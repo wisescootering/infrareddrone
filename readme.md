@@ -1,4 +1,7 @@
-#Aerial drone photography project
+# Aerial drone photography project
 
-#General information
+# General information
 * Author : Balthazar Neveu
+
+# Testing
+```pytest irdrone\test.py```
