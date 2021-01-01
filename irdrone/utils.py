@@ -31,5 +31,5 @@ def imagepath(imgname="2020_1225_091929_004FullSpectrum.JPG", dirname=opj(os.pat
         else:
             assert os.path.exists(imgpth)
             imgpthList.append(imgpth)
-    imgpthList = map(lambda x:os.path.abspath(x), imgpthList)
+    imgpthList = list(map(lambda x:os.path.abspath(x), imgpthList))
     return imgpthList

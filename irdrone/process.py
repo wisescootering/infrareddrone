@@ -6,14 +6,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-def loadimage(imgpth):
+def loadimage(imgpth, numpyMode=True):
     """
     @todo: enrich with an image class
     :param imgpth: list of paths to jpg images
     :return: list of RGB arrays (cv2 bgr to rgb conversion is performed)
     """
     if not isinstance(imgpth, list): imgpth = [imgpth,]
-    return [cv2.cvtColor(cv2.imread(img), cv2.COLOR_BGR2RGB) for img in imgpth]
+    if numpyMode:
+        return [cv2.cvtColor(cv2.imread(img), cv2.COLOR_BGR2RGB) for img in imgpth]
+    else:
+        return [cv2.imread(img) for img in imgpth]
 
 
 def show(img, title=None, compare=True, block=True, suptitle=None):
@@ -89,7 +92,7 @@ def applycolormatrix(img, cm=np.eye(3)):
     if isinstance(cm, list): cm = np.array(cm)
     ndim =  len(cm.shape)
     if ndim==1:
-        assert cm.shape[0] == 3, "cannot initalize diagonal matrix"
+        assert cm.shape[0] == 3, "cannot initialize diagonal matrix"
         cm = np.diag(cm)
     imgcm = np.dot(img, 1.*cm.T).clip(0,255).astype(np.uint8)
     return imgcm

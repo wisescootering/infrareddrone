@@ -3,7 +3,7 @@ import utils
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-
+import imagepipe
 DISPLAY = False
 
 
@@ -109,3 +109,34 @@ def test_applycm(block=False,  display=DISPLAY):
     )
     if not block and display:
         plt.show()
+
+
+def test_imagepipe(display=DISPLAY):
+    ipBasicPipe = imagepipe.ImagePipe(
+        [utils.testimage(xsize=400, ysize=400),],
+        winname="Basic single image processing",
+        rescale=2.
+    )
+    if display:
+        ipBasicPipe.gui()
+
+    forcedparams = {
+        "WB":[0.121569,0.219608],
+        "GAMMA":[0.105882],
+        "BRIGHTNESS":[-0.137255],
+        "TRANSLATION":[-372.000000,-377.000000],
+    }
+    ipBasicPipe.set(**forcedparams)
+    ipBasicPipe.save()
+
+
+
+    ipBasicLinPipe = imagepipe.ImagePipe(
+        [utils.testimage(xsize=400, ysize=400),],
+        sliders=[imagepipe.GLIN, imagepipe.BRIGHTNESS, imagepipe.WB, imagepipe.GAMM],
+        winname="Basic LINEAR DOMAIN single image processing",
+        rescale=2.
+    )
+    if display:
+        ipBasicLinPipe.gui()
+
