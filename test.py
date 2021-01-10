@@ -1,9 +1,9 @@
-import process
-import utils
+import irdrone.process as process
+import irdrone.utils as utils
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-import imagepipe
+import irdrone.imagepipe as imagepipe
 DISPLAY = False
 
 
