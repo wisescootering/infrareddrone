@@ -88,6 +88,7 @@ def cameracalibration(camera="sjcam", checkerboardsize=(10,7), imgname="*.JPG"):
             dic["mtx"] = np.array(dic["mtx"])
             dic["dist"] = np.array(dic["dist"])
             print(Style.GREEN + "CALIBRATION %s SUCCESSFULLY LOADED"%camera)
+            print(Style.RESET)
     else:
         raise  NameError("Calibration %s cannot be loaded %s"%(camera, calibfile))
     return dic
