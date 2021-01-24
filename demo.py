@@ -37,7 +37,38 @@ def spectrumfusiondemo():
     )
     ip.gui()
 
+
+def fuseIRandFullSpectrum():
+    """
+    Example of IR and Full spectrum fusion to try to reconstruct visible image
+    Show an example of forced parameters:
+    - You can play with the tuning sliders, press I to show the dictionary in the terminal
+    - Then force this parameters at the initialization of the ImagePipe (**forcedParams)
+    This allows to save your tuning ... usefull for GUI-less processing
+    :return:
+    """
+    AWB = ipipe.AWB("Auto white balance", slidersName=[])
+    ADD = ipipe.Add("ADD", inputs=[0,2], vrange=(-2., 0., 0.))
+    CM2 = ipipe.ColorMix("ColorMix", inputs=[2,], outputs=[2,], slidersName=["Bleu", "Vert", "Rouge"], vrange=(0.,1.,1.))
+
+    forcedParams = {
+        "ColorMix":[0.34,0.25,0.5],
+        "ADD":[-1.0],
+        # "GAMMA":[-0.020000],
+        "BRIGHTNESS":[0.620000],
+    }
+    ip = ipipe.ImagePipe(
+        [
+            pr.loadimage(ut.imagepath(imgname="*Full*",  dirname="samples2"), numpyMode=False)[0],
+            pr.loadimage(ut.imagepath(imgname="*IR760*", dirname="samples2"), numpyMode=False)[0],
+        ],
+        sliders=[CM2, ADD, AWB, ipipe.WB, ipipe.GAMMA, ipipe.BRIGHTNESS],
+        **forcedParams
+    )
+    ip.gui()
+
 if __name__ == "__main__":
+    fuseIRandFullSpectrum()
     imagecompdemo()
     blendingdemo()
     spectrumfusiondemo()

@@ -80,6 +80,32 @@ class Wb(ProcessBlock):
         return im
 
 
+class BnW(ProcessBlock):
+    def apply(self, im, **kwargs):
+        avg =  1./3.*(1.*im[:,:,0]+1.*im[:,:,1]+1.*im[:,:,2])
+        for i in range(im.shape[-1]):
+            im[:,:,i] = avg
+        return im
+
+
+class AWB(ProcessBlock):
+    def apply(self, im, **kwargs):
+        avg = np.average(im, axis=(0,1))
+        im[:,:,0] *= (avg[1]/avg[0])
+        im[:,:,2] *= (avg[1]/avg[2])
+        return im
+
+
+
+class Equalizer(ProcessBlock):
+    def apply(self, im, **kwargs):
+        im = np.clip(im, 0., 255.)
+        mi, ma = np.min(im), np.max(im)
+        # print(mi, ma)
+        im = 255.*(im - mi)/ (ma-mi)
+        return im
+
+
 class Translation(ProcessBlock):
     def apply(self, im, tx, ty, geometricscale=None, **kwargs):
         if tx== 0 and ty==0:
@@ -104,6 +130,14 @@ class Add(ProcessBlock):
         return im1 + alpha*im2
 
 
+class ColorMix(ProcessBlock):
+    def apply(self, im, coeffblue, coeffgreen, coeffred, **kwargs):
+        im[:,:,0] *= coeffblue
+        im[:,:,1] *= coeffgreen
+        im[:,:,2] *= coeffred
+        return im
+
+
 BRIGHTNESS = Brightness("BRIGHTNESS")
 WB = Wb("WB", slidersName=["WB blue", "WB red"],  vrange=(-1.,3., 0.))
 TRANSLATION = Translation("TRANSLATION", slidersName=["TX", "TY"], vrange=(-500,500))
@@ -112,14 +146,14 @@ ADD = Add("ADD", inputs=[0,2], vrange=(-1., 1., 0.))
 GAMMA = Gamma("GAMMA", vrange=(-0.2, 0.2, 0.))
 GLIN = GammaFixed("GINV", slidersName=[]); GLIN.setGamma(1./2.2)
 GAMM = GammaFixed("GAMM", slidersName=[]); GAMM.setGamma(2.2)
-
+EQ   = Equalizer("EQUALIZER", slidersName=[])
 
 class ImagePipe():
     """
     Pipe various ProcessBlock to perform basic multiple image processing
     """
 
-    def __init__(self, imlist, rescale=None, sliders = [WB, GAMMA, BRIGHTNESS, TRANSLATION], winname=CONTROLWINDOW):
+    def __init__(self, imlist, rescale=None, sliders = [WB, GAMMA, BRIGHTNESS, TRANSLATION], winname=CONTROLWINDOW, **params):
         """
 
 
@@ -131,9 +165,11 @@ class ImagePipe():
         if rescale is None: rescale = 720./(1.*imlist[0].shape[0])
         self.imglistThumbs = list(map(lambda x:cv2.resize(x, (0, 0), fx=rescale, fy=rescale), imlist))
         self.geometricscale = rescale
+        self.set(**params)
 
     def engine(self, imglst, geometricscale=None):
-        result = [1.*imglst[0]]+imglst
+        result = [1.*imglst[0]]+list(map(lambda  x:x.astype(np.float), imglst))
+
         for prc in self.sliders:
             out = prc.apply(*[result[idi] for idi in prc.inputs]+prc.values, geometricscale=geometricscale)
             if isinstance(out, list):
@@ -142,7 +178,7 @@ class ImagePipe():
             else: #Simpler manner of defining a process fuction (do not return a list)
                 for _i, ido in enumerate(prc.outputs):
                     result[ido] = out
-        return result[0].clip(0,255).astype(np.uint8)
+        return np.clip(result[0],0,255).astype(np.uint8)
 
     def save(self):
         """
@@ -160,16 +196,34 @@ class ImagePipe():
             else:
                 idx+=1
 
-    def resetsliders(self, sliderslength=100.):
+    def resetsliders(self, sliderslength=100., forcereset=False):
         """
-        Creat sliders at their initial values
+        Create sliders at their initial values
         """
         def nothing(x):
             pass
         for pa in self.sliders:
-            for paName in pa.slidersName:
-                defaultval =int( (pa.defaultvalue - pa.vrange[0])/(pa.vrange[1]-pa.vrange[0])  * sliderslength)
+            for idx, paName in enumerate(pa.slidersName):
+                if forcereset:
+                    dfval = pa.defaultvalue
+                else:
+                    # print("NOT FORCED RESET")
+                    dfval = pa.values[idx]
+                defaultval =int( (dfval - pa.vrange[0])/(pa.vrange[1]-pa.vrange[0])  * sliderslength)
                 cv2.createTrackbar(paName, self.winname, defaultval, int(sliderslength),nothing)
+
+    def set(self, **params):
+        """
+        Force parameters (Hint: Use I key to print the current values of tuning sliders)
+        :param params:
+        :return:
+        """
+        for pa in self.sliders:
+            if pa.name in params.keys():
+                pa.values = params[pa.name]
+            else:
+                for idx, paName in enumerate(pa.slidersName):
+                    pa.values[idx] = pa.defaultvalue
 
     def gui(self, sliderslength=100.):
         """
@@ -189,18 +243,8 @@ class ImagePipe():
             if k == ord('s'): self.save()
             elif k == ord('i'): print(self.__repr__())
             elif k == ord("q"): break
-            elif k == ord("r"): self.resetsliders()
+            elif k == ord("r"): self.resetsliders(forcereset=True)
         cv2.destroyAllWindows()
-
-    def set(self, **params):
-        """
-        Force parameters (Hint: Use I key to print the current values of tuning sliders)
-        :param params:
-        :return:
-        """
-        for pa in self.sliders:
-            if pa.name in params.keys():
-                pa.values = params[pa.name]
 
     def __repr__(self):
         ret = "\n{\n"
