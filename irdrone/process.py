@@ -19,7 +19,7 @@ def loadimage(imgpth, numpyMode=True):
         return [cv2.imread(img) for img in imgpth]
 
 
-def show(img, title=None, compare=True, block=True, suptitle=None):
+def show(img, title=None, compare=True, block=True, suptitle=None, figsize=None):
     """
     Display matplolib image or a 1D or 2D comparison between images
 
@@ -45,7 +45,7 @@ def show(img, title=None, compare=True, block=True, suptitle=None):
         img   = [im if (im is None or not ((isinstance(im, tuple) or isinstance(im, list)) and len(im)>=1)) else im[0] for im in img]
     if not isinstance(title, list): title = len(img)*[title]
     assert len(title)==len(img)
-    if compare: plt.figure(num=suptitle)
+    if compare: plt.figure(num=suptitle, figsize=figsize)
     for idy, im in enumerate(img):
         if isinstance(im, list): #2D comparison array:
             xlen = max(map(lambda x:len(x), img))

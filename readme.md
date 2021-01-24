@@ -1,12 +1,37 @@
 # Aerial drone photography project
 
 # General information
-* Author : Balthazar Neveu
+* Author : Balthazar Neveu , Alain Neveu
 
-# Demo content
+# Image registration code
+* Images from the drone are nearly distorsion-less
+* Images from the fisheye IR camera have a much wider field of view and distorsions
+
+Image registration works in the following manner:
+* undistort IR image
+* computes feature (*SIFT*) points on 2 thumbnails (800x600) of visible & undistorted IR image in grey levels
+* matches features points (*Flann*)
+* estimates homography between the two set of matched points
+* allows for full resolution (not thumbnail) warp of the IR image onto the visible full resolution image.
+
+# Camera calibration
+* camera calibrations are pre-stored in the calibration/mycamera folder
+* when using a new camera:
+  * to get a planar checkerboard, either print or display on your computer screen  [Generator "8x11"](https://calib.io/pages/camera-calibration-pattern-generator)
+  * shoot about 30 images of the checkerboard in various camera orientations (refer to [openCV Zhang's camera calibration](https://docs.opencv.org/master/dc/dbb/tutorial_py_calibration.html)
+  * put all images in `calibration/mynewcamera`
+  * `calibnewcam = irdrone.utils.cameracalibration(camera="mynewcamera", checkerboardsize=(10,7))` will take care of camera calibration
+* camera calibration is located  [irdrone.calibration](irdrone/cameracalibration.py)  for more details to calibrate your new camera
+
+
+# Testing
+```pytest irdrone\test.py```
+
+# Image processing and visualization features
+## Demo content
 Run [demo.py](demo.py) to test the image processing features.
 
-## I/O management
+### I/O management
 * [irdrone.process](irdrone/process.py) contains helpers
   * load images from disk
   * compare images in a side by side or grid fashion
@@ -83,6 +108,3 @@ Image_0 -> Output : output [8 bit]
 @enduml
 ```
 
-
-# Testing
-```pytest irdrone\test.py```
