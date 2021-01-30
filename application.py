@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import irdrone.process as pr
 import irdrone.utils as ut
 import irdrone.imagepipe as ipipe
@@ -168,6 +169,7 @@ def warp(im, cal, homog, outsize):
         borderValue=(0, 0, 0, 0)
     )
     return out
+
 def applicationDjiDroneSJCamIR(imageRange=[4,6], debug=False):
     """
     Visible camera: DJI Mavic Air 2 drone
@@ -211,7 +213,8 @@ def applicationDjiDroneSJCamIR(imageRange=[4,6], debug=False):
                 aligned[0]
             ],
             sliders=[BnWIR, brIR, gamIR, mix, ipipe.ALPHA, preconvert],
-            winname= "IMAGE %d : VISIBLE versus registered IR image - Use S to save"%(imageRange[idx]),
+            # winname= "IMAGE %d : VISIBLE versus registered IR image - Use S to save"%(imageRange[idx]),
+            winname = "%d -- "%idx  + "VISIBLE:  %s"%viImages[idx]  + "---   FUSED WITH   --- IR : %s"%irImages[idx],
             **forcedParams,
         ).gui()
 
@@ -229,6 +232,6 @@ mix = MixIR("Mix IR and Visible", inputs=[0,2], slidersName=["r", "g", "b"], vra
 
 if __name__ == "__main__":
     applicationDjiDroneSJCamIR(
-        imageRange=range(7), #[4,],
+        imageRange=[4,6], #
         debug=False
     )

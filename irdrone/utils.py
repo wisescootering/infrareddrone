@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from matplotlib.colors import hsv_to_rgb
 import glob
 import itertools
@@ -92,3 +93,14 @@ def cameracalibration(camera="sjcam", checkerboardsize=(10,7), imgname="*.JPG"):
     else:
         raise  NameError("Calibration %s cannot be loaded %s"%(camera, calibfile))
     return dic
+
+def conversionGPSdms2dd(coord):
+    """
+        Conversion from dd° mm' ss.sssss"   en dd.dddddddd
+    """
+    if coord[0]=="W" or coord[0]=="S":
+        signe=-1.
+    else:
+        signe=1.
+    coordDD = signe*(coord[0] + (coord[1] / 60) + (coord[2] / 3600))
+    return coordDD
