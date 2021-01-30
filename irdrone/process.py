@@ -4,6 +4,56 @@ image processing utilities
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
+import os.path as osp
+
+class Image:
+    """
+    Fast image class
+    image[0] = numpy array , only loaded when accessing , otherwise the path is simply kept
+    image[1] = image name
+    """
+    def __init__(self, dat, name=None):
+        if isinstance(dat, str):
+            self.path = dat
+            self.name = osp.basename(dat)
+            self._data = None
+        else:
+            self.path = None
+            self._data = dat
+            self.name = name
+        if name is not None: self.name = name
+
+
+    @property
+    def data(self):
+        if self._data is None:
+            # print("LOAD DATA %s"%self.path)
+            assert osp.exists(self.path), "%s not an image"%self.path
+            self._data = cv2.cvtColor(cv2.imread(self.path), cv2.COLOR_BGR2RGB)
+            # print("data loaded", self._data.shape)
+        else:
+            pass
+            # print("Reaccessing image %s"%self.path)
+        return self._data
+
+    def __getitem__(self, item):
+        if item == 0:
+            # print("ACESS IMAGE CONTENT!")
+            return self.data
+        if item == 1:
+            return  self.name
+
+    def __repr__(self):
+        if self._data is None:
+            return "Image %s not loaded"%self.path
+        else:
+            return "%s - Image %s loaded"%(self._data.shape, self.path)
+
+    def clear(self):
+        self._data = None
+
+    def isempty(self):
+        return self._data is None
 
 
 def loadimage(imgpth, numpyMode=True):
