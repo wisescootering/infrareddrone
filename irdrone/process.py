@@ -29,14 +29,22 @@ class Image:
         if name is not None: self.name = name
         self.loadMetata()
 
+    def save(self, path):
+        cv2.imwrite(path, cv2.cvtColor(self._data, cv2.COLOR_RGB2BGR))
+        return
+
     def loadMetata(self):
         if self.path is not None:
             pimg = PIL.Image.open(self.path)
-            exifTag = {
-                PIL.ExifTags.TAGS[k]: v
-                for k, v in pimg._getexif().items()
-                if k in PIL.ExifTags.TAGS
-            }
+            try:
+                exifTag = {
+                    PIL.ExifTags.TAGS[k]: v
+                    for k, v in pimg._getexif().items()
+                    if k in PIL.ExifTags.TAGS
+                }
+            except:
+                print(Style.YELLOW + "CANNOT ACCESS EXIF"%self.path + Style.RESET)
+                return
             try:
                 dateTimeOriginal= exifTag.get('DateTimeOriginal')
                 imgYear   = int (dateTimeOriginal[0:4])
@@ -83,7 +91,7 @@ class Image:
         if self._data is None:
             # print("LOAD DATA %s"%self.path)
             assert osp.exists(self.path), "%s not an image"%self.path
-            self._data = cv2.cvtColor(cv2.imread(self.path), cv2.COLOR_BGR2RGB)
+            self._data = cv2.cvtColor(cv2.imread(self.path), cv2.COLOR_BGR2RGB)  #LOAD AS A RGB CLASSIC ARRAY
             # print("data loaded", self._data.shape)
         else:
             pass
@@ -193,7 +201,7 @@ def show(img, title=None, compare=True, block=True, suptitle=None, figsize=None)
     [(image middle left, "title C") , (image middle right, "title D")]
     [(image bottom left, "title E") , (image bottom right, "title F")]
 
-    :param img: RGB image / list of RGB images / list of list in a 2D array fashion
+    :param img: RGB image / list of RGB images / lisst of list in a 2D array fashion
     :param title: [optional] not necessary if the tuple (image, title) is used
     :param compare: disable only to display each image sequentially rather than in a side by side comparison fashion
     :param block: True by default, if False, shows plot only at the end
@@ -214,7 +222,11 @@ def show(img, title=None, compare=True, block=True, suptitle=None, figsize=None)
                 else: implt = ima; titl = None
                 if compare: plt.subplot(len(img), xlen, xlen*idy+1 + idx)
                 else: plt.figure(num=("" if suptitle is None else suptitle) +(" %d %d "%(idy, idx) if titl is None else (" " + titl)))
-                if implt is not None:  plt.imshow(implt)
+                if implt is not None:
+                    if isinstance(implt, Image):
+                        plt.imshow(implt.data)
+                        if titl is None: titl=implt.name
+                    else: plt.imshow(implt)
                 if titl is not None: plt.title(titl)
                 plt.axis('off')
                 if not compare: plt.show(block=block)
@@ -223,7 +235,11 @@ def show(img, title=None, compare=True, block=True, suptitle=None, figsize=None)
             titl = title[idy]
             if compare: plt.subplot(1, len(img), idy+1)
             else: plt.figure(num=("" if suptitle is None else suptitle) +(" %d"%idy if titl is None else (" " + titl)))
-            if im is not None: plt.imshow(im)
+            if im is not None:
+                if isinstance(im, Image):
+                    plt.imshow(im.data)
+                    if titl is None: titl=im.name
+                else: plt.imshow(im)
             if titl is not None: plt.title(titl)
             plt.axis('off')
             if not compare: plt.show(block=block)

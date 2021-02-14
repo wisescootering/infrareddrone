@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import irdrone.process as process
 import irdrone.utils as utils
 import os
@@ -80,6 +81,22 @@ def test_show_compare_grid(block=False,  display=DISPLAY):
         plt.show()
 
 
+def test_show_compare_grid_image_class(block=False,  display=DISPLAY):
+    """
+    grid of images display using image class
+    """
+    process.show(
+        [
+            [process.Image(impth, name=os.path.basename(impth)[:12]) for impth in utils.imagepath(imgname=["*Full*", "*IR760*"])],
+            [process.Image(impth, name="") for impth in utils.imagepath(imgname=["*Full*", "*IR760*"])][::-1],
+        ],
+        suptitle="Comparison using Image Class images",
+        block=block
+    )
+    if not block and display:
+        plt.show()
+
+
 def test_applycm(block=False,  display=DISPLAY):
     """
     Application of a color matrix
@@ -131,12 +148,52 @@ def test_imagepipe(display=DISPLAY):
 
 
 
+import copy
+def test_signalplot():
+    class Amplify(imagepipe.ProcessBlock):
+        def apply(self, sig, ampli, **kwargs):
+            out = copy.deepcopy(sig)
+            out.y = sig.y*ampli
+            return out
+
+
+    class Addition(imagepipe.ProcessBlock):
+        def apply(self, sig1, sig2, **kwargs):
+            out = copy.deepcopy(sig1)
+            out.y = sig1.y + sig2.y
+            out.label = sig1.label + " + " +sig2.label
+            out.color = "g.-"
+            return out
+
+    AMPLI = Amplify(
+        "Amplification",
+        vrange=[
+            (0.5, 3., 1.),
+        ],
+        mode = [imagepipe.ProcessBlock.SIGNAL, imagepipe.ProcessBlock.SIGNAL]
+    )
+
+    ADDI = Addition(
+        "Addition", slidersName=[],
+        inputs = [0,2], outputs = [0, ],
+        mode = [imagepipe.ProcessBlock.SIGNAL, imagepipe.ProcessBlock.SIGNAL]
+    )
+
+
+    x  = 2.*np.arange(100)/100.
+    sigList = [
+        imagepipe.Signal(x, x, "-b", "base signal"),
+        imagepipe.Signal(x, np.sin(x), "-r", "sinus")
+    ]
+    ip = imagepipe.ImagePipe(
+        sigList,
+        sliders=[AMPLI, ADDI])
+    ip.gui()
+
     ipBasicLinPipe = imagepipe.ImagePipe(
         [utils.testimage(xsize=400, ysize=400),],
         sliders=[imagepipe.GLIN, imagepipe.BRIGHTNESS, imagepipe.WB, imagepipe.GAMM],
         winname="Basic LINEAR DOMAIN single image processing",
         rescale=2.
     )
-    if display:
-        ipBasicLinPipe.gui()
-
+    ipBasicLinPipe.gui()

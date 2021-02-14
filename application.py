@@ -8,18 +8,6 @@ import cv2
 from joblib import Memory
 
 
-
-class Numpy2Cv2(ipipe.ProcessBlock):
-    def apply(self, im, **kwargs):
-        cvt = im.copy()
-        cvt[:,:,2] =im[:,:,0]
-        cvt[:,:,0] =im[:,:,2]
-        im = cvt
-        return im
-
-preconvert  = Numpy2Cv2("Numpy to opencv color conversion", slidersName=[])
-
-
 def loadDatabase(dirname="flight0001", viscam = "DJI", ircam = "sjcam", imageRange=range(6), numpyMode=True):
     """
     Load database for visible & ir image and camera calibrations loaded in a flight folder
@@ -39,7 +27,7 @@ def loadDatabase(dirname="flight0001", viscam = "DJI", ircam = "sjcam", imageRan
     viImages = [
         pr.Image(
             ut.imagepath(
-                imgname="*%03d*%s*JPG"%(idx, viscam),
+                imgname="*%02d*%s*JPG"%(idx, viscam),
                 dirname=dirname
             )[0],
             name="visible %d"%idx
@@ -53,7 +41,7 @@ def loadDatabase(dirname="flight0001", viscam = "DJI", ircam = "sjcam", imageRan
     irImages = [
         pr.Image(
             ut.imagepath(
-                imgname="*%03d*%s*JPG"%(idx,ircam),
+                imgname="*%02d*%s*JPG"%(idx,ircam),
                 dirname=dirname
             )[0],
             name="IR %d"%idx
@@ -94,7 +82,7 @@ def registration(vilist, irlist, ircalib=None, resize=(800,600), debug=False):
                     irimg,
                     irimgu
                 ],
-                sliders=[ipipe.ALPHA, preconvert],
+                sliders=[ipipe.ALPHA,],
                 winname="DISTORSION CORRECTION ON IR IMAGE  (THUMBNAILS)"
             ).gui()
 
@@ -109,7 +97,7 @@ def registration(vilist, irlist, ircalib=None, resize=(800,600), debug=False):
                     irimg[:visimg.shape[0], :visimg.shape[1]],
                     visimg
                 ],
-                sliders=[ipipe.ALPHA, preconvert],
+                sliders=[ipipe.ALPHA,],
                 winname="VISIBLE VS UNDISTORED UNREGRISTERED IR IMAGE (THUMBNAILS)"
             ).gui()
 
@@ -121,7 +109,7 @@ def registration(vilist, irlist, ircalib=None, resize=(800,600), debug=False):
                     visimg,
                     aligned
                 ],
-                sliders=[ipipe.ALPHA, preconvert],
+                sliders=[ipipe.ALPHA,],
                 winname="REGISTRATION RESULT ON VISIBLE VS IR THUMBNAILS"
             ).gui()
 
@@ -138,7 +126,7 @@ def registration(vilist, irlist, ircalib=None, resize=(800,600), debug=False):
                     visimgFullRes,
                     alignedFullRes
                 ],
-                sliders=[ipipe.ALPHA, preconvert],
+                sliders=[ipipe.ALPHA,],
                 winname="FULL RESOLUTION IR vs VISIBLE REGISTRATION"
             ).gui()
     visimgSize = (visimgFullRes.shape[1], visimgFullRes.shape[0])
@@ -170,7 +158,7 @@ def warp(im, cal, homog, outsize):
     )
     return out
 
-def applicationDjiDroneSJCamIR(imageRange=[4,6], debug=False):
+def applicationDjiDroneSJCamIR(imageRange=[4,6], outimage="fused", debug=False):
     """
     Visible camera: DJI Mavic Air 2 drone
     IR camera: sjcam400
@@ -182,7 +170,7 @@ def applicationDjiDroneSJCamIR(imageRange=[4,6], debug=False):
     :return:
     """
     viImages, _viscal, irImages, ircal = loadDatabase(
-        dirname="flight0001",
+        dirname= "flight0001", #"flight260121",
         imageRange=imageRange,
     )
     for idx in range(len(viImages)):
@@ -207,18 +195,19 @@ def applicationDjiDroneSJCamIR(imageRange=[4,6], debug=False):
             "Mix IR and Visible":[1.096000,0.856000,0.946000],
             "ALPHA":[0.870000],
         }
-        ipipe.ImagePipe(
+        ip= ipipe.ImagePipe(
             [
                 viImages[idx][0],
                 aligned[0]
             ],
-            sliders=[BnWIR, brIR, gamIR, mix, ipipe.ALPHA, preconvert],
-            # winname= "IMAGE %d : VISIBLE versus registered IR image - Use S to save"%(imageRange[idx]),
-            winname = "%d -- "%idx  + "VISIBLE:  %s"%viImages[idx]  + "---   FUSED WITH   --- IR : %s"%irImages[idx],
-            **forcedParams,
-        ).gui()
-
-
+            sliders=[BnWIR, brIR, gamIR, #ipipe.TRANSLATION,
+                     mix, ipipe.ALPHA],
+            backendcv=False,
+            winname = ("%d -- "%idx  + "VISIBLE:  %s"%viImages[idx]  + "---   FUSED WITH   --- IR : %s"%irImages[idx]).replace(u"°", " "),
+            **forcedParams
+        )
+        ip.save(name= outimage+"%04d.jpg"%idx)
+        ip.gui()
 
 class MixIR(ipipe.ProcessBlock):
     def apply(self, vis, ir, coeffr, coeffg, coeffb,  **kwargs):
@@ -232,6 +221,6 @@ mix = MixIR("Mix IR and Visible", inputs=[0,2], slidersName=["r", "g", "b"], vra
 
 if __name__ == "__main__":
     applicationDjiDroneSJCamIR(
-        imageRange=[4,6], #
+        imageRange=[4,6],
         debug=False
     )

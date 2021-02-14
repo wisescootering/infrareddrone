@@ -30,8 +30,8 @@ def spectrumfusiondemo():
     GLIN2 = ipipe.GammaFixed("LINEARIZATION_IMG2", slidersName=[], inputs=[2,], outputs=[2,]);GLIN2.setGamma(1./2.2)
     ip = ipipe.ImagePipe(
         [
-            pr.loadimage(ut.imagepath(imgname="*Full*") , numpyMode=False)[0],
-            pr.loadimage(ut.imagepath(imgname="*IR760*"), numpyMode=False)[0],
+            pr.loadimage(ut.imagepath(imgname="*Full*"))[0],
+            pr.loadimage(ut.imagepath(imgname="*IR760*"))[0],
         ],
         sliders=[ipipe.GLIN, ipipe.BRIGHTNESS, ipipe.WB, GLIN2, TRANSLATION2, ipipe.ADD, ipipe.GAMM, ipipe.GAMMA]
     )
@@ -59,8 +59,8 @@ def fuseIRandFullSpectrum():
     }
     ip = ipipe.ImagePipe(
         [
-            pr.loadimage(ut.imagepath(imgname="*Full*",  dirname="samples2"), numpyMode=False)[0],
-            pr.loadimage(ut.imagepath(imgname="*IR760*", dirname="samples2"), numpyMode=False)[0],
+            pr.loadimage(ut.imagepath(imgname="*Full*",  dirname="samples2"))[0],
+            pr.loadimage(ut.imagepath(imgname="*IR760*", dirname="samples2"))[0],
         ],
         sliders=[CM2, ADD, AWB, ipipe.WB, ipipe.GAMMA, ipipe.BRIGHTNESS],
         **forcedParams
