@@ -1054,14 +1054,17 @@ def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False, t
         #
         #_____________________________________________________________
         class MultiSpectralBand(ipipe.ProcessBlock):
+            def preprocess(self,bandIR=1):
+                self.bandIR=bandIR
+
             def apply(self,Vi,iR, val01,val02,**kwargs):
                 imMultiSpectral = np.zeros_like(Vi)    # float
                 IRlayer = np.zeros_like(Vi[:,:,0])
 
                 #  Calcul de la bande IR ou de l'indice NDVI  ou SDVI (basé sur rgb uniquement)
                 # Attention en float les valeurs des couches d'une image rgb dovient être entre 0 et 1
-                bandIR=1
-                if bandIR == 1 :
+
+                if self.bandIR == 1 :
                     #  La bande spectrale RedEdge classique est définie entre 715nm - 745nm
                     #  Ici elle est simulée à partir de l'image IRsolaire  720nm -1100nm
                     #  Ceci n'est pertinent que si on a monté un fitre IR720nm  lors de la
@@ -1075,14 +1078,14 @@ def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False, t
                     minBandIR = 0.
                     maxBandIR = 1.
 
-                elif bandIR == 2 :
+                elif self.bandIR == 2 :
                     #  La bande spectrale IR est représentée par la couche IRred 720nm - 1100nm
                     #  si  le filtre fixé sur l'objectif de la caméra IR est un filtre IR720nm
                     IRlayer = iR[:, :, 0] / np.max(iR[:, :, 0])
                     minBandIR = 0.
                     maxBandIR = 1.
 
-                elif bandIR == 3 :
+                elif self.bandIR == 3 :
                     #  Bande NIR (Near Infra Red)
                     #  On utilise la couche IRblue  qui par combinaison du filtre matriciel de Bayer
                     #  et du filtre d'objectif IR720nm représente asser bien la bande NIR.
@@ -1091,7 +1094,7 @@ def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False, t
                     minBandIR = 0.
                     maxBandIR = 1.
 
-                elif bandIR == 4 :
+                elif self.bandIR == 4 :
                     #  La bande spectrale IRrgb est la somme des trois couches IRr,IRg et IRb   entre 720nm et 1100nm
                     #  On utilise les trois couches de l'image de la caméra IR munie du filtre IR720nm
                     #IRlayer = (  0.6 * iR[:, :, 0]+ 1. * iR[:,:,1]+ 1.4 *iR[:,:,2]  )/(3.01)
@@ -1099,7 +1102,7 @@ def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False, t
                     minBandIR = 0.
                     maxBandIR = 1.
 
-                elif bandIR == 5 :
+                elif self.bandIR == 5 :
                     #  Calculde l'indice NDVI  (L=0)   ou SAVI si L=0,5
                     #  cet indice est compris en théorie entre -1 et +1
                     #
@@ -1108,7 +1111,7 @@ def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False, t
                     minBandIR =  np.min(IRlayer)  #-1.
                     maxBandIR =  np.max(IRlayer)  #1.
 
-                elif bandIR == 6 :
+                elif self.bandIR == 6 :
                     #  Calcul un indice de développement en utilisant les bandes Red et Green
                     #
                     #  l'indice L de correction est compris en théorie entre -1 et +1
@@ -1125,7 +1128,7 @@ def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False, t
 
                 # Choix de visualiser la couche IR seule   ou bien le traitement multispectral  (trois couches)
                 #   Pour le NDVI  le traitement multispectral n'a pas de sens. On visualise la couche NDVI seule
-                if not visuTriCouche  or bandIR==5 or bandIR==6:
+                if not visuTriCouche  or self.bandIR==5 or self.bandIR==6:
                     return IRlayer
                 else:
                     # Transformation multi spectrale avec shift du spectre
@@ -1141,6 +1144,9 @@ def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False, t
                               slidersName=['Luminosité ou facteur correctif NDVI ',' % IR si ViR'],
                               vrange=[(0.,1.,0.5),(0.,1.,0.87)],
                               inputs=[1,2])
+
+        #multiSpectralBand.bandIR=bandIR
+        multiSpectralBand.preprocess(bandIR=bandIR)
 
         #________________________________________________________________________________
         #   Commentaire sur ipipe
@@ -1289,7 +1295,7 @@ if __name__ == "__main__":
     if typeVisualisation==1: typeVisu=True
 
     folderPath = dirNameIRdrone+'\\test_traitement\\'
-    imgMultiSpectral(listImgMatch, folderPath, bandIR=bandiR, typVisu=typeVisu, debug=False)
+    imgMultiSpectral(listImgMatch, folderPath, bandIR=int(bandiR), typVisu=typeVisu, debug=False)
 
     #def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False, myColorMap='gray',  minColorBar=0, maxColorBar=1,debug=False):
 
