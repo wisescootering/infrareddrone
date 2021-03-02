@@ -375,7 +375,7 @@ class ImagePipe:
             print(self.__repr__())
 
 
-    def gui(self, sliderslength=100.):
+    def gui(self, sliderslength=100., myColorBar ='gray',minColorBar=0, maxColorBar=1,):
         """
         Create a cv2 or pyplot GUI
         to interactively visualize the imagePipe when changing tuning sliders for each processBlock
@@ -421,7 +421,14 @@ class ImagePipe:
                     if result.ylim   is not None: plt.ylim(result.ylim)
             else:
                 plt.axis("off")
-                self.implot = ax.imshow(result)
+                # Echelles des couleurs disponibles
+                # autumn, bone, cool, copper, flag, gray, hot, hsv, jet, pink, prism, spring, summer, winter.
+
+                if len(result.shape)<3:
+                    self.implot = ax.imshow(result,cmap= myColorBar , vmin=minColorBar,vmax=maxColorBar)
+                    plt.colorbar(self.implot,ax=ax)
+                else:
+                    self.implot = ax.imshow(result)
                 ax.margins(x=0)
         self.resetsliders(addslider=True, forcereset=False)
 

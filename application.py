@@ -190,10 +190,11 @@ def applicationDjiDroneSJCamIR(imageRange=[4,6], outimage="fused", debug=False):
         gamIR = ipipe.Gamma("GammaIR", inputs=[2], outputs=[2])
 
         forcedParams = {
-            "BrightnessIR":[-0.420000],
-            "GammaIR":[0.160000],
-            "Mix IR and Visible":[1.096000,0.856000,0.946000],
-            "ALPHA":[0.870000],
+            "MonochromeIR": [],
+            "BrightnessIR": [-0.440000],
+            "GammaIR": [0.180000],
+            "Mix IR and Visible": [0.820000, 1.186000, 1.222000],
+            "ALPHA": [0.870000],
         }
         ip= ipipe.ImagePipe(
             [
@@ -214,7 +215,7 @@ class MixIR(ipipe.ProcessBlock):
         out = vis.copy()
         out[:,:,0] = coeffr*ir[:,:,0]
         out[:,:,1] = coeffg*vis[:,:,0]
-        out[:,:,2] = coeffb*ir[:,:,0]
+        out[:,:,2] = coeffb*vis[:,:,1]
         return out
 
 mix = MixIR("Mix IR and Visible", inputs=[0,2], slidersName=["r", "g", "b"], vrange=(0.7, 1.3, 1.))
