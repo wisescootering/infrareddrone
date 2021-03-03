@@ -1017,7 +1017,7 @@ def printPlanVol(planVol):
 
 from application import registrationCached,warp
 
-def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False, typVisu=False, myColorMap='gray',  minColorBar=0, maxColorBar=1,debug=False):
+def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False,  myColorMap='gray',  minColorBar=0, maxColorBar=1,debug=False):
 
     ircal=ut.cameracalibration(camera='sjcam')
 
@@ -1106,6 +1106,7 @@ def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False, t
                     #  Calculde l'indice NDVI  (L=0)   ou SAVI si L=0,5
                     #  cet indice est compris en théorie entre -1 et +1
                     #
+
                     indiceCorL=val01
                     IRlayer =  (1.+indiceCorL)*(iR[:, :, 2] - Vi[:, :, 0] )/(iR[:, :, 2] + Vi[:, :, 0]+indiceCorL)
                     minBandIR =  np.min(IRlayer)  #-1.
@@ -1156,6 +1157,7 @@ def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False, t
         #  Attention certains traitements ne s'appliquent qu'à une image trois canaux (type RGB)
         #  Par exemple le "slider"     ipipe.WB  ne s'applique qu'à une image tr-icanaux
         ##________________________________________________________________________________
+
         ipipe.ImagePipe(
             [
                 1.*viImg[0]/255.,
@@ -1272,9 +1274,9 @@ if __name__ == "__main__":
 
     writeGPX(listImgMatch, dirNameIRdrone, dateEtude, mute=True)  # ecriture  du tracé GPS au format gpx Garmin
 
-    flightPlanSynthesis = summaryFlight(listImgMatch, seaLevel=True, mute=True)
+    flightPlanSynthesis = summaryFlight(listImgMatch, seaLevel=False, mute=True)
 
-    flightProfil(flightPlanSynthesis, seaLevel=True, dirSaveFig=dirNameIRdrone,mute=True)
+    flightProfil(flightPlanSynthesis, seaLevel=False, dirSaveFig=dirNameIRdrone,mute=True)
 
 
     # ----------------------------------------------------
@@ -1283,19 +1285,29 @@ if __name__ == "__main__":
     # ToDo  Placer ici le process Image pipe de Balthou ...
     # ToDo  Pouvoir spécifier le chemin de sauvegarde des images IR redressssées , VIR , NDVI
     # ToDo  Pouvoir choisir la liste des trairtements à faire ?
+    # ToDo  Sauvegarder les images en full résolution.
 
-    #   bandiR  1> RedEdge  2> IRred    3> NIR    4>  IRrgb
-    #   typVisu True > IR layer          False>  ViR
+    # Choix de la couche IR à calculer
+    myBandIR = input(Style.MAGENTA+"Red Edge :     1|  IRred :2       | NIR : 3      | full IR 4  | NDVI : 5   \n" \
+                     "ViR Rededge :10 |  Vir IRred : 20 | ViR NIR : 30 |  ViR  : 40 |> "+Style.RESET)
+    myBandIR = int(myBandIR)
+    if 0 < myBandIR < 6:
+        myVisuTriCouche = False
+    elif myBandIR > 9:
+        myBandIR = myBandIR / 10
+        myVisuTriCouche = True
+    else:
+        myBandIR = 1
+        myVisuTriCouche = False  # False correspond à une visu monocouche  de la bande IR calculée
 
-    # Demande le type de traitement à appliquer à l'image
-    bandiR = input(Style.MAGENTA+"Type de bande infrarouge : 1> RedEdge  2> IRred    3> NIR    4>  IRrgb "+Style.RESET)
-    # Demande le type de visualisation à l'écran
-    typeVisualisation = input(Style.MAGENTA+"Type de visualisation : 1> IR layer   2> ViR "+Style.RESET)
-    typeVisu=False
-    if typeVisualisation==1: typeVisu=True
+    myColorMap, myMinColorBar, myMaxColorBar = colorMapIRlayer(IRband=myBandIR)
 
-    folderPath = dirNameIRdrone+'\\test_traitement\\'
-    imgMultiSpectral(listImgMatch, folderPath, bandIR=int(bandiR), typVisu=typeVisu, debug=False)
+    folderPath = dirNameIRdrone + '\\'
+
+    imgMultiSpectral(listImgMatch, folderPath,
+                     bandIR=myBandIR,
+                     visuTriCouche=myVisuTriCouche,
+                     myColorMap=myColorMap, minColorBar=myMinColorBar, maxColorBar=myMaxColorBar, debug=False)
 
     #def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False, myColorMap='gray',  minColorBar=0, maxColorBar=1,debug=False):
 
