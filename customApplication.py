@@ -333,7 +333,7 @@ def getAltitudeEncode(listPtdGPS=None):
     for i in range(dimListPtdGPS ):
         d_ar[i] = {"latitude": listPtdGPS[i][0], "longitude": listPtdGPS[i][1]}
     location = {"locations": d_ar}
-    json_data = json.dumps(location, skipkeys=int).encode('utf8')
+    json_data = json.dumps(location, skipkeys=False).encode('utf8')
 
     # SEND REQUEST
     for i in range(tries):
@@ -1114,12 +1114,15 @@ def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False,  
 
                 elif self.bandIR == 6 :
                     #  Calcul un indice de développement en utilisant les bandes Red et Green
-                    #
                     #  l'indice L de correction est compris en théorie entre -1 et +1
                     #
                     indiceCorL = val01
                     IRlayer =  (1.+indiceCorL)*(Vi[:, :, 1] - Vi[:, :, 0] )/(Vi[:, :, 1] + Vi[:, :, 0]+indiceCorL )
                     minBandIR = -1.
+                    maxBandIR = 1.
+                else:
+                    IRlayer = iR[:, :, 0] - iR[:, :, 1]
+                    minBandIR = 0.
                     maxBandIR = 1.
 
                 #   Extension de la plage dynamique
@@ -1136,14 +1139,15 @@ def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False,  
                     #      spectral band   VIgreen > layer blue
                     #      spectral band   VIred   > layer green
                     #      spectral band   IR      > layer red
-                    imMultiSpectral[:, :, 0] = val02*IRlayer      # spectral band   IRlayer  > layer red
-                    imMultiSpectral[:, :, 1] = Vi[:, :, 0]        # spectral band   VIred    > layer green
-                    imMultiSpectral[:, :, 2] = Vi[:, :, 1]        # spectral band   VIgreen  > layer blue
+
+                    imMultiSpectral[:, :, 0] = val01*(val02*np.clip(IRlayer,0.,1.) )
+                    imMultiSpectral[:, :, 1] = val01*Vi[:, :, 0]
+                    imMultiSpectral[:, :, 2] = val01*Vi[:, :, 1]
                     return imMultiSpectral
 
         multiSpectralBand=MultiSpectralBand('dif',
                               slidersName=['Luminosité ou facteur correctif NDVI ',' % IR si ViR'],
-                              vrange=[(0.,1.,0.5),(0.,1.,0.87)],
+                              vrange=[(0.5,1.,1.),(0.,1.,0.87)],
                               inputs=[1,2])
 
         #multiSpectralBand.bandIR=bandIR
@@ -1177,7 +1181,8 @@ def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False,  
         #               Traitement ViR    avec la couche IRrgb  totalement règlable  G/R/IR > B/G/R
         #
         #___________________________________________________________________________________________________
-        if False:
+        traitementBalthou=False
+        if traitementBalthou:
             BnWIR = ipipe.BnW("MonochromeIR", inputs=[2], outputs=[2], slidersName=[])
             brIR = ipipe.Brightness("BrightnessIR", inputs=[2], outputs=[2])
             gamIR = ipipe.Gamma("GammaIR", inputs=[2], outputs=[2])
@@ -1189,18 +1194,6 @@ def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False,  
                 "ALPHA": [0.870000],
             }
 
-            """
-            ipipe.ImagePipe(
-                [
-                    viImg[0],
-                    aligned[0]
-                ],
-                sliders=[BnWIR, brIR, gamIR, mix, ipipe.ALPHA, preconvert],
-                # winname= "IMAGE %d : VISIBLE versus registered IR image - Use S to save"%(imageRange[idx]),
-                winname="%d -- " % idx + "VISIBLE:  %s" % viImg + "---   FUSED WITH   --- IR : %s" % irImg,
-                **forcedParams,
-            ).save(name=imgMultiSpectralName)   #gui()
-            """
             ipipe.ImagePipe(
                 [
                     viImg[0],
@@ -1211,8 +1204,6 @@ def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False,  
                 winname="%d -- " % idx + "VISIBLE:q  %s" % viImg + "---   FUSED WITH   --- IR : %s" % irImg,
                 **forcedParams,
             ).save(name=imgMultiSpectralName)  #gui()
-
-
 
 
 class MixIR(ipipe.ProcessBlock):
@@ -1231,6 +1222,11 @@ mix = MixIR("Mix IR and Visible", inputs=[0, 2], slidersName=["r", "g", "b"], vr
 # -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
+
+    # ------------ pour test rapide -----------------
+    seaLevel=False
+    seeDualImages = False
+    # ------------------------------------------------
 
     dirPlanVol = r'C:\Air-Mission\FlightPath.xlsx'
 
@@ -1263,7 +1259,8 @@ if __name__ == "__main__":
     #   - Tracé du profil de vol du drone dans une figure (file format .png)
     listImgMatch = matchImagesFlightPath(imgListDrone, deltaTimeDrone, timeLapseDrone,
                                          imgListIR, deltaTimeIR, timeLapseIR, mute=True)
-    seeDualImages = False
+
+    # ----- option de visualisation pour le contrôle des paires d'images.
     if seeDualImages:
         if len(listImgMatch) < 2:
             modulo = 1
@@ -1274,9 +1271,9 @@ if __name__ == "__main__":
 
     writeGPX(listImgMatch, dirNameIRdrone, dateEtude, mute=True)  # ecriture  du tracé GPS au format gpx Garmin
 
-    flightPlanSynthesis = summaryFlight(listImgMatch, seaLevel=False, mute=True)
+    flightPlanSynthesis = summaryFlight(listImgMatch, seaLevel=seaLevel, mute=True)
 
-    flightProfil(flightPlanSynthesis, seaLevel=False, dirSaveFig=dirNameIRdrone,mute=True)
+    flightProfil(flightPlanSynthesis, seaLevel=seaLevel, dirSaveFig=dirNameIRdrone,mute=True)
 
 
     # ----------------------------------------------------
@@ -1309,9 +1306,6 @@ if __name__ == "__main__":
                      visuTriCouche=myVisuTriCouche,
                      myColorMap=myColorMap, minColorBar=myMinColorBar, maxColorBar=myMaxColorBar, debug=False)
 
-    #def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False, myColorMap='gray',  minColorBar=0, maxColorBar=1,debug=False):
-
-
     # -----------------------------------------------------
     # 4 > Résumé du traitement
 
@@ -1322,7 +1316,4 @@ if __name__ == "__main__":
     timeFin = datetime.datetime.now()
     stopTime = time.clock()
     tempsExe = stopTime-startTime
-
-    mytest_getAltitude()
-
     print(Style.CYAN + 'End IRdrone-v%s  at %s   CPU : %3.f s' % (versionIRdrone, timeFin.time(), tempsExe) + Style.RESET)
