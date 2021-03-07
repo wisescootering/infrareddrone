@@ -17,7 +17,10 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 import irdrone.process as pr
 import irdrone.imagepipe as ipipe
-
+import os
+from tkinter import Tk
+from tkinter.filedialog import askopenfilename
+import argparse
 
 # -------------     Convertisseurs      ---------------------------------
 
@@ -519,6 +522,19 @@ def readFlightPlan(pathPlanVolExcel):
 
     return planVol
 
+def reformatDirectory(di, xlpath=None, makeOutdir=False):
+    if os.path.exists(di):
+        return di
+    else:
+        if xlpath is not None:
+            newdi = os.path.join(os.path.dirname(xlpath), di)
+            return reformatDirectory(newdi, xlpath=None, makeOutdir=makeOutdir)
+        if makeOutdir:
+            os.mkdir(di)
+            print("creating output dir: %s"%di)
+            return di
+
+    raise NameError("Cannot find directory %s"%di)
 
 def extractFlightPlan(dirPlanVol, mute=True):
     """
@@ -546,7 +562,9 @@ def extractFlightPlan(dirPlanVol, mute=True):
     #    Liste des images de l'étude.
     #    Une liste pour les images du drone et une liste pour les images de la caméra infrarouge
     #    Chaque élément de la liste est un triplet (file name image , path name image, date image)
-
+    dirNameDrone = reformatDirectory(dirNameDrone, xlpath=dirPlanVol)
+    dirNameIR = reformatDirectory(dirNameIR, xlpath=dirPlanVol, makeOutdir=True)
+    dirNameIRdrone = reformatDirectory(dirNameIRdrone, xlpath=dirPlanVol, makeOutdir=True)
     imgListDrone = creatListImg(dirNameDrone, dateEtude, typeDrone, '*', extDrone)
     imgListIR = creatListImg(dirNameIR, dateEtude, typeIR, '*', extIR)
 
@@ -886,7 +904,7 @@ def showDualImages(listImgMatch, modulo=1, seeDualImages=False):
                  figsize=(15, 10))  # figsize=(15,13)
 
 
-def flightProfil(listMatch, seaLevel=False, dirSaveFig=r'C:\Air-Mission\Drone-Flight-profil.png',mute=True):
+def flightProfil(listMatch, seaLevel=False, dirSaveFig=r'SampleMission\Drone-Flight-profil.png',mute=True):
     d_list=[]
     elev_Drone=[]
     elev_Ground=[]
@@ -926,6 +944,7 @@ def showFlightProfil(d_list,elev_Drone,elev_Ground,dirSaveFig,mute=True):
     if not mute:
         print(Style.YELLOW + 'Look your Drone Flight profil >>>>' + Style.RESET)
         plt.show()
+    plt.close()
 
 
 # --------------------------    Utilitaires  ---------------------------------
@@ -1202,7 +1221,7 @@ def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False,  
                 sliders=[BnWIR, brIR, gamIR, mix, ipipe.ALPHA],
                 # winname= "IMAGE %d : VISIBLE versus registered IR image - Use S to save"%(imageRange[idx]),
                 winname="%d -- " % idx + "VISIBLE:q  %s" % viImg + "---   FUSED WITH   --- IR : %s" % irImg,
-                **forcedParams,
+                **forcedParams
             ).save(name=imgMultiSpectralName)  #gui()
 
 
@@ -1217,19 +1236,29 @@ class MixIR(ipipe.ProcessBlock):
 
 mix = MixIR("Mix IR and Visible", inputs=[0, 2], slidersName=["r", "g", "b"], vrange=(0.7, 1.3, 1.))
 
+
+
+def loadFileGUI():
+    Tk().withdraw() # we don't want a full GUI, so keep the root window from appearing
+    filename = askopenfilename() # show an "Open" dialog box and return the path to the selected file
+    print(filename)
+    return filename
 # -----------------------------------------------------------------------------
 #                          Programme Principal 
 # -----------------------------------------------------------------------------
 
 if __name__ == "__main__":
-
+    parser = argparse.ArgumentParser(description='Process Flight Path excel')
+    parser.add_argument('--excel', metavar='excel', type=str, help='path to the flight path xlsx')
+    args = parser.parse_args()
     # ------------ pour test rapide -----------------
     seaLevel=False
     seeDualImages = False
     # ------------------------------------------------
-
-    dirPlanVol = r'C:\Air-Mission\FlightPath.xlsx'
-
+    dirPlanVol = args.excel
+    if dirPlanVol is None or not os.path.isfile(dirPlanVol):
+        print("File browser")
+        dirPlanVol = loadFileGUI()
     versionIRdrone = '1.01'
 
     # ----------------------------------------------------
