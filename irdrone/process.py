@@ -30,6 +30,8 @@ class Image:
         self.loadMetata()
 
     def save(self, path):
+        if self._data is None:
+            self.data
         cv2.imwrite(path, cv2.cvtColor(self._data, cv2.COLOR_RGB2BGR))
         return
 

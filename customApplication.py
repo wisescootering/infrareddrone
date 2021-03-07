@@ -1037,12 +1037,15 @@ def printPlanVol(planVol):
 from application import registrationCached,warp
 
 def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False,  myColorMap='gray',  minColorBar=0, maxColorBar=1,debug=False):
+    # Echelles des couleurs disponibles
+    # autumn, bone, cool, copper, flag, gray, hot, hsv, jet, pink, prism, spring, summer, winter.
 
+    # Il est possible de passer une liste de bandIR et de visuTriCouche afin de sortir plusieurs images d'un coup
+    if not isinstance(bandIR, list): bandIR = [bandIR,]
+    if not isinstance(visuTriCouche, list): visuTriCouche=[visuTriCouche]
     ircal=ut.cameracalibration(camera='sjcam')
 
     for idx in range(len(imList)):
-        imgMultiSpectralName = multispectralPath+'%i-IRdrone-Multi.jpg' % (idx)
-        imgIRName = multispectralPath+'%i-IRdrone-IR.jpg' % (idx)
 
         viImg=Image(imList[idx][0],'Vi')
         irImg=Image(imList[idx][1],'Ir')
@@ -1059,8 +1062,8 @@ def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False,  
             warp(irImg, ircal, homog, visimgSize),
             name="REGISTERED IMAGE"
         )
-        aligned.save(imgIRName)
-
+        aligned.save(os.path.join(multispectralPath, '%i-IR.jpg' % (idx)))
+        viImg.save(os.path.join(multispectralPath, '%i-VISIBLE.jpg' % (idx)))
 
         #____________________________________________________________
         #
@@ -1073,8 +1076,9 @@ def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False,  
         #
         #_____________________________________________________________
         class MultiSpectralBand(ipipe.ProcessBlock):
-            def preprocess(self,bandIR=1):
+            def preprocess(self,bandIR=1, visuTriCouche=False):
                 self.bandIR=bandIR
+                self.visuTriCouche = visuTriCouche
 
             def apply(self,Vi,iR, val01,val02,**kwargs):
                 imMultiSpectral = np.zeros_like(Vi)    # float
@@ -1151,7 +1155,7 @@ def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False,  
 
                 # Choix de visualiser la couche IR seule   ou bien le traitement multispectral  (trois couches)
                 #   Pour le NDVI  le traitement multispectral n'a pas de sens. On visualise la couche NDVI seule
-                if not visuTriCouche  or self.bandIR==5 or self.bandIR==6:
+                if not self.visuTriCouche  or self.bandIR==5 or self.bandIR==6:
                     return IRlayer
                 else:
                     # Transformation multi spectrale avec shift du spectre
@@ -1163,35 +1167,40 @@ def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False,  
                     imMultiSpectral[:, :, 1] = val01*Vi[:, :, 0]
                     imMultiSpectral[:, :, 2] = val01*Vi[:, :, 1]
                     return imMultiSpectral
+        for bidx, _bandIR  in enumerate(bandIR):
+            multiSpectralBand=MultiSpectralBand('dif_%d'%_bandIR,
+                                  slidersName=['Luminosité ou facteur correctif NDVI ',' % IR si ViR'],
+                                  vrange=[(0.5,1.,1.),(0.,1.,0.87)],
+                                  inputs=[1,2])
 
-        multiSpectralBand=MultiSpectralBand('dif',
-                              slidersName=['Luminosité ou facteur correctif NDVI ',' % IR si ViR'],
-                              vrange=[(0.5,1.,1.),(0.,1.,0.87)],
-                              inputs=[1,2])
+            multiSpectralBand.preprocess(bandIR=_bandIR, visuTriCouche=visuTriCouche[bidx])
 
-        #multiSpectralBand.bandIR=bandIR
-        multiSpectralBand.preprocess(bandIR=bandIR)
+            #________________________________________________________________________________
+            #   Commentaire sur ipipe
+            #  Attention floatpipe=False INDISPENSABLE  pour valeurs autres que entre 0 et 255
+            #
+            #  Dans le ipipe le nom sliders est ambigüe. Il désigne la suite des traitements qui seront appliqués
+            #  Attention certains traitements ne s'appliquent qu'à une image trois canaux (type RGB)
+            #  Par exemple le "slider"     ipipe.WB  ne s'applique qu'à une image tr-icanaux
+            ##________________________________________________________________________________
 
-        #________________________________________________________________________________
-        #   Commentaire sur ipipe
-        #  Attention floatpipe=False INDISPENSABLE  pour valeurs autres que entre 0 et 255
-        #
-        #  Dans le ipipe le nom sliders est ambigüe. Il désigne la suite des traitements qui seront appliqués
-        #  Attention certains traitements ne s'appliquent qu'à une image trois canaux (type RGB)
-        #  Par exemple le "slider"     ipipe.WB  ne s'applique qu'à une image tr-icanaux
-        ##________________________________________________________________________________
-
-        ipipe.ImagePipe(
-            [
-                1.*viImg[0]/255.,
-                1.*aligned[0]/255.
-            ],
-            sliders=[multiSpectralBand],
-            floatpipe=False ,
-            # winname= "IMAGE %d : VISIBLE versus registered IR image - Use S to save"%(imageRange[idx]),
-            winname="%d -- " % idx + "VISIBLE:q  %s" % viImg + "---   FUSED WITH   --- IR : %s" % irImg
-        ).gui(myColorBar=myColorMap,  minColorBar=minColorBar, maxColorBar=maxColorBar)  # Attention ici ce save ne fonctionne pas !!!  On travaille sur les miniatures pas sur les image full resolution   save(name=imgMultiSpectralName)
-
+            mspipe = ipipe.ImagePipe(
+                [
+                    1.*viImg[0]/255.,
+                    1.*aligned[0]/255.
+                ],
+                sliders=[multiSpectralBand],
+                floatpipe=False ,
+                # winname= "IMAGE %d : VISIBLE versus registered IR image - Use S to save"%(imageRange[idx]),
+                winname="%d -- " % idx + "VISIBLE:  %s" % viImg + "---   FUSED WITH   --- IR : %s" % irImg
+            )
+            mspipe.floatColorBar(colorBar=myColorMap,  minColorBar=minColorBar, maxColorBar=maxColorBar)
+            # mspipe.gui()  ### DECOMMENTER POUR AVOIR L'INTERFACE GRAPHIQUE
+            imgMultiSpectralName = os.path.join(
+                multispectralPath,
+                '%i-IRdrone-Multi_%d%s.jpg' % (idx, _bandIR, "_tri" if visuTriCouche[bidx] else "" )
+            )
+            mspipe.save(name=imgMultiSpectralName)
         #_________________________           fin de mon traitement     _____________________________________
 
 
@@ -1328,7 +1337,11 @@ if __name__ == "__main__":
 
     myColorMap, myMinColorBar, myMaxColorBar = colorMapIRlayer(IRband=myBandIR)
 
-    folderPath = dirNameIRdrone + '\\'
+    folderPath = dirNameIRdrone
+
+
+    # myBandIR = [1,2,3,4,5] + [1,2,3,4,5]
+    # myVisuTriCouche  = [True, True, True, True, True] + [False, False, False, False, False]
 
     imgMultiSpectral(listImgMatch, folderPath,
                      bandIR=myBandIR,

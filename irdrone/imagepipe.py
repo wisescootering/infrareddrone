@@ -243,6 +243,12 @@ class ImagePipe:
         self.set(**params)
         self.floatpipe=floatpipe
         self.slidersplot = None
+        self.floatColorBar()
+
+    def floatColorBar(self, colorBar ='gray',minColorBar=0, maxColorBar=1):
+        self.colorBar = colorBar
+        self.minColorBar = minColorBar
+        self.maxColorBar = maxColorBar
 
     def engine(self, imglst, geometricscale=None):
         if not self.signalIn and self.floatpipe: result = [1. * imglst[0]] + list(map(lambda x: x.astype(np.float), imglst))
@@ -252,7 +258,7 @@ class ImagePipe:
             if isinstance(out, list):
                 for i, ido in enumerate(prc.outputs):
                     result[ido] = out[i]
-            else:  # Simpler manner of defining a process fuction (do not return a list)
+            else:  # Simpler manner of defining a process function (do not return a list)
                 for _i, ido in enumerate(prc.outputs):
                     result[ido] = out
         if not self.signalOut:
@@ -271,16 +277,23 @@ class ImagePipe:
         print("saving full resolution image...")
         result_full = self.getbuffer()
         if name is not None:
-            cv2.imwrite(name, result_full if self.backendcv else cv2.cvtColor(result_full, cv2.COLOR_RGB2BGR))
-        idx = 1
-        while (idx < 100):
-            out_jpg = "_saved_image_%04d.jpg" % idx
-            if not osp.isfile(out_jpg):
-                cv2.imwrite(out_jpg, result_full if self.backendcv else cv2.cvtColor(result_full, cv2.COLOR_RGB2BGR))
-                print("saved image %s" % out_jpg)
-                break
+            if len(result_full.shape)<3:
+                plt.imsave(name, result_full, vmin=self.minColorBar, vmax=self.maxColorBar, cmap=self.colorBar)
             else:
-                idx += 1
+                try:
+                    cv2.imwrite(name, result_full if self.backendcv else cv2.cvtColor(result_full, cv2.COLOR_RGB2BGR))
+                except:
+                    plt.imsave(name, result_full, vmin=self.minColorBar, vmax=self.maxColorBar, cmap=self.colorBar)
+        else:
+            idx = 1
+            while (idx < 100):
+                out_jpg = "_saved_image_%04d.jpg" % idx
+                if not osp.isfile(out_jpg):
+                    cv2.imwrite(out_jpg, result_full if self.backendcv else cv2.cvtColor(result_full, cv2.COLOR_RGB2BGR))
+                    print("saved image %s" % out_jpg)
+                    break
+                else:
+                    idx += 1
 
     def getbuffer(self):
         """
@@ -375,7 +388,7 @@ class ImagePipe:
             print(self.__repr__())
 
 
-    def gui(self, sliderslength=100., myColorBar ='gray',minColorBar=0, maxColorBar=1,):
+    def gui(self, sliderslength=100.,):
         """
         Create a cv2 or pyplot GUI
         to interactively visualize the imagePipe when changing tuning sliders for each processBlock
@@ -421,12 +434,9 @@ class ImagePipe:
                     if result.ylim   is not None: plt.ylim(result.ylim)
             else:
                 plt.axis("off")
-                # Echelles des couleurs disponibles
-                # autumn, bone, cool, copper, flag, gray, hot, hsv, jet, pink, prism, spring, summer, winter.
-
                 if len(result.shape)<3:
-                    self.implot = ax.imshow(result,cmap= myColorBar , vmin=minColorBar,vmax=maxColorBar)
-                    plt.colorbar(self.implot,ax=ax)
+                    self.implot = ax.imshow(result, cmap= self.colorBar , vmin=self.minColorBar,vmax=self.maxColorBar)
+                    plt.colorbar(self.implot, ax=ax)
                 else:
                     self.implot = ax.imshow(result)
                 ax.margins(x=0)
