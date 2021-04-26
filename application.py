@@ -41,7 +41,7 @@ def loadDatabase(dirname="flight0001", viscam = "DJI", ircam = "sjcam", imageRan
     irImages = [
         pr.Image(
             ut.imagepath(
-                imgname="*%02d*%s*JPG"%(idx,ircam),
+                imgname="*%02d_20*JPG"%(idx) if ircam == "sjcamm20" else "*%02d*%s*JPG"%(idx,ircam),
                 dirname=dirname
             )[0],
             name="IR %d"%idx
@@ -98,10 +98,13 @@ def registration(vilist, irlist, ircalib=None, resize=(800,600), debug=False):
                     visimg
                 ],
                 sliders=[ipipe.ALPHA,],
-                winname="VISIBLE VS UNDISTORED UNREGRISTERED IR IMAGE (THUMBNAILS)"
+                winname="VISIBLE VS UNDISTORTED UNREGRISTERED IR IMAGE (THUMBNAILS)"
             ).gui()
-
-
+        equ = ipipe.Equalizer("")
+        irimg[..., 1] = irimg[..., 2] #REMOVE GREEN CHANNEL, REPLACE IT BY RED
+        irimg = equ.apply(irimg.astype(np.float)).astype(np.uint8)
+        irimg = unsharp_mask(irimg)
+        visimg = equ.apply(visimg.astype(np.float)).astype(np.uint8)
         aligned, homog = rg.estimateFeaturePoints(irimg, visimg, debug=debug)
         if debug:
             ipipe.ImagePipe(
@@ -138,6 +141,17 @@ location = '_cachedir'
 memory = Memory(location, verbose=0)
 registrationCached = memory.cache(registration)
 
+def unsharp_mask(image, kernel_size=(5, 5), sigma=1.0, amount=1.0, threshold=0):
+    """Return a sharpened version of the image, using an unsharp mask."""
+    blurred = cv2.GaussianBlur(image, kernel_size, sigma)
+    sharpened = float(amount + 1) * image - float(amount) * blurred
+    sharpened = np.maximum(sharpened, np.zeros(sharpened.shape))
+    sharpened = np.minimum(sharpened, 255 * np.ones(sharpened.shape))
+    sharpened = sharpened.round().astype(np.uint8)
+    if threshold > 0:
+        low_contrast_mask = np.absolute(image - blurred) < threshold
+        np.copyto(sharpened, image, where=low_contrast_mask)
+    return sharpened
 
 def warp(im, cal, homog, outsize):
     mtx, dist = cal["mtx"], cal["dist"]
@@ -158,7 +172,7 @@ def warp(im, cal, homog, outsize):
     )
     return out
 
-def applicationDjiDroneSJCamIR(imageRange=[4,6], outimage="fused", debug=False):
+def applicationDjiDroneSJCamIR(imageRange=[4,6], outimage="fused", debug=False, ircamera="sjcam", dirname="flight0001"):
     """
     Visible camera: DJI Mavic Air 2 drone
     IR camera: sjcam400
@@ -170,8 +184,9 @@ def applicationDjiDroneSJCamIR(imageRange=[4,6], outimage="fused", debug=False):
     :return:
     """
     viImages, _viscal, irImages, ircal = loadDatabase(
-        dirname= "flight0001", #"flight260121",
+        dirname= dirname,
         imageRange=imageRange,
+        ircam=ircamera
     )
     for idx in range(len(viImages)):
         # ONLY PERFORM IMAGE REGISTRATION WHEN NOT CACHED
@@ -185,6 +200,7 @@ def applicationDjiDroneSJCamIR(imageRange=[4,6], outimage="fused", debug=False):
             warp(irImages[idx], ircal,homog, visimgSize),
             name="REGISTERED IMAGE"
         )
+        aligned.save("%03d_registered.jpg"%imageRange[idx])
         BnWIR = ipipe.BnW("MonochromeIR", inputs=[2], outputs=[2], slidersName=[])
         brIR = ipipe.Brightness("BrightnessIR", inputs=[2], outputs=[2])
         gamIR = ipipe.Gamma("GammaIR", inputs=[2], outputs=[2])
@@ -223,5 +239,13 @@ mix = MixIR("Mix IR and Visible", inputs=[0,2], slidersName=["r", "g", "b"], vra
 if __name__ == "__main__":
     applicationDjiDroneSJCamIR(
         imageRange=[4,6],
-        debug=False
+        debug=False,
+        ircamera="sjcam",
+        dirname="flight0001",
+    )
+    applicationDjiDroneSJCamIR(
+        imageRange=[2,3,5],
+        debug=False,
+        ircamera="sjcamm20",
+        dirname="flight0002",
     )
