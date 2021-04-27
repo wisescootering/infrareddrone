@@ -574,7 +574,7 @@ def extractFlightPlan(dirPlanVol, mute=True):
         print('liste des fichiers IR:')
         print([imgListIR[i][0] for i in range(len(imgListIR))])
 
-    return imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR, dateEtude, dirNameIRdrone
+    return planVol,imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR, dirNameIRdrone
 
 
 def modelCamera(exifTag, mute=True):
@@ -633,7 +633,8 @@ def creatListImg(dirName, dateEtude, cameraModel, camera, typImg, debug=False):
     return imgList
 
 
-def matchImagesFlightPath(imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR, mute=False):
+def matchImagesFlightPath(imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR, \
+                          dateEtude,mute=False):
     """
     :param imgListDrone:  [...,(file name, path name, date), ...]
     :param deltaTimeDrone:
@@ -641,20 +642,28 @@ def matchImagesFlightPath(imgListDrone, deltaTimeDrone, timeLapseDrone, imgListI
     :param imgListIR:     [...,(file name, path name, date), ...]
     :param deltaTimeIR:
     :param timeLapseIR:
+    :dateEtude:   date of flight
     :param mute:
     :return:  listImgMatch   [..., (imgListDrone[i][1], imgListIR[k][1]), ...]
     """
     n = 0
     nRejet = 0
     listImgMatch = []
+    dateRef=datetime.datetime(2000, 1, 1, 12, 0, 0)
     for i in range(len(imgListDrone)):
         indexDT = []
         DT = []
         for k in range(len(imgListIR)):
             dateDrone = imgListDrone[i][2]
             dateIR = imgListIR[k][2]
-            deltaTime = datetime.timedelta.total_seconds(dateIR - dateDrone) - deltaTimeIR + deltaTimeDrone
-            if abs(deltaTime) < timeLapseIR:
+            ecartTimeIR = datetime.timedelta.total_seconds(dateIR - dateRef) -deltaTimeIR
+            ecartTimeDrone = datetime.timedelta.total_seconds(dateDrone - dateRef)- deltaTimeDrone
+            ecartTimeref=datetime.timedelta.total_seconds(dateIR - dateRef)- \
+                         datetime.timedelta.total_seconds(dateDrone - dateRef)
+            deltaTime = abs(ecartTimeIR-ecartTimeDrone)
+            print('dateDrone = ',dateDrone, ' | ', 'dateIR = ', dateIR)
+            print('ecartTimeref = ',ecartTimeref , '  deltaTime = ',deltaTime )
+            if abs(deltaTime) <= 2*timeLapseIR:
                 #  Potentiellement cette image IR  peut s'apparier avec l'image visible
                 indexDT.append(k)
                 DT.append(abs(deltaTime))
@@ -827,7 +836,7 @@ def colorMapIRlayer(IRband):
     #                 'hsv', 'jet', 'pink', 'prism','spring', 'summer', 'winter'
 
     if IRband == 1:
-        myColorMap = 'hot_r'
+        myColorMap = 'autumn'
         myMinColorBar = 0.
         myMaxColorBar = 1.
     elif IRband == 2:
@@ -1036,14 +1045,14 @@ def printPlanVol(planVol):
 
 from application import registrationCached,warp
 
-def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False,  myColorMap='gray',  minColorBar=0, maxColorBar=1,debug=False):
+def  imgMultiSpectral(imList, multispectralPath,bandIR=1, modelCameraIR='sjcam',visuTriCouche=False,  myColorMap='gray',  minColorBar=0, maxColorBar=1,debug=False):
     # Echelles des couleurs disponibles
     # autumn, bone, cool, copper, flag, gray, hot, hsv, jet, pink, prism, spring, summer, winter.
 
     # Il est possible de passer une liste de bandIR et de visuTriCouche afin de sortir plusieurs images d'un coup
     if not isinstance(bandIR, list): bandIR = [bandIR,]
     if not isinstance(visuTriCouche, list): visuTriCouche=[visuTriCouche]
-    ircal=ut.cameracalibration(camera='sjcam')
+    ircal=ut.cameracalibration(camera=modelCameraIR)
 
     for idx in range(len(imList)):
 
@@ -1093,7 +1102,7 @@ def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False,  
                     #  Ceci n'est pertinent que si on a monté un fitre IR720nm  lors de la
                     #  prise de vue.
                     #  L'opération est réalisée en deux phases :
-                    #    1)   soustraction des canaux IRr et IRg  (normalisés sur le max)
+                    #    1)   soustraction des canaux : IRr-IRg
                     #    2)   étalement entre 11 et 245   pour du 8bits entre 0 et 255
                     #    attention en float  l'image est définie entre 0 et 1 (et pas entre 0 et 255!)
 
@@ -1163,6 +1172,9 @@ def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False,  
                     #      spectral band   VIred   > layer green
                     #      spectral band   IR      > layer red
 
+                    #  v01 val01= 1.  val02= 0.87
+                    #  v02 val01= 1.  val02= 1.
+
                     imMultiSpectral[:, :, 0] = val01*(val02*np.clip(IRlayer,0.,1.) )
                     imMultiSpectral[:, :, 1] = val01*Vi[:, :, 0]
                     imMultiSpectral[:, :, 2] = val01*Vi[:, :, 1]
@@ -1198,7 +1210,7 @@ def  imgMultiSpectral(imList, multispectralPath,bandIR=1, visuTriCouche=False,  
             # mspipe.gui()  ### DECOMMENTER POUR AVOIR L'INTERFACE GRAPHIQUE
             imgMultiSpectralName = os.path.join(
                 multispectralPath,
-                '%i-IRdrone-Multi_%d%s.jpg' % (idx, _bandIR, "_tri" if visuTriCouche[bidx] else "" )
+                '%i-IRdrone-CoucheIR_%d%s.jpg' % (idx, _bandIR, "_multi" if visuTriCouche[bidx] else "_mono" )
             )
             mspipe.save(name=imgMultiSpectralName)
         #_________________________           fin de mon traitement     _____________________________________
@@ -1261,8 +1273,8 @@ if __name__ == "__main__":
     parser.add_argument('--excel', metavar='excel', type=str, help='path to the flight path xlsx')
     args = parser.parse_args()
     # ------------ pour test rapide -----------------
-    seaLevel=False
-    seeDualImages = False
+    seaLevel=True   #False
+    seeDualImages = True #False
     # ------------------------------------------------
     dirPlanVol = args.excel
     if dirPlanVol is None or not os.path.isfile(dirPlanVol):
@@ -1281,8 +1293,19 @@ if __name__ == "__main__":
     #     Date, heure, dossier d'images, synchro des horloges, type du drone et de la caméra IR ...
     #     Construction de la liste des images prises lors du vol (Drone et IR)
 
-    imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR, dateEtude, dirNameIRdrone \
-        = extractFlightPlan(dirPlanVol, mute=True)
+    planVol,imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR,  dirNameIRdrone \
+        = extractFlightPlan(dirPlanVol, mute=False)
+    dateEtude=planVol['etude']['date']
+    printPlanVol(planVol)
+
+    if len(imgListDrone)==0:
+        print('Pas d\'images Visibles pour ce vol')
+        import sys
+        sys.exit(2)
+    elif len(imgListIR)==0:
+        print('Pas d\'images Infrarouges pour ce vol')
+        import sys
+        sys.exit(2)
 
     # ----------------------------------------------------
     # 2 > Appariement des images des deux caméras
@@ -1296,7 +1319,13 @@ if __name__ == "__main__":
     #   - Ecriture dans la feuille Summary du fichier Excel Plan de Vol
     #   - Tracé du profil de vol du drone dans une figure (file format .png)
     listImgMatch = matchImagesFlightPath(imgListDrone, deltaTimeDrone, timeLapseDrone,
-                                         imgListIR, deltaTimeIR, timeLapseIR, mute=True)
+                                         imgListIR, deltaTimeIR, timeLapseIR, dateEtude,mute=False)
+
+    if len(listImgMatch)==0:
+        print('0 couples d\'images Visible-InfraRouge ont été détectés pour ce vol')
+        import sys
+        sys.exit(2)
+
 
     # ----- option de visualisation pour le contrôle des paires d'images.
     if seeDualImages:
@@ -1316,34 +1345,37 @@ if __name__ == "__main__":
 
     # ----------------------------------------------------
     # 3 > Traitement des paires d'images
-
-    # ToDo  Placer ici le process Image pipe de Balthou ...
-    # ToDo  Pouvoir spécifier le chemin de sauvegarde des images IR redressssées , VIR , NDVI
     # ToDo  Pouvoir choisir la liste des trairtements à faire ?
-    # ToDo  Sauvegarder les images en full résolution.
-
-    # Choix de la couche IR à calculer
-    myBandIR = input(Style.MAGENTA+"Red Edge :     1|  IRred :2       | NIR : 3      | full IR 4  | NDVI : 5   \n" \
-                     "ViR Rededge :10 |  Vir IRred : 20 | ViR NIR : 30 |  ViR  : 40 |> "+Style.RESET)
-    myBandIR = int(myBandIR)
-    if 0 < myBandIR < 6:
-        myVisuTriCouche = False
-    elif myBandIR > 9:
-        myBandIR = myBandIR / 10
-        myVisuTriCouche = True
-    else:
-        myBandIR = 1
-        myVisuTriCouche = False  # False correspond à une visu monocouche  de la bande IR calculée
-
-    myColorMap, myMinColorBar, myMaxColorBar = colorMapIRlayer(IRband=myBandIR)
-
     folderPath = dirNameIRdrone
 
+    #   Choix de la couche IR à considérer  (on peut en choisir plusieurs)
+    # Red Edge :     1|  IRred :2       | NIR : 3      | full IR 4
+    #
+    # Pour obtenir l'image multispectrale (IR|R|G)  choisir : myVisuTriCouche=True
+    #
+    # On peut choisir de voir la couche infrarouge seule : myVisuTriCouche=False
+    # ATTENTION: Avec cette version on ne peut choisir qu'une seule échelle de couleur !
+    # Donc en pratique on ne peut voir qu'une couche à la fois ...
+    # DE PLUS le choix myBandIR=5 est réservé à l'indice NDVI (l'image multispectrale n'a pas de sens!)
+    #
+    # Exemple 1: pour voir les images multispectrales composée à partir des couches infrarouges
+    # IRred et Full IR ainsi que le NDVI
+    #   myBandIR = [2,4] + [5]
+    #   myVisuTriCouche  = [True,True] + [False]
+    #   myColorMap, myMinColorBar, myMaxColorBar = colorMapIRlayer(IRband=5)
+    #
+    # Exemple 2: pour voir l'image multispectrale composée à partir de la couche Red Edge ainsi que
+    # la couche Red Edge seule
+    #   myBandIR = [1] + [1]
+    #   myVisuTriCouche  = [True] + [False]
+    #   myColorMap, myMinColorBar, myMaxColorBar = colorMapIRlayer(IRband=1)
 
-    # myBandIR = [1,2,3,4,5] + [1,2,3,4,5]
-    # myVisuTriCouche  = [True, True, True, True, True] + [False, False, False, False, False]
+    myBandIR = [2]
+    myVisuTriCouche  = [True]
+    myColorMap, myMinColorBar, myMaxColorBar = colorMapIRlayer(IRband=5)
 
     imgMultiSpectral(listImgMatch, folderPath,
+                     modelCameraIR=planVol['cameraIR']['type'],
                      bandIR=myBandIR,
                      visuTriCouche=myVisuTriCouche,
                      myColorMap=myColorMap, minColorBar=myMinColorBar, maxColorBar=myMaxColorBar, debug=False)
