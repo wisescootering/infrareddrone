@@ -2,7 +2,6 @@
 import irdrone.process as pr
 import irdrone.utils as ut
 import irdrone.imagepipe as ipipe
-import irdrone.registration as registration
 import numpy as np
 import cv2
 import  matplotlib.pyplot as plt

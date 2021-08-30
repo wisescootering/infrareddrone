@@ -194,3 +194,9 @@ def match_histograms(src_image, ref_image):
     image_after_matching = cv2.convertScaleAbs(image_after_matching)
 
     return image_after_matching
+
+def c2g(im):
+    return cv2.cvtColor(im, cv2.COLOR_RGB2GRAY)
+
+def g2c(im):
+    return cv2.cvtColor(im, cv2.COLOR_GRAY2RGB)
