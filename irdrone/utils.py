@@ -70,8 +70,9 @@ def cameracalibration(camera="sjcam", checkerboardsize=(10,7), imgname="*.JPG"):
     :param imgname: matchable image expression "*.jpg", "*.JPG", "*.png" to be more flexible
     :return: dictionary
     """
-    calibfile = osp.join("calibration", camera, "calibration.json")
+    calibfile = osp.join(osp.dirname(osp.abspath(__file__)), "..", "calibration", camera, "calibration.json")
     if not osp.exists(calibfile):
+        print("NOT CALIBRATED %s"%calibfile)
         import cameracalibration
         dic = cameracalibration.calibrate(
             imlist= imagepath(imgname=imgname,  dirname=osp.join("calibration",camera))[-60:],

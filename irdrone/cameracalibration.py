@@ -114,7 +114,7 @@ if __name__ == "__main__":
     #  cameraName="dji"          |   nbImage=48
     #  cameraName="SJ4000WIFI"   |   nbImage=53
     #  cameraName="M20"          |   nbImage=43
-    #
+    #  cameraName="dji"          |   nbImage=? checkerboardsize=(7, 5)
 
     cameraName="SJ4000WIFI"
     nbImage = 53

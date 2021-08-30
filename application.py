@@ -153,19 +153,20 @@ def unsharp_mask(image, kernel_size=(5, 5), sigma=1.0, amount=1.0, threshold=0):
         np.copyto(sharpened, image, where=low_contrast_mask)
     return sharpened
 
-def warp(im, cal, homog, outsize):
+def warp(im: pr.Image, cal, homog, outsize=None):
     mtx, dist = cal["mtx"], cal["dist"]
-
+    if outsize is None:
+        outsize = (im.data.shape[1], im.data.shape[0])
     map1x, map1y = cv2.initUndistortRectifyMap(
         mtx,
         dist,
         np.eye(3,3),
-        np.dot(homog,mtx),
+        np.dot(homog, mtx),
         outsize, cv2.CV_32FC1
     )
 
     out = cv2.remap(
-        im[0], map1x, map1y,
+        im.data, map1x, map1y,
         interpolation=cv2.INTER_CUBIC,
         borderMode=cv2.BORDER_CONSTANT,
         borderValue=(0, 0, 0, 0)
@@ -238,13 +239,13 @@ mix = MixIR("Mix IR and Visible", inputs=[0,2], slidersName=["r", "g", "b"], vra
 
 if __name__ == "__main__":
     applicationDjiDroneSJCamIR(
-        imageRange=[4,6],
+        imageRange=[4, 6],
         debug=False,
         ircamera="sjcam",
         dirname="flight0001",
     )
     applicationDjiDroneSJCamIR(
-        imageRange=[2,3,5],
+        imageRange=[2, 3, 5],
         debug=False,
         ircamera="M20",
         dirname="flight0002",

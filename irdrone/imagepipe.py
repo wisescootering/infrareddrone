@@ -324,14 +324,14 @@ class ImagePipe:
                     else:
                         defaultval = dfval
                         axcolor = 'lightgoldenrodyellow'
-                        self.axes.append(plt.axes([0.25, 0.1+u*0.04, 0.65, 0.03], facecolor=axcolor))
+                        self.axes.append(plt.axes([0.25, 0.05+u*0.025, 0.65, 0.02], facecolor=axcolor))
                         self.slidersplot.append(
                             Slider(
                                 self.axes[u], paName.replace(" ", "_"),
                                 pa.vrange[idx][0],
                                 pa.vrange[idx][1],
                                 valinit=defaultval,
-                                valstep=( pa.vrange[idx][1]-pa.vrange[idx][0])/100.)
+                                valstep=( pa.vrange[idx][1]-pa.vrange[idx][0])/1000.)
                         )
                         u += 1
                 else:

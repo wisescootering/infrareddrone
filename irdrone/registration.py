@@ -42,7 +42,8 @@ def estimateFeaturePoints(img1o, img2o, debug=False):
                        flags = 0)
     if debug:
         img3 = cv2.drawMatchesKnn(img1,kp1,img2,kp2,matches,None,**draw_params)
-        plt.imshow(img3,),plt.show()
+        plt.imshow(img3,)
+        plt.show()
 
     ptsA, ptsB = [] ,[]
     # loop over the top matches
@@ -50,6 +51,7 @@ def estimateFeaturePoints(img1o, img2o, debug=False):
         if matchesMask[i][0] == 1:
             ptsA.append(kp1[m.queryIdx].pt)
             ptsB.append(kp2[m.trainIdx].pt)
+    print("%d matches"%len(ptsA))
     ptsA = np.array(ptsA, dtype="float")
     ptsB = np.array(ptsB, dtype="float")
 
