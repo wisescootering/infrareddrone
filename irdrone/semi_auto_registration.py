@@ -32,18 +32,15 @@ def manual_warp(ref: pr.Image, mov: pr.Image, yaw_main: float, pitch_main: float
     if refinement_homography is not None:
         h = np.dot(refinement_homography, h)
     mov_u = warp(mov, mov_calib, h, outsize=(ref.data.shape[1], ref.data.shape[0]))
-    # mov_u = pr.Image(
-    #     mov_u,
-    #     "Yaw {}° Pitch {}°".format(yaw_main, pitch_main)
-    # )
     return mov_u
 
 
 def estimate_translation(ref, mov_warped, refcalib, geometricscale=None):
     # ----------------------------------------------------------------------------------------
     shifts, error, phase_diff = phase_cross_correlation(
-        ut.c2g(ref.astype(np.uint8)),
-        ut.c2g(mov_warped.astype(np.uint8)),
+        ref if len(ref.shape)==2 else ut.c2g(ref.astype(np.uint8)),
+        mov_warped if len(mov_warped.shape)==2 else ut.c2g(mov_warped.astype(np.uint8)),
+        upsample_factor=8.
     )
     translation = shifts[::-1]
     focal = refcalib["mtx"][0, 0].copy() # we estimate the displacement in the "reference" camera space (in the visible space)
@@ -56,21 +53,20 @@ def estimate_translation(ref, mov_warped, refcalib, geometricscale=None):
     return yaw_refine, pitch_refine, homog_trans
 
 
+def abs_grad_convert(_img):
+    img = ut.c2g(_img.astype(np.float32))
+    img = filters.sobel(img)
+    img = img*(0.5/np.average(img))
+    img = (255.*img).clip(0, 255).astype(np.uint8)
+    return img
+
+
 def mellin_transform(refi, movi):
     radius = np.min(refi.shape[:2])/2.*0.75
     scaling= ["linear", "log"][0]
-    polar_mov = warp_polar(movi, radius=radius, multichannel=True, scaling=scaling)
-    polar_ref = warp_polar(refi, radius=radius, multichannel=True, scaling=scaling)
-
-    def special_convert(_img):
-        img = ut.c2g(_img.astype(np.float32))
-        img = filters.sobel(img)
-        img = img*(0.5/np.average(img))
-        img = (255.*img).clip(0, 255).astype(np.uint8)
-        return img
-    polar_mov_g = special_convert(polar_mov)
-    polar_ref_g = special_convert(polar_ref)
-    return polar_ref, polar_mov, polar_ref_g, polar_mov_g
+    polar_mov = warp_polar(movi, radius=radius, multichannel=len(movi.shape) == 3, scaling=scaling)
+    polar_ref = warp_polar(refi, radius=radius, multichannel=len(refi.shape) == 3, scaling=scaling)
+    return polar_ref, polar_mov
 
 
 def estimate_rotation(polar_refi, polar_movi, ref):
@@ -99,20 +95,25 @@ class ManualAlignment(ipipe.ProcessBlock):
         self.movingcalib = _movingcalib
 
     def apply(self, ref, mov, yaw, pitch, roll, auto, geometricscale=None, **kwargs):
-        debug=True
+        yaw_refine, yaw_refine_last, pitch_refine, pitch_refine_last, roll_refine = 0., 0., 0., 0., 0.
+        debug=False
+        abs_grad = True
+        ref_g = abs_grad_convert(ref) if abs_grad else ref
         mov_warped = manual_warp(
             ref, mov,
             yaw, pitch, roll,
             refcalib=self.refcalib, movingcalib=self.movingcalib,
             geometric_scale=geometricscale
-        )
-        mov_warped_refined = mov_warped
+        ) # manual warp in colors
+        out = mov_warped
+        mov_warped_g = abs_grad_convert(mov_warped) if abs_grad else mov_warped
+        mov_warped_refined = mov_warped  # stay in color
         if auto > 0.25:
             # ----------------------------------------------------------------------------------------
             # REFINE TRANSLATION (PITCH & YAW)
             # ----------------------------------------------------------------------------------------
             yaw_refine, pitch_refine, homog_trans = estimate_translation(
-                ref, mov_warped, self.refcalib,
+                ref_g, mov_warped_g, self.refcalib,
                 geometricscale=geometricscale
             )
             print("YAW %.2f° PITCH %.2f°"%(yaw+yaw_refine, pitch+pitch_refine))
@@ -125,12 +126,14 @@ class ManualAlignment(ipipe.ProcessBlock):
                 geometric_scale=geometricscale,
                 refinement_homography=homog_trans if debug else None
             )
+            mov_warped_refined_g = abs_grad_convert(mov_warped_refined) if abs_grad else mov_warped_refined
+            out = mov_warped_refined
         if auto >= 0.5:
             # ----------------------------------------------------------------------------------------
             # REFINE ROLL
             # ----------------------------------------------------------------------------------------
-            mov_warped = mov_warped_refined
-            polar_ref, polar_mov, polar_ref_g, polar_mov_g = mellin_transform(ref, mov_warped)
+            polar_ref_g, polar_mov_g = mellin_transform(ref_g, mov_warped_refined_g)
+            polar_ref, polar_mov = mellin_transform(ref, mov_warped_refined) # colored for debugging
             roll_refine, roll_homog = estimate_rotation(polar_ref_g, polar_mov_g, ref)
             mov_warped_refined_rot = manual_warp(
                 ref, mov,
@@ -139,7 +142,7 @@ class ManualAlignment(ipipe.ProcessBlock):
                 geometric_scale=geometricscale,
                 refinement_homography=roll_homog
             )
-            mov_warped_refined = mov_warped_refined_rot
+            out = mov_warped_refined_rot
         if auto >= 0.75:
             # ----------------------------------------------------------------------------------------
             # LAST REFINE TRANSLATION ON TOP OF REFINED { ROLL + PITCH + YAW }
@@ -150,8 +153,9 @@ class ManualAlignment(ipipe.ProcessBlock):
                 refcalib=self.refcalib, movingcalib=self.movingcalib,
                 geometric_scale=geometricscale,
             )
+            mov_warped_refined_rot_g = abs_grad_convert(mov_warped_refined_rot) if abs_grad else mov_warped_refined_rot
             yaw_refine_last, pitch_refine_last, _homog_trans_last = estimate_translation(
-                ref, mov_warped_refined_rot, self.refcalib,
+                ref_g, mov_warped_refined_rot_g, self.refcalib,
                 geometricscale=geometricscale
             )
             mov_warped_refined_final = manual_warp(
@@ -160,41 +164,44 @@ class ManualAlignment(ipipe.ProcessBlock):
                 refcalib=self.refcalib, movingcalib=self.movingcalib,
                 geometric_scale=geometricscale,
             )
-            mov_warped_refined = mov_warped_refined_final
+            out = mov_warped_refined_final
         if auto >1.:
             compare = np.zeros((2*polar_ref.shape[0], polar_ref.shape[1]*2, polar_ref.shape[2]))
-            compare[compare.shape[0]//2:, :compare.shape[1]//2, :] = ut.g2c(polar_ref_g) # polar_ref
-            compare[compare.shape[0]//2:, compare.shape[1]//2:, :] = ut.g2c(polar_mov_g) # polar_mov
+            try:
+                compare[compare.shape[0]//2:, :compare.shape[1]//2, :] = ut.g2c((255.*polar_ref_g).astype(np.uint8)) # polar_ref
+                compare[compare.shape[0]//2:, compare.shape[1]//2:, :] = ut.g2c((255.*polar_mov_g).astype(np.uint8)) # polar_mov
+            except:
+                pass
             compare[:compare.shape[0]//2, :compare.shape[1]//2, :] = polar_ref
             compare[:compare.shape[0]//2:, compare.shape[1]//2:, :] = polar_mov
-            mov_warped_refined = np.zeros_like(mov_warped_refined)
-            mov_warped_refined[:compare.shape[0], :compare.shape[1], :] = compare
-        return [mov_warped_refined]
+            out = np.zeros_like(out)
+            out[:compare.shape[0], :compare.shape[1], :] = compare
+        self.yaw = yaw+yaw_refine+yaw_refine_last
+        self.pitch = pitch+pitch_refine+pitch_refine_last
+        self.roll = roll+roll_refine
+        return [out]
 
 
-def real_images_pairs(number=[505, 230]):
-    visref = pr.Image(
-        ut.imagepath(r"%d-DJI-VI.jpg"%number, dirname="../samples")[0],
-        name="visible reference"
-
-    )
-    irmoving = pr.Image(
-        ut.imagepath(r"%d-SJM20-IR.JPG"%number, dirname="../samples")[0],
-        name="ir moving"
-    )
-    ircalib = ut.cameracalibration(camera="M20")
-    viscalib = ut.cameracalibration(camera="DJI")
-    if number == 505:
-        params = {"Rotate":[-15.76, 16.92, 0.0, 0.]}
-    elif number == 630:
-        params = {"Rotate":[-3.000000,8.280000,-4.360000,0.]}
-    else:
-        params = None
-    return visref, irmoving, {"refcalib": viscalib, "movingcalib": ircalib}, params
+class Absgrad(ipipe.ProcessBlock):
+    def apply(self, im1, im2, col, **kwargs):
+        if col > 0.5:
+            # return [abs_grad_convert(im1), abs_grad_convert(im2)]
+            im1_g, im2_g = abs_grad_convert(im1), abs_grad_convert(im2)
+            im1_c = np.zeros((im1_g.shape[0], im1_g.shape[1], 3))
+            im1_c[:, :, 2] = im1_g
+            im2_c = np.zeros((im2_g.shape[0], im2_g.shape[1], 3))
+            im2_c[:, :, 0] = im2_g
+            return [im1_c, im2_c]
+        else:
+            return [im1, im2]
 
 
 class Transparency(ipipe.ProcessBlock):
     def apply(self, im1, im2, alpha, **kwargs):
+        if len(im1.shape)==2:
+            im1 = ut.g2c(im1)
+        if len(im2.shape)==2:
+            im2 = ut.g2c(im2)
         if im1.shape[0] != im2.shape[0] or im1.shape[1] != im2.shape[1]:
             return im1 if alpha > 0.5 else im2
         if alpha <= -0.5:
@@ -212,7 +219,30 @@ class Transparency(ipipe.ProcessBlock):
             return (alpha * im1) + (1-alpha)*im2
 
 
-def demo(number=230):
+def real_images_pairs(number=[505, 230, 630][0]):
+    visref = pr.Image(
+        ut.imagepath(r"%d-DJI-VI.jpg"%number, dirname="../samples")[0],
+        name="visible reference"
+
+    )
+    irmoving = pr.Image(
+        ut.imagepath(r"%d-SJM20-IR.JPG"%number, dirname="../samples")[0],
+        name="ir moving"
+    )
+    ircalib = ut.cameracalibration(camera="M20")
+    viscalib = ut.cameracalibration(camera="DJI")
+    if number == 505:
+        params = {"Rotate":[-15.76, 16.92, 0.88, 1.]}
+    elif number == 630:
+        params = {"Rotate":[-2.200000,7.680000,-4.360000, 1.]}
+    elif number == 230:
+        params = {"Rotate":[1.76 ,5.88 , 0.0 , 1.]}
+    else:
+        params = None
+    return visref, irmoving, {"refcalib": viscalib, "movingcalib": ircalib}, params
+
+
+def demo(number=230, save_full_res=True):
     ref, mov, cals, params = real_images_pairs(number=number)
     angles_amplitude = (-20., 20, 0.)
     rotate3d = ManualAlignment(
@@ -225,6 +255,7 @@ def demo(number=230):
         ]
     )
     alpha = Transparency("Alpha", inputs=[0, 1], vrange=(-1., 1., 1.))
+    absgrad = Absgrad("Absgrad", inputs=[0, 1], outputs=[0, 1], vrange=(0, 1))
     rotate3d.set_movingcalib(cals["movingcalib"])
     rotate3d.set_refcalib(cals["refcalib"])
     ipi = ipipe.ImagePipe(
@@ -232,6 +263,7 @@ def demo(number=230):
         rescale=None,
         sliders=[
             rotate3d,
+            absgrad,
             alpha
         ]
     )
@@ -240,6 +272,15 @@ def demo(number=230):
             **params
         )
     ipi.gui()
+    mov_warped_fullres = manual_warp(
+        ref, mov,
+        rotate3d.yaw, rotate3d.pitch, rotate3d.roll,
+        **cals,
+    )
+    if save_full_res:
+        pr.Image(mov_warped_fullres, "IR registered").save("%d_IR_registered_semi_auto.jpg"%number)
+        pr.Image(abs_grad_convert(ref.data), "REF absgrad").save("%d_REF_absgrad.jpg"%number)
+        pr.Image(abs_grad_convert(mov_warped_fullres), "IR registered absgrad").save("%d_IR_registered_semi_auto_absgrad.jpg"%number)
 
 if __name__ == "__main__":
     demo(number=630)
