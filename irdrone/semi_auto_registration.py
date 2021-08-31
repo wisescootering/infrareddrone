@@ -185,7 +185,9 @@ def real_images_pairs(number=[505, 230]):
     ircalib = ut.cameracalibration(camera="M20")
     viscalib = ut.cameracalibration(camera="DJI")
     if number == 505:
-        params = {"Rotate":[-15.76, 16.92, 0.0, 1.]}
+        params = {"Rotate":[-15.76, 16.92, 0.0, 0.]}
+    elif number == 630:
+        params = {"Rotate":[-3.000000,8.280000,-4.360000,0.]}
     else:
         params = None
     return visref, irmoving, {"refcalib": viscalib, "movingcalib": ircalib}, params
@@ -195,7 +197,16 @@ class Transparency(ipipe.ProcessBlock):
     def apply(self, im1, im2, alpha, **kwargs):
         if im1.shape[0] != im2.shape[0] or im1.shape[1] != im2.shape[1]:
             return im1 if alpha > 0.5 else im2
-        if alpha<=0:
+        if alpha <= -0.5:
+            cmp = np.zeros_like(im1)
+            shp = cmp.shape
+            cmp = im2.copy()
+            alpha_crop = np.abs(alpha) - 0.5
+            limits_y = [int(shp[0]*alpha_crop), int(shp[0]*(1-alpha_crop))]
+            limits_x = [int(shp[1]*alpha_crop), int(shp[1]*(1-alpha_crop))]
+            cmp[limits_y[0]:limits_y[1], limits_x[0]: limits_x[1]] = im1[limits_y[0]:limits_y[1], limits_x[0]: limits_x[1]]
+            return cmp
+        elif alpha<=0.:
             return ((1-np.abs(alpha))*im1 + 2.*np.abs(alpha)*np.abs(im1-im2)).clip(0, 255)
         else:
             return (alpha * im1) + (1-alpha)*im2
@@ -231,6 +242,7 @@ def demo(number=230):
     ipi.gui()
 
 if __name__ == "__main__":
+    demo(number=630)
     demo(number=230)
     demo(number=505)
 
