@@ -1,15 +1,13 @@
 from skimage.registration import phase_cross_correlation
-from itertools import product
-import matplotlib.pyplot as plt
+from skimage.transform import warp_polar
+from skimage import filters
 import numpy as np
 import cv2
 import irdrone.utils as ut
 import irdrone.process as pr
 from application import warp
 import irdrone.imagepipe as ipipe
-from skimage.transform import warp_polar
-from skimage import filters
-
+from irdrone.registration import register_by_blocks, estimateFeaturePoints
 
 
 def manual_warp(ref: pr.Image, mov: pr.Image, yaw_main: float, pitch_main: float, roll_main: float = 0.,
@@ -220,6 +218,53 @@ class Transparency(ipipe.ProcessBlock):
             return (alpha * im1) + (1-alpha)*im2
 
 
+def pre_convert_for_features(_img, amplification=1., thresh=0.01):
+    """
+    Two-step Multi-spectral Registration Via Key-point Detector and Gradient Similarity:
+    Application to Agronomic Scenes for Proxy-sensing
+
+    :param _img:
+    :param amplification:
+    :param thresh:
+    :return:
+    """
+    img = ut.c2g(_img.astype(np.float32))
+    if thresh == 0.:
+        return img.astype(np.uint8)
+    img = filters.sobel(img)
+    img = (img > thresh)*img
+    img = img*(0.5/np.average(img))
+    img = (255.*img).clip(0, 255).astype(np.uint8)
+    return img
+
+class BlockMatching(ipipe.ProcessBlock):
+    def apply(self, ref, mov, flag, threshold, geometricscale=None, **kwargs):
+        if flag <= 0.5:
+            return mov
+        else:
+            ref_new = pre_convert_for_features(ref, thresh=threshold)
+            mov_new = pre_convert_for_features(mov, amplification= 3., thresh=threshold)
+            homog = register_by_blocks(ref_new, mov_new, debug=flag > 0.9, patch_size=120)
+            return cv2.warpPerspective(mov, homog, mov.shape[:2][::-1])
+        return mov
+
+
+class SiftAlignment(ipipe.ProcessBlock):
+    def apply(self, ref, mov, flag, threshold, geometricscale=None, **kwargs):
+        if flag <= 0.5:
+            return mov
+        else:
+            ref_new = pre_convert_for_features(ref, thresh=threshold)
+            mov_new = pre_convert_for_features(mov, amplification=3., thresh=threshold)
+            print(ref_new.shape, mov_new.shape)
+            match_debug_flag = flag > 0.9
+            reg, h, matchdebug = estimateFeaturePoints(ref_new, mov_new, debug=match_debug_flag)
+            if match_debug_flag:
+                return matchdebug
+            else:
+                return cv2.warpPerspective(mov, h, mov.shape[:2][::-1])
+
+
 def real_images_pairs(number=[505, 230, 630][0]):
     visref = pr.Image(
         ut.imagepath(r"%d-DJI-VI.jpg"%number, dirname="../samples")[0],
@@ -255,6 +300,11 @@ def demo(number=230, save_full_res=True):
             angles_amplitude, angles_amplitude,angles_amplitude, (0., 1.01, 1.)
         ]
     )
+    auto_sift = SiftAlignment("SIFT", inputs=[1, 0], outputs=[0],
+                         slidersName=["SIFT", "Threshold"], vrange=[(0., 1., 0.), (0., 1., 0.)])
+    auto_bm = BlockMatching("BM", inputs=[1, 0], outputs=[0],
+                            slidersName=["BLOCK MATCHING", "Threshold"], vrange=[(0., 1., 0.), (0., 1., 0.)]
+                            )
     alpha = Transparency("Alpha", inputs=[0, 1], vrange=(-1., 1., 1.))
     absgrad = Absgrad("Absgrad", inputs=[0, 1], outputs=[0, 1], vrange=(0, 1))
     rotate3d.set_movingcalib(cals["movingcalib"])
@@ -264,6 +314,8 @@ def demo(number=230, save_full_res=True):
         rescale=None,
         sliders=[
             rotate3d,
+            # auto_sift,
+            # auto_bm,
             absgrad,
             alpha
         ]

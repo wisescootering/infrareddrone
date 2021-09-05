@@ -6,7 +6,51 @@ from itertools import product
 from skimage.registration import phase_cross_correlation
 
 
-def estimateFeaturePoints(img1o, img2o, debug=False):
+def estimate_motion_phase_correlation(ref ,mov):
+    shifts, error, phase_diff = phase_cross_correlation(
+        ref,
+        mov
+    )
+    return shifts[::-1]
+
+
+def slice(img, patch, patch_size=[64, 64]):
+    patch_y, patch_x = patch
+    patch_size_y, patch_size_x = patch_size
+    center = [(patch_y+0.5)*patch_size_y, (patch_x+0.5)*patch_size_x]
+    tile = img[patch_y*patch_size_y:(patch_y+1)*patch_size_y, patch_x*patch_size_x:(patch_x+1)*patch_size_x, ...]
+    return tile, center
+
+
+def register_by_blocks(reference, moving, patch_size=100, motion_estim_func=estimate_motion_phase_correlation, debug=False):
+    i_ref = reference
+    i_mov = moving
+    s_y, s_x = i_ref.shape[0], i_ref.shape[1]
+    p_s_y, p_s_x = patch_size, patch_size  # patch size
+    p_n_y, p_n_x = int(np.floor(s_y/p_s_y)), int(np.floor(s_x/p_s_x))  # patch number
+    motion_vectors = np.zeros((p_n_y, p_n_x, 2))
+    centers = np.zeros((p_n_y, p_n_x, 2))
+    for p_y, p_x in product(range(p_n_y), range(p_n_x)):
+        t_ref, c_ref  = slice(i_ref, [p_y, p_x], patch_size=[p_s_y, p_s_x])  # reference tile
+        t_mov, _c_mov = slice(i_mov, [p_y, p_x], patch_size=[p_s_y, p_s_x])  # moving tile
+        motion_vectors[p_y, p_x, :] = motion_estim_func(t_ref, t_mov)
+        centers[p_y, p_x, :] = c_ref
+    if debug:
+        plot_vector_field(centers, motion_vectors, i_ref=i_ref)
+    homog = geometric_rigid_transform_estimation(centers, motion_vectors, img=reference, debug=debug, affinity=True)
+    return homog
+
+
+def plot_vector_field(centers, motion_vectors, i_ref=None):
+    fig, ax = plt.subplots()
+    ax.quiver(centers[:, :, 1], centers[:, :, 0], motion_vectors[:, :, 0], -motion_vectors[:, :, 1], color="r")
+    ax.invert_yaxis()
+    ax.set_aspect("equal")
+    if i_ref is not None:
+        ax.imshow(i_ref, cmap="gray")
+    plt.show()
+
+
 def fit_affinity(input_pts, output_pts, weights=None, debug=False):
     """Fit affinity from coordinates (supports Gaussian elimination)
 
