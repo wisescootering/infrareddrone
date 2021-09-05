@@ -39,11 +39,12 @@ def estimate_translation(ref, mov_warped, refcalib, geometricscale=None):
     # ----------------------------------------------------------------------------------------
     shifts, error, phase_diff = phase_cross_correlation(
         ref if len(ref.shape)==2 else ut.c2g(ref.astype(np.uint8)),
-        mov_warped if len(mov_warped.shape)==2 else ut.c2g(mov_warped.astype(np.uint8)),
+        mov_warped if len(mov_warped.shape) == 2 else ut.c2g(mov_warped.astype(np.uint8)),
         upsample_factor=8.
     )
     translation = shifts[::-1]
-    focal = refcalib["mtx"][0, 0].copy() # we estimate the displacement in the "reference" camera space (in the visible space)
+    focal = refcalib["mtx"][0, 0].copy()
+    # we estimate the displacement in the "reference" camera space (in the visible space)
     if geometricscale is not None:
         focal = focal*geometricscale
     yaw_refine = np.rad2deg(np.arctan(translation[0]/focal))
@@ -198,9 +199,9 @@ class Absgrad(ipipe.ProcessBlock):
 
 class Transparency(ipipe.ProcessBlock):
     def apply(self, im1, im2, alpha, **kwargs):
-        if len(im1.shape)==2:
+        if len(im1.shape) == 2:
             im1 = ut.g2c(im1)
-        if len(im2.shape)==2:
+        if len(im2.shape) == 2:
             im2 = ut.g2c(im2)
         if im1.shape[0] != im2.shape[0] or im1.shape[1] != im2.shape[1]:
             return im1 if alpha > 0.5 else im2

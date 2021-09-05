@@ -148,62 +148,70 @@ def geometric_rigid_transform_estimation(vpos, vector_field, img=None, debug=Fal
     return homog_estim
 
 
+def estimateFeaturePoints(img1o, img2o, debug=False, show=False):
     """
     SIFT + Flann knn matching based image registration with homography fitting
 
     :param img1o: image 1 ir image to displace (register onto image1)
     :param img2o: image 2 visible image to be matched (template = reference)
-    :param debug: used to show feature matching
+    :param debug: used to plot feature matching and warp the image (returns align and img_debug)
+    :param show:
     :return: aligned image, homography
     """
-    img1 = cv2.cvtColor(img1o, cv2.COLOR_BGRA2GRAY)
-    img2 = cv2.cvtColor(img2o, cv2.COLOR_BGRA2GRAY)
+    if len(img1o.shape) > 2:
+        img1 = cv2.cvtColor(img1o, cv2.COLOR_BGRA2GRAY)
+    else:
+        img1 = img1o
+    if len(img2o.shape) > 2:
+        img2 = cv2.cvtColor(img2o, cv2.COLOR_BGRA2GRAY)
+    else:
+        img2 = img2o
     # Initiate SIFT detector
     sift = cv2.xfeatures2d.SIFT_create(5000)
     # find the keypoints and descriptors with SIFT
-    kp1, des1 = sift.detectAndCompute(img1,None)
-    kp2, des2 = sift.detectAndCompute(img2,None)
+    kp1, des1 = sift.detectAndCompute(img1, None)
+    kp2, des2 = sift.detectAndCompute(img2, None)
 
     # FLANN parameters
     FLANN_INDEX_KDTREE = 0
-    index_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = 5) #5
-    search_params = dict(checks=50)   # or pass empty dictionary
-
+    index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=5)  # 5
+    search_params = dict(checks=50)  # or pass empty dictionary
     flann = cv2.FlannBasedMatcher(index_params,search_params)
-    matches = flann.knnMatch(des1,des2, k=2)
+    matches = flann.knnMatch(des1, des2, k=2)
 
     # Need to draw only good matches, so create a mask
     matchesMask = [[0,0] for i in range(len(matches))]
 
     # ratio test as per Lowe's paper
-    for i,(m,n) in enumerate(matches):
-        if m.distance < 0.7*n.distance: #0.7 is nice
-            matchesMask[i]=[1,0]
+    for i, (m, n) in enumerate(matches):
+        if m.distance < 0.7*n.distance:  # 0.7 is nice
+            matchesMask[i] = [1, 0]
 
-    draw_params = dict(matchColor = (0,255,0),
-                       singlePointColor = (255,0,0),
-                       matchesMask = matchesMask,
-                       flags = 0)
+    draw_params = dict(matchColor=(0, 255, 0),
+                       singlePointColor=(255, 0, 0),
+                       matchesMask=matchesMask,
+                       flags=0)
+    img_debug = None
     if debug:
-        img3 = cv2.drawMatchesKnn(img1,kp1,img2,kp2,matches,None,**draw_params)
-        plt.imshow(img3,)
+        img_debug = cv2.drawMatchesKnn(img1, kp1, img2, kp2, matches, None, **draw_params)
+    if show:
+        plt.imshow(img_debug)
         plt.show()
 
-    ptsA, ptsB = [] ,[]
+    pts_a, pts_b = [], []
     # loop over the top matches
     for (i, (m,n)) in enumerate(matches):
         if matchesMask[i][0] == 1:
-            ptsA.append(kp1[m.queryIdx].pt)
-            ptsB.append(kp2[m.trainIdx].pt)
-    print("%d matches"%len(ptsA))
-    ptsA = np.array(ptsA, dtype="float")
-    ptsB = np.array(ptsB, dtype="float")
-
-    # plt.plot(ptsA[:,0], ptsA[:,1], ".r")
-    # plt.plot(ptsB[:,0], ptsB[:,1], ".b")
-    # plt.show()
-
-    (H, mask) = cv2.findHomography(ptsA, ptsB, method=cv2.RANSAC, ransacReprojThreshold=5.0)
+            pts_a.append(kp1[m.queryIdx].pt)
+            pts_b.append(kp2[m.trainIdx].pt)
+    logging.info("%d matches" % len(pts_a))
+    pts_a = np.array(pts_a, dtype="float")
+    pts_b = np.array(pts_b, dtype="float")
+    try:
+        (H, mask) = cv2.findHomography(pts_a, pts_b, method=cv2.RANSAC, ransacReprojThreshold=5.0)
+    except:
+        H = np.eye(3)
+        logging.warning("Homography fitting failed")
     (h, w) = img2.shape[:2]
     aligned = None if not debug else cv2.warpPerspective(img1o, H, (w, h))
-    return aligned, H
+    return aligned, H, img_debug

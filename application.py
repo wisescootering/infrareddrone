@@ -105,7 +105,7 @@ def registration(vilist, irlist, ircalib=None, resize=(800,600), debug=False):
         irimg = equ.apply(irimg.astype(np.float)).astype(np.uint8)
         irimg = unsharp_mask(irimg)
         visimg = equ.apply(visimg.astype(np.float)).astype(np.uint8)
-        aligned, homog = rg.estimateFeaturePoints(irimg, visimg, debug=debug)
+        aligned, homog, debug_img = rg.estimateFeaturePoints(irimg, visimg, debug=debug)
         if debug:
             ipipe.ImagePipe(
                 [
