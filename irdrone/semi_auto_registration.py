@@ -1,13 +1,23 @@
 from skimage.registration import phase_cross_correlation
 from skimage.transform import warp_polar
 from skimage import filters
-import numpy as np
-import cv2
+from skimage import exposure
 import irdrone.utils as ut
 import irdrone.process as pr
 from application import warp
 import irdrone.imagepipe as ipipe
 from irdrone.registration import register_by_blocks, estimateFeaturePoints
+import numpy as np
+import cv2
+import logging
+
+
+# ---------------------------------------------- 3D ROTATION -----------------------------------------------------------
+def get_zoom_mat(scale):
+    zoom_mat = np.eye(3)
+    zoom_mat[0, 0] = scale
+    zoom_mat[1, 1] = scale
+    return zoom_mat
 
 
 def manual_warp(ref: pr.Image, mov: pr.Image, yaw_main: float, pitch_main: float, roll_main: float = 0.,
@@ -17,9 +27,7 @@ def manual_warp(ref: pr.Image, mov: pr.Image, yaw_main: float, pitch_main: float
     if geometric_scale is None:
         h = np.dot(np.dot(refcalib["mtx"], rot_main), np.linalg.inv(movingcalib["mtx"]))
     else:
-        zoom_mat_mov = np.eye(3)
-        zoom_mat_mov[0, 0] = geometric_scale
-        zoom_mat_mov[1, 1] = geometric_scale
+        zoom_mat_mov = get_zoom_mat(geometric_scale)
         zoom_mat_ref = zoom_mat_mov.copy()
         ref_cal = refcalib["mtx"].copy()
         mov_cal = movingcalib["mtx"].copy()
@@ -33,8 +41,8 @@ def manual_warp(ref: pr.Image, mov: pr.Image, yaw_main: float, pitch_main: float
     return mov_u
 
 
+# ---------------------------------------------- SEMI-AUTO ALIGNMENT----------------------------------------------------
 def estimate_translation(ref, mov_warped, refcalib, geometricscale=None):
-    # ----------------------------------------------------------------------------------------
     shifts, error, phase_diff = phase_cross_correlation(
         ref if len(ref.shape)==2 else ut.c2g(ref.astype(np.uint8)),
         mov_warped if len(mov_warped.shape) == 2 else ut.c2g(mov_warped.astype(np.uint8)),
@@ -50,14 +58,6 @@ def estimate_translation(ref, mov_warped, refcalib, geometricscale=None):
     homog_trans = np.eye(3)
     homog_trans[:2, 2] = translation
     return yaw_refine, pitch_refine, homog_trans
-
-
-def abs_grad_convert(_img):
-    img = ut.c2g(_img.astype(np.float32))
-    img = filters.sobel(img)
-    img = img*(0.5/np.average(img))
-    img = (255.*img).clip(0, 255).astype(np.uint8)
-    return img
 
 
 def mellin_transform(refi, movi):
@@ -83,7 +83,12 @@ def estimate_rotation(polar_refi, polar_movi, ref):
     roll_homog = np.dot(np.dot(out_intrinsic, rot_main), np.linalg.inv(out_intrinsic))
     return roll_refine, roll_homog
 
+
 class ManualAlignment(ipipe.ProcessBlock):
+    """
+    Manual 3D rotations
+    Composed with semi automatic refinement
+    """
     refcalib = None
     movingcalib = None
 
@@ -96,16 +101,25 @@ class ManualAlignment(ipipe.ProcessBlock):
     def apply(self, ref, mov, yaw, pitch, roll, auto, geometricscale=None, **kwargs):
         yaw_refine, yaw_refine_last, pitch_refine, pitch_refine_last, roll_refine = 0., 0., 0., 0., 0.
         debug=False
+        mode = [None, "ABS_GRAD", "SCHARR"][2]
         abs_grad = True
-        ref_g = abs_grad_convert(ref) if abs_grad else ref
         mov_warped = manual_warp(
             ref, mov,
             yaw, pitch, roll,
             refcalib=self.refcalib, movingcalib=self.movingcalib,
             geometric_scale=geometricscale
-        ) # manual warp in colors
+        )  # manual warp in colors
         out = mov_warped
-        mov_warped_g = abs_grad_convert(mov_warped) if abs_grad else mov_warped
+        #ABS GRAD VERSION
+        if mode=="ABS_GRAD":
+            ref_g = abs_grad_convert(ref)
+            mov_warped_g = abs_grad_convert(mov_warped)
+        elif mode=="SCHARR":
+            ref_g, mov_warped_g = prepare_inputs_for_matching(ref, mov_warped)
+        elif mode is None:
+            ref_g, mov_warped_g = ref, mov_warped
+
+
         mov_warped_refined = mov_warped  # stay in color
         if auto > 0.25:
             # ----------------------------------------------------------------------------------------
@@ -151,7 +165,7 @@ class ManualAlignment(ipipe.ProcessBlock):
                 yaw+yaw_refine, pitch+pitch_refine, roll+roll_refine,
                 refcalib=self.refcalib, movingcalib=self.movingcalib,
                 geometric_scale=geometricscale,
-            )
+                )
             mov_warped_refined_rot_g = abs_grad_convert(mov_warped_refined_rot) if abs_grad else mov_warped_refined_rot
             yaw_refine_last, pitch_refine_last, _homog_trans_last = estimate_translation(
                 ref_g, mov_warped_refined_rot_g, self.refcalib,
@@ -162,7 +176,7 @@ class ManualAlignment(ipipe.ProcessBlock):
                 yaw+yaw_refine+yaw_refine_last, pitch+pitch_refine+pitch_refine_last, roll+roll_refine,
                 refcalib=self.refcalib, movingcalib=self.movingcalib,
                 geometric_scale=geometricscale,
-            )
+                )
             out = mov_warped_refined_final
         if auto >1.:
             compare = np.zeros((2*polar_ref.shape[0], polar_ref.shape[1]*2, polar_ref.shape[2]))
@@ -181,10 +195,82 @@ class ManualAlignment(ipipe.ProcessBlock):
         return [out]
 
 
+# ------------------------------ MULTISPECTRAL DEDICATED REPRESENTATION ------------------------------------------------
+def pre_convert_for_features(_img, amplification=1., gaussian=9, debug=0):
+    """
+    Two-step Multi-spectral Registration Via Key-point Detector and Gradient Similarity:
+    Application to Agronomic Scenes for Proxy-sensing
+
+    To compute the gradient of the image with a minimal impact of the light distribution (shadow, reflectance, specular)
+    each spectral band is normalized using Gaussian blur [Sage and Unser, 2003],
+    the kernel size is defined by next_odd(image_width^0.4) (19 in our case)
+    and the final normalized images are defined by I=I /(G + 1) * 255
+    where I is the spectral band and G is the Gaussian blur of those spectral bands.
+    This first step minimizes the impact of the noise on the gradient and smooth the signal in case of high reflectance.
+    Using this normalized image, the gradient Igrad(x;y) is computed with the sum of absolute Sharr filter [Seitz, 2010]
+    for horizontal Sx and vertical Sy derivative, noted $I_grad(x,y) = 1/2 |Sx| + 1/2 |Sy|$ .
+    Finally, all gradients Igrad(x;y) are normalized using CLAHE [Zuiderveld, 1994] to locally improve their intensity
+    and increase the number of keypoints detected.
+
+    :param _img:
+    :param amplification:
+    :param thresh:
+    :return:
+    """
+    img = ut.c2g(_img.astype(np.float32))/255.
+
+    img = filters.gaussian(img, sigma=gaussian)
+    # img = exposure.equalize_adapthist(img)
+    img = img*amplification
+    img = (img * 0.5/np.average(img))
+    if debug > 0.75:
+        logging.info("Smoothed images")
+        return (255*img).astype(np.uint8)
+    img_g = filters.gaussian(img, sigma=9.)
+    img = img/(img_g+1.)
+    if debug > 0.5:
+        logging.info("Normalized by gradients")
+        return (255*img).astype(np.uint8)
+    scharr = 0.5* (np.abs(filters.scharr_h(img)) + np.abs(filters.scharr_v(img))) # /255.
+    import matplotlib.pyplot as plt
+    out = scharr.clip(-1, 1).astype(float)
+    out = (out * 0.5/np.average(out))
+    if debug > 0.25:
+        logging.info("Sharr")
+        plt.figure()
+        plt.imshow(scharr)
+        plt.show()
+        return (255*out).clip(0, 255).astype(np.uint8)
+    # out = out.clip(0.01, 1)
+    out = out.clip(0., 1)
+    out = exposure.equalize_adapthist(out)
+    return (255*out).astype(np.uint8)
+
+
+def prepare_inputs_for_matching(ref, mov, abstraction=0., debug=0):
+    """
+    Prepare pairs of inputs
+    assuming that visible image is always sharper than the NIR image so visible has to be blurred slightly more
+    """
+    ref_new = pre_convert_for_features(ref, gaussian=1.+21.*abstraction, debug=debug)
+    mov_new = pre_convert_for_features(mov, gaussian=(21*abstraction), debug=debug)
+    return ref_new, mov_new
+
+
+def abs_grad_convert(_img):
+    img = ut.c2g(_img.astype(np.float32))
+    img = filters.sobel(img)
+    img = img*(0.5/np.average(img))
+    img = (255.*img).clip(0, 255).astype(np.uint8)
+    return img
+
+
+# ---------------------------------------------- UTILITIES FOR VISUALIZATION -------------------------------------------
 class Absgrad(ipipe.ProcessBlock):
+    """Visualize abs grad for simpler registration quality evaluation
+    """
     def apply(self, im1, im2, col, **kwargs):
         if col > 0.5:
-            # return [abs_grad_convert(im1), abs_grad_convert(im2)]
             im1_g, im2_g = abs_grad_convert(im1), abs_grad_convert(im2)
             im1_c = np.zeros((im1_g.shape[0], im1_g.shape[1], 3))
             im1_c[:, :, 2] = im1_g
@@ -196,6 +282,12 @@ class Absgrad(ipipe.ProcessBlock):
 
 
 class Transparency(ipipe.ProcessBlock):
+    """
+    Alpha blend between two images (between 0 & 1)...
+    Switch from one to another around 0...
+    Difference (between -0.5 & 0)
+    Rectangle overlap (between -1 & 0.5)
+    """
     def apply(self, im1, im2, alpha, **kwargs):
         if len(im1.shape) == 2:
             im1 = ut.g2c(im1)
@@ -207,7 +299,7 @@ class Transparency(ipipe.ProcessBlock):
             cmp = np.zeros_like(im1)
             shp = cmp.shape
             cmp = im2.copy()
-            alpha_crop = np.abs(alpha) - 0.5
+            alpha_crop = 1-np.abs(alpha)
             limits_y = [int(shp[0]*alpha_crop), int(shp[0]*(1-alpha_crop))]
             limits_x = [int(shp[1]*alpha_crop), int(shp[1]*(1-alpha_crop))]
             cmp[limits_y[0]:limits_y[1], limits_x[0]: limits_x[1]] = im1[limits_y[0]:limits_y[1], limits_x[0]: limits_x[1]]
@@ -218,106 +310,127 @@ class Transparency(ipipe.ProcessBlock):
             return (alpha * im1) + (1-alpha)*im2
 
 
-def pre_convert_for_features(_img, amplification=1., thresh=0.01):
+# ---------------------------------------------- AUTO ALIGNMENT  -------------------------------------------------------
+class SiftAlignment(ipipe.ProcessBlock):
     """
-    Two-step Multi-spectral Registration Via Key-point Detector and Gradient Similarity:
-    Application to Agronomic Scenes for Proxy-sensing
-
-    :param _img:
-    :param amplification:
-    :param thresh:
-    :return:
+    Feature based rigid transform
     """
-    img = ut.c2g(_img.astype(np.float32))
-    if thresh == 0.:
-        return img.astype(np.uint8)
-    img = filters.sobel(img)
-    img = (img > thresh)*img
-    img = img*(0.5/np.average(img))
-    img = (255.*img).clip(0, 255).astype(np.uint8)
-    return img
-
-class BlockMatching(ipipe.ProcessBlock):
-    def apply(self, ref, mov, flag, threshold, geometricscale=None, **kwargs):
+    def apply(self, ref, mov, flag, abstraction, threshold, debug=0., geometricscale=None, **kwargs):
+        self.homography = np.eye(3)
         if flag <= 0.5:
             return mov
         else:
-            ref_new = pre_convert_for_features(ref, thresh=threshold)
-            mov_new = pre_convert_for_features(mov, amplification= 3., thresh=threshold)
-            homog = register_by_blocks(ref_new, mov_new, debug=flag > 0.9, patch_size=120)
+            # visible image is always sharper than IR image
+            ref_new, mov_new = prepare_inputs_for_matching(ref, mov, abstraction=abstraction, debug=debug)
+            match_debug_flag = flag > 0.9
+            reg, homog, matchdebug = estimateFeaturePoints(
+                ref_new,
+                mov_new,
+                debug=match_debug_flag,
+                thresh=threshold
+            )
+            self.homography = homog if geometricscale is None else np.dot(
+                np.dot(
+                    get_zoom_mat(1./geometricscale),
+                    homog
+                ),
+                np.linalg.inv(get_zoom_mat(1./geometricscale))
+            )  # homograpghy at full resolution
+            if match_debug_flag:
+                return matchdebug
+            else:
+                return cv2.warpPerspective(mov, homog, mov.shape[:2][::-1])
+
+
+class BlockMatching(ipipe.ProcessBlock):
+    """
+    Patch based motion estimation with rigid transform
+    """
+    def apply(self, ref, mov, flag, abstraction, debug=0, geometricscale=None, **kwargs):
+        self.homography = np.eye(3)
+        if flag <= 0.5:
+            return mov
+        else:
+            ref_new, mov_new = prepare_inputs_for_matching(ref, mov, abstraction=abstraction, debug=debug)
+            homog = register_by_blocks(ref_new, mov_new, debug=flag > 1., patch_size=120, affinity=False)
+            self.homography = homog if geometricscale is None else np.dot(
+                np.dot(
+                    get_zoom_mat(1./geometricscale),
+                    homog
+                ),
+                np.linalg.inv(get_zoom_mat(1./geometricscale))
+            )  # homograpghy at full resolution
             return cv2.warpPerspective(mov, homog, mov.shape[:2][::-1])
         return mov
 
 
-class SiftAlignment(ipipe.ProcessBlock):
-    def apply(self, ref, mov, flag, threshold, geometricscale=None, **kwargs):
-        if flag <= 0.5:
-            return mov
-        else:
-            ref_new = pre_convert_for_features(ref, thresh=threshold)
-            mov_new = pre_convert_for_features(mov, amplification=3., thresh=threshold)
-            print(ref_new.shape, mov_new.shape)
-            match_debug_flag = flag > 0.9
-            reg, h, matchdebug = estimateFeaturePoints(ref_new, mov_new, debug=match_debug_flag)
-            if match_debug_flag:
-                return matchdebug
-            else:
-                return cv2.warpPerspective(mov, h, mov.shape[:2][::-1])
-
-
-def real_images_pairs(number=[505, 230, 630][0]):
-    visref = pr.Image(
-        ut.imagepath(r"%d-DJI-VI.jpg"%number, dirname="../samples")[0],
-        name="visible reference"
-
-    )
-    irmoving = pr.Image(
-        ut.imagepath(r"%d-SJM20-IR.JPG"%number, dirname="../samples")[0],
-        name="ir moving"
-    )
-    ircalib = ut.cameracalibration(camera="M20")
-    viscalib = ut.cameracalibration(camera="DJI")
-    if number == 505:
-        params = {"Rotate":[-15.76, 16.92, 0.88, 1.]}
-    elif number == 630:
-        params = {"Rotate":[-2.200000,7.680000,-4.360000, 1.]}
-    elif number == 230:
-        params = {"Rotate":[1.76 ,5.88 , 0.0 , 1.]}
-    else:
-        params = None
-    return visref, irmoving, {"refcalib": viscalib, "movingcalib": ircalib}, params
-
-
+# ---------------------------------------------- INTERACTIVE DEMO  -----------------------------------------------------
 def demo(number=230, save_full_res=True):
+    def real_images_pairs(number=[505, 230, 630][0]):
+        """Demo inputs"""
+        visref = pr.Image(
+            ut.imagepath(r"%d-DJI-VI.jpg"%number, dirname="../samples")[0],
+            name="visible reference"
+
+        )
+        irmoving = pr.Image(
+            ut.imagepath(r"%d-SJM20-IR.JPG"%number, dirname="../samples")[0],
+            name="ir moving"
+        )
+        ircalib = ut.cameracalibration(camera="M20")
+        viscalib = ut.cameracalibration(camera="DJI")
+        if number == 505:
+            params = {"Rotate":[-15.76, 16.92, 0.88, 1.]}
+        elif number == 630:
+            params = {"Rotate":[-2.200000, 7.680000, -4.360000, 1.]}
+        elif number == 230:
+            params = {"Rotate":[1.76, 5.88, 0.0, 1.]}
+        else:
+            params = None
+        return visref, irmoving, {"refcalib": viscalib, "movingcalib": ircalib}, params
     ref, mov, cals, params = real_images_pairs(number=number)
     angles_amplitude = (-20., 20, 0.)
+    auto_align = None
     rotate3d = ManualAlignment(
         "Rotate",
         slidersName=["YAW", "PITCH", "ROLL", "AUTO"],
         inputs=[1, 2],
-        outputs=[0,],
+        outputs=[0],
         vrange=[
-            angles_amplitude, angles_amplitude,angles_amplitude, (0., 1.01, 1.)
+            angles_amplitude, angles_amplitude,angles_amplitude, (0., 1.01, 0.)
         ]
     )
-    auto_sift = SiftAlignment("SIFT", inputs=[1, 0], outputs=[0],
-                         slidersName=["SIFT", "Threshold"], vrange=[(0., 1., 0.), (0., 1., 0.)])
-    auto_bm = BlockMatching("BM", inputs=[1, 0], outputs=[0],
-                            slidersName=["BLOCK MATCHING", "Threshold"], vrange=[(0., 1., 0.), (0., 1., 0.)]
-                            )
+    # USE SIFT = 1 to trigger debug , use <0.9 to view the classical result
+    auto_sift = SiftAlignment(
+        "SIFT", inputs=[1, 0], outputs=[0],
+        slidersName=["SIFT", "ABSTRACT", "SIFT Threshold", "DEBUG"],
+        vrange=[(0., 1., 0.), (0., 1., 0.), (0., 1., 0.), (0., 1., 0.)]
+    )
+    auto_sift.homography = np.eye(3)
+    auto_bm = BlockMatching(
+        "BM", inputs=[1, 0], outputs=[0],
+        slidersName=["BLOCK MATCHING", "Abstraction"],
+        vrange=[(0., 1.01, 1.), (0., 1., 0.)]
+    )
+    auto_bm.homography = np.eye(3)
+# ---------------------------------------------- AUTO ALIGNMENT  -------------------------------------------------------
+    auto_align = [None, auto_bm, auto_sift][0]
+    # auto_bm: auto alignment based on patch local motion estimation using phase correlation + rigid transform
+    # auto_sift = feature matching based rigid transform estimation
+# ----------------------------------------------------------------------------------------------------------------------
+
     alpha = Transparency("Alpha", inputs=[0, 1], vrange=(-1., 1., 1.))
-    absgrad = Absgrad("Absgrad", inputs=[0, 1], outputs=[0, 1], vrange=(0, 1))
+    absgrad_viz = Absgrad("Absgrad visualize", inputs=[0, 1], outputs=[0, 1], vrange=(0, 1))
     rotate3d.set_movingcalib(cals["movingcalib"])
     rotate3d.set_refcalib(cals["refcalib"])
     ipi = ipipe.ImagePipe(
         [ref.data, mov.data],
         rescale=None,
         sliders=[
-            rotate3d,
-            # auto_sift,
-            # auto_bm,
-            absgrad,
-            alpha
+            rotate3d,  # semi auto alignment
+            auto_align, # auto alignment (block matching / feature matching based)
+            absgrad_viz,  # simpler visualization of alignment quality
+            alpha  # alpha blend
         ]
     )
     if params is not None:
@@ -325,15 +438,27 @@ def demo(number=230, save_full_res=True):
             **params
         )
     ipi.gui()
-    mov_warped_fullres = manual_warp(
-        ref, mov,
-        rotate3d.yaw, rotate3d.pitch, rotate3d.roll,
-        **cals,
-    )
     if save_full_res:
+        mov_warped_fullres = manual_warp(
+            ref, mov,
+            rotate3d.yaw, rotate3d.pitch, rotate3d.roll,
+            **cals,
+        )
+        if auto_align is not None and auto_align.homography is not None:
+            mov_warped_fullres_refined = manual_warp(
+                ref, mov,
+                rotate3d.yaw, rotate3d.pitch, rotate3d.roll,
+                refinement_homography=auto_align.homography,
+                **cals,
+            )
+            logging.warning("REFINING WITH {}".format(auto_align.homography))
+        ref.save("%d_REF.jpg"%number)
         pr.Image(mov_warped_fullres, "IR registered").save("%d_IR_registered_semi_auto.jpg"%number)
-        pr.Image(abs_grad_convert(ref.data), "REF absgrad").save("%d_REF_absgrad.jpg"%number)
-        pr.Image(abs_grad_convert(mov_warped_fullres), "IR registered absgrad").save("%d_IR_registered_semi_auto_absgrad.jpg"%number)
+        if auto_align is not None and auto_align.homography is not None:
+            pr.Image(mov_warped_fullres_refined, "IR registered refined").save("%d_IR_registered_semi_auto_REFINED.jpg"%number)
+        # pr.Image(abs_grad_convert(ref.data), "REF absgrad").save("%d_REF_absgrad.jpg"%number)
+        # pr.Image(abs_grad_convert(mov_warped_fullres), "IR registered absgrad").save("%d_IR_registered_semi_auto_absgrad.jpg"%number)
+
 
 if __name__ == "__main__":
     demo(number=630)
