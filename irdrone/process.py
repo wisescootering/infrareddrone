@@ -9,7 +9,26 @@ import os.path as osp
 import PIL.Image
 import PIL.ExifTags
 import datetime
+from os import mkdir
 from irdrone.utils import Style, conversionGPSdms2dd
+import subprocess
+RAWTHERAPEEPATH = r"C:\Program Files\RawTherapee\5.8\rawtherapee-cli.exe"
+assert osp.exists(RAWTHERAPEEPATH), "Please install raw therapee first http://www.rawtherapee.com/downloads/5.8/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
+
+
+def load_dng(path, template="DJI_neutral.pp3"):
+    out_file = path[:-4]+"_RawTherapee.tif"
+    cmd = [
+        RAWTHERAPEEPATH,
+        "-t", "-o", out_file,
+        "-p", osp.join(osp.dirname(__file__), template),
+        "-c", path
+    ]
+    if not osp.isfile(out_file):
+        subprocess.call(cmd)
+    flags = cv2.IMREAD_ANYDEPTH | cv2.IMREAD_ANYCOLOR
+    flags |= cv2.IMREAD_IGNORE_ORIENTATION
+    return cv2.cvtColor(cv2.imread(out_file, flags=flags), cv2.COLOR_BGR2RGB)/(2.**16-1)
 
 class Image:
     """
@@ -93,17 +112,36 @@ class Image:
                 print(Style.YELLOW + "NO GPS DATA FOUND IN %s"%self.path + Style.RESET)
                 self.gps = None
 
+    def get_lineardata(self):
+        self.get_data()
+        return self._lineardata
+    lineardata = property(get_lineardata)
+
     def get_data(self):
         if self._data is None:
-            # print("LOAD DATA %s"%self.path)
             assert osp.exists(self.path), "%s not an image"%self.path
-            if str.lower(osp.basename(self.path)).endswith("raw"):
-                raise NameError("RAW NOT SUPPORTED YET")
-                # with open(self.path, "rb") as fi:
-                    # self._data = fi.readlines()
+            if str.lower(osp.basename(self.path)).endswith("dng"):
+                rawimg = load_dng(self.path, template="DJI_neutral.pp3")
+                self._data = ((rawimg**(2.2)).clip(0., 1.)*255).astype(np.uint8)
+                self._lineardata = rawimg
+            elif str.lower(osp.basename(self.path)).endswith("raw"):
+                sjcam_converter = osp.join(osp.dirname(osp.abspath(__file__)), "..", "sjcam_raw2dng", "sjcam_raw2dng.exe")
+                sjconverter_link = "https://github.com/yanburman/sjcam_raw2dng/releases/tag/v1.2.0"
+                assert osp.isfile(sjcam_converter), "{} does not exist - please download from {}".format(
+                    sjcam_converter,
+                    sjconverter_link
+                )
+                conv_dir = osp.join(osp.dirname(self.path), "_conversion_sjcam")
+                if not osp.isdir(conv_dir):
+                    mkdir(conv_dir)
+                dng_file = osp.join(conv_dir, osp.basename(self.path).replace(".RAW", ".dng"))
+                if not osp.isfile(dng_file):
+                    subprocess.call([sjcam_converter, "-o", conv_dir, self.path])
+                rawimg = load_dng(dng_file, template="SJCAM.pp3")
+                self._data = ((rawimg**(1./2.2)).clip(0., 1.)*255).astype(np.uint8)
+                self._lineardata = rawimg
             else:
                 self._data = cv2.cvtColor(cv2.imread(self.path), cv2.COLOR_BGR2RGB)  #LOAD AS A RGB CLASSIC ARRAY
-            # print("data loaded", self._data.shape)
         else:
             pass
             # print("Reaccessing image %s"%self.path)
