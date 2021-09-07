@@ -19,6 +19,8 @@ class Image:
     """
     def __init__(self, dat, name=None):
         if isinstance(dat, str):
+            if not osp.isfile(dat):
+                raise NameError("File %s does not exist"%dat)
             self.path = dat
             self.name = osp.basename(dat)
             self._data = None
@@ -27,23 +29,27 @@ class Image:
             self._data = dat
             self.name = name
         if name is not None: self.name = name
+        self.date = None
+        self.gps = None
         self.loadMetata()
 
     def save(self, path):
+        if self._data is None:
+            self.data
         cv2.imwrite(path, cv2.cvtColor(self._data, cv2.COLOR_RGB2BGR))
         return
 
     def loadMetata(self):
         if self.path is not None:
-            pimg = PIL.Image.open(self.path)
             try:
+                pimg = PIL.Image.open(self.path)
                 exifTag = {
                     PIL.ExifTags.TAGS[k]: v
                     for k, v in pimg._getexif().items()
                     if k in PIL.ExifTags.TAGS
                 }
             except:
-                print(Style.YELLOW + "CANNOT ACCESS EXIF"%self.path + Style.RESET)
+                print(Style.YELLOW + "CANNOT ACCESS EXIF %s"%self.path + Style.RESET)
                 return
             try:
                 dateTimeOriginal= exifTag.get('DateTimeOriginal')
@@ -91,7 +97,12 @@ class Image:
         if self._data is None:
             # print("LOAD DATA %s"%self.path)
             assert osp.exists(self.path), "%s not an image"%self.path
-            self._data = cv2.cvtColor(cv2.imread(self.path), cv2.COLOR_BGR2RGB)  #LOAD AS A RGB CLASSIC ARRAY
+            if str.lower(osp.basename(self.path)).endswith("raw"):
+                raise NameError("RAW NOT SUPPORTED YET")
+                # with open(self.path, "rb") as fi:
+                    # self._data = fi.readlines()
+            else:
+                self._data = cv2.cvtColor(cv2.imread(self.path), cv2.COLOR_BGR2RGB)  #LOAD AS A RGB CLASSIC ARRAY
             # print("data loaded", self._data.shape)
         else:
             pass

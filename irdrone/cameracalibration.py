@@ -111,7 +111,37 @@ def calibrate(
 
 
 if __name__ == "__main__":
-    calibrate(
-        imlist=ut.imagepath(imgname="*.JPG",  dirname=opj(osp.dirname(__file__), "..", "calibration", "sjcam"))[-30:],
-        resize=(800,600)
-    )
+    #  cameraName="dji"          |   nbImage=48
+    #  cameraName="SJ4000WIFI"   |   nbImage=53
+    #  cameraName="M20"          |   nbImage=43
+    #  cameraName="dji"          |   nbImage=? checkerboardsize=(7, 5)
+
+    cameraName="SJ4000WIFI"
+    nbImage = 53
+
+    fullResolution=True
+    if not fullResolution :
+        # calibration avec des images en basse résolution pour tester si cela fonctionne
+        calibrate(
+            imlist=ut.imagepath(imgname="*.JPG",  dirname=opj(osp.dirname(__file__), "..", "calibration", cameraName))[-nbImage:],
+            resize=(800,600)
+        )
+    elif fullResolution :
+        finecalibration = calibrate(
+            imlist=ut.imagepath(
+                imgname="*.JPG",
+                dirname=opj(osp.dirname(__file__), "..", "calibration", cameraName)
+            )[-nbImage:],
+            checkerboardsize=(10, 7),
+            show=False
+        )
+        print(finecalibration)
+        import json
+
+        finecalibration["mtx"] = finecalibration["mtx"].tolist()
+        finecalibration["dist"] = finecalibration["dist"].tolist()
+        print(finecalibration)
+        with open("calibration.json", 'w') as outfile:
+            json.dump(finecalibration, outfile)
+    else :
+        pass

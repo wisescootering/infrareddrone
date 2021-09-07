@@ -3,6 +3,22 @@
 # General information
 * Author : Balthazar Neveu , Alain Neveu
 
+# Application for botanists
+
+### Sample test
+2 ways to run the sample
+* simply use `customApplication.py` to run a file browser which will allow you to select your excel file, the search [SampleMission/FlightPath.xslx](SampleMission/FlightPath.xslx) .
+* Use `customApplication.py --excel SampleMission/FlightPath.xlsx`
+
+## Content
+2 cameras are used:
+* drone visible camera
+* IR camera
+
+`Camera type`: type is located in th exif, open file details and search camera model
+`Timelapse`: provides the interval between each photo in seconds
+`deltatime`: provides an offset between the two cameras timestamps.
+In the sample folder, you'll find image examples, deltatime is ~ 15 seconds.
 # Image registration code
 * Images from the drone are nearly distorsion-less
 * Images from the fisheye IR camera have a much wider field of view and distorsions
