@@ -254,6 +254,8 @@ class ImagePipe:
         if not self.signalIn and self.floatpipe: result = [1. * imglst[0]] + list(map(lambda x: x.astype(np.float), imglst))
         else: result = [imglst[0]] + imglst
         for prc in self.sliders:
+            if prc is None:
+                continue
             out = prc.apply(*[result[idi] for idi in prc.inputs] + prc.values, geometricscale=geometricscale)
             if isinstance(out, list):
                 for i, ido in enumerate(prc.outputs):
@@ -312,6 +314,8 @@ class ImagePipe:
         if addslider:
             self.axes, self.slidersplot = [], []
         for pa in self.sliders:
+            if pa is None:
+                continue
             for idx, paName in enumerate(pa.slidersName):
                 if forcereset:
                     dfval = pa.defaultvalue[idx]
@@ -348,6 +352,8 @@ class ImagePipe:
         :return:
         """
         for pa in self.sliders:
+            if pa is None:
+                continue
             if pa.name in params.keys():
                 pa.values = params[pa.name]
             else:
@@ -398,7 +404,7 @@ class ImagePipe:
         else:
             self.fig, ax = plt.subplots()
             plt.gcf().canvas.set_window_title(self.winname)
-            totalSliders = int(np.array([len(pa.slidersName) for pa in self.sliders]).sum())
+            totalSliders = int(np.array([len(pa.slidersName) for pa in self.sliders if pa is not None]).sum())
             # RESIZE ONLY TO ADD SLIDERS IF NECESSARY : USEFUL FOR INPUT PLOTS WITHOUT INTERACTIVE SLIDERS
             if totalSliders > 0: plt.subplots_adjust(left=0. if not self.signalOut else 0.1, bottom=0.4)
             self.resetsliders(addslider=False)
