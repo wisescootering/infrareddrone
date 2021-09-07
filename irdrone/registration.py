@@ -4,6 +4,10 @@ import numpy as np
 import logging
 from itertools import product
 from skimage.registration import phase_cross_correlation
+SIFT = "SIFT"
+BRISK = "BRISK"
+KNN = "KNN"
+BRUTEFORCE = "BRUTEFORCE"
 
 
 def estimate_motion_phase_correlation(ref ,mov):
@@ -22,7 +26,11 @@ def slice(img, patch, patch_size=[64, 64]):
     return tile, center
 
 
-def register_by_blocks(reference, moving, patch_size=100, motion_estim_func=estimate_motion_phase_correlation, debug=False):
+def register_by_blocks(reference, moving, patch_size=100, motion_estim_func=estimate_motion_phase_correlation,
+                       debug=False, affinity=True):
+    """
+    Slice image into patches, estimate registration using phase correlation (or any other function motion_estim_func)
+    """
     i_ref = reference
     i_mov = moving
     s_y, s_x = i_ref.shape[0], i_ref.shape[1]
@@ -35,20 +43,8 @@ def register_by_blocks(reference, moving, patch_size=100, motion_estim_func=esti
         t_mov, _c_mov = slice(i_mov, [p_y, p_x], patch_size=[p_s_y, p_s_x])  # moving tile
         motion_vectors[p_y, p_x, :] = motion_estim_func(t_ref, t_mov)
         centers[p_y, p_x, :] = c_ref
-    if debug:
-        plot_vector_field(centers, motion_vectors, i_ref=i_ref)
-    homog = geometric_rigid_transform_estimation(centers, motion_vectors, img=reference, debug=debug, affinity=True)
+    homog = geometric_rigid_transform_estimation(centers, motion_vectors, img=reference, debug=debug, affinity=affinity)
     return homog
-
-
-def plot_vector_field(centers, motion_vectors, i_ref=None):
-    fig, ax = plt.subplots()
-    ax.quiver(centers[:, :, 1], centers[:, :, 0], motion_vectors[:, :, 0], -motion_vectors[:, :, 1], color="r")
-    ax.invert_yaxis()
-    ax.set_aspect("equal")
-    if i_ref is not None:
-        ax.imshow(i_ref, cmap="gray")
-    plt.show()
 
 
 def fit_affinity(input_pts, output_pts, weights=None, debug=False):
@@ -192,14 +188,13 @@ def geometric_rigid_transform_estimation(vpos, vector_field, img=None, debug=Fal
     return homog_estim
 
 
-def estimateFeaturePoints(img1o, img2o, debug=False, show=False):
+def estimateFeaturePoints(img1o, img2o, debug=False, show=False, thresh=0., mode = SIFT, matcher = KNN):
     """
-    SIFT + Flann knn matching based image registration with homography fitting
+    SIFT/BRISK + Flann knn/ matching based image registration with homography fitting
 
     :param img1o: image 1 ir image to displace (register onto image1)
     :param img2o: image 2 visible image to be matched (template = reference)
     :param debug: used to plot feature matching and warp the image (returns align and img_debug)
-    :param show:
     :return: aligned image, homography
     """
     if len(img1o.shape) > 2:
@@ -210,25 +205,46 @@ def estimateFeaturePoints(img1o, img2o, debug=False, show=False):
         img2 = cv2.cvtColor(img2o, cv2.COLOR_BGRA2GRAY)
     else:
         img2 = img2o
-    # Initiate SIFT detector
-    sift = cv2.xfeatures2d.SIFT_create(5000)
+    if mode == "SIFT":
+        # Initiate SIFT detector
+        detector = cv2.xfeatures2d.SIFT_create(5000)
+        FLANN_INDEX_KDTREE = 0
+        index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=5)  # 5
+    elif mode == "BRISK":
+        detector = cv2.BRISK_create(thresh=100)
+        FLANN_INDEX_LSH = 6
+        index_params = dict(
+            algorithm = FLANN_INDEX_LSH,
+            table_number = 6, # 12
+            key_size = 12,     # 20
+            multi_probe_level = 1 #2
+        )
     # find the keypoints and descriptors with SIFT
-    kp1, des1 = sift.detectAndCompute(img1, None)
-    kp2, des2 = sift.detectAndCompute(img2, None)
+    kp1, des1 = detector.detectAndCompute(img1, None)
+    kp2, des2 = detector.detectAndCompute(img2, None)
 
-    # FLANN parameters
-    FLANN_INDEX_KDTREE = 0
-    index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=5)  # 5
-    search_params = dict(checks=50)  # or pass empty dictionary
-    flann = cv2.FlannBasedMatcher(index_params,search_params)
-    matches = flann.knnMatch(des1, des2, k=2)
+    if matcher == KNN:
+        search_params = dict(checks=50)  # or pass empty dictionary
+        flann = cv2.FlannBasedMatcher(index_params,search_params)
+        matches = flann.knnMatch(des1, des2, k=2)
+    elif matcher == BRUTEFORCE:
+        # create BFMatcher object
+        BFMatcher = cv2.BFMatcher(
+            normType = cv2.NORM_HAMMING,
+            crossCheck = True
+        )
+        # Matching descriptor vectors using Brute Force Matcher
+        matches = BFMatcher.match(queryDescriptors=des1,
+                                  trainDescriptors=des2)
+        # Sort them in the order of their distance
+        matches = sorted(matches, key=lambda x: x.distance)
 
-    # Need to draw only good matches, so create a mask
+# Need to draw only good matches, so create a mask
     matchesMask = [[0,0] for i in range(len(matches))]
 
     # ratio test as per Lowe's paper
     for i, (m, n) in enumerate(matches):
-        if m.distance < 0.7*n.distance:  # 0.7 is nice
+        if m.distance < (0.7+thresh)*n.distance:  # 0.7 is nice
             matchesMask[i] = [1, 0]
 
     draw_params = dict(matchColor=(0, 255, 0),
