@@ -9,21 +9,25 @@ import os.path as osp
 opj = osp.join
 
 
-def getcorners(img, checkerboardsize =(10,7), resize=None, show=False):
+def getcorners(img_in, checkerboardsize =(10,7), resize=None, show=False):
     """
-    Corners detection on images
-    @TODO: implement subpix corners refinement
+    Corners detection on images with subpix corners refinement
     :param img: image numpy array or path to image
     :param checkerboardsize:  checkerboard size X, Y (count corners, not the number of squares)
     :param resize: speed up computation by processing smaller images
     :param show: computes an overlay on the image showing checkerboards, allow debugging
     :return: ret (boolean flag), corners, image with corners overlay, imsize
     """
-    if isinstance(img, str): img = cv2.imread(img)
+    if isinstance(img_in, str): img = pr.Image(img_in).data
+    elif isinstance(img_in, pr.Image): img = img_in.data
+    else: img = img_in
     grayorig = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
     gray = grayorig if (resize is None or resize is False) else cv2.resize(grayorig, resize)
-    ret, corners = cv2.findChessboardCorners(gray, checkerboardsize,None)
-    img = None if not show else cv2.drawChessboardCorners(gray, checkerboardsize, corners,ret)
+    ret, corners = cv2.findChessboardCorners(gray, checkerboardsize, None)
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.1)
+    if ret:
+        corners = cv2.cornerSubPix(gray, corners, (5, 5), (-1, -1), criteria)
+    img = None if not show else cv2.drawChessboardCorners(gray, checkerboardsize, corners, ret)
     return ret, corners, img, gray.shape[::-1]
 
 
@@ -80,11 +84,16 @@ def calibrate(
         if id>=len(imlist): ret, out = False, None
         else:
             im = imlist[id]
+            # im = pr.Image(im)
+            # im = im.data
+            # im.show()
             _ret, _corners, _out, _imsize = getcornerscached(im, resize=(800,600), show=True,  checkerboardsize=checkerboardsize) #START WITH A THUMBNAIL
             if _ret:
                 ret, corners, out, imsize = getcornerscached(im, resize=resize, show=True,  checkerboardsize=checkerboardsize)
-            else: ret, out= False,  None
-            if ret: cornerlist.append(corners)
+            else:
+                ret, out= False,  None
+            if ret:
+                cornerlist.append(corners)
         outlist[idy][idx] = out if ret else None
 
     if show: #SHOW DETECTED IMAGES
@@ -109,39 +118,49 @@ def calibrate(
     return {"mtx": mtx, "dist": dist, "size": imsize}
 
 
-
-if __name__ == "__main__":
+def get_config(cam):
     #  cameraName="dji"          |   nbImage=48
     #  cameraName="SJ4000WIFI"   |   nbImage=53
     #  cameraName="M20"          |   nbImage=43
     #  cameraName="dji"          |   nbImage=? checkerboardsize=(7, 5)
+    confs = {
+        "SJ4000WIFI": dict(checkerboardsize=(10, 7), nbImage=53, suffix="*.JPG"),
+        "M20": dict(checkerboardsize=(10, 7), nbImage=43, suffix="*.JPG"),
+        "DJI_RAW": dict(checkerboardsize=(7, 5), nbImage=29, suffix="*.DNG"),
+        "DJI": dict(checkerboardsize=(7, 5), nbImage=29, suffix="*.JPG")
+    }
+    return confs[cam]
 
-    cameraName="SJ4000WIFI"
-    nbImage = 53
 
-    fullResolution=True
+if __name__ == "__main__":
+    cameraName="DJI_RAW"
+    conf = get_config(cameraName)
+    suffix = conf["suffix"]
+    nbImage = conf["nbImage"]
+    checkerboardsize = conf["checkerboardsize"]
+    fullResolution = True
     if not fullResolution :
         # calibration avec des images en basse résolution pour tester si cela fonctionne
         calibrate(
-            imlist=ut.imagepath(imgname="*.JPG",  dirname=opj(osp.dirname(__file__), "..", "calibration", cameraName))[-nbImage:],
-            resize=(800,600)
+            imlist=ut.imagepath(imgname=suffix,  dirname=opj(osp.dirname(__file__), "..", "calibration", cameraName))[-nbImage:],
+            checkerboardsize=checkerboardsize,
+            resize=(800, 600)
         )
     elif fullResolution :
         finecalibration = calibrate(
             imlist=ut.imagepath(
-                imgname="*.JPG",
+                imgname=suffix,
                 dirname=opj(osp.dirname(__file__), "..", "calibration", cameraName)
             )[-nbImage:],
-            checkerboardsize=(10, 7),
+            checkerboardsize=checkerboardsize,
             show=False
         )
-        print(finecalibration)
         import json
-
+        finecalibration["camera"] = cameraName
         finecalibration["mtx"] = finecalibration["mtx"].tolist()
         finecalibration["dist"] = finecalibration["dist"].tolist()
         print(finecalibration)
-        with open("calibration.json", 'w') as outfile:
+        with open(opj(osp.dirname(__file__), "..", "calibration", cameraName, "calibration.json"), 'w') as outfile:
             json.dump(finecalibration, outfile)
     else :
         pass

@@ -122,7 +122,7 @@ class Image:
             assert osp.exists(self.path), "%s not an image"%self.path
             if str.lower(osp.basename(self.path)).endswith("dng"):
                 rawimg = load_dng(self.path, template="DJI_neutral.pp3")
-                self._data = ((rawimg**(2.2)).clip(0., 1.)*255).astype(np.uint8)
+                self._data = ((rawimg**(1./2.2)).clip(0., 1.)*255).astype(np.uint8)
                 self._lineardata = rawimg
             elif str.lower(osp.basename(self.path)).endswith("raw"):
                 sjcam_converter = osp.join(osp.dirname(osp.abspath(__file__)), "..", "sjcam_raw2dng", "sjcam_raw2dng.exe")
