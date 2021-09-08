@@ -144,8 +144,9 @@ class Image:
                 if not osp.isfile(dng_file):
                     subprocess.call([sjcam_converter, "-o", conv_dir, self.path])
                 rawimg = load_dng(dng_file, template="SJCAM.pp3")
-                self._data = ((rawimg**(1./2.2)).clip(0., 1.)*255).astype(np.uint8)
-                self._lineardata = rawimg
+                bp_sjcam = 0.255
+                self._data = (((rawimg-bp_sjcam).clip(0., 1.)**(1./2.2)).clip(0., 1.)*255).astype(np.uint8)
+                self._lineardata = (rawimg-bp_sjcam).clip(0., 1.)
             elif str.lower(osp.basename(self.path)).endswith("tif") or str.lower(osp.basename(self.path)).endswith("tiff"):
                 linear_data = load_tif(self.path)
                 self._lineardata = linear_data

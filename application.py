@@ -56,7 +56,7 @@ def registration(vilist, irlist, ircalib=None, resize=(800,600), debug=False):
     """
     Computes distorsion free thumbnails in order to estimate a matching between feature points
     and therefore deduce an homography
-    @TODO: warp only once (correct distorsion then homography only once)
+
     :param vilist: (visible image, visible image title)
     :param irlist: (infrared image, infrared image title)
     :param calib: infrared camera calibration
