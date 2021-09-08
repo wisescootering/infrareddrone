@@ -27,7 +27,7 @@ Curve=0;
 Curve2=0;
 
 [HLRecovery]
-Enabled=true
+Enabled=false
 Method=Blend
 
 [Retinex]
@@ -120,7 +120,7 @@ LcCurve=0;
 ClCurve=0;
 
 [Sharpening]
-Enabled=false
+Enabled=true
 Contrast=20
 Method=usm
 Radius=0.5
@@ -163,8 +163,8 @@ Uniformity=5
 [White Balance]
 Enabled=true
 Setting=Camera
-Temperature=4907
-Green=0.94799999999999995
+Temperature=4805
+Green=0.98299999999999998
 Equal=1
 TemperatureBias=0
 
@@ -232,7 +232,7 @@ Enhance=false
 Median=false
 Luma=0
 Ldetail=0
-Chroma=17.16
+Chroma=17.690000000000001
 Method=Lab
 LMethod=SLI
 CMethod=MAN
@@ -241,8 +241,8 @@ SMethod=shal
 MedMethod=soft
 RGBMethod=soft
 MethodMed=Lonly
-Redchro=-2
-Bluechro=4
+Redchro=-4.7999999999999998
+Bluechro=3.6000000000000001
 Gamma=1.7
 Passes=1
 LCurve=1;0.050000000000000003;0.14999999999999999;0.34999999999999998;0.34999999999999998;0.55000000000000004;0.040000000000000001;0.34999999999999998;0.34999999999999998;
@@ -321,9 +321,9 @@ CenterY=0
 
 [PCVignette]
 Enabled=true
-Strength=-0.59999999999999998
-Feather=27
-Roundness=50
+Strength=-0.46000000000000002
+Feather=41
+Roundness=26
 
 [CACorrection]
 Red=0
@@ -380,13 +380,13 @@ ApplyLookTable=true
 ApplyBaselineExposureOffset=true
 ApplyHueSatMap=true
 DCPIlluminant=0
-WorkingProfile=ProPhoto
+WorkingProfile=Adobe RGB
 WorkingTRC=none
 WorkingTRCGamma=2.3999999999999999
 WorkingTRCSlope=12.92
-OutputProfile=RTv4_sRGB
+OutputProfile=AdobeRGB1998
 OutputProfileIntent=Relative
-OutputBPC=true
+OutputBPC=false
 
 [Wavelet]
 Enabled=false

@@ -27,7 +27,7 @@ Curve=0;
 Curve2=0;
 
 [HLRecovery]
-Enabled=true
+Enabled=false
 Method=Blend
 
 [Retinex]
@@ -120,11 +120,11 @@ LcCurve=0;
 ClCurve=0;
 
 [Sharpening]
-Enabled=false
-Contrast=20
-Method=usm
+Enabled=true
+Contrast=37
+Method=rld
 Radius=0.5
-BlurRadius=0.20000000000000001
+BlurRadius=0.29999999999999999
 Amount=200
 Threshold=20;80;2000;1200;
 OnlyEdges=false
@@ -132,7 +132,7 @@ EdgedetectionRadius=1.8999999999999999
 EdgeTolerance=1800
 HalocontrolEnabled=false
 HalocontrolAmount=85
-DeconvRadius=0.75
+DeconvRadius=1.21
 DeconvAmount=100
 DeconvDamping=0
 DeconvIterations=30
@@ -232,7 +232,7 @@ Enhance=false
 Median=false
 Luma=0
 Ldetail=0
-Chroma=17.16
+Chroma=6.7199999999999998
 Method=Lab
 LMethod=SLI
 CMethod=MAN
@@ -241,8 +241,8 @@ SMethod=shal
 MedMethod=soft
 RGBMethod=soft
 MethodMed=Lonly
-Redchro=-2
-Bluechro=4
+Redchro=0.59999999999999998
+Bluechro=-1.6000000000000001
 Gamma=1.7
 Passes=1
 LCurve=1;0.050000000000000003;0.14999999999999999;0.34999999999999998;0.34999999999999998;0.55000000000000004;0.040000000000000001;0.34999999999999998;0.34999999999999998;
@@ -275,8 +275,8 @@ Lab=false
 Enabled=false
 X=0
 Y=0
-W=4032
-H=3024
+W=4600
+H=3448
 FixedRatio=true
 Ratio=As Image
 Orientation=As Image
@@ -338,7 +338,7 @@ CenterY=0
 
 [Resize]
 Enabled=false
-Scale=0.22
+Scale=0.20000000000000001
 AppliesTo=Cropped area
 Method=Lanczos
 DataSpecified=3
@@ -374,17 +374,17 @@ DeconvDamping=0
 DeconvIterations=100
 
 [Color Management]
-InputProfile=(embedded)
+InputProfile=(none)
 ToneCurve=false
 ApplyLookTable=true
 ApplyBaselineExposureOffset=true
 ApplyHueSatMap=true
 DCPIlluminant=0
-WorkingProfile=ProPhoto
+WorkingProfile=Adobe RGB
 WorkingTRC=none
 WorkingTRCGamma=2.3999999999999999
 WorkingTRCSlope=12.92
-OutputProfile=RTv4_sRGB
+OutputProfile=AdobeRGB1998
 OutputProfileIntent=Relative
 OutputBPC=true
 
