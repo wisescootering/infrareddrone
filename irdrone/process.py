@@ -16,6 +16,12 @@ RAWTHERAPEEPATH = r"C:\Program Files\RawTherapee\5.8\rawtherapee-cli.exe"
 assert osp.exists(RAWTHERAPEEPATH), "Please install raw therapee first http://www.rawtherapee.com/downloads/5.8/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
 
 
+def load_tif(in_file):
+    flags = cv2.IMREAD_ANYDEPTH | cv2.IMREAD_ANYCOLOR
+    flags |= cv2.IMREAD_IGNORE_ORIENTATION
+    return cv2.cvtColor(cv2.imread(in_file, flags=flags), cv2.COLOR_BGR2RGB)/(2.**16-1)
+
+
 def load_dng(path, template="DJI_neutral.pp3"):
     out_file = path[:-4]+"_RawTherapee.tif"
     cmd = [
@@ -26,9 +32,8 @@ def load_dng(path, template="DJI_neutral.pp3"):
     ]
     if not osp.isfile(out_file):
         subprocess.call(cmd)
-    flags = cv2.IMREAD_ANYDEPTH | cv2.IMREAD_ANYCOLOR
-    flags |= cv2.IMREAD_IGNORE_ORIENTATION
-    return cv2.cvtColor(cv2.imread(out_file, flags=flags), cv2.COLOR_BGR2RGB)/(2.**16-1)
+    return load_tif(out_file)
+
 
 class Image:
     """
@@ -121,7 +126,8 @@ class Image:
         if self._data is None:
             assert osp.exists(self.path), "%s not an image"%self.path
             if str.lower(osp.basename(self.path)).endswith("dng"):
-                rawimg = load_dng(self.path, template="DJI_neutral.pp3")
+                rawimg = load_dng(self.path, template="DJI_neutral.pp3") # COLOR MATRIX IS APPLIED, LINEAR
+                # @TODO: lens shading correction for DJI
                 self._data = ((rawimg**(1./2.2)).clip(0., 1.)*255).astype(np.uint8)
                 self._lineardata = rawimg
             elif str.lower(osp.basename(self.path)).endswith("raw"):
@@ -140,6 +146,10 @@ class Image:
                 rawimg = load_dng(dng_file, template="SJCAM.pp3")
                 self._data = ((rawimg**(1./2.2)).clip(0., 1.)*255).astype(np.uint8)
                 self._lineardata = rawimg
+            elif str.lower(osp.basename(self.path)).endswith("tif") or str.lower(osp.basename(self.path)).endswith("tiff"):
+                linear_data = load_tif(self.path)
+                self._lineardata = linear_data
+                self._data = ((linear_data**(2.2)).clip(0., 1.)*255).astype(np.uint8)
             else:
                 self._data = cv2.cvtColor(cv2.imread(self.path), cv2.COLOR_BGR2RGB)  #LOAD AS A RGB CLASSIC ARRAY
         else:
