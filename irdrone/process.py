@@ -41,13 +41,14 @@ class Image:
     image[0] = numpy array , only loaded when accessing , otherwise the path is simply kept
     image[1] = image name
     """
-    def __init__(self, dat, name=None):
+    def __init__(self, dat, name=None, shading_correction=True):
         if isinstance(dat, str):
             if not osp.isfile(dat):
                 raise NameError("File %s does not exist"%dat)
             self.path = dat
             self.name = osp.basename(dat)
             self._data = None
+            self.shading_correction = shading_correction
         else:
             self.path = None
             self._data = dat
@@ -60,7 +61,13 @@ class Image:
     def save(self, path):
         if self._data is None:
             self.data
-        cv2.imwrite(path, cv2.cvtColor(self._data, cv2.COLOR_RGB2BGR))
+        if path.lower().endswith("jpg"):
+            cv2.imwrite(path, cv2.cvtColor(self._data, cv2.COLOR_RGB2BGR))
+        elif path.lower().endswith("tif"):
+            cv2.imwrite(path, cv2.cvtColor(
+                ((2**16-1)*(self._data.clip(0, 1))).astype(np.uint16),
+                cv2.COLOR_RGB2BGR)
+            )
         return
 
     def loadMetata(self):
@@ -123,12 +130,19 @@ class Image:
     lineardata = property(get_lineardata)
 
     def get_data(self):
+        gamma = 1./2.2
         if self._data is None:
             assert osp.exists(self.path), "%s not an image"%self.path
             if str.lower(osp.basename(self.path)).endswith("dng"):
                 rawimg = load_dng(self.path, template="DJI_neutral.pp3") # COLOR MATRIX IS APPLIED, LINEAR
-                # @TODO: lens shading correction for DJI
-                self._data = ((rawimg**(1./2.2)).clip(0., 1.)*255).astype(np.uint8)
+                # lens shading correction for DJI
+                if self.shading_correction:
+                    shading_correction = np.load(
+                        osp.abspath(osp.join(osp.dirname(__file__), "..", "calibration", "DJI_RAW", "shading_calibration.npy"))
+                    )
+                    shading_map = cv2.resize(shading_correction, (rawimg.shape[1], rawimg.shape[0]))
+                    rawimg = (shading_map*rawimg).clip(0., 1.)
+                self._data = ((rawimg**(gamma)).clip(0., 1.)*255).astype(np.uint8)
                 self._lineardata = rawimg
             elif str.lower(osp.basename(self.path)).endswith("raw"):
                 sjcam_converter = osp.join(osp.dirname(osp.abspath(__file__)), "..", "sjcam_raw2dng", "sjcam_raw2dng.exe")
@@ -145,12 +159,12 @@ class Image:
                     subprocess.call([sjcam_converter, "-o", conv_dir, self.path])
                 rawimg = load_dng(dng_file, template="SJCAM.pp3")
                 bp_sjcam = 0.255
-                self._data = (((rawimg-bp_sjcam).clip(0., 1.)**(1./2.2)).clip(0., 1.)*255).astype(np.uint8)
+                self._data = (((rawimg-bp_sjcam).clip(0., 1.)**(gamma)).clip(0., 1.)*255).astype(np.uint8)
                 self._lineardata = (rawimg-bp_sjcam).clip(0., 1.)
             elif str.lower(osp.basename(self.path)).endswith("tif") or str.lower(osp.basename(self.path)).endswith("tiff"):
                 linear_data = load_tif(self.path)
                 self._lineardata = linear_data
-                self._data = ((linear_data**(2.2)).clip(0., 1.)*255).astype(np.uint8)
+                self._data = ((linear_data**(gamma)).clip(0., 1.)*255).astype(np.uint8)
             else:
                 self._data = cv2.cvtColor(cv2.imread(self.path), cv2.COLOR_BGR2RGB)  #LOAD AS A RGB CLASSIC ARRAY
         else:

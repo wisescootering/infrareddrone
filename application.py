@@ -67,7 +67,7 @@ def registration(vilist, irlist, ircalib=None, resize=(800,600), debug=False):
     alignedList = []
     visimg, irimg = vilist[0].copy(), irlist[0].copy()
     if ircalib is None: #BETTER AVOID THIS !
-        cropx, cropy = 300,300
+        cropx, cropy = 300, 300
         irimg = cv2.resize(
             irimg[cropy:-cropy, cropx:-cropx, :],
             (visimg.shape[1], visimg.shape[0])
@@ -168,7 +168,7 @@ def warp(im: pr.Image, cal, homog, outsize=None):
     )
 
     out = cv2.remap(
-        im.data, map1x, map1y,
+        im if not isinstance(im, pr.Image) else im.data, map1x, map1y,
         interpolation=cv2.INTER_CUBIC,
         borderMode=cv2.BORDER_CONSTANT,
         borderValue=(0, 0, 0, 0)

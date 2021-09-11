@@ -219,7 +219,7 @@ class ImagePipe:
     Matplolib backend by default has nice tuning slider values
     It is possible to use the ImagePipe in a headless mode to process images without GUI ... use the save method.
     """
-    def __init__(self, imlist, rescale=None, sliders=[ProcessBlock("identity", slidersName=[])], winname=CONTROLWINDOW, backendcv=False, floatpipe=True, **params):
+    def __init__(self, imlist, rescale=None, sliders=[ProcessBlock("identity", slidersName=[])], winname=CONTROLWINDOW, backendcv=False, floatpipe=False, **params):
         """
         :param imlist: list of RGB (not cv2 fashioned) arrays
         """
@@ -268,7 +268,7 @@ class ImagePipe:
                 return cv2.cvtColor(np.clip(result[0], 0, 255).astype(np.uint8), cv2.COLOR_RGB2BGR) if self.floatpipe \
                     else cv2.cvtColor(result[0], cv2.COLOR_RGB2BGR)
             else:
-                return np.clip(result[0], 0, 255).astype(np.uint8) if self.floatpipe else result[0]
+                return np.clip(result[0], 0, 255).astype(np.uint8) if not self.floatpipe else result[0]
         else:
             return result[0]
 
@@ -363,6 +363,8 @@ class ImagePipe:
     def update(self, val):
         u = 0
         for pa in self.sliders:
+            if pa is None:
+                continue
             for idx, paName in enumerate(pa.slidersName):
                 pa.values[idx] =self.slidersplot[u].val
                 u+=1

@@ -84,9 +84,7 @@ def calibrate(
         if id>=len(imlist): ret, out = False, None
         else:
             im = imlist[id]
-            # im = pr.Image(im)
-            # im = im.data
-            # im.show()
+            # pr.Image(im).show()
             _ret, _corners, _out, _imsize = getcornerscached(im, resize=(800,600), show=True,  checkerboardsize=checkerboardsize) #START WITH A THUMBNAIL
             if _ret:
                 ret, corners, out, imsize = getcornerscached(im, resize=resize, show=True,  checkerboardsize=checkerboardsize)
@@ -127,13 +125,14 @@ def get_config(cam):
         "SJ4000WIFI": dict(checkerboardsize=(10, 7), nbImage=53, suffix="*.JPG"),
         "M20": dict(checkerboardsize=(10, 7), nbImage=43, suffix="*.JPG"),
         "DJI_RAW": dict(checkerboardsize=(7, 5), nbImage=29, suffix="*.DNG"),
+        "M20_RAW": dict(checkerboardsize=(10, 7), nbImage=30, suffix="*.RAW"),
         "DJI": dict(checkerboardsize=(7, 5), nbImage=29, suffix="*.JPG")
     }
     return confs[cam]
 
 
 if __name__ == "__main__":
-    cameraName="DJI_RAW"
+    cameraName="M20_RAW"
     conf = get_config(cameraName)
     suffix = conf["suffix"]
     nbImage = conf["nbImage"]
