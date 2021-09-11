@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from matplotlib.colors import hsv_to_rgb
+from scipy.interpolate import interp1d
 import glob
 import itertools
 import numpy as np
@@ -200,3 +201,31 @@ def c2g(im):
 
 def g2c(im):
     return cv2.cvtColor(im, cv2.COLOR_GRAY2RGB)
+
+def get_polar_shading_map(img_shape=(3448, 4600, 3), calib=None):
+    radius = int(np.sqrt((img_shape[0]/2)**2+(img_shape[1]/2) **2))
+    x_lin = np.array(range(radius))
+    vignetting_map = np.zeros(img_shape)
+    for ch in range(3):
+        parametric_profile = get_shading_profile(calib["RGB"[ch]], x_lin)
+        radial_map = np.zeros((360, radius))
+        radial_map = np.repeat(np.array([parametric_profile]), radial_map.shape[0], axis=0)
+        vignetting_map[:, :, ch] = cv2.warpPolar(
+            radial_map,
+            (img_shape[1], img_shape[0]),
+            center=(img_shape[1]/2, img_shape[0]/2),
+            maxRadius=radius,
+            flags=cv2.WARP_INVERSE_MAP
+        )
+    return vignetting_map
+
+
+def get_shading_profile(verts, x_lin):
+    x_vert, y_vert = zip(*verts)
+    i_lin = np.arange(len(x_vert))
+    interp_i = np.linspace(0, i_lin.max(), 100 * i_lin.max())
+    xi = interp1d(i_lin, x_vert, kind='linear')(interp_i)
+    yi = interp1d(i_lin, y_vert, kind='cubic')(interp_i)
+    i_nonlin = interp1d(xi, interp_i)(x_lin)
+    y_profile = interp1d(interp_i, yi)(i_nonlin)
+    return y_profile
