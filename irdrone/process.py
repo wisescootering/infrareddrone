@@ -10,7 +10,7 @@ import PIL.Image
 import PIL.ExifTags
 import datetime
 from os import mkdir
-from irdrone.utils import Style, conversionGPSdms2dd, get_polar_shading_map
+from irdrone.utils import Style, conversionGPSdms2dd, get_polar_shading_map, contrast_stretching
 import subprocess
 RAWTHERAPEEPATH = r"C:\Program Files\RawTherapee\5.8\rawtherapee-cli.exe"
 assert osp.exists(RAWTHERAPEEPATH), "Please install raw therapee first http://www.rawtherapee.com/downloads/5.8/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
@@ -21,6 +21,7 @@ SJCAM_M20_PROFILE_CONTROL_POINTS = {
     "G": [(-1818.1593058299723, 0.9593926491976511), (184.6507089333645, 1.016621860616801), (672.4623430384404, 0.9758875264857452), (1240.4111479507396, 1.0150339670490343), (1672.6256359791887, 1.0733830394880173), (2022.0053655849624, 1.2150426799356917), (2363.4446467906046, 1.245596720032249), (2994.7102946010355, 0.7414550584390546), (3256.7450918053655, 0.32619787712675397)],
     "B":[(-1872.1109909763832, 0.9448023256039491), (174.521941381101, 1.016191567620653), (650.7576814104391, 0.9787972027547605), (1241.1325657443285, 1.0204409272645043), (1668.6554117791238, 1.0786695019553694), (2008.6199153783855, 1.2239852542049876), (2347.1015157298157, 1.2613796190708801), (2895.4546895993954, 0.7369495461155825), (3357.444414697938, 0.3475093200941026)]
 }
+
 
 def load_tif(in_file):
     flags = cv2.IMREAD_ANYDEPTH | cv2.IMREAD_ANYCOLOR
@@ -138,7 +139,7 @@ class Image:
     lineardata = property(get_lineardata)
 
     def get_data(self):
-        gamma = 1./2.2
+        gamma = 2.2 #1./2.2
         if self._data is None:
             assert osp.exists(self.path), "%s not an image"%self.path
 # ---------------------------------------------------------------------------------------------------- DJI Mavic Air RAW
@@ -154,7 +155,8 @@ class Image:
                         )
                         shading_correction_DJI = cv2.resize(shading_correction_DJI, (rawimg.shape[1], rawimg.shape[0]))
                     rawimg = (shading_correction_DJI*rawimg).clip(0., 1.)
-                self._data = ((rawimg**(gamma)).clip(0., 1.)*255).astype(np.uint8)
+                # self._data = ((rawimg**(gamma)).clip(0., 1.)*255).astype(np.uint8)
+                self._data = (contrast_stretching(rawimg.clip(0., 1.))[0]*255).astype(np.uint8)
                 self._lineardata = rawimg
 # -------------------------------------------------------------------------------------------------------- SJCAM M20 RAW
             elif str.lower(osp.basename(self.path)).endswith("raw"):
@@ -182,7 +184,8 @@ class Image:
                         )
                         print("LOADING SHADING CALIB")
                     rawimg = (rawimg * shading_correction_M20)
-                self._data = ((rawimg.clip(0., 1.)**(gamma)).clip(0., 1.)*255).astype(np.uint8)
+                # self._data = ((rawimg.clip(0., 1.)**(gamma)).clip(0., 1.)*255).astype(np.uint8)
+                self._data = (contrast_stretching(rawimg.clip(0., 1.))[0]*255).astype(np.uint8)
                 self._lineardata = rawimg.clip(0., 1.)
             elif str.lower(osp.basename(self.path)).endswith("tif") or str.lower(osp.basename(self.path)).endswith("tiff"):
                 linear_data = load_tif(self.path)

@@ -153,6 +153,7 @@ def unsharp_mask(image, kernel_size=(5, 5), sigma=1.0, amount=1.0, threshold=0):
         np.copyto(sharpened, image, where=low_contrast_mask)
     return sharpened
 
+
 def warp(im: pr.Image, cal, homog, outsize=None):
     if not isinstance(im, pr.Image):
         im = pr.Image(im, "warped")

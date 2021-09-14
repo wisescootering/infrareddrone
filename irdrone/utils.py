@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from matplotlib.colors import hsv_to_rgb
 from scipy.interpolate import interp1d
+from skimage import exposure
 import glob
 import itertools
 import numpy as np
@@ -229,3 +230,15 @@ def get_shading_profile(verts, x_lin):
     i_nonlin = interp1d(xi, interp_i)(x_lin)
     y_profile = interp1d(interp_i, yi)(i_nonlin)
     return y_profile
+
+
+def contrast_stretching(img, percentiles=None, crop_black_circle = 450, p_val=(2, 98)):
+    if percentiles is not None:
+        p2, p98 = percentiles[0], percentiles[1]
+    else:
+        if crop_black_circle is not None:
+            p2, p98 = np.percentile(img[:, crop_black_circle:-crop_black_circle, 1], p_val)
+        else:
+            p2, p98 = np.percentile(img, p_val)
+    img_rescale = exposure.rescale_intensity(img, in_range=(p2, p98))
+    return img_rescale, [p2, p98]
