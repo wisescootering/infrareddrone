@@ -10,6 +10,8 @@ from irdrone.registration import register_by_blocks, estimateFeaturePoints
 import numpy as np
 import cv2
 import logging
+import os.path as osp
+ROTATE = "Rotate"
 
 
 # ---------------------------------------------- 3D ROTATION -----------------------------------------------------------
@@ -352,7 +354,7 @@ class BlockMatching(ipipe.ProcessBlock):
             return mov
         else:
             ref_new, mov_new = prepare_inputs_for_matching(ref, mov, abstraction=abstraction, debug=debug)
-            homog = register_by_blocks(ref_new, mov_new, debug=flag > 1., patch_size=120, affinity=False)
+            homog = register_by_blocks(ref_new, mov_new, debug=flag > 1., patch_size=120, affinity=True)
             self.homography = homog if geometricscale is None else np.dot(
                 np.dot(
                     get_zoom_mat(1./geometricscale),
@@ -365,34 +367,13 @@ class BlockMatching(ipipe.ProcessBlock):
 
 
 # ---------------------------------------------- INTERACTIVE DEMO  -----------------------------------------------------
-def demo(number=230, save_full_res=True):
-    def real_images_pairs(number=[505, 230, 630][0]):
-        """Demo inputs"""
-        visref = pr.Image(
-            ut.imagepath(r"%d-DJI-VI.jpg"%number, dirname="../samples")[0],
-            name="visible reference"
 
-        )
-        irmoving = pr.Image(
-            ut.imagepath(r"%d-SJM20-IR.JPG"%number, dirname="../samples")[0],
-            name="ir moving"
-        )
-        ircalib = ut.cameracalibration(camera="M20")
-        viscalib = ut.cameracalibration(camera="DJI")
-        if number == 505:
-            params = {"Rotate":[-15.76, 16.92, 0.88, 1.]}
-        elif number == 630:
-            params = {"Rotate":[-2.200000, 7.680000, -4.360000, 1.]}
-        elif number == 230:
-            params = {"Rotate":[1.76, 5.88, 0.0, 1.]}
-        else:
-            params = None
-        return visref, irmoving, {"refcalib": viscalib, "movingcalib": ircalib}, params
-    ref, mov, cals, params = real_images_pairs(number=number)
+
+def align_demo(ref, mov, cals, params={}):
     angles_amplitude = (-20., 20, 0.)
     auto_align = None
     rotate3d = ManualAlignment(
-        "Rotate",
+        ROTATE,
         slidersName=["YAW", "PITCH", "ROLL", "AUTO"],
         inputs=[1, 2],
         outputs=[0],
@@ -414,7 +395,7 @@ def demo(number=230, save_full_res=True):
     )
     auto_bm.homography = np.eye(3)
 # ---------------------------------------------- AUTO ALIGNMENT  -------------------------------------------------------
-    auto_align = [None, auto_bm, auto_sift][0]
+    auto_align = [None, auto_bm, auto_sift][1]
     # auto_bm: auto alignment based on patch local motion estimation using phase correlation + rigid transform
     # auto_sift = feature matching based rigid transform estimation
 # ----------------------------------------------------------------------------------------------------------------------
@@ -438,30 +419,147 @@ def demo(number=230, save_full_res=True):
             **params
         )
     ipi.gui()
-    if save_full_res:
-        mov_warped_fullres = manual_warp(
+    alignment_parameters = dict(
+        yaw=rotate3d.yaw,
+        pitch=rotate3d.pitch,
+        roll=rotate3d.roll,
+        homography=None if (auto_align is None or auto_align.homography is None) else auto_align.homography,
+        calibrations=cals
+    )
+    return alignment_parameters
+
+
+def post_warp(ref, mov, params, img_name="img", linear=False):
+    extension = "tif" if linear else "jpg"
+    mov_warped_fullres = manual_warp(
+        ref, mov,
+        params["yaw"], params["pitch"], params["roll"],
+        **params["calibrations"],
+    )
+    if params["homography"] is not None:
+        mov_warped_fullres_refined = manual_warp(
             ref, mov,
-            rotate3d.yaw, rotate3d.pitch, rotate3d.roll,
-            **cals,
+            params["yaw"], params["pitch"], params["roll"],
+            refinement_homography=params["homography"],
+            **params["calibrations"],
         )
-        if auto_align is not None and auto_align.homography is not None:
-            mov_warped_fullres_refined = manual_warp(
-                ref, mov,
-                rotate3d.yaw, rotate3d.pitch, rotate3d.roll,
-                refinement_homography=auto_align.homography,
-                **cals,
-            )
-            logging.warning("REFINING WITH {}".format(auto_align.homography))
-        ref.save("%d_REF.jpg"%number)
-        pr.Image(mov_warped_fullres, "IR registered").save("%d_IR_registered_semi_auto.jpg"%number)
-        if auto_align is not None and auto_align.homography is not None:
-            pr.Image(mov_warped_fullres_refined, "IR registered refined").save("%d_IR_registered_semi_auto_REFINED.jpg"%number)
+        pr.Image(mov_warped_fullres_refined, "IR registered refined").save("{}_IR_registered_semi_auto_REFINED.{}".format(img_name, extension))
+        logging.warning("REFINING WITH {}".format(params["homography"]))
+        if not isinstance(ref, pr.Image):
+            ref = pr.Image(ref)
+        ref.save("{}_REF.{}".format(img_name, extension))
+        pr.Image(mov_warped_fullres, "IR registered").save("{}_IR_registered_semi_auto.{}".format(img_name, extension))
         # pr.Image(abs_grad_convert(ref.data), "REF absgrad").save("%d_REF_absgrad.jpg"%number)
         # pr.Image(abs_grad_convert(mov_warped_fullres), "IR registered absgrad").save("%d_IR_registered_semi_auto_absgrad.jpg"%number)
 
 
-if __name__ == "__main__":
-    demo(number=630)
-    demo(number=230)
-    demo(number=505)
+# ------------------------------------------------------ JPG DEMO  -----------------------------------------------------
+def real_images_pairs(number=[505, 230, 630][0]):
+    """Demo inputs"""
+    visref = pr.Image(
+        ut.imagepath(r"%d-DJI-VI.jpg"%number, dirname="../samples")[0],
+        name="visible reference"
 
+    )
+    irmoving = pr.Image(
+        ut.imagepath(r"%d-SJM20-IR.JPG"%number, dirname="../samples")[0],
+        name="ir moving"
+    )
+    ircalib = ut.cameracalibration(camera="M20")
+    viscalib = ut.cameracalibration(camera="DJI")
+    if number == 505:
+        params = {ROTATE:[-15.76, 16.92, 0.88, 1.]}
+    elif number == 630:
+        params = {ROTATE:[-2.200000, 7.680000, -4.360000, 1.]}
+    elif number == 230:
+        params = {ROTATE:[1.76, 5.88, 0.0, 1.]}
+    else:
+        params = None
+    return visref, irmoving, {"refcalib": viscalib, "movingcalib": ircalib}, params
+
+
+def demo_jpg(number=630):
+    ref, mov, cals, params = real_images_pairs(number=number)
+    align_demo(ref, mov, cals, )
+    alignment = align_demo(ref, mov, cals, params=params)
+    post_warp(ref, mov, alignment, "raw", img_name="%d"%number)
+
+
+# ------------------------------------------------------ RAW DEMO  -----------------------------------------------------
+def align_raw(vis_path, nir_path, cals, out_dir=None, params=None):
+    """Estimate alignment on raw files through semi-automatic alignment GUI.
+    Then apply to linear raw & save 16bits tif ... (ready for any kind of multi-spectral fusion)
+
+    :param vis_path: Path to visible DJI DNG image
+    :param nir_path: Path to NIR SJCAM M20 RAW image
+    :param cals: Geometric calibration dictionary.
+    :param out_dir: Path to save images
+    :param params: Params to initiate the GUI
+    :return: 
+    """
+    vis = pr.Image(vis_path)
+    nir = pr.Image(nir_path)
+    if False:
+        vis_undist = warp(vis.data, cals["refcalib"], np.eye(3)) # @TODO: Fix DJI calibration before using this
+        vis_undist = pr.Image(vis_undist)
+        vis_undist_lin = warp(vis.lineardata, cals["refcalib"], np.eye(3))
+    else:
+        vis_undist = vis
+        vis_undist_lin = vis.lineardata
+    alignment = align_demo(vis_undist, nir, cals, params=params)
+    if out_dir is not None:
+        prefix = osp.basename(vis_path)[:-4]
+        post_warp(
+            vis_undist.data,
+            nir,
+            alignment,
+            img_name=osp.join(out_dir, prefix + "_raw_NON_LINEAR")
+        )
+        post_warp(
+            vis_undist_lin,
+            nir.lineardata,
+            alignment,
+            img_name=osp.join(out_dir, prefix + "_raw_LINEAR"),
+            linear=True
+        )
+
+
+def demo_raw(folder=osp.join(osp.dirname(__file__), "..", r"Hyperlapse 06_09_2021_sync")):
+    """
+    Scan the folder for pairs of raw with the same name.
+    Assume that RAW from SJCAM M20 and DNG from DJI have the same file name
+    """
+    data_link = "https://drive.google.com/drive/folders/1IrF55tDYV6YwHm0gUTRc7T3WTnbwbPxk?usp=sharing"
+    assert osp.isdir(folder), "please download {} and put all images in {}".format(data_link, folder)
+    cals = dict(
+        refcalib=ut.cameracalibration(camera="DJI_RAW"),
+        movingcalib=ut.cameracalibration(camera="M20_RAW")
+    )
+    out_dir = osp.join(folder, "debug")
+    if not osp.isdir(out_dir):
+        import os
+        os.mkdir(out_dir)
+    import glob
+    for vis_pth in sorted(glob.glob(osp.join(folder, "*.DNG"))):
+        print(osp.basename((vis_pth)))
+        params = None
+        phase_correl_default_flag = 1.
+        bname = osp.basename(vis_pth)
+        if "20210906122928" in bname: params = {ROTATE: [4.2, 7.52, 0.56, phase_correl_default_flag]}
+        if "20210906123134" in bname: params = {ROTATE: [3.44, 8.16, 0.32, phase_correl_default_flag]}
+        if "20210906123514" in bname: params = {ROTATE: [0.4, 7.72, 1.88, phase_correl_default_flag]}
+        if "20210906123918" in bname: params = {ROTATE: [3.48, 5.64, 1.88, phase_correl_default_flag]}
+        if "20210906124318" in bname: params = {ROTATE: [1.84, 6.6, 2.84, phase_correl_default_flag]}
+        if "20210906124530" in bname: params = {ROTATE: [2.24, 7.04, 1.52, phase_correl_default_flag]}
+        nir_pth = vis_pth.replace("DNG", "RAW")
+        align_raw(vis_pth, nir_pth, cals, out_dir=out_dir, params=params)
+
+
+if __name__ == "__main__":
+    raw = True
+    if raw:
+        demo_raw()
+    else:
+        demo_jpg(number=630)
+        demo_jpg(number=230)
+        demo_jpg(number=505)

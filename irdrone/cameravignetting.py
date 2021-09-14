@@ -66,16 +66,20 @@ SJCAM_M20_PROFILE_CONTROL_POINTS = {
     "B":[(-1872.1109909763832, 0.9448023256039491), (174.521941381101, 1.016191567620653), (650.7576814104391, 0.9787972027547605), (1241.1325657443285, 1.0204409272645043), (1668.6554117791238, 1.0786695019553694), (2008.6199153783855, 1.2239852542049876), (2347.1015157298157, 1.2613796190708801), (2895.4546895993954, 0.7369495461155825), (3357.444414697938, 0.3475093200941026)]
 }
 
+
 def load_white_charts(camera_name="M20_RAW"):
+    data_link = "https://drive.google.com/drive/folders/1CXh8gBTLLKLq7QDYVKwW8srUkNxbxSiW?usp=sharing"
+    cam_calib_dir = osp.join(osp.dirname(__file__), "..", "camera_calibration")
+    assert osp.isdir(cam_calib_dir), "Please download {} and unzip into {}".format(data_link, cam_calib_dir)
     ref_, ref = None, None
     if camera_name == "DJI_RAW":
         radial_shading_calibration = None
-        vig_folder = osp.join(osp.dirname(__file__), "..", "camera_calibration", "DJI_RAW_lens_shading")
+        vig_folder = osp.join(cam_calib_dir, "DJI_RAW_lens_shading")
         vig_ = osp.join(vig_folder, "DJI_Nappe Blanche_0936_RAW_Therapee.tif")
         ref_ = osp.join(vig_folder, "DJI_Nappe Blanche_0936PL_Neutral_Vig.tif")
     elif camera_name == "M20_RAW":
         radial_shading_calibration = SJCAM_M20_PROFILE_CONTROL_POINTS
-        vig_folder = osp.join(osp.dirname(__file__), "..", "camera_calibration", "M20_RAW_lens_shading")
+        vig_folder = osp.join(cam_calib_dir, "M20_RAW_lens_shading")
         vig_ = osp.join(vig_folder, "nappe Blanhe_037.RAW")
     vig = pr.Image(vig_, shading_correction=False).lineardata
     if ref_ is not None:
@@ -244,7 +248,7 @@ def test_calibration_DJI():
     shading_correction = np.load(
         osp.abspath(osp.join(osp.dirname(__file__), "..", "calibration", camera_name, "shading_calibration.npy"))
     )
-    img_path = osp.join(osp.dirname(__file__), "..", "Hyperlapse 06_09_2021-2021_sync", "20210906122928.DNG")
+    img_path = osp.join(osp.dirname(__file__), "..", "Hyperlapse 06_09_2021_sync", "20210906122928.DNG")
     img_ = pr.Image(img_path, shading_correction=False)
     img_done = pr.Image(img_path)
     pr.show([img_.lineardata, img_done.lineardata])
@@ -276,7 +280,7 @@ def test_calibration_M20():
     camera_name = "M20_RAW"
     img_shape = (3448, 4600, 3)
     vig_map = get_polar_shading_map(img_shape=img_shape, calib=SJCAM_M20_PROFILE_CONTROL_POINTS)
-    img_path = osp.join(osp.dirname(__file__), "..", "Hyperlapse 06_09_2021-2021_sync", "20210906122928.RAW")
+    img_path = osp.join(osp.dirname(__file__), "..", "Hyperlapse 06_09_2021_sync", "20210906122928.RAW")
     img_ = pr.Image(img_path, shading_correction=False)
     img_done = pr.Image(img_path)
     img_adapteq_vig, perc = contrast_stretching(img_done.lineardata)
