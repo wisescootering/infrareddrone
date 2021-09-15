@@ -190,7 +190,8 @@ class Image:
             elif str.lower(osp.basename(self.path)).endswith("tif") or str.lower(osp.basename(self.path)).endswith("tiff"):
                 linear_data = load_tif(self.path)
                 self._lineardata = linear_data
-                self._data = ((linear_data**(gamma)).clip(0., 1.)*255).astype(np.uint8)
+                self._data = (contrast_stretching(linear_data.clip(0., 1.))[0]*255).astype(np.uint8)
+                # self._data = ((linear_data**(gamma)).clip(0., 1.)*255).astype(np.uint8)
             else:
                 self._data = cv2.cvtColor(cv2.imread(self.path), cv2.COLOR_BGR2RGB)  #LOAD AS A RGB CLASSIC ARRAY
         else:

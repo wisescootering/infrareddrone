@@ -370,7 +370,7 @@ class BlockMatching(ipipe.ProcessBlock):
             return mov
         else:
             ref_new, mov_new = prepare_inputs_for_matching(ref, mov, abstraction=abstraction, debug=debug)
-            homog = register_by_blocks(ref_new, mov_new, debug=flag > 1., patch_size=120, affinity=True)
+            homog = register_by_blocks(ref_new, mov_new, debug=flag > 1., patch_size=120, affinity=False)
             self.homography = homog if geometricscale is None else np.dot(
                 np.dot(
                     get_zoom_mat(1./geometricscale),
@@ -402,7 +402,7 @@ def align_demo(ref, mov, cals, params={}, abstraction_offset_ref=1):
     auto_sift = SiftAlignment(
         "SIFT", inputs=[1, 0], outputs=[0],
         slidersName=["SIFT", "ABSTRACT", "SIFT Threshold", "DEBUG"],
-        vrange=[(0., 1., 0.), (0., 1., 0.), (0., 1., 0.), (0., 1., 0.)]
+        vrange=[(0., 1., 0.88), (0., 1., 0.), (0., 1., 0.), (0., 1., 0.)]
     )
     auto_sift.homography = np.eye(3)
     auto_bm = BlockMatching(
@@ -587,6 +587,10 @@ def demo_raw(folder=osp.join(osp.dirname(__file__), "..", r"Hyperlapse 06_09_202
         params["Absgrad visualize"] = [1.]
         params["Alpha"] = [-0.47]
         nir_pth = vis_pth.replace("DNG", "RAW")
+        # @TODO: FIX WHEN DJI GEOMETRIC CALIBRATION IS FIXED
+        vis_pth_undist = vis_pth.replace(".DNG", "_PL4_DIST.tif")
+        if osp.exists(vis_pth_undist):
+            vis_pth = vis_pth_undist
         align_raw(vis_pth, nir_pth, cals, out_dir=out_dir, params=params)
 
 
