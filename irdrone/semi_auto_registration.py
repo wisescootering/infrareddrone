@@ -93,6 +93,7 @@ class ManualAlignment(ipipe.ProcessBlock):
     """
     refcalib = None
     movingcalib = None
+    abstraction_offset_ref = 1.
 
     def set_refcalib(self, _refcalib):
         self.refcalib = _refcalib
@@ -100,11 +101,13 @@ class ManualAlignment(ipipe.ProcessBlock):
     def set_movingcalib(self, _movingcalib):
         self.movingcalib = _movingcalib
 
+    def set_abstraction_offset_ref(self, _abstraction_offset_ref):
+        self.abstraction_offset_ref = _abstraction_offset_ref
+
     def apply(self, ref, mov, yaw, pitch, roll, auto, geometricscale=None, **kwargs):
         yaw_refine, yaw_refine_last, pitch_refine, pitch_refine_last, roll_refine = 0., 0., 0., 0., 0.
         debug=False
         mode = [None, "ABS_GRAD", "SCHARR"][2]
-        abs_grad = True
         mov_warped = manual_warp(
             ref, mov,
             yaw, pitch, roll,
@@ -116,10 +119,10 @@ class ManualAlignment(ipipe.ProcessBlock):
         if mode=="ABS_GRAD":
             ref_g = abs_grad_convert(ref)
             mov_warped_g = abs_grad_convert(mov_warped)
-        elif mode=="SCHARR":
-            ref_g, mov_warped_g = prepare_inputs_for_matching(ref, mov_warped)
+        elif mode == "SCHARR":
+            ref_g, mov_warped_g = prepare_inputs_for_matching(ref, mov_warped, abstraction_offset_ref=self.abstraction_offset_ref)
         elif mode is None:
-            ref_g, mov_warped_g = ref, mov_warped
+            ref_g, mov_warped_g = ut.c2g(ref), ut.c2g(mov_warped)
 
 
         mov_warped_refined = mov_warped  # stay in color
@@ -141,7 +144,12 @@ class ManualAlignment(ipipe.ProcessBlock):
                 geometric_scale=geometricscale,
                 refinement_homography=homog_trans if debug else None
             )
-            mov_warped_refined_g = abs_grad_convert(mov_warped_refined) if abs_grad else mov_warped_refined
+            if mode=="ABS_GRAD":
+                mov_warped_refined_g = abs_grad_convert(mov_warped_refined)
+            elif mode == "SCHARR":
+                _, mov_warped_refined_g = prepare_inputs_for_matching(ref, mov_warped_refined, abstraction_offset_ref=self.abstraction_offset_ref)
+            elif mode is None:
+                mov_warped_refined_g = ut.c2g(mov_warped_refined)
             out = mov_warped_refined
         if auto >= 0.5:
             # ----------------------------------------------------------------------------------------
@@ -150,6 +158,8 @@ class ManualAlignment(ipipe.ProcessBlock):
             polar_ref_g, polar_mov_g = mellin_transform(ref_g, mov_warped_refined_g)
             polar_ref, polar_mov = mellin_transform(ref, mov_warped_refined) # colored for debugging
             roll_refine, roll_homog = estimate_rotation(polar_ref_g, polar_mov_g, ref)
+            roll_refine = -roll_refine
+            roll_homog = np.linalg.inv(roll_homog)
             mov_warped_refined_rot = manual_warp(
                 ref, mov,
                 yaw+yaw_refine, pitch+pitch_refine, roll,
@@ -167,8 +177,13 @@ class ManualAlignment(ipipe.ProcessBlock):
                 yaw+yaw_refine, pitch+pitch_refine, roll+roll_refine,
                 refcalib=self.refcalib, movingcalib=self.movingcalib,
                 geometric_scale=geometricscale,
-                )
-            mov_warped_refined_rot_g = abs_grad_convert(mov_warped_refined_rot) if abs_grad else mov_warped_refined_rot
+            )
+            if mode=="ABS_GRAD":
+                mov_warped_refined_rot_g = abs_grad_convert(mov_warped_refined_rot)
+            elif mode == "SCHARR":
+                _, mov_warped_refined_rot_g = prepare_inputs_for_matching(ref, mov_warped_refined_rot, abstraction_offset_ref=self.abstraction_offset_ref)
+            elif mode is None:
+                mov_warped_refined_rot_g = ut.c2g(mov_warped_refined_rot)
             yaw_refine_last, pitch_refine_last, _homog_trans_last = estimate_translation(
                 ref_g, mov_warped_refined_rot_g, self.refcalib,
                 geometricscale=geometricscale
@@ -178,7 +193,7 @@ class ManualAlignment(ipipe.ProcessBlock):
                 yaw+yaw_refine+yaw_refine_last, pitch+pitch_refine+pitch_refine_last, roll+roll_refine,
                 refcalib=self.refcalib, movingcalib=self.movingcalib,
                 geometric_scale=geometricscale,
-                )
+            )
             out = mov_warped_refined_final
         if auto >1.:
             compare = np.zeros((2*polar_ref.shape[0], polar_ref.shape[1]*2, polar_ref.shape[2]))
@@ -187,8 +202,8 @@ class ManualAlignment(ipipe.ProcessBlock):
                 compare[compare.shape[0]//2:, compare.shape[1]//2:, :] = ut.g2c((255.*polar_mov_g).astype(np.uint8)) # polar_mov
             except:
                 pass
-            compare[:compare.shape[0]//2, :compare.shape[1]//2, :] = polar_ref
-            compare[:compare.shape[0]//2:, compare.shape[1]//2:, :] = polar_mov
+            compare[:compare.shape[0]//2, :compare.shape[1]//2, :] = (255.*polar_ref).astype(np.uint8)
+            compare[:compare.shape[0]//2:, compare.shape[1]//2:, :] = (255.*polar_mov).astype(np.uint8)
             out = np.zeros_like(out)
             out[:compare.shape[0], :compare.shape[1], :] = compare
         self.yaw = yaw+yaw_refine+yaw_refine_last
@@ -249,12 +264,12 @@ def pre_convert_for_features(_img, amplification=1., gaussian=9, debug=0):
     return (255*out).astype(np.uint8)
 
 
-def prepare_inputs_for_matching(ref, mov, abstraction=0., debug=0):
+def prepare_inputs_for_matching(ref, mov, abstraction=0., abstraction_offset_ref=1., debug=0):
     """
     Prepare pairs of inputs
     assuming that visible image is always sharper than the NIR image so visible has to be blurred slightly more
     """
-    ref_new = pre_convert_for_features(ref, gaussian=1.+21.*abstraction, debug=debug)
+    ref_new = pre_convert_for_features(ref, gaussian=abstraction_offset_ref+(21*abstraction), debug=debug)
     mov_new = pre_convert_for_features(mov, gaussian=(21*abstraction), debug=debug)
     return ref_new, mov_new
 
@@ -331,6 +346,7 @@ class SiftAlignment(ipipe.ProcessBlock):
                 debug=match_debug_flag,
                 thresh=threshold
             )
+            homog = np.linalg.inv(homog)
             self.homography = homog if geometricscale is None else np.dot(
                 np.dot(
                     get_zoom_mat(1./geometricscale),
@@ -369,7 +385,7 @@ class BlockMatching(ipipe.ProcessBlock):
 # ---------------------------------------------- INTERACTIVE DEMO  -----------------------------------------------------
 
 
-def align_demo(ref, mov, cals, params={}):
+def align_demo(ref, mov, cals, params={}, abstraction_offset_ref=1):
     angles_amplitude = (-20., 20, 0.)
     auto_align = None
     rotate3d = ManualAlignment(
@@ -381,6 +397,7 @@ def align_demo(ref, mov, cals, params={}):
             angles_amplitude, angles_amplitude,angles_amplitude, (0., 1.01, 0.)
         ]
     )
+    rotate3d.set_abstraction_offset_ref(abstraction_offset_ref)
     # USE SIFT = 1 to trigger debug , use <0.9 to view the classical result
     auto_sift = SiftAlignment(
         "SIFT", inputs=[1, 0], outputs=[0],
@@ -480,9 +497,24 @@ def real_images_pairs(number=[505, 230, 630][0]):
 
 def demo_jpg(number=630):
     ref, mov, cals, params = real_images_pairs(number=number)
-    align_demo(ref, mov, cals, )
     alignment = align_demo(ref, mov, cals, params=params)
-    post_warp(ref, mov, alignment, "raw", img_name="%d"%number)
+    post_warp(ref, mov, alignment, img_name="{}".format(number))
+
+
+def check_alignement(number=630):
+    """Test semi-auto alignment on visible pairs
+    Use manual angles to create a fake misalignment
+    """
+    ref, mov, cals, params = real_images_pairs(number=number)
+    mov = pr.Image(ref.data)
+    cals["refcalib"]["dist"] = None
+    cals["movingcalib"] = cals["refcalib"]
+    params = {
+        "Absgrad visualize":[1.],
+        "Alpha": [-0.48],
+        "SIFT": [0.85,0.276000,0.000000,0.000000],
+    }
+    align_demo(ref, mov, cals,  params=params, abstraction_offset_ref=0)
 
 
 # ------------------------------------------------------ RAW DEMO  -----------------------------------------------------
@@ -545,17 +577,21 @@ def demo_raw(folder=osp.join(osp.dirname(__file__), "..", r"Hyperlapse 06_09_202
         params = None
         phase_correl_default_flag = 1.
         bname = osp.basename(vis_pth)
+        params = dict()
         if "20210906122928" in bname: params = {ROTATE: [4.2, 7.52, 0.56, phase_correl_default_flag]}
         if "20210906123134" in bname: params = {ROTATE: [3.44, 8.16, 0.32, phase_correl_default_flag]}
         if "20210906123514" in bname: params = {ROTATE: [0.4, 7.72, 1.88, phase_correl_default_flag]}
         if "20210906123918" in bname: params = {ROTATE: [3.48, 5.64, 1.88, phase_correl_default_flag]}
         if "20210906124318" in bname: params = {ROTATE: [1.84, 6.6, 2.84, phase_correl_default_flag]}
         if "20210906124530" in bname: params = {ROTATE: [2.24, 7.04, 1.52, phase_correl_default_flag]}
+        params["Absgrad visualize"] = [1.]
+        params["Alpha"] = [-0.47]
         nir_pth = vis_pth.replace("DNG", "RAW")
         align_raw(vis_pth, nir_pth, cals, out_dir=out_dir, params=params)
 
 
 if __name__ == "__main__":
+    # check_alignement(number=630)
     raw = True
     if raw:
         demo_raw()
