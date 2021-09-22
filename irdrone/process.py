@@ -288,7 +288,7 @@ def loadimage(imgpth, numpyMode=True):
         return [cv2.imread(img) for img in imgpth]
 
 
-def show(img, title=None, compare=True, block=True, suptitle=None, figsize=None):
+def show(img, title=None, compare=True, block=True, suptitle=None, figsize=None, save=None):
     """
     Display matplolib image or a 1D or 2D comparison between images
 
@@ -345,6 +345,7 @@ def show(img, title=None, compare=True, block=True, suptitle=None, figsize=None)
             plt.axis('off')
             if not compare: plt.show(block=block)
     if suptitle is not None: plt.suptitle(suptitle)
+    if save is not None: plt.savefig(save); plt.close();return
     if compare: plt.show(block=block)
 
 
