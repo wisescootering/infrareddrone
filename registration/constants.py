@@ -1,0 +1,7 @@
+NEWTON = "NEWTON"
+GRADIENT_DESCENT = "GRADIENT_DESCENT"
+LAPLACIAN_ENERGIES = "laplacian_energies"
+GRAY_SCALE = "gray_scale"
+COLORED = "colored"
+SSD = "SSD"
+NTG = "NTG"

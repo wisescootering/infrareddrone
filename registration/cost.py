@@ -4,12 +4,7 @@ from irdrone.utils import c2g, g2c
 from numba import jit
 import os.path as osp
 import logging
-
-LAPLACIAN_ENERGIES = "laplacian_energies"
-GRAY_SCALE = "gray_scale"
-COLORED = "colored"
-SSD = "SSD"
-NTG = "NTG"
+from registration.constants import LAPLACIAN_ENERGIES, GRAY_SCALE, COLORED, SSD, NTG
 
 
 def multispectral_representation(img, sigma_gaussian=5., mode=LAPLACIAN_ENERGIES):
