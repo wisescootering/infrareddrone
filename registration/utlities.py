@@ -3,8 +3,8 @@ from matplotlib import cm
 import os.path as osp
 import irdrone.process as pr
 import numpy as np
-from registration.newton import search_minimum_full_patch_discrete, derivatives, newton_iter, quadric_approximation
-from registration.constants import NEWTON, GRADIENT_DESCENT, QUADRATIC_FORM, SOBEL_DERIVATIVES
+from registration.newton import search_minimum_full_patch_discrete, newton_iter, quadric_approximation
+from registration.constants import NEWTON, GRADIENT_DESCENT, QUADRATIC_FORM
 import logging
 
 
@@ -179,22 +179,6 @@ def search_minimum(single_cost, debug=False, mode=QUADRATIC_FORM):
         hessi, gradi, constants = quadric_approximation(single_cost)
         logging.info("GRADIENT QUADRATRIC FORM APPROACH {}".format(gradi))
         logging.info("HESSIAN QUADRATRIC FORM APPROACH {}".format(hessi))
-    elif mode == SOBEL_DERIVATIVES:
-        hess, gradients, constants = derivatives(single_cost)
-        gradi = gradients[1, 1, :, :]
-        hessi = hess[0, 0, :, :, :]
-        logging.info("GRADIENT SOBEL APPROACH", gradi)
-        logging.info("HESSIAN SOBEL APPROACH", hessi)
-        if debug:
-            ch = 0
-            pr.show(
-                [
-                    [single_cost[:, :, ch]],
-                    [(gradients[:, :, ch, 0], "grad X"), (gradients[:, :, ch,  1], "grad Y")],
-                    [(hess[:, :, ch, 0, 0], "xx"), (hess[:, :, ch, 0, 1], "xy")],
-                    [(hess[:, :, ch, 1, 0], "yx"), (hess[:, :, ch, 1, 1], "yy")]
-                ]
-            )
     new_val = newton_iter(
         np.array([0., 0.]).T,
         gradi,
@@ -264,7 +248,7 @@ def real_search(cost_file=osp.join(osp.dirname(__file__), "..", "samples" , "cos
                 # init_val = [1., 2.],
                 # init_val = [2.25, -2.4], # CLOSE TO THE EDGE!
                 alpha=1.,
-                iter=5,
+                iter=10,
                 mode=NEWTON
             )
             plot_search(*res)
@@ -283,9 +267,9 @@ def test_search(debug=False):
 if __name__ == "__main__":
     log = logging.getLogger()
     log.setLevel(logging.INFO)
-    search_multi_channel()
     test_search(debug=False)
     test_search(debug=True)
     search_full()
     real_search()
+    search_multi_channel()
 

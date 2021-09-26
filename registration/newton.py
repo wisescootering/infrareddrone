@@ -50,59 +50,7 @@ So it could be easier to retrieve Hessian A and gradient Ax+B
 """
 import numpy as np
 import logging
-from registration.constants import NEWTON, GRADIENT_DESCENT, QUADRATIC_FORM, SOBEL_DERIVATIVES
-from scipy.ndimage import convolve
-
-def classic_gradient(cost, sobel_flag=False):
-    """
-    2N+1, 2M+1, C -> 2N-1 , 2M-1, C, 2
-    Single gradient needs a 3x3 neighborhood.
-    """
-    grads = np.empty((cost.shape[0]-2, cost.shape[1]-2, cost.shape[2], 2))
-    sobel_ = cost[:, 2:, :] - cost[:, :-2, :]
-    grad_y = sobel_[1:-1]
-    if sobel_flag:  # REMOVE FOR NUMBA?
-        grad_y = (sobel_[:-2] + sobel_[2:] + 2*sobel_[1:-1])/4.
-    sobel_ = cost[2:, :, :] - cost[:-2, :, :]
-    grad_x = sobel_[:, 1:-1, :]
-    if sobel_flag:  # REMOVE FOR NUMBA?
-        grad_x = (sobel_[:, :-2] + sobel_[:, 2:] + 2*sobel_[:, 1:-1])/4.
-    grads[:, :, :, 0] = grad_y / 2.
-    grads[:, :, :, 1] = grad_x / 2.
-    return grads
-
-
-def hessian(grad_x_y, sobel_flag=False):
-    """
-    Hessian is the matrix of gradients of gradients
-    2N+1, 2M+1, C -> 2N-1 , 2M-1, C, 2, 2
-    |g_xx , g_xy|
-    |g_yx , g_yy|
-    :param grad_x_y:
-    :param sobel_flag:
-    :return:
-    """
-    hes = np.empty((grad_x_y.shape[0]-2, grad_x_y.shape[1]-2, grad_x_y.shape[2], 2, 2))
-    hes[:, :, :, 0, :] = classic_gradient(grad_x_y[:, :, :, 0], sobel_flag=sobel_flag)
-    hes[:, :, :, 1, :] = classic_gradient(grad_x_y[:, :, :, 1], sobel_flag=sobel_flag)
-    return hes
-
-
-def derivatives(cost, sobel_flag=False):
-    """
-    Naive gradient computation using the Sobel filter ... and the hessian as the matrix of Sobel of Sobel.
-    2N+1, 2M+1, C 
-    -> gradient (2N-1 , 2M-1, C, 2)
-    -> hessian  (2N-3 , 2M-3, C, 2, 2)
-    
-    :param cost: 
-    :param sobel_flag: 
-    :return: 
-    """
-    grads = classic_gradient(cost, sobel_flag=sobel_flag)
-    hessi = hessian(grads, sobel_flag=sobel_flag)
-    constant = cost
-    return hessi, grads, constant
+from registration.constants import NEWTON, GRADIENT_DESCENT, QUADRATIC_FORM
 
 
 def quadric_approximation(full_cost):
@@ -225,7 +173,6 @@ def newton_iter(previous_val, grad_vec, hess_mat=None, alpha=1., max_step=1.):
 def plane_approximation(cost_full):
     n_channels = cost_full.shape[0]
     hessians = None
-    # hessians = np.empty((n_channels, 2, 2))
     grads = np.empty((n_channels, 2))
     constants = np.empty((n_channels, 1))
     for ch in range(n_channels):
@@ -254,7 +201,8 @@ def get_derivatives_at_position(cost, x_pos, y_pos, mode=QUADRATIC_FORM):
     subpix_x = id_x_f - id_x
     subpix_y = id_y_f - id_y
     logging.info("Position - x {} y {}  [quantified x {} y {}]".format(x_pos, y_pos, id_x, id_y))
-    if id_x < 3 or id_x > cost.shape[1]-3 or id_y < 3 or id_y > cost.shape[0]-3:
+    required_neighborhood = 2
+    if id_x < required_neighborhood or id_x > cost.shape[1]-required_neighborhood or id_y < required_neighborhood or id_y > cost.shape[0]-required_neighborhood:
         logging.warning("WENT TOO FAR!")
         return False, None, None, None, x_pos_discrete, y_pos_discrete, debug_dict
 
@@ -264,12 +212,7 @@ def get_derivatives_at_position(cost, x_pos, y_pos, mode=QUADRATIC_FORM):
         id_x-neighborhood_size:id_x+neighborhood_size+1,
         :
     ]
-    if mode == SOBEL_DERIVATIVES:
-        hess, gradients, constants = derivatives(extracted_patch, sobel_flag=True)
-        hess_mat = hess[0, 0, :, :, :]
-        grads = gradients[1, 1, :, :]
-        constants = extracted_patch[2, 2, :]
-    elif mode == QUADRATIC_FORM:
+    if mode == QUADRATIC_FORM:
         hess_mat, grads, constants = quadric_approximation(extracted_patch)
     hess_mat[:, 0, 0] = hess_mat[:, 0, 0].clip(0, None)
     hess_mat[:, 1, 1] = hess_mat[:, 1, 1].clip(0, None)
@@ -279,13 +222,13 @@ def get_derivatives_at_position(cost, x_pos, y_pos, mode=QUADRATIC_FORM):
     constants_original = constants.copy()
     plan_approx = False
     for ch in range(hess_mat.shape[0]):
-        if dets[ch] <0:
+        if dets[ch] < 0.:
             logging.warning("NON SEMI-POSITIVE MATRIX! \n {} , determinant = {}".format(hess_mat[ch, :,: ], dets[ch]))
             hess_mat[ch, 1, 0] = 0.
             hess_mat[ch, 0, 1] = 0.
         if hess_mat[ch, 0, 0] == 0. or hess_mat[ch, 1, 1] == 0.:
             plan_approx = True
-            logging.warning("NON INVERTIBLE HESSIAN! {}".format(hess_mat[ch, :, :]))
+            logging.warning("NON INVERTIBLE HESSIAN on channel {}! {}".format(ch, hess_mat[ch, :, :]))
             neighborhood_size = 1 # 3x3
             extracted_patch_small = cost[
                   id_y-neighborhood_size:id_y+neighborhood_size+1,
@@ -352,7 +295,7 @@ def search_minimum_full_patch_discrete(cost, init_val=None, iter=20, alpha=0.5, 
         # if np.fabs(new_val[0])>cost.shape[0]//2-2 or  np.fabs(new_val[1])>cost.shape[1]//2-2: #GETTING OUT OF BOUNDS!
         #     from registration.utlities import quadratic_approximation_plot
         #     quadratic_approximation_plot(**dbg_dict, previous_position=previous_val, next_position=new_val)
-        if step_norm<0.1:
+        if step_norm < 0.1:
             logging.info("Finished converging! {}".format(step_norm))
             break
 
