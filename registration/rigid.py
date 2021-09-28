@@ -10,6 +10,7 @@ import cv2
 from skimage import transform
 from os import mkdir
 
+
 def minimum_cost(cost):
     """Find the argmin in a single cost area (multichannel) and refine with quadratic form subpixel search
     :param cost:
@@ -61,6 +62,7 @@ def brute_force_vector_field_search(costs=None, centers=None, downscale=None):
             vpos[i, j, :] = centers[i, j] * (1. if downscale is None else downscale)
     return vpos, vector_field
 
+
 class MotionModelHomography:
     def __init__(self, model=np.eye(3), **kwargs):
         if model is None:
@@ -87,7 +89,7 @@ class MotionModelHomography:
             return self.model
 
     def warp(self, img, downscale=1.):
-        """Downscale shall be dealt with here"""
+        """Downscale is handled here"""
         img_array = img.data if isinstance(img, pr.Image) else img
         homog_at_scale = self.rescale(downscale=downscale)
         img_aligned = cv2.warpPerspective(img_array, homog_at_scale, img_array.shape[:2][::-1])
@@ -101,6 +103,7 @@ class MotionModel:
     def __init__(self, model=None):
         self.model = model
         self.model_history = [self.model]
+
     def compose(self, new_model):
         """
         compose
@@ -108,7 +111,8 @@ class MotionModel:
         :return:
         """
         self.model = new_model.model # combine models
-        self.model_history = self.model_history.prepend(new_model.model)
+        self.model_history = [new_model.model] + self.model_history
+
     def estimate(self, *args, **kwargs):
         """
         Estimate motion model from data such as
@@ -118,6 +122,12 @@ class MotionModel:
         self.model = model_estimation(*args)
         """
         pass
+
+    def warp(self, img, downscale=1.):
+        pass
+
+    def __repr__(self):
+        return str(self.model)
 
 
 def dummy_cost_func(_img_ref, _img_mov, **kwargs):
@@ -169,7 +179,7 @@ def pyramidal_search(
         debug_trace(ds_img_ref, ds, 0, suffix="_ref")
         debug_trace(ds_img_mov, ds, 0, suffix="_start")
         iter_list = range(1, n_iter+1)
-        for iter_current in iter_list:
+        for _iter_current in iter_list:
             iter +=1
             cost_dict = compute_cost(ds_img_ref, ds_img_mov, prefix="ds{:02d}_".format(ds), suffix="_it{:02d}".format(iter), **alignment_params)
             vpos, vector_field = brute_force_vector_field_search(costs=cost_dict["costs"], centers=cost_dict["centers"], downscale=ds)
@@ -204,6 +214,8 @@ def align_data(img_ref, img_mov, debug_dir):
     return homog_estim
 
 
+# ------------------------------------------------------- Tests --------------------------------------------------------
+# ----------------------------------------------- Vanilla alignment ----------------------------------------------------
 def generate_test_data(t_x=2., t_y=-5., theta=-0.5, suffix=""):
     # t_x, t_y, theta = -2. ,2., -0.5
     # t_x, t_y, theta = -20. ,2., 1.
@@ -236,7 +248,7 @@ def generate_test_data(t_x=2., t_y=-5., theta=-0.5, suffix=""):
 
 
 def test_alignment_system():
-    vis_img, vis_img_moved, debug_dir, homog = generate_test_data(t_x=-20, t_y=135.4, theta = -7., suffix="_multi_scale")
+    vis_img, vis_img_moved, debug_dir, homog = generate_test_data(t_x=-20, t_y=135.4, theta = -5., suffix="_multi_scale")
     out_img = pyramidal_search(
         vis_img.data, vis_img_moved.data,
         # debug_dir=None, debug=True,  # -> SHOW TRACES, NOT SAVING ANYTHING TO DISK
@@ -245,10 +257,9 @@ def test_alignment_system():
         # debug_dir=debug_dir, debug=True, # -> FORCE ALL TRACES TO DISK
         debug_dir=debug_dir, debug=True,
         mode=COLORED,
-        dist=SSD
+        dist=SSD,
+        iterative_scheme = [(40, 4), (32, 1), (16, 1)]
     )
-    # homog_estim = align_data(vis_img.data, vis_img_moved.data, debug_dir)
-    # img_mov_corrected = homog_estim.warp(vis_img_moved)
     pr.Image(out_img.astype(np.uint8)).save(osp.join(debug_dir, "ALIGNED_PYR.jpg"))
 
 
@@ -259,16 +270,18 @@ def test_alignment_system_single_scale():
     pr.Image(img_mov_corrected).save(osp.join(debug_dir, "ALIGNED_NEW.jpg"))
 
 
-def test_alignement_real():
-    path = osp.join(osp.dirname(__file__), "..", "samples")
-    vis_img = pr.Image(osp.join(path, "20210906123134_PL4_DIST_raw_NON_LINEAR_REF.jpg"))
-    nir_img = pr.Image(osp.join(path, "20210906123134_PL4_DIST_raw_NON_LINEAR_IR_registered_semi_auto.jpg"))
+# ------------------------------------------------------- Run on images ------------------------------------------------
+def align_images(vis_img=None, nir_img=None, debug_dir=""):
+
     mode = LAPLACIAN_ENERGIES
     dist = NTG
     iterative_scheme = [(32, 4), (32, 2), (16, 2), (8, 1),]
-    debug_dir = "_iterative_multiscale_multispectral_alignment_{}_{}_{}".format(mode, dist, iterative_scheme)
+    debug_dir = debug_dir+"_{}_{}_{}".format(mode, dist, iterative_scheme)
     if not osp.isdir(debug_dir):
         mkdir(debug_dir)
+    vis_img.save(osp.join(debug_dir, "REF.jpg"))
+    nir_img.save(osp.join(debug_dir, "MOVED.jpg"))
+
     out_img = pyramidal_search(
         vis_img.data, nir_img.data,
         # debug_dir=None, debug=True,  # -> SHOW TRACES, NOT SAVING ANYTHING TO DISK
@@ -285,9 +298,26 @@ def test_alignement_real():
     pr.Image(out_img.astype(np.uint8)).save(osp.join(debug_dir, "ALIGNED_PYR.jpg"))
 
 
+def run_alignment_disparity():
+    path = osp.join(osp.dirname(__file__), "..", "Image_424")
+    vis_img = pr.Image(osp.join(path, "HYPERLAPSE_0422_PL4_DIST.tif"))
+    nir_img = pr.Image(osp.join(path, "HYPERLAPSE_0429_PL4_DIST.tif"))
+    align_images(vis_img, nir_img, debug_dir="img_424_visible_homog")
+
+
+def run_alignment_multispectral():
+    path = osp.join(osp.dirname(__file__), "..", "samples")
+    vis_img = pr.Image(osp.join(path, "20210906123134_PL4_DIST_raw_NON_LINEAR_REF.jpg"))
+    nir_img = pr.Image(osp.join(path, "20210906123134_PL4_DIST_raw_NON_LINEAR_IR_registered_semi_auto.jpg"))
+    align_images(vis_img, nir_img, debug_dir="iterative_multiscale_multispectral_alignment")
+
+
 if __name__ == "__main__":
     log = logging.getLogger()
     log.setLevel(logging.INFO)
     test_alignment_system_single_scale()
     test_alignment_system()
-    test_alignement_real()
+
+    run_alignment_disparity()
+    run_alignment_multispectral()
+

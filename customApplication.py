@@ -1285,7 +1285,7 @@ if __name__ == "__main__":
     # ----------------------------------------------------
     #        Début du programme
     timeDebut = datetime.datetime.now()
-    startTime=time.clock()
+    startTime=time.process_time()
     print(Style.CYAN + 'Start IRdrone-v%s  at  %s ' % (versionIRdrone, timeDebut.time()) + Style.RESET)
 
     # ----------------------------------------------------
