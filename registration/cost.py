@@ -99,11 +99,7 @@ def multispectral_representation(img, sigma_gaussian=None, mode=LAPLACIAN_ENERGI
 
 # ---------------------------------------------- Cost functions / distances --------------------------------------------
 # ----------------------------------------------------------------------------------------------------------------------
-def get_patch(ref, mov, crop):
-    y_start, y_end, x_start, x_end = crop
-    patch_ref = ref[y_start:y_end, x_start:x_end, :]
-    patch_mov = mov[y_start:y_end, x_start:x_end, :]
-    return patch_ref, patch_mov
+
 
 
 @jit(nopython=True)
@@ -139,25 +135,32 @@ def cost_surface_NTG(patch_ref, patch_mov_search, search_y, search_x):
 
 # ---------------------------------------------- Full image cost function ----------------------------------------------
 # ----------------------------------------------------------------------------------------------------------------------
+@jit(nopython=True)
+def get_patch(ref, mov, crop):
+    y_start, y_end, x_start, x_end = crop
+    patch_ref = ref[y_start:y_end, x_start:x_end, :]
+    patch_mov = mov[y_start:y_end, x_start:x_end, :]
+    return patch_ref, patch_mov
+
+
+@jit(nopython=True)
 def compute_cost_surfaces(
         ref, mov,
         y_n=3, x_n=3, search_y=3, search_x=3,
-        debug=False, debug_fig=None, mode=LAPLACIAN_ENERGIES, dist_mode=SSD, downscale=1, suffix="", prefix=""
+        dist_mode=SSD
     ):
-    # @TODO: remove debug figures, could be numba only
     y_s, x_s, c_s = ref.shape
     p_size_x = int(np.floor(x_s / x_n))
     p_size_y = int(np.floor(y_s / y_n))
-    costs = []
-    costs_dbg = []
-    centers = np.empty((p_size_y, p_size_x, 2))
+    costs = np.empty((y_n, x_n, 2*search_y+1, 2*search_x+1, c_s))
+    centers = np.empty((y_n, x_n, 2))
+    patch_coords = np.empty((y_n, x_n, 4))
     for y_id in range(y_n):
-        costs.append([])
-        costs_dbg.append([])
         for x_id in range(x_n):
             y_start, y_end = y_id*p_size_y, (y_id+1)*p_size_y
             x_start, x_end = x_id*p_size_x, (x_id+1)*p_size_x
             y_center, x_center = (y_start+y_end)/2., (x_start+x_end)/2.
+            patch_coords[y_id, x_id, :] = [y_start, y_end, x_start, x_end]
             centers[y_id, x_id, :] = [x_center, y_center]
             patch_ref, patch_mov = get_patch(ref, mov, (y_start, y_end, x_start, x_end))
             patch_mov_search = patch_mov[search_y:-search_y, search_x:-search_x, :]
@@ -165,73 +168,77 @@ def compute_cost_surfaces(
                 cost = cost_surface_SSD(patch_ref.astype(np.float32), patch_mov_search.astype(np.float32), search_y, search_x)
             elif dist_mode == NTG:
                 cost = cost_surface_NTG(patch_ref.astype(np.float32), patch_mov_search.astype(np.float32), search_y, search_x)
-            if debug or debug_fig is not None:
-                debug_fig_current = None
-                if debug_fig is not None:
-                    debug_fig_current = debug_fig+"cost_surface_{}_{}_{}.png".format(y_id, x_id, suffix)
-
-                if mode == LAPLACIAN_ENERGIES:
-                    costs_plots = [
-                        (cost[:, :, 0], "{} -".format(dist_mode)),
-                        (cost[:, :, 1], "{} |".format(dist_mode)),
-                        (cost[:, :, 2], "{} /".format(dist_mode)),
-                        (cost[:, :, 3], "{} \\".format(dist_mode)),
-                        (np.sum(cost, axis=2), "cost sum")
-                    ]
-                if mode == GRAY_SCALE:
-                    costs_plots = [
-                        (cost[:, :, 0], "{}".format(dist_mode)),
-                    ]
-                if mode == COLORED:
-                    costs_plots = [
-                        (cost[:, :, 0], "{} R".format(dist_mode)),
-                        (cost[:, :, 1], "{} G".format(dist_mode)),
-                        (cost[:, :, 2], "{} B".format(dist_mode)),
-                    ]
-                pr.show(
-                    [
-                        [
-                            (viz_laplacian_energy(patch_ref), "VIS"),
-                            (viz_laplacian_energy(patch_mov), "NIR"),
-                            (viz_laplacian_energy(patch_mov_search), "NIR patch"),
-                            (viz_laplacian_energy(cost), "colored cost {}".format(dist_mode)),
-                        ],
-                        costs_plots
-
-                    ],
-                    suptitle="PATCH Y={} X={} {} {} {}".format(y_id, x_id, dist_mode, prefix, suffix),
-                    save=debug_fig_current
-                )
-            costs[y_id].append(cost)
-            costs_dbg[y_id].append(np.sum(cost, axis=2))
-    cost_dict = {
-        "costs": np.array(costs),
-        "centers": centers,
-        "downscale": downscale
-    }
-    return cost_dict, costs_dbg
+            costs[y_id, x_id] = cost
+    return costs, centers, patch_coords
 
 
 def compute_cost_surfaces_with_traces(
         ref, mov,
         debug=False, debug_dir=None, prefix=None, suffix="", align_config=AlignmentConfig()
     ):
-    """Run compute_cost_surfaces with extra traces
-    @TODO: normally, debug figures shall be plotted here only
+    """Wrapping for numba acclerated compute_cost_surfaces with extra debug traces
     """
     if prefix is None:
         prefix = ""
     debug_fig_main = None if debug_dir is None else osp.join(debug_dir, "{}_blocks_y{}x{}_search_y{}x{}_{}_".format(
         prefix, align_config.y_n, align_config.x_n, align_config.search_y, align_config.search_x, align_config.dist_mode))
-    cost_dict, _costs_dbg = compute_cost_surfaces(
+    costs, centers, patch_coords = compute_cost_surfaces(
         ref, mov,
         y_n=align_config.y_n, x_n=align_config.x_n,
         search_x=align_config.search_x, search_y=align_config.search_y,
-        debug=debug,
-        debug_fig=debug_fig_main, prefix=prefix, suffix=suffix,
-        mode=align_config.mode,
         dist_mode=align_config.dist_mode,
     )
+    cost_dict = {
+        "costs": costs,
+        "centers": centers,
+        "downscale": align_config.downscale
+    }
+    debug_fig = debug_fig_main
+    _costs_dbg = []
+    if debug or debug_dir is not None:
+        for y_id in range(align_config.y_n):
+            _costs_dbg.append([])
+            for x_id in range(align_config.x_n):
+                y_start, y_end, x_start, x_end = patch_coords[y_id, x_id, :].astype(int)
+                patch_ref, patch_mov = get_patch(ref, mov, (y_start, y_end, x_start, x_end))
+                cost = cost_dict["costs"][y_id][x_id]
+                _costs_dbg[y_id].append(cost.sum(axis=-1))
+                if debug or debug_fig is not None:
+                    debug_fig_current = None
+                    if debug_fig is not None:
+                        debug_fig_current = debug_fig+"cost_surface_{}_{}_{}.png".format(y_id, x_id, suffix)
+
+                    if align_config.mode == LAPLACIAN_ENERGIES:
+                        costs_plots = [
+                            (cost[:, :, 0], "{} -".format(align_config.dist_mode)),
+                            (cost[:, :, 1], "{} |".format(align_config.dist_mode)),
+                            (cost[:, :, 2], "{} /".format(align_config.dist_mode)),
+                            (cost[:, :, 3], "{} \\".format(align_config.dist_mode)),
+                            (np.sum(cost, axis=2), "cost sum")
+                        ]
+                    if align_config.mode == GRAY_SCALE:
+                        costs_plots = [
+                            (cost[:, :, 0], "{}".format(align_config.dist_mode)),
+                        ]
+                    if align_config.mode == COLORED:
+                        costs_plots = [
+                            (cost[:, :, 0], "{} R".format(align_config.dist_mode)),
+                            (cost[:, :, 1], "{} G".format(align_config.dist_mode)),
+                            (cost[:, :, 2], "{} B".format(align_config.dist_mode)),
+                        ]
+                    pr.show(
+                        [
+                            [
+                                (viz_laplacian_energy(patch_ref), "VIS"),
+                                (viz_laplacian_energy(patch_mov), "NIR"),
+                                # (viz_laplacian_energy(patch_mov_search), "NIR patch"),
+                                (viz_laplacian_energy(cost), "colored cost {}".format(align_config.dist_mode)),
+                            ],
+                            costs_plots
+                        ],
+                        suptitle="PATCH Y={} X={} {} {} {}".format(y_id, x_id, align_config.dist_mode, prefix, suffix),
+                        save=debug_fig_current
+                    )
     debug_fig = None if debug_fig_main is None else debug_fig_main + "overview_cost_surfaces_{}.png".format(suffix)
 
     if debug or debug_dir is not None:
@@ -286,7 +293,7 @@ if __name__ == '__main__':
     path = osp.join(osp.dirname(__file__), "..", "samples")
     nir_img = pr.Image(osp.join(path, "20210906123134_PL4_DIST_raw_NON_LINEAR_IR_registered_semi_auto.jpg"))
     vis_img = pr.Image(osp.join(path, "20210906123134_PL4_DIST_raw_NON_LINEAR_REF.jpg"))
-    debug_dir = "_debug_cost_new_checko"
+    debug_dir = "_debug_cost_factorize"
     if not osp.isdir(debug_dir):
         mkdir(debug_dir)
     align_conf = AlignmentConfig(
