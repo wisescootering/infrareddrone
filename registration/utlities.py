@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 from matplotlib import cm
 import os.path as osp
-import irdrone.process as pr
 import numpy as np
 from registration.newton import search_minimum_full_patch_discrete, newton_iter, quadric_approximation
 from registration.constants import NEWTON, GRADIENT_DESCENT, QUADRATIC_FORM
@@ -169,7 +168,6 @@ def quadratic_approximation_plot(
             ax.set_title("{}  -vs-  {}\n{}        {}\ngrad={}  -vs-  {}".format(hess_original[ch, 0, :], hess[ch, 0, :], hess_original[ch, 1, :], hess[ch, 1, :], grad_original[ch, :], grad[ch, :]))
         else:
             ax.set_title("{}\n{}\ngrad={}".format(hess[ch, 0, :], hess[ch, 1, :], grad[ch, :]))
-        # ax = fig.add_subplot(n_channels, 2, ch*2+2, projection='3d')
 
     plt.show()
 
@@ -230,7 +228,7 @@ def search_multi_channel():
 
 
 def real_search(cost_file=osp.join(osp.dirname(__file__), "..", "samples" , "cost.npy")):
-    costs = np.load(cost_file)
+    costs = np.load(cost_file, allow_pickle=True).item().get("costs")
     center_y, center_x = costs.shape[2]//2, costs.shape[3]//2
     extraction_area = 5
     for i in range(costs.shape[0]):
