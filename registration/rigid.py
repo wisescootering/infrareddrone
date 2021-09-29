@@ -3,12 +3,13 @@ import numpy as np
 from registration.newton import newton_iter, quadric_approximation
 from irdrone.registration import geometric_rigid_transform_estimation
 import logging
-from registration.cost import compute_cost_surfaces_with_traces, AlignmentConfig, run_multispectral_cost
+from registration.cost import compute_cost_surfaces_with_traces, AlignmentConfig, run_multispectral_cost, multispectral_representation, viz_laplacian_energy
 from registration.constants import LAPLACIAN_ENERGIES, GRAY_SCALE, COLORED, SSD, NTG
 import irdrone.process as pr
 import cv2
 from skimage import transform
 from os import mkdir
+import time
 
 
 def minimum_cost(cost):
@@ -131,44 +132,86 @@ class MotionModel:
         return str(self.model)
 
 
-def dummy_cost_func(_img_ref, _img_mov, **kwargs):
-    cost_file = osp.join(osp.dirname(__file__), "..", "samples" , "cost.npy")
-    cost_dict = np.load(cost_file, allow_pickle=True).item()
-    return cost_dict
+def compute_pyramid(img, scales_list):
+    """Returns pyramid dictionary"""
+    img_pyr = {}
+
+    for (ids, resized) in enumerate(transform.pyramid_gaussian(img, downscale=2, multichannel=True)):
+        if 2**ids in scales_list:
+            img_pyr[2**ids] = resized.astype(np.float32)
+            logging.info("Storing pyramid level {}".format(2**ids, resized.shape))
+        if 2**ids >= max(scales_list):#iterative_scheme[0][0]:
+            break
+    return img_pyr
 
 
 def pyramidal_search(
-        img_ref, img_mov, debug_dir=None, dummy_mode=False, debug=True,
+        img_ref, img_mov, debug_dir=None, debug=True,
         iterative_scheme=[(32, 12), (16, 2), (8, 1),],
         mode=[LAPLACIAN_ENERGIES, GRAY_SCALE, COLORED][-1],
         dist=[SSD, NTG][0],
+        sigma_ref=5,
+        sigma_mov=3,
+        affinity=True
     ):
     """
-    # TODO: move spectral reperesentation here! downscale, warp and estimate on spectral representations images...
+        - debug_dir=None, debug=True,  # -> SHOW TRACES, NOT SAVING ANYTHING TO DISK
+        - debug_dir=None, debug=False,  # -> NO TRACES AT ALL, NOT SAVING ANYTHING TO DISK
+        - debug_dir=debug_dir, debug=False, # -> FORCE ONLY MANDATORY TRACES (see debug_flag in debug_trace function)
+        - debug_dir=debug_dir, debug=True, # -> FORCE ALL TRACES TO DISK
     """
     forced_debug_dir = debug_dir
     if not debug:
         debug_dir = None # disable most traces if debug is set to False
-    def debug_trace(img, ds=1, iter="", suffix="", prefix="", debug_flag=None):
+
+    def debug_trace(img, ds=1, iter="", suffix="", prefix="", debug_flag=None, msr_mode=None):
         """debug_flag allows to force debugging trace if set to True"""
         if debug_flag is None:
             debug_flag = debug
         if debug_flag and forced_debug_dir is not None:
-            img_save = img if img.dtype == np.uint8 else ((img*255).clip(0, 255)).astype(np.uint8)
+            if msr_mode == LAPLACIAN_ENERGIES:
+                img_save = viz_laplacian_energy(img)
+            else:
+                img_save = img if img.dtype == np.uint8 else ((img*255).clip(0, 255)).astype(np.uint8)
             pr.Image(img_save).save(osp.join(forced_debug_dir, "{}it{:02d}_ds{:02d}_{}.jpg".format(prefix, iter, ds, suffix)))
+    # ------------------------------------------------------------------------------------------------------------------
     motion_model = MotionModelHomography()
-    if dummy_mode:
-        compute_cost, alignment_params = dummy_cost_func, dict()
-    else:
-        compute_cost = run_multispectral_cost
-    img_mov_init = img_mov.copy()
-    # @TODO: move spectral reperesentation here! downscale, warp and estimate on spectral representations images...
-    downscale_func = lambda img, ds: transform.pyramid_reduce(img, downscale=ds, multichannel=True)
+    compute_cost = compute_cost_surfaces_with_traces
+    # ------------------------------------------------------------------------------------------------------------------
+    # ------------------------------------------------------------------------------------  Multispectral representation
+    ts_msr_start = time.perf_counter()
+    msr_ref = multispectral_representation(
+        img_ref if isinstance(img_ref, np.ndarray) else img_ref.data,
+        sigma_gaussian=sigma_ref, mode=mode
+    ).astype(np.float32)
+    msr_mov = multispectral_representation(
+        img_mov if isinstance(img_mov, np.ndarray) else img_mov.data,
+        sigma_gaussian=sigma_mov, mode=mode
+    ).astype(np.float32)
+    ts_msr_end = time.perf_counter()
+    logging.warning("{:.2f}s elapsed in MSR {} computation".format(ts_msr_end - ts_msr_start, mode))
+    # ------------------------------------------------------------------------------------------------------------------
     iter = 0
+    ts_ds_start = time.perf_counter()
+    scales_list = [el[0] for el in iterative_scheme]
+    msr_ref_pyr = compute_pyramid(msr_ref, scales_list)
+    msr_mov_pyr = compute_pyramid(msr_mov, scales_list)
+    if debug:
+        img_ref_pyr = compute_pyramid(img_ref, scales_list)
+        img_mov_pyr = compute_pyramid(img_mov, scales_list)
+    ts_ds_end = time.perf_counter()
+
+    logging.warning("{:.2f}s elapsed in pyramid dowscale up to {}".format(ts_ds_end - ts_ds_start, iterative_scheme[0][0]))
+
+    # ---------------------------------------------------    PYRAMID   -------------------------------------------------
+    # -------------------------------------------------------------------------------------------------- Multiscale loop
     for ds, n_iter in iterative_scheme:
+        ts_scale_start = time.perf_counter()
         alignment_params = dict(
             debug=debug,
             debug_dir=debug_dir,
+            # debug=False,
+            # debug_dir=None,
             align_config = AlignmentConfig(
                 downscale=ds,
                 mode=mode,
@@ -177,26 +220,77 @@ def pyramidal_search(
                 sigma_mov=None,
             )
         )
-        ds_img_ref = downscale_func(img_ref, ds)
-        ds_img_mov = downscale_func(img_mov, ds)
-        ds_img_mov_init = ds_img_mov.copy()
-        ds_img_mov = motion_model.warp(ds_img_mov_init, downscale=ds)
-        debug_trace(ds_img_mov_init, ds, 0, suffix="_original")
-        debug_trace(ds_img_ref, ds, 0, suffix="_ref")
-        debug_trace(ds_img_mov, ds, 0, suffix="_start")
+        # --------------------------------------------------------------------------------------------------------------
+        # ------------------------------------------------------------------------------------------------- Debug images
+        if debug:
+            ds_img_mov_init = img_mov_pyr[ds]
+            ds_img_mov = motion_model.warp(ds_img_mov_init, downscale=ds)  # register thumbnail based on previous model
+            # debug_trace(ds_img_mov_init, ds, 999, prefix="_image_", suffix= "_mov_original")
+            debug_trace(ds_img_mov, ds, iter, prefix="_image_" , suffix="mov_start")
+
+        # --------------------------------------------------------------------------------------------------------------
+        # --------------------------------------------------------------------- Downsample multispectral representation
+        ts_ds_start = time.perf_counter()
+        # ds_msr_ref = downscale_func(msr_ref, ds)
+        # ds_msr_mov_init = downscale_func(msr_mov, ds)
+        ds_msr_ref = msr_ref_pyr[ds]
+        ds_msr_mov_init = msr_mov_pyr[ds]
+        ts_ds_end = time.perf_counter()
+        logging.warning("{:.2f}s elapsed in dowscale {}".format(ts_ds_end - ts_ds_start, ds))
+        ts_warp_start = time.perf_counter()
+        ds_msr_mov = motion_model.warp(ds_msr_mov_init, downscale=ds)  # register thumbnail based on previous model
+        ts_warp_end = time.perf_counter()
+        logging.warning("{:.2f}s elapsed in warping at scale {}".format(ts_warp_end - ts_warp_start, ds))
+        # debug_trace(ds_msr_mov_init, ds, 0, prefix="_msr_", suffix="_mov_original", msr_mode=mode)
+        debug_trace(ds_msr_mov, ds, iter, prefix="_msr_", suffix="__start", msr_mode=mode)
+
+        # --------------------------------------------------------------------------------------------------------------
+        # ----------------------------------------------------------------------------------------------- Iteration loop
         iter_list = range(1, n_iter+1)
         for _iter_current in iter_list:
-            iter +=1
-            cost_dict = compute_cost(img_ref, img_mov, suffix="_it{:02d}".format(iter), **alignment_params)
-            vpos, vector_field = brute_force_vector_field_search(costs=cost_dict["costs"], centers=cost_dict["centers"], downscale=ds)
-            motion_model_residual = MotionModelHomography(model=None, vector_pos=vpos, vector_field=vector_field, affinity=True) #, debug=debug)
-            print(iter, motion_model_residual)
+            iter += 1
+            ts_iter_start = time.perf_counter()
+            # --------------------------------------------    SEARCH   -------------------------------------------------
+            # ---------------------------------------------------------------------- Cost + Vector field + Model fitting
+            cost_dict = compute_cost(
+                ds_msr_ref, ds_msr_mov,
+                suffix="_it{:02d}".format(iter),
+                prefix="ds{}_{}".format(ds, mode),
+                **alignment_params)
+            vpos, vector_field = brute_force_vector_field_search(
+                costs=cost_dict["costs"],
+                centers=cost_dict["centers"],
+                downscale=ds
+            )
+            motion_model_residual = MotionModelHomography(
+                model=None, vector_pos=vpos, vector_field=vector_field,
+                affinity=affinity,
+                # debug=debug
+            )
+            logging.info("iteration {} - {}".format(iter, motion_model_residual))
             motion_model.compose(motion_model_residual)
-            ds_img_mov = motion_model.warp(ds_img_mov_init, downscale=ds)
-            img_mov = motion_model.warp(img_mov_init, downscale=1)
-            debug_trace(ds_img_mov, ds, iter, suffix="alignment")
-            out_img = motion_model.warp(img_mov_init, downscale=1)
-            debug_trace(out_img, ds, iter, prefix="ALIGN_", debug_flag=True)  # FORCE DEBUGGING (minimal trace)
+
+            # ----------------------------------------------    WARP   -------------------------------------------------
+            # ----------------------------------------------------------------------------------------------- MSR images
+            ds_msr_mov = motion_model.warp(ds_msr_mov_init, downscale=ds)
+            debug_trace(ds_msr_mov, ds, iter, prefix="_msr_", suffix="_alignment", msr_mode=mode, debug_flag=True)
+            # @TODO: every once in a while, we could warp the full res image...
+
+            # --------------------------------------------------------------------------------------------- Debug images
+            if debug:
+                ds_img_mov = motion_model.warp(ds_img_mov_init, downscale=ds)
+                debug_trace(ds_img_mov, ds, iter, prefix="_image_", suffix="alignment")
+                out_img = motion_model.warp(img_mov, downscale=1)
+                debug_trace(out_img, ds, iter, prefix="FULL_RES_ALIGN_", debug_flag=True)  # FORCE DEBUGGING (minimal trace)
+            ts_iter_end = time.perf_counter()
+            logging.warning("{:.2f}s elapsed at scale {} - iter {}".format(ts_iter_end - ts_iter_start, ds, iter))
+        debug_trace(ds_msr_ref, ds, iter, prefix="_msr_", suffix="_ref", msr_mode=mode, debug_flag=True)
+        if debug:
+            ds_img_ref = img_ref_pyr[ds]
+            debug_trace(ds_img_ref, ds, iter, prefix="_image_", suffix= "ref")
+        ts_scale_end = time.perf_counter()
+        logging.warning("{:.2f}s elapsed at scale {}".format(ts_scale_end - ts_scale_start, ds))
+        iter +=1
     out_img = motion_model.warp(img_mov, downscale=1)
     return out_img
 
@@ -239,7 +333,7 @@ def alignment_system_single_scale_single_iter(
         img_ref, img_mov, debug_dir,
         align_config=AlignmentConfig(mode=COLORED, dist_mode=SSD, downscale=32)
 ):
-    """BUGFIXED
+    """
     Single scale - compute cost, search, warp
     """
     cost_file = osp.join(debug_dir, "ds32_colored_blocks_y5x5_search_y6x6_SSD__cost_search_.npy")
@@ -257,8 +351,7 @@ def alignment_system_single_scale_single_iter(
 
 
 def test_alignment_system_single_scale_single_iter():
-    """BUGFIXED
-    :return:
+    """
     """
     vis_img, vis_img_moved, debug_dir, homog = generate_test_data(suffix="_single_scale")
     homog_estim = alignment_system_single_scale_single_iter(vis_img.data, vis_img_moved.data, debug_dir)
@@ -267,29 +360,30 @@ def test_alignment_system_single_scale_single_iter():
 
 
 def test_alignment_system_multi_scale_multi_iter():
-    """BUGFIXED
     """
-    vis_img, vis_img_moved, debug_dir, homog = generate_test_data(t_x=-20, t_y=135.4, theta = -5., suffix="_Multi_scale_refactor")
+    """
+    # vis_img, vis_img_moved, debug_dir, homog = generate_test_data(t_x=-20, t_y=135.4, theta = -5., suffix="_Multi_scale_MSR")
+
+    vis_img, vis_img_moved, debug_dir, homog = generate_test_data(t_x=-20, t_y=60.4, theta = -7., suffix="_Multi_scale_MSR_light")
     out_img = pyramidal_search(
         vis_img.data, vis_img_moved.data,
-        # debug_dir=None, debug=True,  # -> SHOW TRACES, NOT SAVING ANYTHING TO DISK
-        # debug_dir=None, debug=False,  # -> NO TRACES AT ALL, NOT SAVING ANYTHING TO DISK
-        # debug_dir=debug_dir, debug=False, # -> FORCE ONLY MANDATORY TRACES
-        # debug_dir=debug_dir, debug=True, # -> FORCE ALL TRACES TO DISK
-        debug_dir=debug_dir, debug=True,
-        mode=COLORED,
+        debug_dir=debug_dir, debug=False,
+        mode=LAPLACIAN_ENERGIES,
         dist=SSD,
-        iterative_scheme = [(40, 4), (32, 1), (16, 1)]
+        # iterative_scheme = [(40, 4), (32, 2), (16, 1)],
+        iterative_scheme = [(32, 6), (16, 6), (8, 3), (4, 3)],
+        sigma_mov=5,
+        sigma_ref=5
     )
-    pr.Image(out_img.astype(np.uint8)).save(osp.join(debug_dir, "ALIGNED_PYR.jpg"))
+    pr.Image(out_img.astype(np.uint8)).save(osp.join(debug_dir, "REGISTERED_PYR.jpg"))
 
 
 
 # ----------------------------------------- Run on images using pyramid ------------------------------------------------
-def align_images(vis_img=None, nir_img=None, debug_dir=""):
+def align_images(vis_img=None, nir_img=None, debug_dir="", affinity=True):
     mode = LAPLACIAN_ENERGIES
     dist = NTG
-    iterative_scheme = [(32, 4), (32, 2), (16, 2), (8, 1),]
+    iterative_scheme = [(32, 4), (32, 2), (16, 2), (8, 2), (4, 3), (2, 2)]
     debug_dir = debug_dir+"_{}_{}_{}".format(mode, dist, iterative_scheme)
     if not osp.isdir(debug_dir):
         mkdir(debug_dir)
@@ -302,12 +396,14 @@ def align_images(vis_img=None, nir_img=None, debug_dir=""):
         # debug_dir=None, debug=False,  # -> NO TRACES AT ALL, NOT SAVING ANYTHING TO DISK
         # debug_dir=debug_dir, debug=False, # -> FORCE ONLY MANDATORY TRACES
         # debug_dir=debug_dir, debug=True, # -> FORCE ALL TRACES TO DISK
-        debug_dir=debug_dir, debug=True,
+        debug_dir=debug_dir, debug=False,
         iterative_scheme = iterative_scheme,
         mode=mode,
-        dist=dist
+        dist=dist,
+        affinity=affinity
+
     )
-    pr.Image(out_img.astype(np.uint8)).save(osp.join(debug_dir, "ALIGNED_PYR.jpg"))
+    pr.Image(out_img.astype(np.uint8)).save(osp.join(debug_dir, "REGISTERED_PYR.jpg"))
 
 
 def run_alignment_disparity():
@@ -321,14 +417,19 @@ def run_alignment_multispectral():
     path = osp.join(osp.dirname(__file__), "..", "samples")
     vis_img = pr.Image(osp.join(path, "20210906123134_PL4_DIST_raw_NON_LINEAR_REF.jpg"))
     nir_img = pr.Image(osp.join(path, "20210906123134_PL4_DIST_raw_NON_LINEAR_IR_registered_semi_auto.jpg"))
-    align_images(vis_img, nir_img, debug_dir="iterative_multiscale_multispectral_alignment")
+    align_images(
+        vis_img, nir_img,
+        debug_dir="iterative_multiscale_multispectral_alignment_MSR_search",
+        affinity=False
+    )
 
 
 if __name__ == "__main__":
     log = logging.getLogger()
-    log.setLevel(logging.INFO)
+    # log.setLevel(logging.INFO)
+    log.setLevel(logging.WARNING)
     # test_alignment_system_single_scale_single_iter()
-    test_alignment_system_multi_scale_multi_iter()
+    # test_alignment_system_multi_scale_multi_iter()
 
     # run_alignment_disparity()
     run_alignment_multispectral()
