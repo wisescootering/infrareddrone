@@ -251,7 +251,7 @@ def compute_cost_surfaces_with_traces(
     return cost_dict
 
 
-def run_multispectral_cost(ref_orig, mov_orig, debug_dir=None, debug=True, suffix="", align_config=AlignmentConfig()):
+def run_multispectral_cost(ref_orig, mov_orig, debug_dir=None, debug=True, suffix="", prefix="", align_config=AlignmentConfig()):
     """
     - Switch to a specific multi-spectral representation
     - Downscale
@@ -267,7 +267,7 @@ def run_multispectral_cost(ref_orig, mov_orig, debug_dir=None, debug=True, suffi
         mov_orig if isinstance(mov_orig, np.ndarray) else mov_orig.data,
         sigma_gaussian=align_config.sigma_mov, mode=align_config.mode
     )
-    prefix = "ds{}_{}".format(align_config.downscale, align_config.mode)
+    prefix = prefix+"ds{}_{}".format(align_config.downscale, align_config.mode)
     if debug or debug_dir is not None:
         debug_fig = None if debug_dir is None else osp.join(debug_dir, "{}_{}".format(prefix, suffix))
         debug_image_inputs(ref_orig, mov_orig, ref, mov, mode=align_config.mode, debug_fig=debug_fig, title="{} {}".format(prefix, suffix))
@@ -278,13 +278,14 @@ def run_multispectral_cost(ref_orig, mov_orig, debug_dir=None, debug=True, suffi
     else:
         ref_pyr, mov_pyr = ref, mov
 
-    compute_cost_surfaces_with_traces(
+    cost_dict = compute_cost_surfaces_with_traces(
         ref_pyr, mov_pyr, debug_dir=debug_dir,
-        prefix=prefix,
+        prefix=prefix,suffix=suffix,
         debug=debug,
         align_config=align_config
 
     )
+    return cost_dict
 
 
 if __name__ == '__main__':

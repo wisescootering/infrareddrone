@@ -3,7 +3,7 @@ import numpy as np
 from registration.newton import newton_iter, quadric_approximation
 from irdrone.registration import geometric_rigid_transform_estimation
 import logging
-from registration.cost import align
+from registration.cost import compute_cost_surfaces_with_traces, AlignmentConfig, run_multispectral_cost
 from registration.constants import LAPLACIAN_ENERGIES, GRAY_SCALE, COLORED, SSD, NTG
 import irdrone.process as pr
 import cv2
@@ -19,7 +19,8 @@ def minimum_cost(cost):
     amin_index = np.unravel_index(np.argmin(cost.sum(axis=-1)), (cost.shape[0], cost.shape[1]))
     init_position = np.array([amin_index[1]-cost.shape[1]//2, amin_index[0]-cost.shape[0]//2])
     neighborhood_size = 1
-    if amin_index[0] < neighborhood_size or amin_index[0] > cost.shape[0]-1-neighborhood_size or amin_index[1] < neighborhood_size or amin_index[1] > cost.shape[1]-1-neighborhood_size:
+    if amin_index[0] < neighborhood_size or amin_index[0] > cost.shape[0]-1-neighborhood_size or\
+        amin_index[1] < neighborhood_size or amin_index[1] > cost.shape[1]-1-neighborhood_size:
         return init_position
     extracted_patch = cost[
         amin_index[0]-neighborhood_size:amin_index[0]+neighborhood_size+1,
@@ -40,9 +41,9 @@ def minimum_cost(cost):
 def brute_force_vector_field_search(costs=None, centers=None, downscale=None):
     """
     Returns vector field ready to be fit (at full scale if downscale is provided)
-    :param costs:
-    :param centers:
-    :param downscale:
+    :param costs: displacement cost
+    :param centers: center positions of each path
+    :param downscale: downscale factor
     :return:
     """
     center_y, center_x = costs.shape[2]//2, costs.shape[3]//2
@@ -143,6 +144,7 @@ def pyramidal_search(
         dist=[SSD, NTG][0],
     ):
     """
+    # TODO: move spectral reperesentation here! downscale, warp and estimate on spectral representations images...
     """
     forced_debug_dir = debug_dir
     if not debug:
@@ -158,19 +160,23 @@ def pyramidal_search(
     if dummy_mode:
         compute_cost, alignment_params = dummy_cost_func, dict()
     else:
-        compute_cost = align
-        alignment_params = dict(
-            downscale=1, debug_dir=debug_dir,
-            mode=mode,
-            dist_mode=dist,
-            sigma_ref=None, # @TODO: remove the sigmas
-            sigma_mov=None,
-            debug=debug
-        )
+        compute_cost = run_multispectral_cost
+    img_mov_init = img_mov.copy()
     # @TODO: move spectral reperesentation here! downscale, warp and estimate on spectral representations images...
     downscale_func = lambda img, ds: transform.pyramid_reduce(img, downscale=ds, multichannel=True)
     iter = 0
     for ds, n_iter in iterative_scheme:
+        alignment_params = dict(
+            debug=debug,
+            debug_dir=debug_dir,
+            align_config = AlignmentConfig(
+                downscale=ds,
+                mode=mode,
+                dist_mode=dist,
+                sigma_ref=None,
+                sigma_mov=None,
+            )
+        )
         ds_img_ref = downscale_func(img_ref, ds)
         ds_img_mov = downscale_func(img_mov, ds)
         ds_img_mov_init = ds_img_mov.copy()
@@ -181,37 +187,18 @@ def pyramidal_search(
         iter_list = range(1, n_iter+1)
         for _iter_current in iter_list:
             iter +=1
-            cost_dict = compute_cost(ds_img_ref, ds_img_mov, prefix="ds{:02d}_".format(ds), suffix="_it{:02d}".format(iter), **alignment_params)
+            cost_dict = compute_cost(img_ref, img_mov, suffix="_it{:02d}".format(iter), **alignment_params)
             vpos, vector_field = brute_force_vector_field_search(costs=cost_dict["costs"], centers=cost_dict["centers"], downscale=ds)
             motion_model_residual = MotionModelHomography(model=None, vector_pos=vpos, vector_field=vector_field, affinity=True) #, debug=debug)
             print(iter, motion_model_residual)
             motion_model.compose(motion_model_residual)
             ds_img_mov = motion_model.warp(ds_img_mov_init, downscale=ds)
+            img_mov = motion_model.warp(img_mov_init, downscale=1)
             debug_trace(ds_img_mov, ds, iter, suffix="alignment")
-            out_img = motion_model.warp(img_mov, downscale=1)
+            out_img = motion_model.warp(img_mov_init, downscale=1)
             debug_trace(out_img, ds, iter, prefix="ALIGN_", debug_flag=True)  # FORCE DEBUGGING (minimal trace)
     out_img = motion_model.warp(img_mov, downscale=1)
     return out_img
-
-
-def align_data(img_ref, img_mov, debug_dir):
-    cost_file = osp.join(debug_dir, "ds_32_blocks_y5x5_colored_SSD__cost_search.npy")
-    if not osp.isfile(cost_file):
-        cost_dict = align(
-            img_ref, img_mov,
-            downscale=32,
-            # debug=False, debug_dir= None,
-            debug_dir=debug_dir,
-            mode=[LAPLACIAN_ENERGIES, GRAY_SCALE, COLORED][-1],
-            dist_mode=[SSD, NTG][0]
-        )
-        # cost_file = np.array(costs)
-    else:
-        cost_dict = np.load(cost_file, allow_pickle=True).item()
-    vpos, vector_field = brute_force_vector_field_search(**cost_dict)
-    homog_estim = MotionModelHomography(model=None, vector_pos=vpos, vector_field=vector_field, debug=True, affinity=True)
-    print(homog_estim)
-    return homog_estim
 
 
 # ------------------------------------------------------- Tests --------------------------------------------------------
@@ -247,8 +234,42 @@ def generate_test_data(t_x=2., t_y=-5., theta=-0.5, suffix=""):
     return vis_img, vis_img_moved, debug_dir, homog
 
 
-def test_alignment_system():
-    vis_img, vis_img_moved, debug_dir, homog = generate_test_data(t_x=-20, t_y=135.4, theta = -5., suffix="_multi_scale")
+# -------------------------------------- single scale cost + search + warp  --------------------------------------------
+def alignment_system_single_scale_single_iter(
+        img_ref, img_mov, debug_dir,
+        align_config=AlignmentConfig(mode=COLORED, dist_mode=SSD, downscale=32)
+):
+    """BUGFIXED
+    Single scale - compute cost, search, warp
+    """
+    cost_file = osp.join(debug_dir, "ds32_colored_blocks_y5x5_search_y6x6_SSD__cost_search_.npy")
+    if not osp.isfile(cost_file):
+        cost_dict = run_multispectral_cost(
+            img_ref, img_mov,
+            debug_dir=debug_dir,
+            align_config=align_config
+        )
+    else:
+        cost_dict = np.load(cost_file, allow_pickle=True).item()
+    vpos, vector_field = brute_force_vector_field_search(**cost_dict)
+    homog_estim = MotionModelHomography(model=None, vector_pos=vpos, vector_field=vector_field, debug=True, affinity=True)
+    return homog_estim
+
+
+def test_alignment_system_single_scale_single_iter():
+    """BUGFIXED
+    :return:
+    """
+    vis_img, vis_img_moved, debug_dir, homog = generate_test_data(suffix="_single_scale")
+    homog_estim = alignment_system_single_scale_single_iter(vis_img.data, vis_img_moved.data, debug_dir)
+    img_mov_corrected = homog_estim.warp(vis_img_moved)
+    pr.Image(img_mov_corrected).save(osp.join(debug_dir, "ALIGNED_NEW.jpg"))
+
+
+def test_alignment_system_multi_scale_multi_iter():
+    """BUGFIXED
+    """
+    vis_img, vis_img_moved, debug_dir, homog = generate_test_data(t_x=-20, t_y=135.4, theta = -5., suffix="_Multi_scale_refactor")
     out_img = pyramidal_search(
         vis_img.data, vis_img_moved.data,
         # debug_dir=None, debug=True,  # -> SHOW TRACES, NOT SAVING ANYTHING TO DISK
@@ -263,16 +284,9 @@ def test_alignment_system():
     pr.Image(out_img.astype(np.uint8)).save(osp.join(debug_dir, "ALIGNED_PYR.jpg"))
 
 
-def test_alignment_system_single_scale():
-    vis_img, vis_img_moved, debug_dir, homog = generate_test_data(suffix="_single_scale")
-    homog_estim = align_data(vis_img.data, vis_img_moved.data, debug_dir)
-    img_mov_corrected = homog_estim.warp(vis_img_moved)
-    pr.Image(img_mov_corrected).save(osp.join(debug_dir, "ALIGNED_NEW.jpg"))
 
-
-# ------------------------------------------------------- Run on images ------------------------------------------------
+# ----------------------------------------- Run on images using pyramid ------------------------------------------------
 def align_images(vis_img=None, nir_img=None, debug_dir=""):
-
     mode = LAPLACIAN_ENERGIES
     dist = NTG
     iterative_scheme = [(32, 4), (32, 2), (16, 2), (8, 1),]
@@ -293,8 +307,6 @@ def align_images(vis_img=None, nir_img=None, debug_dir=""):
         mode=mode,
         dist=dist
     )
-    # homog_estim = align_data(vis_img.data, vis_img_moved.data, debug_dir)
-    # img_mov_corrected = homog_estim.warp(vis_img_moved)
     pr.Image(out_img.astype(np.uint8)).save(osp.join(debug_dir, "ALIGNED_PYR.jpg"))
 
 
@@ -315,9 +327,9 @@ def run_alignment_multispectral():
 if __name__ == "__main__":
     log = logging.getLogger()
     log.setLevel(logging.INFO)
-    test_alignment_system_single_scale()
-    test_alignment_system()
+    # test_alignment_system_single_scale_single_iter()
+    test_alignment_system_multi_scale_multi_iter()
 
-    run_alignment_disparity()
+    # run_alignment_disparity()
     run_alignment_multispectral()
 
