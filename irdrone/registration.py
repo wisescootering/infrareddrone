@@ -121,9 +121,7 @@ def fit_affinity(input_pts, output_pts, weights=None, debug=False):
     return affinity
 
 
-
-
-def geometric_rigid_transform_estimation(vpos, vector_field, img=None, debug=False, affinity=False, ax=None):
+def geometric_rigid_transform_estimation(vpos, vector_field, img=None, debug=False, affinity=False, ax=None, factor_plot=1.):
     """Fit homography on a vector field
 
     Parameters
@@ -169,20 +167,25 @@ def geometric_rigid_transform_estimation(vpos, vector_field, img=None, debug=Fal
         kwargs = dict(
             angles="xy",
             scale_units="xy",
-            # scale=1.,
-            # headwidth=2.,
-            # headlength=4.,
-            # headaxislength=2.5,
-            #   headwidth=0.,
-            #   headlength=0.,
-            #   headaxislength=0.,
+            scale=1.,
+            headwidth=2.,
+            headlength=4.,
+            headaxislength=2.5,
+            width=0.001
             # width=0.001
+
         )
-        ax.quiver(vpos[:, :, 1], vpos[:, :, 0], -vector_field[:, :, 0], -vector_field[:, :, 1], color="b", label="ESTIMATED", **kwargs)
-        ax.quiver(vpos[:, :, 1], vpos[:, :, 0], -mv[:, :, 0], -mv[:, :, 1], color="r", label="FIT", **kwargs)
+        # ax.quiver(vpos[:, :, 1], vpos[:, :, 0], -vector_field[:, :, 0], -vector_field[:, :, 1], color="b", label="ESTIMATED", **kwargs)
+        # ax.quiver(vpos[:, :, 1], vpos[:, :, 0], -mv[:, :, 0], -mv[:, :, 1], color="r", label="FIT", **kwargs)
+
+        ax.quiver(vpos[:, :, 0], vpos[:, :, 1], factor_plot*vector_field[:, :, 0], factor_plot*vector_field[:, :, 1], color="b", label="ESTIMATED", **kwargs)
+        ax.quiver(vpos[:, :, 0], vpos[:, :, 1], factor_plot*mv[:, :, 0], factor_plot*mv[:, :, 1], color="r", label="FIT", **kwargs)
+
         ax.set_aspect("equal")
         ax.invert_yaxis()
-        # ax.axis('off')
+
+        ax.axis("off")
+        plt.tight_layout(pad=0)
         if show_flag:
             plt.show()
     return homog_estim

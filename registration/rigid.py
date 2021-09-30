@@ -2,6 +2,9 @@ import os.path as osp
 import numpy as np
 from registration.newton import newton_iter, quadric_approximation
 from irdrone.registration import geometric_rigid_transform_estimation
+from registration.warp_flow import warp_from_sparse_vector_field
+# from irdrone.utils import c2g, g2c
+import matplotlib.pyplot as plt
 import logging
 from registration.cost import compute_cost_surfaces_with_traces, AlignmentConfig, run_multispectral_cost, multispectral_representation, viz_laplacian_energy
 from registration.constants import LAPLACIAN_ENERGIES, GRAY_SCALE, COLORED, SSD, NTG
@@ -20,14 +23,14 @@ def minimum_cost(cost):
     amin_index = np.unravel_index(np.argmin(cost.sum(axis=-1)), (cost.shape[0], cost.shape[1]))
     init_position = np.array([amin_index[1]-cost.shape[1]//2, amin_index[0]-cost.shape[0]//2])
     neighborhood_size = 1
-    if amin_index[0] < neighborhood_size or amin_index[0] > cost.shape[0]-1-neighborhood_size or\
-        amin_index[1] < neighborhood_size or amin_index[1] > cost.shape[1]-1-neighborhood_size:
+    if amin_index[0] < neighborhood_size or amin_index[0] > cost.shape[0]-1-neighborhood_size or \
+            amin_index[1] < neighborhood_size or amin_index[1] > cost.shape[1]-1-neighborhood_size:
         return init_position
     extracted_patch = cost[
-        amin_index[0]-neighborhood_size:amin_index[0]+neighborhood_size+1,
-        amin_index[1]-neighborhood_size:amin_index[1]+neighborhood_size+1,
-        :
-    ]
+                      amin_index[0]-neighborhood_size:amin_index[0]+neighborhood_size+1,
+                      amin_index[1]-neighborhood_size:amin_index[1]+neighborhood_size+1,
+                      :
+                      ]
     hessi, gradi, constants = quadric_approximation(extracted_patch)
 
     new_val = newton_iter(
@@ -55,11 +58,11 @@ def brute_force_vector_field_search(costs=None, centers=None, downscale=None):
         for j in range(costs.shape[1]):
             logging.info("patch {} {}".format(i, j))
             single_cost = costs[
-                i, j,
-                center_y-extraction_area:center_y+extraction_area+1,
-                center_x-extraction_area:center_x+extraction_area+1,
-                :
-            ]
+                          i, j,
+                          center_y-extraction_area:center_y+extraction_area+1,
+                          center_x-extraction_area:center_x+extraction_area+1,
+                          :
+                          ]
             vector_field[i, j, :] = minimum_cost(single_cost) * (1. if downscale is None else downscale)
             vpos[i, j, :] = centers[i, j] * (1. if downscale is None else downscale)
     return vpos, vector_field
@@ -74,7 +77,7 @@ class MotionModelHomography:
             self.model_history = [self.model]
 
     def estimate(self, vector_pos=None, vector_field=None, debug=False, affinity=False, **kwargs):
-        self.model = geometric_rigid_transform_estimation(vector_pos, vector_field, debug=debug, affinity=affinity)
+        self.model = geometric_rigid_transform_estimation(vector_pos, vector_field, debug=debug, affinity=affinity, **kwargs)
         self.model_history = [self.model]
 
     def compose(self, new_model):
@@ -145,16 +148,26 @@ def compute_pyramid(img, scales_list):
     return img_pyr
 
 
+def viz_msr(img, msr_mode):
+    if msr_mode == LAPLACIAN_ENERGIES:
+        img_save = viz_laplacian_energy(img)
+    else:
+        img_save = img if img.dtype == np.uint8 else ((img*255).clip(0, 255)).astype(np.uint8)
+    return img_save
+
+
 def pyramidal_search(
-        img_ref, img_mov, debug_dir=None, debug=True,
-        iterative_scheme=[(32, 12), (16, 2), (8, 1),],
-        mode=[LAPLACIAN_ENERGIES, GRAY_SCALE, COLORED][-1],
-        dist=[SSD, NTG][0],
-        sigma_ref=5,
-        sigma_mov=3,
-        affinity=True
-    ):
+    img_ref, img_mov, debug_dir=None, debug=True,
+    iterative_scheme=[(32, 12), (16, 2), (8, 1),],
+    mode=[LAPLACIAN_ENERGIES, GRAY_SCALE, COLORED][-1],
+    dist=[SSD, NTG][0],
+    sigma_ref=5,
+    sigma_mov=3,
+    affinity=True,
+    default_patch_number=5
+):
     """
+        iterative_scheme = [ (downsample, iteration, num_patches)]
         - debug_dir=None, debug=True,  # -> SHOW TRACES, NOT SAVING ANYTHING TO DISK
         - debug_dir=None, debug=False,  # -> NO TRACES AT ALL, NOT SAVING ANYTHING TO DISK
         - debug_dir=debug_dir, debug=False, # -> FORCE ONLY MANDATORY TRACES (see debug_flag in debug_trace function)
@@ -169,11 +182,12 @@ def pyramidal_search(
         if debug_flag is None:
             debug_flag = debug
         if debug_flag and forced_debug_dir is not None:
-            if msr_mode == LAPLACIAN_ENERGIES:
-                img_save = viz_laplacian_energy(img)
-            else:
-                img_save = img if img.dtype == np.uint8 else ((img*255).clip(0, 255)).astype(np.uint8)
-            pr.Image(img_save).save(osp.join(forced_debug_dir, "{}it{:02d}_ds{:02d}_{}.jpg".format(prefix, iter, ds, suffix)))
+            name = "{}it{:02d}_ds{:02d}_{}.jpg".format(prefix, iter, ds, suffix)
+            if isinstance(img, np.ndarray) or isinstance(img, pr.Image):
+                img_save = viz_msr(img, msr_mode=msr_mode)
+                pr.Image(img_save).save(osp.join(forced_debug_dir, name))
+            elif isinstance(img, plt.Axes):
+                plt.savefig(osp.join(forced_debug_dir, name))
     # ------------------------------------------------------------------------------------------------------------------
     motion_model = MotionModelHomography()
     compute_cost = compute_cost_surfaces_with_traces
@@ -205,19 +219,23 @@ def pyramidal_search(
 
     # ---------------------------------------------------    PYRAMID   -------------------------------------------------
     # -------------------------------------------------------------------------------------------------- Multiscale loop
-    for ds, n_iter in iterative_scheme:
+    for iter_conf in iterative_scheme:
+        if len(iter_conf) >= 2:
+            ds, n_iter = iter_conf[:2]
+            num_patches = default_patch_number
+        if len(iter_conf) >= 3:
+            num_patches = iter_conf[2]
         ts_scale_start = time.perf_counter()
         alignment_params = dict(
             debug=debug,
             debug_dir=debug_dir,
-            # debug=False,
-            # debug_dir=None,
             align_config = AlignmentConfig(
                 downscale=ds,
                 mode=mode,
                 dist_mode=dist,
                 sigma_ref=None,
                 sigma_mov=None,
+                num_patches=num_patches
             )
         )
         # --------------------------------------------------------------------------------------------------------------
@@ -231,8 +249,6 @@ def pyramidal_search(
         # --------------------------------------------------------------------------------------------------------------
         # --------------------------------------------------------------------- Downsample multispectral representation
         ts_ds_start = time.perf_counter()
-        # ds_msr_ref = downscale_func(msr_ref, ds)
-        # ds_msr_mov_init = downscale_func(msr_mov, ds)
         ds_msr_ref = msr_ref_pyr[ds]
         ds_msr_mov_init = msr_mov_pyr[ds]
         ts_ds_end = time.perf_counter()
@@ -241,7 +257,6 @@ def pyramidal_search(
         ds_msr_mov = motion_model.warp(ds_msr_mov_init, downscale=ds)  # register thumbnail based on previous model
         ts_warp_end = time.perf_counter()
         logging.warning("{:.2f}s elapsed in warping at scale {}".format(ts_warp_end - ts_warp_start, ds))
-        # debug_trace(ds_msr_mov_init, ds, 0, prefix="_msr_", suffix="_mov_original", msr_mode=mode)
         debug_trace(ds_msr_mov, ds, iter, prefix="_msr_", suffix="__start", msr_mode=mode)
 
         # --------------------------------------------------------------------------------------------------------------
@@ -250,7 +265,7 @@ def pyramidal_search(
         for _iter_current in iter_list:
             iter += 1
             ts_iter_start = time.perf_counter()
-            # --------------------------------------------    SEARCH   -------------------------------------------------
+            # --------------------------------------------    COST SEARCH   --------------------------------------------
             # ---------------------------------------------------------------------- Cost + Vector field + Model fitting
             cost_dict = compute_cost(
                 ds_msr_ref, ds_msr_mov,
@@ -262,11 +277,33 @@ def pyramidal_search(
                 centers=cost_dict["centers"],
                 downscale=ds
             )
+            # --------------------------------------------------------------------------------------- Debug Vector field
+            ax_vector_field = None
+            img_mov_reg = None
+            if debug:
+                img_mov_reg = motion_model.warp(img_mov, downscale=1)
+                # debug_trace(img_mov_reg, ds, iter, prefix="FLOW_", suffix="ALIGNED_GLOBALLY", debug_flag=True)
+                displaced_image = warp_from_sparse_vector_field(img_mov_reg, vector_field)
+                # np.save(osp.join(forced_debug_dir, "local_displacement"), {"img":img_mov_reg, "vector_field":vector_field})
+                debug_trace(displaced_image, ds, iter, prefix="FLOW_", suffix="WARP_LOCAL", debug_flag=True)
+                fig = plt.figure(figsize=(img_mov.shape[:2][::-1]), dpi=1)
+                ax_vector_field = fig.add_subplot(111)
+
             motion_model_residual = MotionModelHomography(
                 model=None, vector_pos=vpos, vector_field=vector_field,
                 affinity=affinity,
+                ax=ax_vector_field,
+                # img= g2c(c2g(
+                #     (255.*transform.resize(viz_msr(ds_msr_mov, msr_mode=mode), img_mov.shape, anti_aliasing=False)).astype(np.uint8)
+                # )),
+                img = img_mov_reg
                 # debug=debug
             )
+            if debug:
+                debug_trace(
+                    ax_vector_field, ds, iter,
+                    prefix="FLOW_", suffix="VECTOR_FIELD_GLOBAL_ALIGNED", debug_flag=True
+                )
             logging.info("iteration {} - {}".format(iter, motion_model_residual))
             motion_model.compose(motion_model_residual)
 
@@ -298,9 +335,6 @@ def pyramidal_search(
 # ------------------------------------------------------- Tests --------------------------------------------------------
 # ----------------------------------------------- Vanilla alignment ----------------------------------------------------
 def generate_test_data(t_x=2., t_y=-5., theta=-0.5, suffix=""):
-    # t_x, t_y, theta = -2. ,2., -0.5
-    # t_x, t_y, theta = -20. ,2., 1.
-    # t_x, t_y, theta = -20., 2.8, 4.
     path = osp.join(osp.dirname(__file__), "..", "samples")
     vis_img = pr.Image(osp.join(path, "20210906123134_PL4_DIST_raw_NON_LINEAR_REF.jpg"))
     debug_dir = "_test_images_tx%d_ty%d_%ddeg%s"%(t_x, t_y, theta, suffix)
@@ -362,55 +396,70 @@ def test_alignment_system_single_scale_single_iter():
 def test_alignment_system_multi_scale_multi_iter():
     """
     """
-    # vis_img, vis_img_moved, debug_dir, homog = generate_test_data(t_x=-20, t_y=135.4, theta = -5., suffix="_Multi_scale_MSR")
-
-    vis_img, vis_img_moved, debug_dir, homog = generate_test_data(t_x=-20, t_y=60.4, theta = -7., suffix="_Multi_scale_MSR_light")
+    iterative_scheme = [(32, 12, 5), (16, 2, 5), (8, 1, 5), (4, 1, 5)]
+    vis_img, vis_img_moved, debug_dir, homog = generate_test_data(
+        t_x=20., t_y=120.4, theta =-15.,
+        suffix="_Multi_scale_MSR_{}".format(iterative_scheme)
+    )
     out_img = pyramidal_search(
         vis_img.data, vis_img_moved.data,
         debug_dir=debug_dir, debug=False,
         mode=LAPLACIAN_ENERGIES,
         dist=SSD,
-        # iterative_scheme = [(40, 4), (32, 2), (16, 1)],
-        iterative_scheme = [(32, 6), (16, 6), (8, 3), (4, 3)],
+        iterative_scheme=iterative_scheme,
         sigma_mov=5,
-        sigma_ref=5
+        sigma_ref=5,
+        affinity=True
     )
     pr.Image(out_img.astype(np.uint8)).save(osp.join(debug_dir, "REGISTERED_PYR.jpg"))
-
 
 
 # ----------------------------------------- Run on images using pyramid ------------------------------------------------
-def align_images(vis_img=None, nir_img=None, debug_dir="", affinity=True):
+def align_images(
+        vis_img=None, nir_img=None,
+        debug_dir="", affinity=True,
+        iterative_scheme = [(4, 1, 5), (4, 1, 15), (2, 1, 15)]
+    ):
     mode = LAPLACIAN_ENERGIES
     dist = NTG
-    iterative_scheme = [(32, 4), (32, 2), (16, 2), (8, 2), (4, 3), (2, 2)]
     debug_dir = debug_dir+"_{}_{}_{}".format(mode, dist, iterative_scheme)
     if not osp.isdir(debug_dir):
         mkdir(debug_dir)
-    vis_img.save(osp.join(debug_dir, "REF.jpg"))
-    nir_img.save(osp.join(debug_dir, "MOVED.jpg"))
+    out_img_path = osp.join(debug_dir, "REGISTERED_PYR.jpg")
+    if not osp.isfile(out_img_path):
+        vis_img.save(osp.join(debug_dir, "REF.jpg"))
+        nir_img.save(osp.join(debug_dir, "MOVED.jpg"))
 
-    out_img = pyramidal_search(
-        vis_img.data, nir_img.data,
-        # debug_dir=None, debug=True,  # -> SHOW TRACES, NOT SAVING ANYTHING TO DISK
-        # debug_dir=None, debug=False,  # -> NO TRACES AT ALL, NOT SAVING ANYTHING TO DISK
-        # debug_dir=debug_dir, debug=False, # -> FORCE ONLY MANDATORY TRACES
-        # debug_dir=debug_dir, debug=True, # -> FORCE ALL TRACES TO DISK
-        debug_dir=debug_dir, debug=False,
-        iterative_scheme = iterative_scheme,
-        mode=mode,
-        dist=dist,
-        affinity=affinity
+        out_img = pyramidal_search(
+            vis_img.data, nir_img.data,
+            debug_dir=debug_dir, debug=True,
+            iterative_scheme = iterative_scheme,
+            mode=mode,
+            dist=dist,
+            affinity=affinity
 
-    )
-    pr.Image(out_img.astype(np.uint8)).save(osp.join(debug_dir, "REGISTERED_PYR.jpg"))
+        )
+        pr.Image(out_img.astype(np.uint8)).save(out_img_path)
+    else:
+        out_img = pr.Image(out_img_path).data
+    # ESTIMATE FINAL FLOW
+    # _out_img = pyramidal_search(
+    #     vis_img.data, out_img,
+    #     debug_dir=debug_dir, debug=False,
+    #     iterative_scheme = [(4, 1, 20)],
+    #     mode=mode,
+    #     dist=dist,
+    #     affinity=affinity
+    # )
 
 
 def run_alignment_disparity():
     path = osp.join(osp.dirname(__file__), "..", "Image_424")
     vis_img = pr.Image(osp.join(path, "HYPERLAPSE_0422_PL4_DIST.tif"))
     nir_img = pr.Image(osp.join(path, "HYPERLAPSE_0429_PL4_DIST.tif"))
-    align_images(vis_img, nir_img, debug_dir="img_424_visible_homog")
+    align_images(vis_img, nir_img,
+                 debug_dir="img_424_disparity",
+                 iterative_scheme = [(16, 6, 5), (8, 1, 15), (4, 1, 15), (4, 1, 30)])
 
 
 def run_alignment_multispectral():
@@ -419,8 +468,10 @@ def run_alignment_multispectral():
     nir_img = pr.Image(osp.join(path, "20210906123134_PL4_DIST_raw_NON_LINEAR_IR_registered_semi_auto.jpg"))
     align_images(
         vis_img, nir_img,
-        debug_dir="iterative_multiscale_multispectral_alignment_MSR_search",
-        affinity=False
+        # debug_dir="iterative_multiscale_multispectral_alignment_MSR_search",
+        debug_dir="PWC_MSR",
+        affinity=False,
+        iterative_scheme = [(16, 2, 5), (8, 2, 5), (4, 1, 5), (4, 1, 10), (4, 1, 15)]
     )
 
 

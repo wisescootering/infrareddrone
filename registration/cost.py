@@ -194,15 +194,12 @@ def compute_cost_surfaces_with_traces(
         "downscale": align_config.downscale
     }
     debug_fig = debug_fig_main
-    _costs_dbg = []
     if debug or debug_dir is not None:
         for y_id in range(align_config.y_n):
-            _costs_dbg.append([])
             for x_id in range(align_config.x_n):
                 y_start, y_end, x_start, x_end = patch_coords[y_id, x_id, :].astype(int)
                 patch_ref, patch_mov = get_patch(ref, mov, (y_start, y_end, x_start, x_end))
                 cost = cost_dict["costs"][y_id][x_id]
-                _costs_dbg[y_id].append(cost.sum(axis=-1))
                 if debug or debug_fig is not None:
                     debug_fig_current = None
                     if debug_fig is not None:
@@ -242,6 +239,13 @@ def compute_cost_surfaces_with_traces(
     debug_fig = None if debug_fig_main is None else debug_fig_main + "overview_cost_surfaces_{}.png".format(suffix)
 
     if debug or debug_dir is not None:
+        _costs_dbg = []
+        if debug or debug_dir is not None:
+            for y_id in range(align_config.y_n):
+                _costs_dbg.append([])
+                for x_id in range(align_config.x_n):
+                    cost = cost_dict["costs"][y_id][x_id]
+                    _costs_dbg[y_id].append(cost.sum(axis=-1))
         pr.show(
             _costs_dbg, suptitle="cost {} surfaces y{} x{} {} {}".format(
                 align_config.dist_mode, align_config.y_n, align_config.x_n, prefix, suffix),
