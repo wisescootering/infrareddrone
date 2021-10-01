@@ -172,9 +172,76 @@ def compute_cost_surfaces(
     return costs, centers, patch_coords
 
 
+def plot_costs_overview(cost_dict, debug_fig=None, title=None, pickle_path=None):
+    _costs_dbg = []
+    for y_id in range(cost_dict["costs"].shape[0]):
+        _costs_dbg.append([])
+        for x_id in range(cost_dict["costs"].shape[1]):
+            cost = cost_dict["costs"][y_id][x_id]
+            _costs_dbg[y_id].append(cost.sum(axis=-1))
+    pr.show(
+        _costs_dbg,
+        suptitle=title,
+        save=debug_fig,
+    )
+    if pickle_path is not None:
+        np.save(pickle_path, cost_dict)
+
+
+def plot_single_cost_function(cost_dict, ref, mov, patch_coords, prefix="", suffix="", align_config=AlignmentConfig(),
+                              debug=False, debug_fig=None):
+
+    for y_id in range(align_config.y_n):
+        for x_id in range(align_config.x_n):
+            y_start, y_end, x_start, x_end = patch_coords[y_id, x_id, :].astype(int)
+            patch_ref, patch_mov = get_patch(ref, mov, (y_start, y_end, x_start, x_end))
+            cost = cost_dict["costs"][y_id][x_id]
+            if debug or debug_fig is not None:
+                debug_fig_current = None
+                if debug_fig is not None:
+                    debug_fig_current = debug_fig+"cost_surface_{}_{}_{}.png".format(y_id, x_id, suffix)
+
+                if align_config.mode == LAPLACIAN_ENERGIES:
+                    costs_plots = [
+                        (cost[:, :, 0], "{} -".format(align_config.dist_mode)),
+                        (cost[:, :, 1], "{} |".format(align_config.dist_mode)),
+                        (cost[:, :, 2], "{} /".format(align_config.dist_mode)),
+                        (cost[:, :, 3], "{} \\".format(align_config.dist_mode)),
+                        (np.sum(cost, axis=2), "cost sum")
+                    ]
+                if align_config.mode == GRAY_SCALE:
+                    costs_plots = [
+                        (cost[:, :, 0], "{}".format(align_config.dist_mode)),
+                    ]
+                if align_config.mode == COLORED:
+                    costs_plots = [
+                        (cost[:, :, 0], "{} R".format(align_config.dist_mode)),
+                        (cost[:, :, 1], "{} G".format(align_config.dist_mode)),
+                        (cost[:, :, 2], "{} B".format(align_config.dist_mode)),
+                    ]
+                patch_mov_search = patch_mov[
+                                   align_config.search_y:-align_config.search_y,
+                                   align_config.search_x:-align_config.search_x,
+                                   :
+               ]
+                pr.show(
+                    [
+                        [
+                            (viz_laplacian_energy(patch_ref), "VIS"),
+                            (viz_laplacian_energy(patch_mov), "NIR"),
+                            (viz_laplacian_energy(patch_mov_search), "NIR patch"),
+                            (viz_laplacian_energy(cost), "colored cost {}".format(align_config.dist_mode)),
+                        ],
+                        costs_plots
+                    ],
+                    suptitle="PATCH Y={} X={} {} {} {}".format(y_id, x_id, align_config.dist_mode, prefix, suffix),
+                    save=debug_fig_current
+                )
+
 def compute_cost_surfaces_with_traces(
         ref, mov,
-        debug=False, debug_dir=None, prefix=None, suffix="", align_config=AlignmentConfig()
+        debug=False, debug_dir=None, prefix=None, suffix="", align_config=AlignmentConfig(),
+        forced_debug_dir=None
     ):
     """Wrapping for numba acclerated compute_cost_surfaces with extra debug traces
     """
@@ -194,64 +261,28 @@ def compute_cost_surfaces_with_traces(
         "downscale": align_config.downscale
     }
     debug_fig = debug_fig_main
+    # ------------------------------------------------------------------------------------------- Debug all single costs
     if debug or debug_dir is not None:
-        for y_id in range(align_config.y_n):
-            for x_id in range(align_config.x_n):
-                y_start, y_end, x_start, x_end = patch_coords[y_id, x_id, :].astype(int)
-                patch_ref, patch_mov = get_patch(ref, mov, (y_start, y_end, x_start, x_end))
-                cost = cost_dict["costs"][y_id][x_id]
-                if debug or debug_fig is not None:
-                    debug_fig_current = None
-                    if debug_fig is not None:
-                        debug_fig_current = debug_fig+"cost_surface_{}_{}_{}.png".format(y_id, x_id, suffix)
-
-                    if align_config.mode == LAPLACIAN_ENERGIES:
-                        costs_plots = [
-                            (cost[:, :, 0], "{} -".format(align_config.dist_mode)),
-                            (cost[:, :, 1], "{} |".format(align_config.dist_mode)),
-                            (cost[:, :, 2], "{} /".format(align_config.dist_mode)),
-                            (cost[:, :, 3], "{} \\".format(align_config.dist_mode)),
-                            (np.sum(cost, axis=2), "cost sum")
-                        ]
-                    if align_config.mode == GRAY_SCALE:
-                        costs_plots = [
-                            (cost[:, :, 0], "{}".format(align_config.dist_mode)),
-                        ]
-                    if align_config.mode == COLORED:
-                        costs_plots = [
-                            (cost[:, :, 0], "{} R".format(align_config.dist_mode)),
-                            (cost[:, :, 1], "{} G".format(align_config.dist_mode)),
-                            (cost[:, :, 2], "{} B".format(align_config.dist_mode)),
-                        ]
-                    pr.show(
-                        [
-                            [
-                                (viz_laplacian_energy(patch_ref), "VIS"),
-                                (viz_laplacian_energy(patch_mov), "NIR"),
-                                # (viz_laplacian_energy(patch_mov_search), "NIR patch"),
-                                (viz_laplacian_energy(cost), "colored cost {}".format(align_config.dist_mode)),
-                            ],
-                            costs_plots
-                        ],
-                        suptitle="PATCH Y={} X={} {} {} {}".format(y_id, x_id, align_config.dist_mode, prefix, suffix),
-                        save=debug_fig_current
-                    )
-    debug_fig = None if debug_fig_main is None else debug_fig_main + "overview_cost_surfaces_{}.png".format(suffix)
-
-    if debug or debug_dir is not None:
-        _costs_dbg = []
-        if debug or debug_dir is not None:
-            for y_id in range(align_config.y_n):
-                _costs_dbg.append([])
-                for x_id in range(align_config.x_n):
-                    cost = cost_dict["costs"][y_id][x_id]
-                    _costs_dbg[y_id].append(cost.sum(axis=-1))
-        pr.show(
-            _costs_dbg, suptitle="cost {} surfaces y{} x{} {} {}".format(
-                align_config.dist_mode, align_config.y_n, align_config.x_n, prefix, suffix),
-            save=debug_fig
+        plot_single_cost_function(
+            cost_dict, ref, mov, patch_coords, prefix=prefix, suffix=suffix, align_config=align_config,
+            debug=debug, debug_fig=debug_fig
         )
-        np.save(debug_fig_main+"_cost_search_{}".format(suffix), cost_dict)
+    # -------------------------------------------------------------------------------------- Debug overview of all costs
+    if forced_debug_dir is not None:
+        debug_fig_main = osp.join(
+            forced_debug_dir, "{}_blocks_y{}x{}_search_y{}x{}_{}_".format(
+                prefix, align_config.y_n, align_config.x_n,
+                align_config.search_y, align_config.search_x, align_config.dist_mode
+            )
+        )
+        debug_fig = None if debug_fig_main is None else debug_fig_main + "overview_cost_surfaces_{}.png".format(suffix)
+        pickle_path = None if debug_fig_main is None else debug_fig_main+"_cost_search_{}".format(suffix)
+        plot_costs_overview(
+            cost_dict,
+            debug_fig=debug_fig,
+            title="cost {} surfaces y{} x{} {} {}".format(align_config.dist_mode, align_config.y_n, align_config.x_n, prefix, suffix),
+            pickle_path=pickle_path
+        )
     return cost_dict
 
 

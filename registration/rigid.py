@@ -173,6 +173,7 @@ def pyramidal_search(
         - debug_dir=debug_dir, debug=False, # -> FORCE ONLY MANDATORY TRACES (see debug_flag in debug_trace function)
         - debug_dir=debug_dir, debug=True, # -> FORCE ALL TRACES TO DISK
     """
+    ts_start = time.perf_counter()
     forced_debug_dir = debug_dir
     if not debug:
         debug_dir = None # disable most traces if debug is set to False
@@ -229,6 +230,7 @@ def pyramidal_search(
         alignment_params = dict(
             debug=debug,
             debug_dir=debug_dir,
+            forced_debug_dir=forced_debug_dir, # for cost overview
             align_config = AlignmentConfig(
                 downscale=ds,
                 mode=mode,
@@ -271,12 +273,15 @@ def pyramidal_search(
                 ds_msr_ref, ds_msr_mov,
                 suffix="_it{:02d}".format(iter),
                 prefix="ds{}_{}".format(ds, mode),
-                **alignment_params)
+
+                **alignment_params
+            )
             vpos, vector_field = brute_force_vector_field_search(
                 costs=cost_dict["costs"],
                 centers=cost_dict["centers"],
                 downscale=ds
             )
+
             # --------------------------------------------------------------------------------------- Debug Vector field
             ax_vector_field = None
             img_mov_reg = None
@@ -318,7 +323,7 @@ def pyramidal_search(
                 ds_img_mov = motion_model.warp(ds_img_mov_init, downscale=ds)
                 debug_trace(ds_img_mov, ds, iter, prefix="_image_", suffix="alignment")
                 out_img = motion_model.warp(img_mov, downscale=1)
-                debug_trace(out_img, ds, iter, prefix="FULL_RES_ALIGN_", debug_flag=True)  # FORCE DEBUGGING (minimal trace)
+                debug_trace(out_img, ds, iter, prefix="FULL_RES_ALIGN_", debug_flag=True)
             ts_iter_end = time.perf_counter()
             logging.warning("{:.2f}s elapsed at scale {} - iter {}".format(ts_iter_end - ts_iter_start, ds, iter))
         debug_trace(ds_msr_ref, ds, iter, prefix="_msr_", suffix="_ref", msr_mode=mode, debug_flag=True)
@@ -328,7 +333,10 @@ def pyramidal_search(
         ts_scale_end = time.perf_counter()
         logging.warning("{:.2f}s elapsed at scale {}".format(ts_scale_end - ts_scale_start, ds))
         iter +=1
+    ts_end = time.perf_counter()
+    logging.warning("\tTOTAL {:.2f}s elapsed for iterative scheme {}".format(ts_end - ts_start, iterative_scheme))
     out_img = motion_model.warp(img_mov, downscale=1)
+
     return out_img
 
 
@@ -417,7 +425,7 @@ def test_alignment_system_multi_scale_multi_iter():
 # ----------------------------------------- Run on images using pyramid ------------------------------------------------
 def align_images(
         vis_img=None, nir_img=None,
-        debug_dir="", affinity=True,
+        debug_dir="", debug=False, affinity=True,
         iterative_scheme = [(4, 1, 5), (4, 1, 15), (2, 1, 15)]
     ):
     mode = LAPLACIAN_ENERGIES
@@ -432,7 +440,7 @@ def align_images(
 
         out_img = pyramidal_search(
             vis_img.data, nir_img.data,
-            debug_dir=debug_dir, debug=True,
+            debug_dir=None, debug=debug,
             iterative_scheme = iterative_scheme,
             mode=mode,
             dist=dist,
@@ -442,15 +450,6 @@ def align_images(
         pr.Image(out_img.astype(np.uint8)).save(out_img_path)
     else:
         out_img = pr.Image(out_img_path).data
-    # ESTIMATE FINAL FLOW
-    # _out_img = pyramidal_search(
-    #     vis_img.data, out_img,
-    #     debug_dir=debug_dir, debug=False,
-    #     iterative_scheme = [(4, 1, 20)],
-    #     mode=mode,
-    #     dist=dist,
-    #     affinity=affinity
-    # )
 
 
 def run_alignment_disparity():
@@ -468,10 +467,10 @@ def run_alignment_multispectral():
     nir_img = pr.Image(osp.join(path, "20210906123134_PL4_DIST_raw_NON_LINEAR_IR_registered_semi_auto.jpg"))
     align_images(
         vis_img, nir_img,
-        # debug_dir="iterative_multiscale_multispectral_alignment_MSR_search",
         debug_dir="PWC_MSR",
+        debug=False,
         affinity=False,
-        iterative_scheme = [(16, 2, 5), (8, 2, 5), (4, 1, 5), (4, 1, 10), (4, 1, 15)]
+        iterative_scheme = [(32, 3, 4), (16, 2, 5), (8, 2, 5), (4, 1, 5), (4, 1, 10), (4, 1, 15)]
     )
 
 
