@@ -8,6 +8,7 @@ import numpy as np
 import os.path as osp
 import PIL.Image
 import PIL.ExifTags
+import exifread
 import datetime
 from os import mkdir
 from irdrone.utils import Style, conversionGPSdms2dd, get_polar_shading_map, contrast_stretching
@@ -65,6 +66,8 @@ class Image:
         if name is not None: self.name = name
         self.date = None
         self.gps = None
+        self.altitude = None
+        self.altitude_ref = None
         self.loadMetata()
 
     def save(self, path):
@@ -81,18 +84,24 @@ class Image:
 
     def loadMetata(self):
         if self.path is not None:
+            prefix = ""
             try:
-                pimg = PIL.Image.open(self.path)
-                exifTag = {
-                    PIL.ExifTags.TAGS[k]: v
-                    for k, v in pimg._getexif().items()
-                    if k in PIL.ExifTags.TAGS
-                }
+                if self.path.lower().endswith("dng"):
+                    with open(self.path, 'rb') as f:
+                        exifTag = exifread.process_file(f)
+                    prefix = "EXIF "
+                else:
+                    pimg = PIL.Image.open(self.path)
+                    exifTag = {
+                        PIL.ExifTags.TAGS[k]: v
+                        for k, v in pimg._getexif().items()
+                        if k in PIL.ExifTags.TAGS
+                    }
             except:
                 print(Style.YELLOW + "CANNOT ACCESS EXIF %s"%self.path + Style.RESET)
                 return
             try:
-                dateTimeOriginal= exifTag.get('DateTimeOriginal')
+                dateTimeOriginal = str(exifTag[prefix+'DateTimeOriginal'])
                 imgYear   = int (dateTimeOriginal[0:4])
                 imgMonth  = int (dateTimeOriginal[5:7])
                 imgDay    = int (dateTimeOriginal[8:11])
@@ -105,30 +114,47 @@ class Image:
                 self.date = None
 
             try:
-                dateTime = exifTag.get('DateTime')
+                dateTime = str(exifTag.get(prefix+'DateTime'))
                 self.dateFile = dateTime
             except:
                 self.dateFile = None
 
             try:
-                gpsHemisphere= exifTag.get('GPSInfo').__getitem__(1)
-                if gpsHemisphere == 'S' :
-                    signeLat=-1.
+                if self.path.lower().endswith("dng"):
+                    gpsHemisphere = str(exifTag["GPS GPSLatitudeRef"])
+                    gpsLat_str = str(exifTag['GPS GPSLatitude'])[1:-1].split(", ")
+                    gpsLat = [
+                        int(gpsLat_str[0]),
+                        int(gpsLat_str[1]),
+                        int(gpsLat_str[2].split("/")[0])/ int(gpsLat_str[2].split("/")[1])
+                    ]
+                    gpsMeridien = str(exifTag["GPS GPSLongitudeRef"])
+                    gpsLong_str = str(exifTag['GPS GPSLongitude'])[1:-1].split(", ")
+                    gpsLong = [
+                        int(gpsLong_str[0]),
+                        int(gpsLong_str[1]),
+                        int(gpsLong_str[2].split("/")[0])/ int(gpsLong_str[2].split("/")[1])
+                    ]
+                    _altitude = str(exifTag["GPS GPSAltitude"]).split("/")
+                    self.altitude = int(_altitude[0])/int(_altitude[1])
+                    _altitude_ref = str(exifTag["GPS GPSAltitudeRef"])
+                    if _altitude_ref != "0":
+                        _altitude_ref = _altitude_ref.split("/")
+                        self.altitude_ref = int(_altitude_ref[0])/int(_altitude_ref[1])
                 else:
-                    signeLat = 1.
-                gpsLat = [chiffre / (1. * precision) for chiffre, precision in exifTag.get('GPSInfo').__getitem__(2)]
+                    gpsHemisphere= exifTag.get(prefix+'GPSInfo').__getitem__(1)
+                    gpsLat = [chiffre / (1. * precision) for chiffre, precision in exifTag.get('GPSInfo').__getitem__(2)]
+                    gpsMeridien = exifTag.get(prefix+'GPSInfo').__getitem__(3)
+                    gpsLong = [chiffre / (1. * precision) for chiffre, precision in exifTag.get('GPSInfo').__getitem__(4)]
+                signeLat=-1.  if gpsHemisphere == 'S' else 1.
+                signeLong = -1. if gpsMeridien == 'W' else 1.
                 gpsLatDD = conversionGPSdms2dd(gpsLat)
-                gpsLatitude=[gpsHemisphere,signeLat*gpsLat[0] ,gpsLat[1],gpsLat[2], gpsLatDD]
-
-                gpsMeridien = exifTag.get('GPSInfo').__getitem__(3)
-                if gpsMeridien == 'W' :
-                    signeLong=-1.
-                else:
-                    signeLong = 1.
-                gpsLong = [chiffre / (1. * precision) for chiffre, precision in exifTag.get('GPSInfo').__getitem__(4)]
+                gpsLatitude=[gpsHemisphere, signeLat*gpsLat[0] ,gpsLat[1],gpsLat[2], gpsLatDD]
                 gpsLongDD = conversionGPSdms2dd(gpsLong)
                 gpsLongitude = [gpsMeridien, signeLong* gpsLong[0], gpsLong[1], gpsLong[2], gpsLongDD]
-                self.gps = {"latitude": gpsLatitude, "longitude": gpsLongitude}
+                self.latitude = gpsLatitude
+                self.longitude = gpsLongitude
+                self.gps = {"latitude": gpsLatitude, "longitude": gpsLongitude, "altitude": self.altitude}
             except:
                 print(Style.YELLOW + "NO GPS DATA FOUND IN %s"%self.path + Style.RESET)
                 self.gps = None
