@@ -23,7 +23,7 @@ def get_zoom_mat(scale):
 
 
 def manual_warp(ref: pr.Image, mov: pr.Image, yaw_main: float, pitch_main: float, roll_main: float = 0.,
-                refcalib=None, movingcalib=None, geometric_scale=None, refinement_homography=None):
+                refcalib=None, movingcalib=None, geometric_scale=None, refinement_homography=None, bigger_size_factor = None):
     rot_main, _ = cv2.Rodrigues(np.array([-np.deg2rad(pitch_main), np.deg2rad(yaw_main), np.deg2rad(roll_main)]))
     mov_calib = movingcalib.copy()
     if geometric_scale is None:
@@ -39,7 +39,16 @@ def manual_warp(ref: pr.Image, mov: pr.Image, yaw_main: float, pitch_main: float
         mov_calib["mtx"] = mov_cal
     if refinement_homography is not None:
         h = np.dot(refinement_homography, h)
-    mov_u = warp(mov, mov_calib, h, outsize=(ref.data.shape[1], ref.data.shape[0]))
+    if bigger_size_factor is not None:
+        outsize= [ref.data.shape[1], ref.data.shape[0]]
+        new_out_size = [int(outsize[0]*bigger_size_factor), int(outsize[1]*bigger_size_factor)]
+        translation_mat = np.eye(3)
+        translation_mat[0, 2] = (new_out_size[0] - outsize[0])/2
+        translation_mat[1, 2] = (new_out_size[1] - outsize[1])/2
+        h = np.dot(translation_mat, h)
+        mov_u = warp(mov, mov_calib, h, outsize=(new_out_size[0], new_out_size[1]))
+    else:
+        mov_u = warp(mov, mov_calib, h, outsize=(ref.data.shape[1], ref.data.shape[0]))
     return mov_u
 
 

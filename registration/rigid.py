@@ -143,7 +143,7 @@ def compute_pyramid(img, scales_list):
         if 2**ids in scales_list:
             img_pyr[2**ids] = resized.astype(np.float32)
             logging.info("Storing pyramid level {}".format(2**ids, resized.shape))
-        if 2**ids >= max(scales_list):#iterative_scheme[0][0]:
+        if 2**ids >= max(scales_list):
             break
     return img_pyr
 
@@ -220,12 +220,15 @@ def pyramidal_search(
 
     # ---------------------------------------------------    PYRAMID   -------------------------------------------------
     # -------------------------------------------------------------------------------------------------- Multiscale loop
-    for iter_conf in iterative_scheme:
+    for id_scheme, iter_conf in enumerate(iterative_scheme):
         if len(iter_conf) >= 2:
             ds, n_iter = iter_conf[:2]
             num_patches = default_patch_number
+            search_size = 6
         if len(iter_conf) >= 3:
             num_patches = iter_conf[2]
+        if len(iter_conf) >= 4:
+            search_size = iter_conf[3]
         ts_scale_start = time.perf_counter()
         alignment_params = dict(
             debug=debug,
@@ -237,7 +240,8 @@ def pyramidal_search(
                 dist_mode=dist,
                 sigma_ref=None,
                 sigma_mov=None,
-                num_patches=num_patches
+                num_patches=num_patches,
+                search_size=search_size
             )
         )
         # --------------------------------------------------------------------------------------------------------------
@@ -264,7 +268,7 @@ def pyramidal_search(
         # --------------------------------------------------------------------------------------------------------------
         # ----------------------------------------------------------------------------------------------- Iteration loop
         iter_list = range(1, n_iter+1)
-        for _iter_current in iter_list:
+        for id_iter, _iter_current in enumerate(iter_list):
             iter += 1
             ts_iter_start = time.perf_counter()
             # --------------------------------------------    COST SEARCH   --------------------------------------------
@@ -273,7 +277,6 @@ def pyramidal_search(
                 ds_msr_ref, ds_msr_mov,
                 suffix="_it{:02d}".format(iter),
                 prefix="ds{}_{}".format(ds, mode),
-
                 **alignment_params
             )
             vpos, vector_field = brute_force_vector_field_search(
@@ -285,12 +288,13 @@ def pyramidal_search(
             # --------------------------------------------------------------------------------------- Debug Vector field
             ax_vector_field = None
             img_mov_reg = None
-            if debug:
+            if debug or (id_iter == len(iter_list)-1 and id_scheme==len(iterative_scheme)-1):
                 img_mov_reg = motion_model.warp(img_mov, downscale=1)
                 # debug_trace(img_mov_reg, ds, iter, prefix="FLOW_", suffix="ALIGNED_GLOBALLY", debug_flag=True)
                 displaced_image = warp_from_sparse_vector_field(img_mov_reg, vector_field)
                 # np.save(osp.join(forced_debug_dir, "local_displacement"), {"img":img_mov_reg, "vector_field":vector_field})
                 debug_trace(displaced_image, ds, iter, prefix="FLOW_", suffix="WARP_LOCAL", debug_flag=True)
+            if debug:
                 fig = plt.figure(figsize=(img_mov.shape[:2][::-1]), dpi=1)
                 ax_vector_field = fig.add_subplot(111)
 
