@@ -87,7 +87,7 @@ class Image:
         if self.path is not None:
             prefix = ""
             try:
-                if self.path.lower().endswith("dng"):
+                if self.path.lower().endswith("dng") or self.path.lower().endswith("raw"):
                     with open(self.path, 'rb') as f:
                         exifTag = exifread.process_file(f)
                     prefix = "EXIF "

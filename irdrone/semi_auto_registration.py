@@ -10,7 +10,8 @@ from irdrone.registration import register_by_blocks, estimateFeaturePoints
 import numpy as np
 import cv2
 import logging
-import os.path as osp
+import os
+osp = os.path
 ROTATE = "Rotate"
 
 
@@ -469,15 +470,16 @@ def post_warp(ref, mov, params, img_name="img", linear=False):
             refinement_homography=params["homography"],
             **params["calibrations"],
         )
-        pr.Image(mov_warped_fullres_refined, "IR registered refined").save("{}_IR_registered_semi_auto_REFINED.{}".format(img_name, extension))
-        logging.warning("REFINING WITH {}".format(params["homography"]))
-        if not isinstance(ref, pr.Image):
-            ref = pr.Image(ref)
-        ref.save("{}_REF.{}".format(img_name, extension))
-        pr.Image(mov_warped_fullres, "IR registered").save("{}_IR_registered_semi_auto.{}".format(img_name, extension))
+        if img_name is not None:
+            pr.Image(mov_warped_fullres_refined, "IR registered refined").save("{}_IR_registered_semi_auto_REFINED.{}".format(img_name, extension))
+            logging.warning("SAVE WITH REFINING WITH {}".format(params["homography"]))
+            if not isinstance(ref, pr.Image):
+                ref = pr.Image(ref)
+            ref.save("{}_REF.{}".format(img_name, extension))
+            pr.Image(mov_warped_fullres, "IR registered").save("{}_IR_registered_semi_auto.{}".format(img_name, extension))
         # pr.Image(abs_grad_convert(ref.data), "REF absgrad").save("%d_REF_absgrad.jpg"%number)
         # pr.Image(abs_grad_convert(mov_warped_fullres), "IR registered absgrad").save("%d_IR_registered_semi_auto_absgrad.jpg"%number)
-
+    return mov_warped_fullres
 
 # ------------------------------------------------------ JPG DEMO  -----------------------------------------------------
 def real_images_pairs(number=[505, 230, 630][0]):
@@ -549,20 +551,23 @@ def align_raw(vis_path, nir_path, cals, out_dir=None, params=None):
         vis_undist_lin = vis.lineardata
     alignment = align_demo(vis_undist, nir, cals, params=params)
     if out_dir is not None:
+        if not osp.isdir(out_dir):
+            os.mkdir(out_dir)
         prefix = osp.basename(vis_path)[:-4]
-        post_warp(
-            vis_undist.data,
-            nir,
-            alignment,
-            img_name=osp.join(out_dir, prefix + "_raw_NON_LINEAR")
-        )
-        post_warp(
-            vis_undist_lin,
-            nir.lineardata,
-            alignment,
-            img_name=osp.join(out_dir, prefix + "_raw_LINEAR"),
-            linear=True
-        )
+    out_non_lin = post_warp(
+        vis_undist.data,
+        nir,
+        alignment,
+        img_name=None if out_dir is None else osp.join(out_dir, prefix + "_raw_NON_LINEAR")
+    )
+    out_lin = post_warp(
+        vis_undist_lin,
+        nir.lineardata,
+        alignment,
+        img_name=None if out_dir is None else osp.join(out_dir, prefix + "_raw_LINEAR"),
+        linear=True
+    )
+    return out_lin, out_non_lin, vis
 
 
 def demo_raw(folder=osp.join(osp.dirname(__file__), "..", r"Hyperlapse 06_09_2021_sync")):
