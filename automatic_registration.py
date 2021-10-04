@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 from customApplication import colorMapNDVI
 import irdrone.imagepipe as ipipe
 import shutil
+import cv2
 
 class VegetationIndex(ipipe.ProcessBlock):
     """
@@ -47,7 +48,7 @@ def ndvi(vis_img, nir_img, out_path=None):
         ipi.save(out_path)
 
 
-def align_raw(vis_path, nir_path, cals, debug_dir=None, extension=1.4):
+def align_raw(vis_path, nir_path, cals, debug_dir=None, debug=True, extension=1.4):
     """
     :param vis_path: Path to visible DJI DNG image
     :param nir_path: Path to NIR SJCAM M20 RAW image
@@ -70,41 +71,37 @@ def align_raw(vis_path, nir_path, cals, debug_dir=None, extension=1.4):
         cals_ref["dist"] *= 0.
 
     ref_full = vis_undist.data
+    mov_full = nir.data
     ts_end_load = time.perf_counter()
     logging.warning("{:.2f}s elapsed in loading full resolution RAW".format(ts_end_load - ts_start))
-
-    # @TODO: inverse downscale and MSR
     ts_start_coarse_search = time.perf_counter()
     ds = 32
-    ref = transform.pyramid_reduce(ref_full, downscale=ds, multichannel=True).astype(np.float32)
-    # ref = cv2.resize(ref_full, (ref_full.shape[1]//ds, ref_full.shape[0]//ds))
-    mov_full = nir.data
-    mov = transform.pyramid_reduce(mov_full, downscale=ds, multichannel=True).astype(np.float32)
-    # mov = cv2.resize(mov_full, (mov_full.shape[1]//ds, mov_full.shape[0]//ds))
-    debug_dir = debug_dir
-    if not os.path.isdir(debug_dir):
-        os.mkdir(debug_dir)
-    pr.Image(rigid.viz_msr(ref, "" )).save(osp.join(debug_dir, "REF.jpg"))
+    # -------------------------------------------------------------- Full res : Undistort NIR fisheye with a larger FOV
     yaw_main, pitch_main, roll_main = 0., 0., 0.
-    mov_w = manual_warp(
-        ref, mov,
+    mov_w_full = manual_warp(
+        ref_full, mov_full,
         yaw_main, pitch_main, roll_main,
         refcalib=cals_ref, movingcalib=cals["movingcalib"],
-        geometric_scale=1/ds, refinement_homography=None,
+        refinement_homography=None,
         bigger_size_factor=extension,
 
     )
-
-    pad_y = (mov_w.shape[0]-ref.shape[0])//2
-    pad_x = (mov_w.shape[1]-ref.shape[1])//2
-    align_config = rigid.AlignmentConfig(num_patches=1, search_size=pad_x, mode=rigid.LAPLACIAN_ENERGIES)
-    msr_ref = rigid.multispectral_representation(ref, mode=align_config.mode).astype(np.float32)
-    msr_mov = rigid.multispectral_representation(mov_w, mode=align_config.mode).astype(np.float32)
+    # -------------------------------------------------------------- Multi-spectral representation
+    msr_mode = rigid.LAPLACIAN_ENERGIES
+    # @TODO : Fix Gaussian
+    msr_ref_full = rigid.multispectral_representation(ref_full, mode=msr_mode, sigma_gaussian=3.).astype(np.float32)
+    # @TODO: re-use MSR of full res!
+    msr_mov_full = rigid.multispectral_representation(mov_w_full, mode=msr_mode, sigma_gaussian=1.).astype(np.float32)
+    msr_ref = transform.pyramid_reduce(msr_ref_full, downscale=ds, multichannel=True).astype(np.float32)
+    msr_mov = transform.pyramid_reduce(msr_mov_full, downscale=ds, multichannel=True).astype(np.float32)
+    pad_y = (msr_mov.shape[0]-msr_ref.shape[0])//2
+    pad_x = (msr_mov.shape[1]-msr_ref.shape[1])//2
+    align_config = rigid.AlignmentConfig(num_patches=1, search_size=pad_x, mode=msr_mode)
     padded_ref = np.zeros_like(msr_mov)
-    padded_ref[pad_y:pad_y+ref.shape[0], pad_x:pad_x+ref.shape[1], :] = msr_ref
-    pr.Image(rigid.viz_msr(mov_w, None)).save(osp.join(debug_dir, "_LOWRES_MOV_INIT.jpg"))
-    pr.Image(rigid.viz_msr(msr_mov, align_config.mode)).save(osp.join(debug_dir, "_LOWRES_MOV_MSR.jpg"))
-    pr.Image(rigid.viz_msr(padded_ref, align_config.mode)).save(osp.join(debug_dir, "_LOWRES_MSR_PADDED_REF.jpg"))
+    padded_ref[pad_y:pad_y+msr_ref.shape[0], pad_x:pad_x+msr_ref.shape[1], :] = msr_ref
+    # pr.Image(rigid.viz_msr(mov_w, None)).save(osp.join(debug_dir, "_LOWRES_MOV_INIT.jpg"))
+    pr.Image(rigid.viz_msr(msr_mov, align_config.mode)).save(osp.join(debug_dir, "_PADDED_LOWRES_MOV_MSR.jpg"))
+    pr.Image(rigid.viz_msr(padded_ref, align_config.mode)).save(osp.join(debug_dir, "_PADDED_LOWRES_MSR_REF.jpg"))
     cost_dict = rigid.compute_cost_surfaces_with_traces(
         msr_mov, padded_ref,
         debug=True, debug_dir=debug_dir,
@@ -114,22 +111,22 @@ def align_raw(vis_path, nir_path, cals, debug_dir=None, extension=1.4):
     )
 
 
-
     focal = cals_ref["mtx"][0, 0].copy()
     # translation = -np.argmin(cost_dict["costs"][0,0, :, :, :])[::-1] * ds
     translation = -ds*rigid.minimum_cost(cost_dict["costs"][0,0, :, :, :])
     yaw_refine = np.rad2deg(np.arctan(translation[0]/focal))
     pitch_refine = np.rad2deg(np.arctan(translation[1]/focal))
     print("2D translation {}".format(translation, yaw_refine, pitch_refine))
-    mov_wr = manual_warp(
-        ref, mov,
-        yaw_main + yaw_refine, pitch_main + pitch_refine, roll_main,
-        refcalib=cals_ref, movingcalib=cals["movingcalib"],
-        geometric_scale=1/ds, refinement_homography=None,
-    )
 
-    pr.Image(rigid.viz_msr(mov_wr, None)).save(osp.join(debug_dir, "_LOWRES_REGISTERED.jpg"))
-
+    if debug:
+        mov_wr = manual_warp(
+            msr_ref, cv2.resize(mov_full, (mov_full.shape[1]//ds, mov_full.shape[0]//ds)),
+            yaw_main + yaw_refine, pitch_main + pitch_refine, roll_main,
+            refcalib=cals_ref, movingcalib=cals["movingcalib"],
+            geometric_scale=1/ds, refinement_homography=None,
+        )
+        pr.Image(rigid.viz_msr(mov_wr, None)).save(osp.join(debug_dir, "_LOWRES_REGISTERED.jpg"))
+        pr.Image(rigid.viz_msr(cv2.resize(ref_full, (ref_full.shape[1]//ds, ref_full.shape[0]//ds)), None)).save(osp.join(debug_dir, "_LOWRES_REF.jpg"))
 
     mov_wr_fullres = manual_warp(
         ref_full, mov_full,
@@ -139,13 +136,13 @@ def align_raw(vis_path, nir_path, cals, debug_dir=None, extension=1.4):
     )
     ts_end_coarse_search = time.perf_counter()
     logging.warning("{:.2f}s elapsed in coarse search".format(ts_end_coarse_search - ts_start_coarse_search))
-    pr.Image(ref_full).save(osp.join(debug_dir, "REF_FULLRES.jpg"))
+    pr.Image(ref_full).save(osp.join(debug_dir, "FULLRES_REF.jpg"))
     pr.Image(mov_wr_fullres).save(osp.join(debug_dir, "FULLRES_REGISTERED_COARSE.jpg"))
     mov_w_final = rigid.pyramidal_search(
         ref_full, mov_wr_fullres,
-        iterative_scheme=[(16, 2, 4), (16, 2, 5), (4, 3, 5)],
+        iterative_scheme=[(16, 2, 4, 8), (16, 2, 5), (4, 3, 5)],
         mode=rigid.LAPLACIAN_ENERGIES, dist=rigid.NTG,
-        debug=False, debug_dir=debug_dir,
+        debug=True, debug_dir=debug_dir,
         affinity=False,
         sigma_ref=5.,
         sigma_mov=3.
