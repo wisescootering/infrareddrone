@@ -66,6 +66,7 @@ class Image:
         if name is not None: self.name = name
         self.date = None
         self.gps = None
+        self.camera = None
         self.altitude = None
         self.altitude_ref = None
         self.loadMetata()
@@ -101,12 +102,26 @@ class Image:
                 print(Style.YELLOW + "CANNOT ACCESS EXIF %s"%self.path + Style.RESET)
                 return
             try:
+                maker = str(exifTag['Image Make'])
+                model = str(exifTag['Image Model'])
+                serial_number = str(exifTag[prefix+'BodySerialNumber'])
+                timelapse = 0
+                deltatime = 0
+                self.camera = {"maker": maker,
+                             "model": model,
+                             "serial number": serial_number,
+                             "timelapse": timelapse,
+                             "deltatime": deltatime}
+            except:
+                print(Style.YELLOW + "NO CAMERA IN %s"%self.path + Style.RESET)
+                self.camera = None
+            try:
                 dateTimeOriginal = str(exifTag[prefix+'DateTimeOriginal'])
-                imgYear   = int (dateTimeOriginal[0:4])
-                imgMonth  = int (dateTimeOriginal[5:7])
-                imgDay    = int (dateTimeOriginal[8:11])
-                imgHour   = int (dateTimeOriginal[11:13])
-                imgMin    = int (dateTimeOriginal[14:16])
+                imgYear = int (dateTimeOriginal[0:4])
+                imgMonth = int (dateTimeOriginal[5:7])
+                imgDay = int (dateTimeOriginal[8:11])
+                imgHour = int (dateTimeOriginal[11:13])
+                imgMin = int (dateTimeOriginal[14:16])
                 imgSecond = int (dateTimeOriginal[17:19])
                 self.date = datetime.datetime(imgYear, imgMonth, imgDay, imgHour, imgMin, imgSecond)
             except:
@@ -136,7 +151,10 @@ class Image:
                         int(gpsLong_str[2].split("/")[0])/ int(gpsLong_str[2].split("/")[1])
                     ]
                     _altitude = str(exifTag["GPS GPSAltitude"]).split("/")
-                    self.altitude = int(_altitude[0])/int(_altitude[1])
+                    if len(_altitude)==1:
+                        self.altitude = int(_altitude[0])
+                    else:
+                        self.altitude = int(_altitude[0])/int(_altitude[1])
                     _altitude_ref = str(exifTag["GPS GPSAltitudeRef"])
                     if _altitude_ref != "0":
                         _altitude_ref = _altitude_ref.split("/")
