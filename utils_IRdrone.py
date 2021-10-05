@@ -548,10 +548,12 @@ def writeSummaryFlight(flightPlanSynthesis, pathName):
     listSheets = workbook.sheetnames
     if len(listSheets) < 2:
         print(Style.RED + ' le fichier Excel du plan de vol ne contient pas de feuille Summary' + Style.RESET)
-        return
+        ws_sum = workbook.create_sheet("Summary", 1)
+        ws_sum.title = "Summary"
     elif listSheets[1] != 'Summary':
         print(Style.RED + ' le fichier Excel du plan de vol ne contient pas de feuille Summary' + Style.RESET)
-        return
+        ws_sum = workbook.create_sheet("Summary", 1)
+        ws_sum.title = "Summary"
     else:
         pass
 
