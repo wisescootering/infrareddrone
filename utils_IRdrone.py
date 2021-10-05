@@ -1,0 +1,633 @@
+# -*- coding: utf-8 -*-
+# pylint: disable=C0103, C0301, W0703
+"""
+Created on Mon Sep 13 15:56:18 2021
+
+@authors: manuel/alain
+"""
+
+from operator import itemgetter
+import irdrone.utils as ut
+import datetime
+import openpyxl
+from irdrone.utils import Style
+import irdrone.process as pr
+import os
+import sys
+import utils_GPS as uGPS
+import matplotlib.pyplot as plt
+
+
+# -------------   Convertisseurs de dates   Exif<->Python  Excel->Python  --------------------------------
+
+
+def dateExif2Py(exifTag):
+    """
+
+    :param exifTag: données Exif d'une image
+    :return: datePhotoPython     (datetime python)
+
+       Extraction de la date  de la prise de photo à partir de ses données Exif
+       La date est fournie par  l'horloge de la caméra.
+       Format Exif  YYYY:MM:DD  hh:mm:ss  type string
+       Puis conversion en datetime python en analysant la chaine de caractère Exif
+       On récupère Year Month Day Hour Min et Second  de type string
+       Il faut convertir les string en integer (via la fonction int()  )
+
+       Attention la clé Exif à utiliser est 'DateTimeOriginal'
+       La clé Exif 'DateTime' indique la date de création du fichier sur l'ordinateur!
+       La valeur de la clé 'DateTimeOriginal' est une chaine de caractères (string) 'YYYY:MM:DD  hh:mm:ss'
+       Il faut extraire de cette chaine les valeurs numériques (integer) DD,MM,YYYY,hh,mm,ss
+       puis construire une date "python" datetime.datetime(YYYY,MM,DD,hh,mm,ss,micross). Sous cette
+       forme on peut manipuler les dates. En particulier on peut connaître  la durée entre deux
+       dates  (en seconde). Il est aussi possible de connaître le nom du jour et du mois.
+
+    """
+
+    dateTimeOriginal = exifTag.get('DateTimeOriginal')  # date exacte de la prise de vue
+    imgYear = int(dateTimeOriginal[0:4])
+    imgMonth = int(dateTimeOriginal[5:7])
+    imgDay = int(dateTimeOriginal[8:11])
+    imgHour = int(dateTimeOriginal[11:13])
+    imgMin = int(dateTimeOriginal[14:16])
+    imgSecond = int(dateTimeOriginal[17:19])
+    imgMicroSecond = 0
+    # construction de la date python
+    #  Rem: Pour accéder aux éléments individuels de la date python
+    #       datePhotoPython.year(.month | .day | .hour | .minute | .second | .microseconde)
+    #
+    datePy = datetime.datetime(imgYear, imgMonth, imgDay, imgHour, imgMin, imgSecond, imgMicroSecond)
+
+    return datePy
+
+
+def datePy2Exif(datePy):
+    """
+
+    :param datePy:    (Year, Month, Day, Hour, Minute, Second, Microsecond, timezone)
+    :return: dateExif  str  format  YYYY:MM:DD hh:mm:ss
+    """
+    dateExif = str(datePy.year) + ':' + str(datePy.month) + ':' + str(datePy.day) + ' ' + \
+               str(datePy.hour) + ':' + str(datePy.minute) + ':' + str(datePy.second)
+    return dateExif
+
+
+def dateExif2Excel(dateExif):
+    """
+
+    :param dateExif:   str format  YYYY:MM:DD hh:mm:ss
+    :return: dateExcel str format  YYYY-MM-DD hh:mm:ss
+    """
+    date = dateExif.split(' ')[0].split(':')
+    date.extend(dateExif.split(' ')[1].split(':'))
+    dateExcel = str(date[0]) + '-' + str(date[1]) + '-' + str(date[2]) + ' ' + \
+                str(date[3]) + ':' + str(date[4]) + ':' + str(date[5])
+
+    return dateExcel
+
+
+def dateExcel2Py(dateExcel):
+    """
+
+    :param dateExcel:    str    format  YYYY-MM-DD hh:mm:ss
+    :return: datePy     (Year, Month, Day, Hour, Minute, Second, Microsecond, timezone)
+    """
+    imgYear = int(dateExcel[0:4])
+    imgMonth = int(dateExcel[5:7])
+    imgDay = int(dateExcel[8:11])
+    imgHour = int(dateExcel[11:13])
+    imgMin = int(dateExcel[14:16])
+    imgSecond = int(dateExcel[17:19])
+    imgMicroSecond = 0
+    # construction de la date python
+    #  Rem: Pour accéder aux éléments individuels de la date python
+    #       datePhotoPython.year(.month | .day | .hour | .minute | .second | .microseconde)
+    #
+    datePy = datetime.datetime(imgYear, imgMonth, imgDay, imgHour, imgMin, imgSecond, imgMicroSecond)
+    return datePy
+
+
+
+# ------------------     Plan de Vol      -------------------------------
+
+
+def readFlightPlan(pathPlanVolExcel, mute=None):
+    """
+    :param pathPlanVolExcel: chemin du fichier Excel qui contient le plan de vol  (string)
+    :return: planVol  Dictionnaire contenant les données du plan de vol  (dic)
+
+        Read the Flight Plan  in Excel file
+        Lecture du fichier Excel qui contient les informations sur le plan de vol
+
+    """
+    workbook = openpyxl.load_workbook(pathPlanVolExcel, read_only=True)
+    sheet = workbook['Plan_de_Vol']
+    nuetude = 2  # 2      numéro
+    nudrone = (nuetude + 8) + 1  # 2+8+1 =11
+    nucameraIR = (nudrone + 7) + 1  # 11+7+1=19
+    nuimages = (nucameraIR + 5) + 1  # 19+5+1=25
+    numeteo = (nuimages + 11) + 1  # 25+11+1=37
+    planVol = {sheet.cell(nuetude, 1).value:
+                   {sheet.cell(nuetude + 1, 1).value: sheet.cell(nuetude + 1, 2).value,  # 'client'
+                    sheet.cell(nuetude + 2, 1).value: sheet.cell(nuetude + 2, 2).value,  # 'lieu'
+                    sheet.cell(nuetude + 3, 1).value: sheet.cell(nuetude + 3, 2).value,
+                    # 'GPS'    Ndd.ddddd°,Edd.ddddd°
+                    sheet.cell(nuetude + 4, 1).value: sheet.cell(nuetude + 4, 2).value,  # 'altitude'
+                    sheet.cell(nuetude + 5, 1).value: sheet.cell(nuetude + 5, 2).value,  # 'date' DD/MM/YYYY  hh:mm:ss
+                    sheet.cell(nuetude + 6, 1).value: sheet.cell(nuetude + 6, 2).value,  # 'heure_solaire'
+                    sheet.cell(nuetude + 7, 1).value: sheet.cell(nuetude + 7, 2).value,  # 'numero_du_vol'
+                    sheet.cell(nuetude + 8, 1).value: sheet.cell(nuetude + 8, 2).value  # 'pilote'
+                    },
+               sheet.cell(nudrone, 1).value:  # 'drone'
+                   {sheet.cell(nudrone + 1, 1).value: sheet.cell(nudrone + 1, 2).value,  # 'marque'
+                    sheet.cell(nudrone + 2, 1).value: sheet.cell(nudrone + 2, 2).value,  # 'type'
+                    sheet.cell(nudrone + 3, 1).value: sheet.cell(nudrone + 3, 2).value,  # 'timelapse'(Drone)
+                    sheet.cell(nudrone + 4, 1).value: sheet.cell(nudrone + 4, 2).value,  # 'deltatime'
+                    sheet.cell(nudrone + 5, 1).value: sheet.cell(nudrone + 5, 2).value,  # 'imatriculation'
+                    sheet.cell(nudrone + 6, 1).value: sheet.cell(nudrone + 6, 2).value,  # 'altitude  de vol'
+                    sheet.cell(nudrone + 7, 1).value: sheet.cell(nudrone + 7, 2).value  # 'altitude  de vol'
+                    },
+               sheet.cell(nucameraIR, 1).value:  # 'cameraIR'
+                   {sheet.cell(nucameraIR + 1, 1).value: sheet.cell(nucameraIR + 1, 2).value,  # 'marque'
+                    sheet.cell(nucameraIR + 2, 1).value: sheet.cell(nucameraIR + 2, 2).value,  # 'type'
+                    sheet.cell(nucameraIR + 3, 1).value: sheet.cell(nucameraIR + 3, 2).value,  # 'timelapse'(IR)
+                    sheet.cell(nucameraIR + 4, 1).value: sheet.cell(nucameraIR + 4, 2).value,  # 'deltatime'
+                    sheet.cell(nucameraIR + 5, 1).value: sheet.cell(nucameraIR + 5, 2).value  # libre
+                    },
+               sheet.cell(nuimages, 1).value:  # 'images'
+               # 'repertoireViR (save)' répertoire général des images du vol
+                   {sheet.cell(nuimages + 1, 1).value: sheet.cell(nuimages + 1, 2).value,
+                    # 'repertoireDrone'  répertoire des images drone
+                    sheet.cell(nuimages + 2, 1).value: sheet.cell(nuimages + 2, 2).value,
+                    # 'extDrone' extention des images (JPG, DNG)
+                    sheet.cell(nuimages + 3, 1).value: sheet.cell(nuimages + 3, 2).value,
+                    # 'filtreDrone'   densité du filtre DNxxx
+                    sheet.cell(nuimages + 4, 1).value: sheet.cell(nuimages + 4, 2).value,
+                    sheet.cell(nuimages + 5, 1).value: sheet.cell(nuimages + 5, 2).value,  # libre
+                    sheet.cell(nuimages + 6, 1).value: sheet.cell(nuimages + 6, 2).value,  # libre
+                    # 'repertoireIR'  repertoire des images IR
+                    sheet.cell(nuimages + 7, 1).value: sheet.cell(nuimages + 7, 2).value,
+                    # 'extIR'       extention des images infrarouge
+                    sheet.cell(nuimages + 8, 1).value: sheet.cell(nuimages + 8, 2).value,
+                    # 'filtreIR'     longueur d'onde du filtre IR
+                    sheet.cell(nuimages + 9, 1).value: sheet.cell(nuimages + 9, 2).value,
+                    sheet.cell(nuimages + 10, 1).value: sheet.cell(nuimages + 10, 2).value,  # libre
+                    sheet.cell(nuimages + 11, 1).value: sheet.cell(nuimages + 11, 2).value  # libre
+                    },
+               sheet.cell(numeteo, 1).value:  # 'meteo'
+                   {sheet.cell(numeteo + 1, 1).value: sheet.cell(numeteo + 1, 2).value,  # 'ensoleillement'
+                    sheet.cell(numeteo + 2, 1).value: sheet.cell(numeteo + 2, 2).value,  # 'vent'
+                    sheet.cell(numeteo + 3, 1).value: sheet.cell(numeteo + 3, 2).value  # 'temperature'
+                    }
+               }
+    workbook.close()
+    if not mute:
+        printPlanVol(planVol)
+
+    return planVol
+
+
+def extractFlightPlan(dirPlanVol, mute=True):
+    """
+        Lecture du plan de vol puis extrcation des données
+        > Chemin des images Visible et IR, type de drone et de caméra, synchroniation horloges ...
+        > Liste des images Drone et des images IR
+    """
+    planVol = readFlightPlan(dirPlanVol, mute=mute)
+
+    dirNameIRdrone = planVol['images'][
+        'repertoireViR  (save)']  # folder for save photography  VIR, RedEdge,NIR, NDVI etc output
+    dirNameDrone = planVol['images']['repertoireDrone']  # Drone photography folder   (input)
+    dirNameIR = planVol['images']['repertoireIR']  # IR photography folder (input)
+    dateEtude = planVol['etude']['date']  # date of flight > format DD MM et YYYY
+    typeDrone = planVol['drone']['type']  # type of drone (see in the Exif tag of the image of the drone)
+    extDrone = planVol['images']['extDrone']  # file format Vi
+    typeIR = planVol['cameraIR']['type']  # type of camera in use (see in the Exif tag of the image of the IR camera)
+    timeLapseDrone = float(planVol['drone']['timelapse'])  # Time Lapse of Drone camera
+    timeLapseIR = float(planVol['cameraIR']['timelapse'])  # Time Lapse of IR camera
+    extIR = planVol['images']['extIR']  # file format  IR
+    deltaTimeDrone = float(planVol['drone']['deltatime'])  # decalage horloge caméra du drone / horloge de référence
+    deltaTimeIR = float(planVol['cameraIR']['deltatime'])  # decalage horloge caméra infrarouge /horloge de référence
+
+    #
+    #    Liste des images de l'étude.
+    #    Une liste pour les images du drone et une liste pour les images de la caméra infrarouge#
+    #    Chaque élément de la liste est un triplet (file name image , path name image, date image)
+    dirNameDrone = reformatDirectory(dirNameDrone, xlpath=dirPlanVol)
+    dirNameIR = reformatDirectory(dirNameIR, xlpath=dirPlanVol, makeOutdir=True)
+    dirNameIRdrone = reformatDirectory(dirNameIRdrone, xlpath=dirPlanVol, makeOutdir=True)
+    imgListDrone = creatListImg(dirNameDrone, dateEtude, typeDrone, '*', extDrone, planVol)
+    imgListIR = creatListImgIR(dirNameIR, dateEtude, typeIR, '*', extIR, planVol)
+    if not mute:
+        if len(imgListDrone) == 0:
+            print('Pas d\'images Visibles pour ce vol')
+            sys.exit(2)
+        else:
+            print('%i images visibles détectées ' % len(imgListDrone))
+            print([(imgListDrone[i][0], imgListDrone[i][2]) for i in range(len(imgListDrone))])
+
+        if len(imgListIR) == 0:
+            print('Pas d\'images Infrarouges pour ce vol')
+            sys.exit(2)
+        else:
+            print('%i images infrarougess détectées ' % len(imgListIR))
+            print([(imgListIR[i][0], imgListIR[i][2]) for i in range(len(imgListIR))])
+
+        if len(imgListDrone) == 0 and len(imgListIR) == 0:
+            print('Il y a %i images Vi et  %i NiR pour ce vol' % (len(imgListDrone), len(imgListIR)))
+
+    return planVol, imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR, dirNameIRdrone
+
+
+def creatListImgIR(dirName, dateEtude, cameraModel, camera, typImg, planVol, debug=False):
+    """
+    :return:  imgList   [(),...,(file name image , path name image, date image),...,()]
+    """
+    # Création de la liste des photos IR  (extension donnée  RAW) et contenues dans le répertoire dirName
+    # Si camera="*' alors la liste comporte toutes les images avec l'extension typeImg (ici RAW)
+    # Pour une  SJcam M20 on extrait la date du nom du fichier  ...
+    # car les données Exif du fichier RAW de SJCam sont illisibles par exifread ou bien PIL.ExifTags ???
+    #
+    imlist = sorted(ut.imagepath(imgname="*%s*.%s" % (camera, typImg), dirname=dirName))
+    imgList = []
+    for i in range(len(imlist)):
+        nameImg = imlist[i].split('\\')[len(imlist[i].split('\\')) - 1]
+        imgYear = int(nameImg[0:4])
+        imgMonth = int(nameImg[5:7])
+        imgDay = int(nameImg[7:9])
+        imgHour = int(nameImg[10:12])
+        imgMin = int(nameImg[12:14])
+        imgSecond = int(nameImg[14:16])
+        imgMicroSecond = 0
+        dateImg = datetime.datetime(imgYear, imgMonth, imgDay, imgHour, imgMin, imgSecond, imgMicroSecond)
+        imgList.append((nameImg, imlist[i], dateImg))  # ajout à la liste des images
+
+    imgList = sorted(imgList, key=itemgetter(2), reverse=False)  # tri par la date de prise de vue
+    return imgList
+
+
+def creatListImg(dirName, dateEtude, cameraModel, camera, typImg, planVol, debug=False):
+    """
+    :param dirName:
+    :param dateEtude:
+    :param cameraModel:
+    :param camera:
+    :param typImg:
+    :param debug:
+    :return:  imgList   [(), ...,(file name image , path name image, date image), ..., ()]
+    """
+
+    # Création de la liste des photos (extension donnée  ex: JPG, DNG) et contenues dans le répertoire dirName
+    # Si camera="*' alors la liste comporte toutes les images avec l'extension typeImg
+    # Si camera ='DJI'  la liste filtre les images prises par le drone
+    # Pas possible de filtrer les images SJcam avec le non du fichier  (il faut regarder les données Exif de l'image)
+    imlist = sorted(ut.imagepath(imgname="*%s*.%s" % (camera, typImg), dirname=dirName))
+
+    imgList = []
+    j = 0
+    for i in range(len(imlist)):
+        img = pr.Image(imlist[i])
+        img.camera["timelapse"] = float(planVol['drone']['timelapse'])
+        img.camera["deltatime"] = float(planVol['drone']['deltatime'])
+        try:
+            """
+            extraction des données Exif de l'image
+            si pas de données Exif image ignorée.
+            """
+            debug = True
+            cameraModelImg = img.camera['model']
+            if cameraModelImg == cameraModel:  # images prises par d'autres caméras. images ignorées
+                dateImg = img.date
+                if (dateImg.year, dateImg.month, dateImg.day) == (dateEtude.year, dateEtude.month, dateEtude.day):
+                    j += 1
+                    nameImg = imlist[i].split('\\')[len(imlist[i].split('\\')) - 1]
+                    imgList.append((nameImg, imlist[i], dateImg))  # ajout à la liste des images
+                else:
+                    if debug: print(
+                        '%s a été prise le %i %i %i. Cette date est différente de celle de l\'étude %i %i %i'
+                        % (imlist[i], dateImg.day, dateImg.month, dateImg.year, dateEtude.day, dateEtude.month,
+                           dateEtude.year))
+            else:
+                if debug: print('%s a été prise par un autre  appareil (Model %s) ' % (imlist[i], cameraModelImg))
+        except:
+            if debug: print("No Exif tags in %s" % imlist[i])
+
+    imgList = sorted(imgList, key=itemgetter(2), reverse=False)  # tri par la date de prise de vue
+    return imgList
+
+
+def printPlanVol(planVol):
+    print(' Vol à : %s  (%s)  du %s   '
+          '\n Client : %s'
+          '\n Pilote : %s sur drone %s'
+          '\n Caméra Vi : %s'
+          '\n Timelaps  : %s  s    DeltaTime %s  s'
+          '\n Caméra IR: %s'
+          '\n Timelaps  : %s  s    DeltaTime %s  s'
+          '\n Filtre infrarouge  IR %i nm'
+          '\n Météo : %s  Vent %.1f m/s  Température %.1f °C' %
+          (planVol['etude']['lieu'], (planVol['etude']['GPS'] + '  ' + str(planVol['etude']['altitude']) + ' m'),
+           planVol['etude']['date'],
+           planVol['etude']['client'],
+           planVol['etude']['pilote'],
+           (planVol['drone']['marque'] + ' ' + planVol['drone']['type']),
+           planVol['drone']['marque'],
+           planVol['drone']['timelapse'], planVol['drone']['deltatime'],
+           (planVol['cameraIR']['marque'] + '  ' + planVol['cameraIR']['type']),
+           planVol['cameraIR']['timelapse'], planVol['cameraIR']['deltatime'],
+           (planVol['images']['filtreIR']),
+           planVol['meteo']['ensoleillement'], planVol['meteo']['vent'], planVol['meteo']['temperature']
+           )
+          )
+    return
+
+
+def matchImagesFlightPath(imgListDrone,
+                          deltaTimeDrone,
+                          timeLapseDrone,
+                          imgListIR,
+                          deltaTimeIR,
+                          timeLapseIR,
+                          dateEtude,
+                          mute=False):
+    """
+    :param imgListDrone:  [...,(file name, path name, date), ...]
+    :param deltaTimeDrone:
+    :param timeLapseDrone
+    :param imgListIR:     [...,(file name, path name, date), ...]
+    :param deltaTimeIR:
+    :param timeLapseIR:
+    :dateEtude:   date of flight
+    :param mute:
+    :return:  listImgMatch   [..., (imgListDrone[i][1], imgListIR[k][1]), ...]
+    """
+    n = 0
+    nRejet = 0
+    listImgMatch = []
+    dateRef = datetime.datetime(2000, 1, 1, 12, 0, 0)
+    for i in range(len(imgListDrone)):
+        indexDT = []
+        DT = []
+        signeDT = []
+        for k in range(len(imgListIR)):
+            dateDrone = imgListDrone[i][2]
+            dateIR = imgListIR[k][2]
+            ecartTimeIR = datetime.timedelta.total_seconds(dateIR - dateRef) - deltaTimeIR
+            ecartTimeDrone = datetime.timedelta.total_seconds(dateDrone - dateRef) - deltaTimeDrone
+            ecartTimeref = datetime.timedelta.total_seconds(dateIR - dateRef) - \
+                           datetime.timedelta.total_seconds(dateDrone - dateRef)
+            deltaTime = (ecartTimeIR - ecartTimeDrone)
+            if not mute:
+                print('dateDrone = ', dateDrone, ' | ', 'dateIR = ', dateIR)
+                print('ecartTimeref = ', ecartTimeref, '  deltaTime = ', deltaTime)
+            if abs(deltaTime) <= 1.0 * timeLapseIR:
+                #  Potentiellement cette image IR  peut s'apparier avec l'image visible
+                indexDT.append(k)
+                DT.append(abs(deltaTime))
+                if deltaTime == 0:
+                    signeDT.append(0)
+                else:
+                    signeDT.append(int((ecartTimeIR - ecartTimeDrone) / abs(ecartTimeIR - ecartTimeDrone)))
+            else:
+                pass
+        if len(DT) == 0:
+            # Aucune image IR ne s'apparie avec l'image visible
+            nRejet += 1
+            if not mute: print(Style.YELLOW + 'INFO:  l\'image visible ', imgListDrone[i][0],
+                               'ne s\'apparie avec aucune image IR.' + Style.RESET)
+            pass
+        else:
+            #    Une ou plusieurs iamges IR peuvent s'apparier avec l'image visible.
+            #    On choisi celle qui est la plus proche et on l'ajoute à la liste des images appariées
+
+            kIRmatch = indexDT[DT.index(min(DT))]
+            # On test si cette image n'a pas déjà été utilisée (lié à un pb de précision des horloges!)
+            if n > 1 and listImgMatch[i - 1][1] == imgListIR[kIRmatch][0]:
+                if not mute:
+                    print(Style.RED + 'Attention pb avec les deux images \n'
+                                      'Visible :', imgListDrone[i][0],
+                          '\nInfrarouge :', imgListIR[kIRmatch][0], '\n'
+                                                                    'L\'image infrarouge  est déjà appariée avec l\'image ',
+                          listImgMatch[i - 1][1] + Style.RESET)
+                nRejet += 1
+            else:
+                n += 1
+                listImgMatch.append((imgListDrone[i][1], imgListIR[kIRmatch][1]))
+                if not mute: print(Style.GREEN + 'N°', n, ' DT ', int(signeDT[DT.index(min(DT))] * min(DT)), 's   ',
+                                   imgListDrone[i][0], ' | ', imgListIR[kIRmatch][0] + Style.RESET)
+
+    print(Style.GREEN + '%i couples d\'images Visible-InfraRouge ont été détectés pour le vol du %s' % (
+        len(listImgMatch), dateEtude), '\n',
+          ' Images visibles éliminées : %i' % nRejet + Style.RESET)
+    return listImgMatch
+
+
+def summaryFlight(listImg, seaLevel=False, dirSaveFig=None, mute=True):
+    """
+    :param listImg:      list of image pairs VI/IR matched at the same point
+    :param mute:
+    :return: summary  [... (imgNameVi,imgNameIRoriginal,imgNameIR,imgNameViR, dateVi,
+                          imgLat, imgLon, imgAltGround , imgAltSeaLevel ,imgAltRef,
+                          distToLastPt,capToLastPt   ) ...]                   list
+        imgNameVi---------------------- file name of visible RGB color image at point P
+        imgNameIRoriginal-------------- file name of original infrared image  at point P
+        imgNameIR---------------------- file name of infrared image  (match with visible image at point P)
+        imgNameViR -------------------- file name of multispectral image at point P
+        dateVi ------------------------ date the visible image was shot             [YY-MM-DD hh:mm:ss]
+        imgLat, imgLon, imgAltGround    GPS coordinates of point P                  [°],[°],[m]
+        imgAltSeaLevel ---------------  altitude of the drone in relation to the sealevel [m]
+        imgAltRef---------------------- altitude of the drone relative to take-off point  (DJI ref)  [m]
+        distToLastPt------------------- distance to next point                                       [m]
+        capToLastPt-------------------- direction to the next point relative to the geographic north [°]
+
+        lists the essential elements of flight after treatment by IRdrone.
+        This data will be saved in the Excel file of the flight plan  (sheet "Summary")
+
+    """
+    print(Style.CYAN + 'https://wxs.ign.fr/essentiels/alti/rest/elevation')
+    summary = []
+    listPtGPS = []
+    listCoordGPS = []
+    distP0P1 = []
+    capP0P1 = []
+    altGeo = []
+    altDroneSol = []
+    altDroneSealLevel = []
+    altGround = []
+    distFlight = []
+    dateVi = []
+
+    if len(listImg) < 99:
+        pas = len(listImg) - 1
+    else:
+        pas = 99  # Teste 189 OK  mais 199 no OK
+    for i in range(len(listImg)):
+        img = pr.Image(listImg[i][0])
+        listPtGPS.append((img.gps['latitude'][4], img.gps['longitude'][4]))
+        listCoordGPS.append((img.gps['latitude'][4], img.gps['longitude'][4], img.gps['altitude']))
+        dateVi.append(img.date)
+    if seaLevel:
+        #  Pour tout les points de la liste on détermine les altitudes du sol par rapport au niveau de la mer.
+        #  Utilise l'API de l'IGN.
+        #  Attention cette API limite le nombre de points qu'il est possible d'envoyer dans la requette
+        #  On fait trois tentatives. Si échec l'altitude du sol par rapport au niveau de la mer est fixée à zéro.
+        for k in range(0, int(round(len(listImg), 0) / pas) + 1):
+            list = listPtGPS[k * pas:(k + 1) * pas]
+            altGeo += uGPS.altitude_IGN(list)
+            print('%i / %i ' % (k, int(round(len(listImg), 0) / pas)))
+
+        print(Style.CYAN + 'Fin du recalage des altitudes par rapport au sol' + Style.RESET)
+        # ToDo: modifier le point de TakeOff
+        altGeoPref = 550  # altitude du point de décollage par rapport au niveau de la mer
+    else:
+        altGeo = [0.0] * len(listPtGPS)
+        altGeoPref = 0.
+
+    #  Calcule la distance et le cap entre la point P0 et le point suivant P1
+    for i in range(len(listImg) - 1):
+        imgDist, imgCap = uGPS.segmentUTM(listPtGPS[i][0], listPtGPS[i][1], listPtGPS[i + 1][0], listPtGPS[i + 1][1])
+        distP0P1.append(imgDist)
+        capP0P1.append(imgCap)
+    distP0P1.append(0)  # pas de distance ni de cap au point suivant pour point d'atterrissage !
+    capP0P1.append(0)  # on fixe la valeur arbitrairement à 0
+
+    for i in range(len(listImg)):
+        img = pr.Image(listImg[i][0])
+        if not mute:
+            print('altitudes : drone / takeOff %f m | sol/ sea level %f m |  drone /sol %f m'
+                  % (listCoordGPS[i][2], altGeo[i], round(listCoordGPS[i][2] + altGeoPref - altGeo[i], 5)))
+        # altitude du drone par rapport au sol et par rapport au niveau de la mer
+        altDroneSol.append(round(listCoordGPS[i][2] + altGeoPref - altGeo[i], 5))
+        altGround.append(altGeo[i])  # altitude du sol par rapport au niveau de la mer
+        altDroneSealLevel.append(altGeo[i] + altDroneSol[i])
+        distToLastPt = round(distP0P1[i], 2)  # distance au point suivant   (précision au cm !)
+        if i == 0:
+            distFlight.append(0.)
+        else:
+            distFlight.append(distFlight[i - 1] + distToLastPt)
+
+        capToLastPt = round(capP0P1[i], 3)
+        #    images visibles
+        imgNameVi = listImg[i][0].split('\\')[len(listImg[i][0].split('\\')) - 1]
+        numeroRef = imgNameVi.split('_')[len(imgNameVi.split('_')) - 1]
+        #    images infra-rouges
+        imgNameIRoriginal = listImg[i][1].split('\\')[len(listImg[i][1].split('\\')) - 1]
+        imgNameIR = 'IRdroneIR_%s' % numeroRef
+        imgNameViR = 'IRdroneViR_%s' % numeroRef
+        summary.append(
+            (imgNameVi, imgNameIRoriginal, imgNameIR, imgNameViR,
+             dateVi[i],
+             round(listCoordGPS[i][0], 5), round(listCoordGPS[i][1], 5),
+             altDroneSol[i], round(altGeo[i], 3), round(listCoordGPS[i][2], 3),
+             distToLastPt, capToLastPt, round(distFlight[i], 2)
+             )
+        )
+
+    showFlightProfil(distFlight, altDroneSealLevel, altGround, dirSaveFig=dirSaveFig, mute=False)
+
+    if not mute:
+        txtSummary = 'Liste des images du vol :'
+        for i in range(len(listImg)):
+            txtSummary = txtSummary + '\n' + str(summary[i])
+        print(Style.GREEN + txtSummary + Style.RESET)
+
+    return summary
+
+
+def writeSummaryFlight(flightPlanSynthesis, pathName):
+    """
+    :param flightPlanSynthesis:
+    :param pathName:
+    :return:
+
+            Write the Flight Plan Summary in Excel file
+    ToDo créer la feuille Summary si elle n'existe pas. Normalement à ce stade le fichier Excel plan de vol existe
+        puisqu'il a été lu dès le début
+    """
+    workbook = openpyxl.load_workbook(pathName)
+    listSheets = workbook.sheetnames
+    if len(listSheets) < 2:
+        print(Style.RED + ' le fichier Excel du plan de vol ne contient pas de feuille Summary' + Style.RESET)
+        return
+    elif listSheets[1] != 'Summary':
+        print(Style.RED + ' le fichier Excel du plan de vol ne contient pas de feuille Summary' + Style.RESET)
+        return
+    else:
+        pass
+
+    sheet = workbook['Summary']
+    listHeadCol = ['Point',
+                   'Image                    Visible',
+                   'Image                    Infrarouge',
+                   'Image                    Infrarouge recalée',
+                   'Image                    Multi-Spectrale',
+                   'Date prise de vue',
+                   'Latitude                dd°dddddd',
+                   'Longitude               dd°dddddd',
+                   'Drone Altitude     / ground       [m]',
+                   'Ground Elevation   / sealevel       [m]',
+                   'Drone Altitude     / Take off       [m]',
+                   'Distance point suivant  [°]',
+                   'Cap point suivant',
+                   'Distance / Start Pt      [m]'
+                   ]
+    for k in range(len(listHeadCol)):
+        sheet.cell(1, k + 1).value = listHeadCol[k]
+    for i in range(len(flightPlanSynthesis)):
+        sheet.cell(i + 2, 1).value = i
+        for k in range(len(flightPlanSynthesis[i])):
+            sheet.cell(i + 2, k + 2).value = flightPlanSynthesis[i][k]
+    sheet = workbook['Plan_de_Vol']
+    sheet.cell(2, 2).value = None
+    workbook.save(pathName)
+    workbook.close()
+    print(Style.GREEN + 'Ecriture du résumé du vol dans %s  terminée.' % pathName)
+
+
+def showFlightProfil(d_list, elev_Drone, elev_Ground, dirSaveFig=None, mute=True):
+    # BASIC STAT INFORMATION
+    min_elev = min(elev_Ground)
+
+    # PLOT ELEVATION PROFILE
+    base_reg = min_elev
+    plt.figure(figsize=(10, 4))
+    plt.plot(d_list, elev_Drone, '.r', label='Drone: ')
+    plt.plot(d_list, elev_Ground, 'g', label='Ground ')
+    plt.fill_between(d_list, elev_Ground, base_reg, alpha=0.1)
+    plt.text(d_list[0], elev_Drone[0], "Start")
+    plt.text(d_list[-1], elev_Drone[-1], "*")
+    plt.xlabel("Distance (m)")
+    plt.ylabel("Altitude (m)")
+    plt.grid()
+    plt.legend(fontsize='small')
+    filepath = dirSaveFig + '\\Flight profil IRdrone'
+    if dirSaveFig == None:
+        pass
+    else:
+        plt.savefig(filepath, dpi=75, facecolor='w', edgecolor='w', orientation='portrait',
+                    format=None, transparent=False,
+                    bbox_inches='tight', pad_inches=0.1, metadata=None)
+        print(Style.GREEN + 'Save flight profil in %s' % filepath + Style.RESET)
+    if not mute:
+        print(Style.YELLOW + 'Look your Drone Flight profil >>>>' + Style.RESET)
+        plt.show()
+    plt.close()
+
+
+def reformatDirectory(di, xlpath=None, makeOutdir=False):
+    if os.path.exists(di):
+        return di
+    else:
+        if xlpath is not None:
+            newdi = os.path.join(os.path.dirname(xlpath), di)
+            return reformatDirectory(newdi, xlpath=None, makeOutdir=makeOutdir)
+        if makeOutdir:
+            os.mkdir(di)
+            print("creating output dir: %s" % di)
+            return di
+
+    raise NameError("Cannot find directory %s" % di)
+
+
+
+
