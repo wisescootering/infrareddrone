@@ -15,12 +15,13 @@ from os import mkdir
 import time
 
 
-def minimum_cost(cost):
+def minimum_cost(cost, amin_index=None):
     """Find the argmin in a single cost area (multichannel) and refine with quadratic form subpixel search
     :param cost:
     :return:
     """
-    amin_index = np.unravel_index(np.argmin(cost.sum(axis=-1)), (cost.shape[0], cost.shape[1]))
+    if amin_index is None:
+        amin_index = np.unravel_index(np.argmin(cost.sum(axis=-1)), (cost.shape[0], cost.shape[1]))
     init_position = np.array([amin_index[1]-cost.shape[1]//2, amin_index[0]-cost.shape[0]//2])
     neighborhood_size = 1
     if amin_index[0] < neighborhood_size or amin_index[0] > cost.shape[0]-1-neighborhood_size or \
@@ -40,6 +41,44 @@ def minimum_cost(cost):
         max_step=None
     )
     return new_val+init_position
+
+
+def minimum_cost_max_hessian(cost, debug=False):
+    concavity = np.zeros_like(cost)
+    for id_y in range(2, cost.shape[0]-2):
+        for id_x in range(2, cost.shape[1]-2):
+            cost_patch = cost[id_y-1:id_y+2, id_x-1:id_x+2]
+            hessi, grads, constants = quadric_approximation(cost_patch)
+            for ch in range(cost.shape[-1]):
+                concavity[id_y, id_x, :] = np.linalg.det(hessi[ch, :, :])
+    amax_index = np.unravel_index(np.argmax(concavity.sum(axis=-1)), (cost.shape[0], cost.shape[1]))
+    init_position = np.array([amax_index[1]-cost.shape[1]//2, amax_index[0]-cost.shape[0]//2])
+    refinement_neighborhood = 3
+    # if amax_index[0] >= refinement_neighborhood and amax_index[0]<cost.shape[0]
+    cost_selection = cost[
+                     amax_index[0]-refinement_neighborhood:amax_index[0]+refinement_neighborhood+1,
+                     amax_index[1]-refinement_neighborhood:amax_index[1]+refinement_neighborhood+1]
+    displacement = minimum_cost(cost_selection)
+    if debug:
+        plt.subplot(1, 3, 1)
+        plt.imshow(concavity[:, :, 0])
+        plt.plot(init_position[0]+concavity.shape[1]//2, init_position[1]+concavity.shape[0]//2, "r+")
+        plt.colorbar()
+        plt.title("Concavity {}".format(init_position))
+
+    if debug:
+        plt.subplot(1, 3, 2)
+        plt.imshow(cost_selection.sum(axis=-1))
+        plt.plot(displacement[0]+cost_selection.shape[1]//2, displacement[1]+cost_selection.shape[0]//2, "r+")
+        plt.title("Cost refine {}".format(displacement))
+    displacement = init_position+displacement
+    if debug:
+        plt.subplot(1, 3, 3)
+        plt.imshow(cost.sum(axis=-1))
+        plt.plot(displacement[0]+cost.shape[1]//2, displacement[1]+cost.shape[0]//2, "r+")
+        plt.title("Full cost {}".format(displacement))
+        plt.show()
+    return displacement
 
 
 def brute_force_vector_field_search(costs=None, centers=None, downscale=None):

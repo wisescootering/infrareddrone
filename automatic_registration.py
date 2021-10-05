@@ -48,7 +48,7 @@ def ndvi(vis_img, nir_img, out_path=None):
         ipi.save(out_path)
 
 
-def align_raw(vis_path, nir_path, cals, debug_dir=None, debug=True, extension=1.4):
+def align_raw(vis_path, nir_path, cals, debug_dir=None, debug=False, extension=1.4):
     """
     :param vis_path: Path to visible DJI DNG image
     :param nir_path: Path to NIR SJCAM M20 RAW image
@@ -57,6 +57,8 @@ def align_raw(vis_path, nir_path, cals, debug_dir=None, debug=True, extension=1.
     :param extension: extend the FOV of the NIR camera compared to the DJI camera 1.4 by default, 1.75 is ~maximum
     :return:
     """
+    if debug_dir is not None and not osp.isdir(debug_dir):
+        os.mkdir(debug_dir)
     ts_start = time.perf_counter()
     vis = pr.Image(vis_path)
     nir = pr.Image(nir_path)
@@ -112,8 +114,11 @@ def align_raw(vis_path, nir_path, cals, debug_dir=None, debug=True, extension=1.
 
 
     focal = cals_ref["mtx"][0, 0].copy()
-    # translation = -np.argmin(cost_dict["costs"][0,0, :, :, :])[::-1] * ds
-    translation = -ds*rigid.minimum_cost(cost_dict["costs"][0,0, :, :, :])
+    # translation = -ds*rigid.minimum_cost(cost_dict["costs"][0,0, :, :, :])
+    try:
+        translation = -ds*rigid.minimum_cost_max_hessian(cost_dict["costs"][0,0, :, :, :], debug=debug)
+    except:
+        translation = -ds*rigid.minimum_cost(cost_dict["costs"][0,0, :, :, :]) # @ TODO: handle the case of argmax close to the edge!
     yaw_refine = np.rad2deg(np.arctan(translation[0]/focal))
     pitch_refine = np.rad2deg(np.arctan(translation[1]/focal))
     print("2D translation {}".format(translation, yaw_refine, pitch_refine))
@@ -142,7 +147,7 @@ def align_raw(vis_path, nir_path, cals, debug_dir=None, debug=True, extension=1.
         ref_full, mov_wr_fullres,
         iterative_scheme=[(16, 2, 4, 8), (16, 2, 5), (4, 3, 5)],
         mode=rigid.LAPLACIAN_ENERGIES, dist=rigid.NTG,
-        debug=True, debug_dir=debug_dir,
+        debug=debug, debug_dir=debug_dir,
         affinity=False,
         sigma_ref=5.,
         sigma_mov=3.
@@ -151,7 +156,6 @@ def align_raw(vis_path, nir_path, cals, debug_dir=None, debug=True, extension=1.
     # pr.show([ref, mov, mov_w], suptitle="{}".format(mov.shape))
     ts_end = time.perf_counter()
     logging.warning("{:.2f}s elapsed in total alignment".format(ts_end - ts_start))
-
 
 
 def demo_raw(folder=osp.join(osp.dirname(__file__), r"Hyperlapse 06_09_2021_sync")):
@@ -184,15 +188,25 @@ def process_raw_folder(folder, delta=timedelta(seconds=171)):
     sync_pairs = synchronize_data(folder, replace_dji=(".DNG", "_PL4_DIST.tif"), delta=delta)
     cals = dict(refcalib=ut.cameracalibration(camera="DJI_RAW"), movingcalib=ut.cameracalibration(camera="M20_RAW"))
     out_dir = osp.join(folder, "_RESULTS")
+    process_raw_pairs(sync_pairs, cals, folder=folder, out_dir=out_dir)
+
+
+def process_raw_pairs(
+        sync_pairs,
+        cals=dict(refcalib=ut.cameracalibration(camera="DJI_RAW"), movingcalib=ut.cameracalibration(camera="M20_RAW")),
+        folder=None, out_dir=None):
+    if folder is None:
+        folder = osp.dirname(sync_pairs[0][0])
+    if out_dir is None:
+        out_dir = osp.join(folder, "_RESULTS")
     if not osp.exists(out_dir):
         os.mkdir(out_dir)
-    # for vis_pth, nir_pth in sync_pairs[::-1][:2]:
-    for vis_pth, nir_pth in sync_pairs[::40]:
+    for vis_pth, nir_pth in sync_pairs:  # [::-1]  [::-1][4:5]:  [3::40]: [410:415]:
         logging.warning("processing {} {}".format(osp.basename(vis_pth), osp.basename(nir_pth)))
         debug_dir = osp.join(folder, osp.basename(vis_pth)[:-4]+"_align_debuggin")
         align_raw(vis_pth, nir_pth, cals, debug_dir=debug_dir)
         if osp.isdir(debug_dir):
-            ref_pth = osp.join(debug_dir, "REF_FULLRES.jpg")
+            ref_pth = osp.join(debug_dir, "FULLRES_REF.jpg")
             aligned_pth = osp.join(debug_dir, "FLOW_it09_ds04_WARP_LOCAL.jpg")
             # ---------------------------------------------------------------------------------------------- copy traces
             if True:
@@ -212,6 +226,7 @@ def process_raw_folder(folder, delta=timedelta(seconds=171)):
                 pr.Image(aligned_pth),
                 out_path=osp.join(out_dir, "_NDVI_" + osp.basename(vis_pth[:-4])+".jpg")
             )
+
 
 def demo_raw_real_application(folder_database=osp.join(osp.dirname(__file__), "FlightDatabase")):
     data_link = "https://drive.google.com/drive/folders/1UJGvq8gWpkkgtAd6cRbNiQIRyabcjPIf?usp=sharing"
