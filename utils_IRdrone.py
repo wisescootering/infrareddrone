@@ -107,18 +107,15 @@ def dateExcel2Py(dateExcel):
     return datePy
 
 
-
 # ------------------     Plan de Vol      -------------------------------
 
 
 def readFlightPlan(pathPlanVolExcel, mute=None):
     """
+        Read the Flight Plan  in Excel file.
+
     :param pathPlanVolExcel: chemin du fichier Excel qui contient le plan de vol  (string)
     :return: planVol  Dictionnaire contenant les données du plan de vol  (dic)
-
-        Read the Flight Plan  in Excel file
-        Lecture du fichier Excel qui contient les informations sur le plan de vol
-
     """
     workbook = openpyxl.load_workbook(pathPlanVolExcel, read_only=True)
     sheet = workbook['Plan_de_Vol']
@@ -127,12 +124,12 @@ def readFlightPlan(pathPlanVolExcel, mute=None):
     nucameraIR = (nudrone + 7) + 1  # 11+7+1=19
     nuimages = (nucameraIR + 5) + 1  # 19+5+1=25
     numeteo = (nuimages + 11) + 1  # 25+11+1=37
-    planVol = {sheet.cell(nuetude, 1).value:
+    planVol = {sheet.cell(nuetude, 1).value:  # mission
                    {sheet.cell(nuetude + 1, 1).value: sheet.cell(nuetude + 1, 2).value,  # 'client'
                     sheet.cell(nuetude + 2, 1).value: sheet.cell(nuetude + 2, 2).value,  # 'lieu'
+                    # 'coord GPS Take Off'    N dd.ddddd E dd.ddddd°
                     sheet.cell(nuetude + 3, 1).value: sheet.cell(nuetude + 3, 2).value,
-                    # 'GPS'    Ndd.ddddd°,Edd.ddddd°
-                    sheet.cell(nuetude + 4, 1).value: sheet.cell(nuetude + 4, 2).value,  # 'altitude'
+                    sheet.cell(nuetude + 4, 1).value: sheet.cell(nuetude + 4, 2).value,  # 'altitude Take 0ff'
                     sheet.cell(nuetude + 5, 1).value: sheet.cell(nuetude + 5, 2).value,  # 'date' DD/MM/YYYY  hh:mm:ss
                     sheet.cell(nuetude + 6, 1).value: sheet.cell(nuetude + 6, 2).value,  # 'heure_solaire'
                     sheet.cell(nuetude + 7, 1).value: sheet.cell(nuetude + 7, 2).value,  # 'numero_du_vol'
@@ -189,17 +186,19 @@ def readFlightPlan(pathPlanVolExcel, mute=None):
 
 def extractFlightPlan(dirPlanVol, mute=True):
     """
-        Lecture du plan de vol puis extrcation des données
-        > Chemin des images Visible et IR, type de drone et de caméra, synchroniation horloges ...
-        > Liste des images Drone et des images IR
+    Lecture du plan de vol puis extrcation des données
+    > Chemin des images Visible et IR, type de drone et de caméra, synchroniation horloges ...
+    > Liste des images Drone et des images IR
+
+    :param dirPlanVol:  path of Fligth Plan in  a Excel file
+    :return: (planVol,imgListDrone,deltaTimeDrone,timeLapseDrone,imgListIR,deltaTimeIR,timeLapseIR,
+    dirNameIRdrone,coordGPS_TakeOff,alti_TakeOff)   )
     """
     planVol = readFlightPlan(dirPlanVol, mute=mute)
-
-    dirNameIRdrone = planVol['images'][
-        'repertoireViR  (save)']  # folder for save photography  VIR, RedEdge,NIR, NDVI etc output
+    dirNameIRdrone = planVol['images']['repertoireViR  (save)']  # folder for save photography  VIR,  NDVI etc
     dirNameDrone = planVol['images']['repertoireDrone']  # Drone photography folder   (input)
     dirNameIR = planVol['images']['repertoireIR']  # IR photography folder (input)
-    dateEtude = planVol['etude']['date']  # date of flight > format DD MM et YYYY
+    dateMission = planVol['mission']['date']  # date of flight > format DD MM et YYYY
     typeDrone = planVol['drone']['type']  # type of drone (see in the Exif tag of the image of the drone)
     extDrone = planVol['images']['extDrone']  # file format Vi
     typeIR = planVol['cameraIR']['type']  # type of camera in use (see in the Exif tag of the image of the IR camera)
@@ -208,16 +207,22 @@ def extractFlightPlan(dirPlanVol, mute=True):
     extIR = planVol['images']['extIR']  # file format  IR
     deltaTimeDrone = float(planVol['drone']['deltatime'])  # decalage horloge caméra du drone / horloge de référence
     deltaTimeIR = float(planVol['cameraIR']['deltatime'])  # decalage horloge caméra infrarouge /horloge de référence
+    # take off pt
+    takeOff =[]
+    coordGPS_TakeOff = planVol['mission']['coord GPS Take Off']
+    coordGPS_TakeOff = (coordGPS_TakeOff.split()[1],coordGPS_TakeOff.split()[3])
+    takeOff.append(coordGPS_TakeOff)
+    alti_TakeOff = uGPS.altitude_IGN(takeOff, mute=True)
+    alti_TakeOff=alti_TakeOff[0]
 
-    #
     #    Liste des images de l'étude.
-    #    Une liste pour les images du drone et une liste pour les images de la caméra infrarouge#
+    #    Une liste pour les images du drone et une liste pour les images de la caméra infrarouge
     #    Chaque élément de la liste est un triplet (file name image , path name image, date image)
     dirNameDrone = reformatDirectory(dirNameDrone, xlpath=dirPlanVol)
     dirNameIR = reformatDirectory(dirNameIR, xlpath=dirPlanVol, makeOutdir=True)
     dirNameIRdrone = reformatDirectory(dirNameIRdrone, xlpath=dirPlanVol, makeOutdir=True)
-    imgListDrone = creatListImg(dirNameDrone, dateEtude, typeDrone, '*', extDrone, planVol)
-    imgListIR = creatListImgIR(dirNameIR, dateEtude, typeIR, '*', extIR, planVol)
+    imgListDrone = creatListImg(dirNameDrone, dateMission, typeDrone, '*', extDrone, planVol)
+    imgListIR = creatListImgIR(dirNameIR, dateMission, typeIR, '*', extIR, planVol)
     if not mute:
         if len(imgListDrone) == 0:
             print('Pas d\'images Visibles pour ce vol')
@@ -236,10 +241,12 @@ def extractFlightPlan(dirPlanVol, mute=True):
         if len(imgListDrone) == 0 and len(imgListIR) == 0:
             print('Il y a %i images Vi et  %i NiR pour ce vol' % (len(imgListDrone), len(imgListIR)))
 
-    return planVol, imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR, dirNameIRdrone
+    return planVol, imgListDrone, deltaTimeDrone, timeLapseDrone, \
+           imgListIR, deltaTimeIR, timeLapseIR, dirNameIRdrone, \
+           coordGPS_TakeOff, alti_TakeOff
 
 
-def creatListImgIR(dirName, dateEtude, cameraModel, camera, typImg, planVol, debug=False):
+def creatListImgIR(dirName, dateMission, cameraModel, camera, typImg, planVol, debug=False):
     """
     :return:  imgList   [(),...,(file name image , path name image, date image),...,()]
     """
@@ -266,10 +273,10 @@ def creatListImgIR(dirName, dateEtude, cameraModel, camera, typImg, planVol, deb
     return imgList
 
 
-def creatListImg(dirName, dateEtude, cameraModel, camera, typImg, planVol, debug=False):
+def creatListImg(dirName, dateMission, cameraModel, camera, typImg, planVol, debug=False):
     """
     :param dirName:
-    :param dateEtude:
+    :param dateMission:
     :param cameraModel:
     :param camera:
     :param typImg:
@@ -298,17 +305,19 @@ def creatListImg(dirName, dateEtude, cameraModel, camera, typImg, planVol, debug
             cameraModelImg = img.camera['model']
             if cameraModelImg == cameraModel:  # images prises par d'autres caméras. images ignorées
                 dateImg = img.date
-                if (dateImg.year, dateImg.month, dateImg.day) == (dateEtude.year, dateEtude.month, dateEtude.day):
+                if (dateImg.year, dateImg.month, dateImg.day) == (dateMission.year, dateMission.month, dateMission.day):
                     j += 1
                     nameImg = imlist[i].split('\\')[len(imlist[i].split('\\')) - 1]
                     imgList.append((nameImg, imlist[i], dateImg))  # ajout à la liste des images
                 else:
-                    if debug: print(
+                    if debug: print(Style.YELLOW,
                         '%s a été prise le %i %i %i. Cette date est différente de celle de l\'étude %i %i %i'
-                        % (imlist[i], dateImg.day, dateImg.month, dateImg.year, dateEtude.day, dateEtude.month,
-                           dateEtude.year))
+                        % (imlist[i], dateImg.day, dateImg.month, dateImg.year, dateMission.day, dateMission.month,
+                           dateMission.year), Style.RESET)
             else:
-                if debug: print('%s a été prise par un autre  appareil (Model %s) ' % (imlist[i], cameraModelImg))
+                if debug: print(Style.YELLOW,
+                                '%s a été prise par un autre  appareil (Model %s) ' % (imlist[i], cameraModelImg),
+                                Style.RESET)
         except:
             if debug: print("No Exif tags in %s" % imlist[i])
 
@@ -326,10 +335,10 @@ def printPlanVol(planVol):
           '\n Timelaps  : %s  s    DeltaTime %s  s'
           '\n Filtre infrarouge  IR %i nm'
           '\n Météo : %s  Vent %.1f m/s  Température %.1f °C' %
-          (planVol['etude']['lieu'], (planVol['etude']['GPS'] + '  ' + str(planVol['etude']['altitude']) + ' m'),
-           planVol['etude']['date'],
-           planVol['etude']['client'],
-           planVol['etude']['pilote'],
+          (planVol['mission']['lieu'], (planVol['mission']['GPS'] + '  ' + str(planVol['mission']['altitude']) + ' m'),
+           planVol['mission']['date'],
+           planVol['mission']['client'],
+           planVol['mission']['pilote'],
            (planVol['drone']['marque'] + ' ' + planVol['drone']['type']),
            planVol['drone']['marque'],
            planVol['drone']['timelapse'], planVol['drone']['deltatime'],
@@ -348,7 +357,7 @@ def matchImagesFlightPath(imgListDrone,
                           imgListIR,
                           deltaTimeIR,
                           timeLapseIR,
-                          dateEtude,
+                          dateMission,
                           mute=False):
     """
     :param imgListDrone:  [...,(file name, path name, date), ...]
@@ -357,7 +366,7 @@ def matchImagesFlightPath(imgListDrone,
     :param imgListIR:     [...,(file name, path name, date), ...]
     :param deltaTimeIR:
     :param timeLapseIR:
-    :dateEtude:   date of flight
+    :dateMission:   date of flight
     :param mute:
     :return:  listImgMatch   [..., (imgListDrone[i][1], imgListIR[k][1]), ...]
     """
@@ -417,12 +426,12 @@ def matchImagesFlightPath(imgListDrone,
                                    imgListDrone[i][0], ' | ', imgListIR[kIRmatch][0] + Style.RESET)
 
     print(Style.GREEN + '%i couples d\'images Visible-InfraRouge ont été détectés pour le vol du %s' % (
-        len(listImgMatch), dateEtude), '\n',
+        len(listImgMatch), dateMission), '\n',
           ' Images visibles éliminées : %i' % nRejet + Style.RESET)
     return listImgMatch
 
 
-def summaryFlight(listImg, seaLevel=False, dirSaveFig=None, mute=True):
+def summaryFlight(listImg, altTakeOff=0., seaLevel=False, dirSaveFig=None, mute=True):
     """
     :param listImg:      list of image pairs VI/IR matched at the same point
     :param mute:
@@ -477,8 +486,7 @@ def summaryFlight(listImg, seaLevel=False, dirSaveFig=None, mute=True):
             print('%i / %i ' % (k, int(round(len(listImg), 0) / pas)))
 
         print(Style.CYAN + 'Fin du recalage des altitudes par rapport au sol' + Style.RESET)
-        # ToDo: modifier le point de TakeOff
-        altGeoPref = 550  # altitude du point de décollage par rapport au niveau de la mer
+        altGeoPref = altTakeOff  # altitude du point de décollage par rapport au niveau de la mer
     else:
         altGeo = [0.0] * len(listPtGPS)
         altGeoPref = 0.
@@ -541,17 +549,15 @@ def writeSummaryFlight(flightPlanSynthesis, pathName):
     :return:
 
             Write the Flight Plan Summary in Excel file
-    ToDo créer la feuille Summary si elle n'existe pas. Normalement à ce stade le fichier Excel plan de vol existe
-        puisqu'il a été lu dès le début
     """
     workbook = openpyxl.load_workbook(pathName)
     listSheets = workbook.sheetnames
     if len(listSheets) < 2:
-        print(Style.RED + ' le fichier Excel du plan de vol ne contient pas de feuille Summary' + Style.RESET)
+        print(Style.YELLOW + ' Création de la feuille Summary' + Style.RESET)
         ws_sum = workbook.create_sheet("Summary", 1)
         ws_sum.title = "Summary"
     elif listSheets[1] != 'Summary':
-        print(Style.RED + ' le fichier Excel du plan de vol ne contient pas de feuille Summary' + Style.RESET)
+        print(Style.YELLOW + ' Création de la feuille Summary' + Style.RESET)
         ws_sum = workbook.create_sheet("Summary", 1)
         ws_sum.title = "Summary"
     else:
@@ -580,7 +586,7 @@ def writeSummaryFlight(flightPlanSynthesis, pathName):
         for k in range(len(flightPlanSynthesis[i])):
             sheet.cell(i + 2, k + 2).value = flightPlanSynthesis[i][k]
     sheet = workbook['Plan_de_Vol']
-    sheet.cell(2, 2).value = None
+    sheet.cell(2, 11).value = '*'
     workbook.save(pathName)
     workbook.close()
     print(Style.GREEN + 'Ecriture du résumé du vol dans %s  terminée.' % pathName)
@@ -591,13 +597,13 @@ def showFlightProfil(d_list, elev_Drone, elev_Ground, dirSaveFig=None, mute=True
     min_elev = min(elev_Ground)
 
     # PLOT ELEVATION PROFILE
-    base_reg = min_elev
+    base_reg = min_elev-10
     plt.figure(figsize=(10, 4))
-    plt.plot(d_list, elev_Drone, '.r', label='Drone: ')
-    plt.plot(d_list, elev_Ground, 'g', label='Ground ')
-    plt.fill_between(d_list, elev_Ground, base_reg, alpha=0.1)
-    plt.text(d_list[0], elev_Drone[0], "Start")
-    plt.text(d_list[-1], elev_Drone[-1], "*")
+    plt.plot(d_list, elev_Drone, '.r', label='Drone: ', linewidth=1, linestyle='dashed',markersize=0)
+    plt.plot(d_list, elev_Ground, 'tab:brown', label='Ground ')
+    plt.fill_between(d_list, elev_Ground, base_reg, color='tab:brown', alpha=0.1)
+    plt.text(d_list[0], elev_Drone[0], "Start Pt")
+    plt.text(d_list[-1], elev_Drone[-1], "End Pt")
     plt.xlabel("Distance (m)")
     plt.ylabel("Altitude (m)")
     plt.grid()
@@ -629,7 +635,3 @@ def reformatDirectory(di, xlpath=None, makeOutdir=False):
             return di
 
     raise NameError("Cannot find directory %s" % di)
-
-
-
-

@@ -1,15 +1,16 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=C0103, C0301, W0703
 """
-Created on Mon Sep 13 15:56:18 2021
+Created on 2021-10-04 15:56:18
 
-@authors: manuel/alain
+@authors: balthazar/alain
 """
 
 import utils_IRdrone as IRd
+import utils_GPS as uGPS
+from irdrone.utils import Style
 import datetime
 import time
-from irdrone.utils import Style
 import os
 from tkinter import Tk
 from tkinter.filedialog import askopenfilename
@@ -36,7 +37,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Process Flight Path excel')
     parser.add_argument('--excel', metavar='excel', type=str, help='path to the flight path xlsx')
     args = parser.parse_args()
-    # ------------------------------------------------
     dirPlanVol = args.excel
     if dirPlanVol is None or not os.path.isfile(dirPlanVol):
         print(Style.CYAN + "File browser")
@@ -57,9 +57,10 @@ if __name__ == "__main__":
     #     Date, heure, dossier d'images, synchro des horloges, type du drone et de la caméra IR ...
     #     Construction de la liste des images prises lors du vol (Drone et IR)
 
-    planVol, imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR, dirNameIRdrone \
-        = IRd.extractFlightPlan(dirPlanVol, mute=True)
-    dateEtude = planVol['etude']['date']
+    planVol, imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, \
+    timeLapseIR, dirNameIRdrone, coordGPS_TakeOff, alti_TakeOff = \
+    IRd.extractFlightPlan(dirPlanVol, mute=True)
+    dateMission = planVol['mission']['date']
 
     # ----------------------------------------------------
     # 2 > Appariement des images des deux caméras
@@ -74,27 +75,28 @@ if __name__ == "__main__":
     #   - Tracé du profil de vol du drone dans une figure (file format .png)
 
     listImgMatch = IRd.matchImagesFlightPath(imgListDrone, deltaTimeDrone, timeLapseDrone,
-                                             imgListIR, deltaTimeIR, timeLapseIR, dateEtude, mute=True)
+                                             imgListIR, deltaTimeIR, timeLapseIR, dateMission, mute=True)
 
     if len(listImgMatch) == 0:
         print('0 couples d\'images Visible-InfraRouge ont été détectés pour ce vol')
         sys.exit(2)
     # ------ Calcule de la trajectoire du drone et du profil du vol
-
-    # writeGPX(listImgMatch, dirNameIRdrone, dateEtude, mute=True)  # écriture  du tracé GPS au format gpx Garmin
+    #        Génère la trajectoire au format Garmin gpx
 
     print(Style.CYAN + '------ Calcule de la trajectoire du drone et du profil du vol' + Style.RESET)
-    flightPlanSynthesis = IRd.summaryFlight(listImgMatch, seaLevel=True,
+    flightPlanSynthesis = IRd.summaryFlight(listImgMatch, altTakeOff=alti_TakeOff, seaLevel=True,
                                             dirSaveFig=osp.dirname(dirPlanVol), mute=True)
     IRd.writeSummaryFlight(flightPlanSynthesis, dirPlanVol)
+    uGPS.writeGPX(listImgMatch, dirNameIRdrone, dateMission, mute=True)  # écriture  du tracé GPS au format gpx Garmin
 
     # -----------------------------------------------------
-    #  3 > Traitement
+    #  3 > Traitement des images
+    #     Recalage des paires d'images Vi et IR
+    #     Construction des images RiV  et NDVI
     # ----------------------------------------------------
 
     # -----------------------------------------------------
     # 4 > Résumé du traitement
-
     # ----------------------------------------------------
     #        Fin du programme
     timeFin = datetime.datetime.now()

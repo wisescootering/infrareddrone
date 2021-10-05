@@ -4,6 +4,7 @@ import re
 import json
 import requests
 from irdrone.utils import Style
+import irdrone.process as pr
 
 
 # ========================================
@@ -411,3 +412,117 @@ def printGPS(gpsLatitude, gpsLongitude, gpsAltitude):
     stringgpsAlt = "%.1f" % gpsAltitude
     print("  Longitude :", stringgpsLong, " |  Latitude :", stringgpsLat, " | Altitude : ", stringgpsAlt, " m")
     return
+
+
+def writeGPX(listImgMatch, dirNameVol, dateEtude, mute=True):
+    """
+    :param listImgMatch:
+    :param dirNameVol:
+    :param dateEtude:
+    :param mute:
+    :return:
+        Construction d'un fichier gpx contenant le tracé du plan de vol
+        Il y a au début une tres grosse étiquette !!
+    """
+
+    #  mise en forme de la date pour le format gpx Garmin
+    if dateEtude.month < 10:
+        monthGpx = str('0' + str(dateEtude.month))
+    else:
+        monthGpx = str(dateEtude.month)
+    if dateEtude.day < 10:
+        dayGpx = str('0' + str(dateEtude.day))
+    else:
+        dayGpx = str(dateEtude.day)
+
+    dateGpx = '%i-%s-%sT00:00:00Z' % (dateEtude.year, monthGpx, dayGpx)
+
+    #     mise en forme des coordonnées GPS pour le format gpx
+    #     Il faut aussi calculer la zone GPS  définie par le domaine [maxLat,minLat]x[maxLon,minLon]
+    pointTrk, maxLat, minLat, maxLon, minLon = formatCoordGPSforGpx(listImgMatch)
+
+    # affectation du nom du fichier  et d'une description
+    nameTrkGPS = "IRdrone-%s-%s-%i" % (dayGpx, monthGpx, dateEtude.year)
+    descriptionTrkGPS = str('IRdrone v01.1   Trace GPS du vol %s-%s-%i' % (dayGpx, monthGpx, dateEtude.year))
+
+    fichierGpx = "<?xml version=\"1.0\" encoding=\"utf-8\"?>" \
+                 "<gpx creator=\"IRdrone v01.1\" " \
+                 "version=\"1.1\" " \
+                 "xsi:schemaLocation=\"http://www.topografix.com/GPX/1/1 \" "
+
+    fichierGpx = "{0}xmlns=\"http://www.topografix.com/GPX/1/1\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:wptx1=\"http://www.garmin.com/xmlschemas/WaypointExtension/v1\" xmlns:gpxtrx=\"http://www.garmin.com/xmlschemas/GpxExtensions/v3\" xmlns:gpxtpx=\"http://www.garmin.com/xmlschemas/TrackPointExtension/v1\" xmlns:gpxx=\"http://www.garmin.com/xmlschemas/GpxExtensions/v3\" xmlns:trp=\"http://www.garmin.com/xmlschemas/TripExtensions/v1\" xmlns:adv=\"http://www.garmin.com/xmlschemas/AdventuresExtensions/v1\" xmlns:prs=\"http://www.garmin.com/xmlschemas/PressureExtension/v1\" xmlns:tmd=\"http://www.garmin.com/xmlschemas/TripMetaDataExtensions/v1\" xmlns:vptm=\"http://www.garmin.com/xmlschemas/ViaPointTransportationModeExtensions/v1\" xmlns:ctx=\"http://www.garmin.com/xmlschemas/CreationTimeExtension/v1\" xmlns:gpxacc=\"http://www.garmin.com/xmlschemas/AccelerationExtension/v1\" xmlns:gpxpx=\"http://www.garmin.com/xmlschemas/PowerExtension/v1\" xmlns:vidx1=\"http://www.garmin.com/xmlschemas/VideoExtension/v1\">".format(
+        fichierGpx)
+
+    """
+        Couleur du trait :   Red,Green,Blue,Yellow,Gray, et DarkRed, DarkGreen etc
+
+        Attention format des dates   2021-02-11T19:00:00Z
+    """
+
+    fichierGpx = fichierGpx + "\n<metadata>\n" \
+                              "<link href=\"http://www.garmin.com\">\n" \
+                              "<text>Garmin International</text>\n" \
+                              "</link>\n" \
+                              "<time>" + dateGpx + "</time>\n" \
+                                                   "<bounds maxlat=\"" + str(maxLat) + "\" maxlon=\"" + str(
+        minLat) + "\" minlat=\"" + str(maxLon) + "\" minlon=\"" + str(minLon) + "\" />\n" \
+                                                                                "</metadata>\n" \
+                                                                                "<trk>\n" \
+                                                                                "<name>" + nameTrkGPS + "</name>\n" \
+                                                                                                        "<desc>" + descriptionTrkGPS + "</desc>\n" \
+                                                                                                                                       "<extensions>\n" \
+                                                                                                                                       "<gpxx:TrackExtension>\n" \
+                                                                                                                                       "<gpxx:DisplayColor>Red</gpxx:DisplayColor>\n" \
+                                                                                                                                       "</gpxx:TrackExtension>\n" \
+                                                                                                                                       "</extensions>\n" \
+                                                                                                                                       "<trkseg>"
+
+    for k in range(len(listImgMatch)):
+        fichierGpx = fichierGpx + pointTrk[k]
+
+    fichierGpx = fichierGpx + "\n</trkseg>\n" \
+                              "</trk>\n" \
+                              "</gpx>"
+
+    if not mute: print(fichierGpx)
+
+    dirpath = '%s\\TrkGpx-%s-%s-%i.gpx' % (dirNameVol, dayGpx, monthGpx, dateEtude.year)
+
+    if not mute: print('Ecriture du fichier gpx %s' % dirpath)
+
+    with open(dirpath, "w") as fichier:
+        fichier.write(fichierGpx)
+
+    return
+
+
+def formatCoordGPSforGpx(listImgMatch):
+    """
+
+    :param listImgMatch: list of images pairs
+    :return: pointTrk  list of GPS coordinates (str)    (format gpx Garmin)
+             sample      '<trkpt 45.05022 3.89567 >
+                          <ele>110.5</ele>
+                          </trkpt>'
+            maxLat, minLat, maxLon, minLon
+    """
+    coordGPSgpxLat = []
+    coordGPSgpxLon = []
+    coordGPSgpxAlt = []
+    pointTrk = []
+    for k in range(len(listImgMatch)):
+        img = pr.Image(listImgMatch[k][0])
+        lat = img.gps['latitude'][4]
+        long = img.gps['longitude'][4]
+        alti = img.gps['altitude']
+        coordGPSgpxLat.append(lat)
+        coordGPSgpxLon.append(long)
+        coordGPSgpxAlt.append(alti)
+        pointTrk.append("\n<trkpt lat=\"%s\" lon=\"%s\">\n<ele>%s</ele>\n</trkpt>" % (lat, long, alti))
+
+    maxLat = max(coordGPSgpxLat)
+    minLat = min(coordGPSgpxLat)
+    maxLon = max(coordGPSgpxLon)
+    minLon = min(coordGPSgpxLon)
+
+    return pointTrk, maxLat, minLat, maxLon, minLon
