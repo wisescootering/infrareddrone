@@ -16,7 +16,7 @@ import os
 import sys
 import utils_GPS as uGPS
 import matplotlib.pyplot as plt
-
+import logging
 
 # -------------   Convertisseurs de dates   Exif<->Python  Excel->Python  --------------------------------
 
@@ -117,7 +117,7 @@ def readFlightPlan(pathPlanVolExcel, mute=None):
     :param pathPlanVolExcel: chemin du fichier Excel qui contient le plan de vol  (string)
     :return: planVol  Dictionnaire contenant les données du plan de vol  (dic)
     """
-    workbook = openpyxl.load_workbook(pathPlanVolExcel, read_only=True)
+    workbook = openpyxl.load_workbook(pathPlanVolExcel, read_only=True, data_only=True)
     sheet = workbook['Plan_de_Vol']
     nuetude = 2  # 2      numéro
     nudrone = (nuetude + 8) + 1  # 2+8+1 =11
@@ -127,8 +127,7 @@ def readFlightPlan(pathPlanVolExcel, mute=None):
     planVol = {sheet.cell(nuetude, 1).value:  # mission
                    {sheet.cell(nuetude + 1, 1).value: sheet.cell(nuetude + 1, 2).value,  # 'client'
                     sheet.cell(nuetude + 2, 1).value: sheet.cell(nuetude + 2, 2).value,  # 'lieu'
-                    # 'coord GPS Take Off'    N dd.ddddd E dd.ddddd°
-                    sheet.cell(nuetude + 3, 1).value: sheet.cell(nuetude + 3, 2).value,
+                    sheet.cell(nuetude + 3, 1).value: sheet.cell(nuetude + 3, 2).value,  # 'coord GPS Take Off'    N dd.ddddd E dd.ddddd°
                     sheet.cell(nuetude + 4, 1).value: sheet.cell(nuetude + 4, 2).value,  # 'altitude Take 0ff'
                     sheet.cell(nuetude + 5, 1).value: sheet.cell(nuetude + 5, 2).value,  # 'date' DD/MM/YYYY  hh:mm:ss
                     sheet.cell(nuetude + 6, 1).value: sheet.cell(nuetude + 6, 2).value,  # 'heure_solaire'
@@ -198,7 +197,11 @@ def extractFlightPlan(dirPlanVol, mute=True):
     dirNameIRdrone = planVol['images']['repertoireViR  (save)']  # folder for save photography  VIR,  NDVI etc
     dirNameDrone = planVol['images']['repertoireDrone']  # Drone photography folder   (input)
     dirNameIR = planVol['images']['repertoireIR']  # IR photography folder (input)
-    dateMission = planVol['mission']['date']  # date of flight > format DD MM et YYYY
+    mission_key = 'mission'
+    if 'etude' in planVol.keys():
+        mission_key = 'etude'
+        planVol['mission'] = planVol['etude']
+    dateMission = planVol[mission_key]['date']  # date of flight > format DD MM et YYYY
     typeDrone = planVol['drone']['type']  # type of drone (see in the Exif tag of the image of the drone)
     extDrone = planVol['images']['extDrone']  # file format Vi
     typeIR = planVol['cameraIR']['type']  # type of camera in use (see in the Exif tag of the image of the IR camera)
@@ -208,12 +211,27 @@ def extractFlightPlan(dirPlanVol, mute=True):
     deltaTimeDrone = float(planVol['drone']['deltatime'])  # decalage horloge caméra du drone / horloge de référence
     deltaTimeIR = float(planVol['cameraIR']['deltatime'])  # decalage horloge caméra infrarouge /horloge de référence
     # take off pt
-    takeOff =[]
-    coordGPS_TakeOff = planVol['mission']['coord GPS Take Off']
-    coordGPS_TakeOff = (coordGPS_TakeOff.split()[1],coordGPS_TakeOff.split()[3])
-    takeOff.append(coordGPS_TakeOff)
-    alti_TakeOff = uGPS.altitude_IGN(takeOff, mute=True)
-    alti_TakeOff=alti_TakeOff[0]
+    coordGPS_TakeOff = None
+    try:
+        takeOff =[]
+        coordGPS_TakeOff = planVol[mission_key]['coord GPS Take Off']
+        coordGPS_TakeOff = (float(coordGPS_TakeOff.split()[1]), float(coordGPS_TakeOff.split()[3]))
+        takeOff.append(coordGPS_TakeOff)
+        alti_TakeOff = uGPS.altitude_IGN(takeOff, mute=False)
+        alti_TakeOff = alti_TakeOff[0]
+        print("Take off at GPS : {} altitude from IGN {}".format(coordGPS_TakeOff, alti_TakeOff))
+        logging.info("Take off at GPS : {} altitude from IGN {}".format(coordGPS_TakeOff, alti_TakeOff))
+    except:
+        logging.warning("Cannot extract takeoff altitude from IGN API through GPS coordinates")
+        alti_TakeOff = 0.
+        try:
+            if 'altitude' in planVol[mission_key].keys():
+                alti_TakeOff = planVol[mission_key]['altitude']
+            elif 'altitude Take Off' in planVol[mission_key].keys():
+                alti_TakeOff = planVol[mission_key]['altitude Take Off']
+            logging.warning("Fallback to altitude Take Off from the excel file {}".format(alti_TakeOff))
+        except:
+            logging.warning("Cannot extract takeoff altitude from excel \"altitude Take Off\" cell -> setting to zero")
 
     #    Liste des images de l'étude.
     #    Une liste pour les images du drone et une liste pour les images de la caméra infrarouge
