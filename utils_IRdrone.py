@@ -117,67 +117,63 @@ def readFlightPlan(pathPlanVolExcel, mute=None):
     :param pathPlanVolExcel: chemin du fichier Excel qui contient le plan de vol  (string)
     :return: planVol  Dictionnaire contenant les données du plan de vol  (dic)
     """
-    workbook = openpyxl.load_workbook(pathPlanVolExcel, read_only=True)
+    workbook = openpyxl.load_workbook(pathPlanVolExcel, read_only=True, data_only=True)
+
     sheet = workbook['Plan_de_Vol']
+
     nuetude = 2  # 2      numéro
     nudrone = (nuetude + 8) + 1  # 2+8+1 =11
     nucameraIR = (nudrone + 7) + 1  # 11+7+1=19
     nuimages = (nucameraIR + 5) + 1  # 19+5+1=25
     numeteo = (nuimages + 11) + 1  # 25+11+1=37
-    planVol = {sheet.cell(nuetude, 1).value:  # mission
-                   {sheet.cell(nuetude + 1, 1).value: sheet.cell(nuetude + 1, 2).value,  # 'client'
-                    sheet.cell(nuetude + 2, 1).value: sheet.cell(nuetude + 2, 2).value,  # 'lieu'
-                    # 'coord GPS Take Off'    N dd.ddddd E dd.ddddd°
-                    sheet.cell(nuetude + 3, 1).value: sheet.cell(nuetude + 3, 2).value,
-                    sheet.cell(nuetude + 4, 1).value: sheet.cell(nuetude + 4, 2).value,  # 'altitude Take 0ff'
-                    sheet.cell(nuetude + 5, 1).value: sheet.cell(nuetude + 5, 2).value,  # 'date' DD/MM/YYYY  hh:mm:ss
-                    sheet.cell(nuetude + 6, 1).value: sheet.cell(nuetude + 6, 2).value,  # 'heure_solaire'
-                    sheet.cell(nuetude + 7, 1).value: sheet.cell(nuetude + 7, 2).value,  # 'numero_du_vol'
-                    sheet.cell(nuetude + 8, 1).value: sheet.cell(nuetude + 8, 2).value  # 'pilote'
+    planVol = {'mission':
+                   {'client': sheet.cell(nuetude + 1, 2).value,
+                    'lieu': sheet.cell(nuetude + 2, 2).value,
+                    'coord GPS Take Off': sheet.cell(nuetude + 3, 2).value,
+                    'altitude Take 0ff': sheet.cell(nuetude + 4, 2).value,
+                    'date': sheet.cell(nuetude + 5, 2).value,  # ' DD-MM-YYYY  hh:mm:ss
+                    'heure_solaire': sheet.cell(nuetude + 6, 2).value,
+                    'numero_du_vol': sheet.cell(nuetude + 7, 2).value,
+                    'pilote': sheet.cell(nuetude + 8, 2).value
                     },
-               sheet.cell(nudrone, 1).value:  # 'drone'
-                   {sheet.cell(nudrone + 1, 1).value: sheet.cell(nudrone + 1, 2).value,  # 'marque'
-                    sheet.cell(nudrone + 2, 1).value: sheet.cell(nudrone + 2, 2).value,  # 'type'
-                    sheet.cell(nudrone + 3, 1).value: sheet.cell(nudrone + 3, 2).value,  # 'timelapse'(Drone)
-                    sheet.cell(nudrone + 4, 1).value: sheet.cell(nudrone + 4, 2).value,  # 'deltatime'
-                    sheet.cell(nudrone + 5, 1).value: sheet.cell(nudrone + 5, 2).value,  # 'imatriculation'
-                    sheet.cell(nudrone + 6, 1).value: sheet.cell(nudrone + 6, 2).value,  # 'altitude  de vol'
-                    sheet.cell(nudrone + 7, 1).value: sheet.cell(nudrone + 7, 2).value  # 'altitude  de vol'
+               'drone':
+                   {'marque': sheet.cell(nudrone + 1, 2).value,
+                    'type': sheet.cell(nudrone + 2, 2).value,
+                    'timelapse': sheet.cell(nudrone + 3, 2).value,
+                    'deltatime': sheet.cell(nudrone + 4, 2).value,
+                    'imatriculation': sheet.cell(nudrone + 5, 2).value,
+                    'altitude  de vol': sheet.cell(nudrone + 6, 2).value,
+                    'synchro horloges': sheet.cell(nudrone + 7, 2).value  # libre
                     },
-               sheet.cell(nucameraIR, 1).value:  # 'cameraIR'
-                   {sheet.cell(nucameraIR + 1, 1).value: sheet.cell(nucameraIR + 1, 2).value,  # 'marque'
-                    sheet.cell(nucameraIR + 2, 1).value: sheet.cell(nucameraIR + 2, 2).value,  # 'type'
-                    sheet.cell(nucameraIR + 3, 1).value: sheet.cell(nucameraIR + 3, 2).value,  # 'timelapse'(IR)
-                    sheet.cell(nucameraIR + 4, 1).value: sheet.cell(nucameraIR + 4, 2).value,  # 'deltatime'
-                    sheet.cell(nucameraIR + 5, 1).value: sheet.cell(nucameraIR + 5, 2).value  # libre
+               'cameraIR':
+                   {'marque': sheet.cell(nucameraIR + 1, 2).value,
+                    'type': sheet.cell(nucameraIR + 2, 2).value,
+                    'timelapse': sheet.cell(nucameraIR + 3, 2).value,
+                    'deltatime': sheet.cell(nucameraIR + 4, 2).value,
+                    'synchro horloges': sheet.cell(nucameraIR + 5, 2).value  # libre
                     },
-               sheet.cell(nuimages, 1).value:  # 'images'
-               # 'repertoireViR (save)' répertoire général des images du vol
-                   {sheet.cell(nuimages + 1, 1).value: sheet.cell(nuimages + 1, 2).value,
-                    # 'repertoireDrone'  répertoire des images drone
-                    sheet.cell(nuimages + 2, 1).value: sheet.cell(nuimages + 2, 2).value,
-                    # 'extDrone' extention des images (JPG, DNG)
-                    sheet.cell(nuimages + 3, 1).value: sheet.cell(nuimages + 3, 2).value,
-                    # 'filtreDrone'   densité du filtre DNxxx
-                    sheet.cell(nuimages + 4, 1).value: sheet.cell(nuimages + 4, 2).value,
-                    sheet.cell(nuimages + 5, 1).value: sheet.cell(nuimages + 5, 2).value,  # libre
-                    sheet.cell(nuimages + 6, 1).value: sheet.cell(nuimages + 6, 2).value,  # libre
-                    # 'repertoireIR'  repertoire des images IR
-                    sheet.cell(nuimages + 7, 1).value: sheet.cell(nuimages + 7, 2).value,
-                    # 'extIR'       extention des images infrarouge
-                    sheet.cell(nuimages + 8, 1).value: sheet.cell(nuimages + 8, 2).value,
-                    # 'filtreIR'     longueur d'onde du filtre IR
-                    sheet.cell(nuimages + 9, 1).value: sheet.cell(nuimages + 9, 2).value,
-                    sheet.cell(nuimages + 10, 1).value: sheet.cell(nuimages + 10, 2).value,  # libre
-                    sheet.cell(nuimages + 11, 1).value: sheet.cell(nuimages + 11, 2).value  # libre
+               'images':
+                   {'repertoireViR  (save)': sheet.cell(nuimages + 1, 2).value,
+                    'repertoireDrone': sheet.cell(nuimages + 2, 2).value,
+                    'extDrone': sheet.cell(nuimages + 3, 2).value,
+                    'filtreDrone': sheet.cell(nuimages + 4, 2).value,
+                    'libre_1': sheet.cell(nuimages + 5, 2).value,  # libre
+                    'libre_2': sheet.cell(nuimages + 6, 2).value,  # libre
+                    'repertoireIR': sheet.cell(nuimages + 7, 2).value,
+                    'extIR': sheet.cell(nuimages + 8, 2).value,
+                    'filtreIR': sheet.cell(nuimages + 9, 2).value,
+                    'libre_3': sheet.cell(nuimages + 10, 2).value,  # libre
+                    'libre_4': sheet.cell(nuimages + 11, 2).value  # libre
                     },
-               sheet.cell(numeteo, 1).value:  # 'meteo'
-                   {sheet.cell(numeteo + 1, 1).value: sheet.cell(numeteo + 1, 2).value,  # 'ensoleillement'
-                    sheet.cell(numeteo + 2, 1).value: sheet.cell(numeteo + 2, 2).value,  # 'vent'
-                    sheet.cell(numeteo + 3, 1).value: sheet.cell(numeteo + 3, 2).value  # 'temperature'
+               'meteo':
+                   {'ensoleillement': sheet.cell(numeteo + 1, 2).value,
+                    'vent': sheet.cell(numeteo + 2, 2).value,
+                    'temperature': sheet.cell(numeteo + 3, 2).value,
+                    'humidite': sheet.cell(numeteo + 4, 2).value
                     }
                }
     workbook.close()
+
     if not mute:
         printPlanVol(planVol)
 
@@ -192,10 +188,10 @@ def extractFlightPlan(dirPlanVol, mute=True):
 
     :param dirPlanVol:  path of Fligth Plan in  a Excel file
     :return: (planVol,imgListDrone,deltaTimeDrone,timeLapseDrone,imgListIR,deltaTimeIR,timeLapseIR,
-    dirNameIRdrone,coordGPS_TakeOff,alti_TakeOff)   )
+    dirNameIRdrone,coordGPS_TakeOff,altiTakeOff)   )
     """
     planVol = readFlightPlan(dirPlanVol, mute=mute)
-    dirNameIRdrone = planVol['images']['repertoireViR  (save)']  # folder for save photography  VIR,  NDVI etc
+    dirNameIRdrone = planVol['images']['repertoireViR  (save)']  # folder for save photography  VIR,  NDVI (output)
     dirNameDrone = planVol['images']['repertoireDrone']  # Drone photography folder   (input)
     dirNameIR = planVol['images']['repertoireIR']  # IR photography folder (input)
     dateMission = planVol['mission']['date']  # date of flight > format DD MM et YYYY
@@ -207,13 +203,6 @@ def extractFlightPlan(dirPlanVol, mute=True):
     extIR = planVol['images']['extIR']  # file format  IR
     deltaTimeDrone = float(planVol['drone']['deltatime'])  # decalage horloge caméra du drone / horloge de référence
     deltaTimeIR = float(planVol['cameraIR']['deltatime'])  # decalage horloge caméra infrarouge /horloge de référence
-    # take off pt
-    takeOff =[]
-    coordGPS_TakeOff = planVol['mission']['coord GPS Take Off']
-    coordGPS_TakeOff = (coordGPS_TakeOff.split()[1],coordGPS_TakeOff.split()[3])
-    takeOff.append(coordGPS_TakeOff)
-    alti_TakeOff = uGPS.altitude_IGN(takeOff, mute=True)
-    alti_TakeOff=alti_TakeOff[0]
 
     #    Liste des images de l'étude.
     #    Une liste pour les images du drone et une liste pour les images de la caméra infrarouge
@@ -242,8 +231,7 @@ def extractFlightPlan(dirPlanVol, mute=True):
             print('Il y a %i images Vi et  %i NiR pour ce vol' % (len(imgListDrone), len(imgListIR)))
 
     return planVol, imgListDrone, deltaTimeDrone, timeLapseDrone, \
-           imgListIR, deltaTimeIR, timeLapseIR, dirNameIRdrone, \
-           coordGPS_TakeOff, alti_TakeOff
+           imgListIR, deltaTimeIR, timeLapseIR, dirNameIRdrone
 
 
 def creatListImgIR(dirName, dateMission, cameraModel, camera, typImg, planVol, debug=False):
@@ -311,9 +299,10 @@ def creatListImg(dirName, dateMission, cameraModel, camera, typImg, planVol, deb
                     imgList.append((nameImg, imlist[i], dateImg))  # ajout à la liste des images
                 else:
                     if debug: print(Style.YELLOW,
-                        '%s a été prise le %i %i %i. Cette date est différente de celle de l\'étude %i %i %i'
-                        % (imlist[i], dateImg.day, dateImg.month, dateImg.year, dateMission.day, dateMission.month,
-                           dateMission.year), Style.RESET)
+                                    '%s a été prise le %i %i %i. Cette date est différente de celle de l\'étude %i %i %i'
+                                    % (imlist[i], dateImg.day, dateImg.month, dateImg.year, dateMission.day,
+                                       dateMission.month,
+                                       dateMission.year), Style.RESET)
             else:
                 if debug: print(Style.YELLOW,
                                 '%s a été prise par un autre  appareil (Model %s) ' % (imlist[i], cameraModelImg),
@@ -335,7 +324,7 @@ def printPlanVol(planVol):
           '\n Timelaps  : %s  s    DeltaTime %s  s'
           '\n Filtre infrarouge  IR %i nm'
           '\n Météo : %s  Vent %.1f m/s  Température %.1f °C' %
-          (planVol['mission']['lieu'], (planVol['mission']['GPS'] + '  ' + str(planVol['mission']['altitude']) + ' m'),
+          (planVol['mission']['lieu'], (planVol['mission']['coord GPS Take Off'] + '  ' + str(planVol['mission']['altitude Take 0ff']) + ' m'),
            planVol['mission']['date'],
            planVol['mission']['client'],
            planVol['mission']['pilote'],
@@ -344,8 +333,8 @@ def printPlanVol(planVol):
            planVol['drone']['timelapse'], planVol['drone']['deltatime'],
            (planVol['cameraIR']['marque'] + '  ' + planVol['cameraIR']['type']),
            planVol['cameraIR']['timelapse'], planVol['cameraIR']['deltatime'],
-           (planVol['images']['filtreIR']),
-           planVol['meteo']['ensoleillement'], planVol['meteo']['vent'], planVol['meteo']['temperature']
+           planVol['images']['filtreIR'],
+           planVol['meteo']['ensoleillement'], float(planVol['meteo']['vent']), float(planVol['meteo']['temperature'])
            )
           )
     return
@@ -431,7 +420,7 @@ def matchImagesFlightPath(imgListDrone,
     return listImgMatch
 
 
-def summaryFlight(listImg, altTakeOff=0., seaLevel=False, dirSaveFig=None, mute=True):
+def summaryFlight(listImg, planVol, seaLevel=False, dirSaveFig=None, mute=True):
     """
     :param listImg:      list of image pairs VI/IR matched at the same point
     :param mute:
@@ -465,11 +454,16 @@ def summaryFlight(listImg, altTakeOff=0., seaLevel=False, dirSaveFig=None, mute=
     altGround = []
     distFlight = []
     dateVi = []
-
-    if len(listImg) < 99:
+    # découpage de la liste de points GPS
+    #  En theorie 5000 pt selon
+    #  #https://geoservices.ign.fr/documentation/services/api-et-services-ogc/calcul-altimetrique-rest
+    #  Teste 189     mais 199 ne marche pas !!!!
+    #
+    maxPas=99
+    if len(listImg) < maxPas:
         pas = len(listImg) - 1
     else:
-        pas = 99  # Teste 189 OK  mais 199 no OK
+        pas = maxPas
     for i in range(len(listImg)):
         img = pr.Image(listImg[i][0])
         listPtGPS.append((img.gps['latitude'][4], img.gps['longitude'][4]))
@@ -480,16 +474,23 @@ def summaryFlight(listImg, altTakeOff=0., seaLevel=False, dirSaveFig=None, mute=
         #  Utilise l'API de l'IGN.
         #  Attention cette API limite le nombre de points qu'il est possible d'envoyer dans la requette
         #  On fait trois tentatives. Si échec l'altitude du sol par rapport au niveau de la mer est fixée à zéro.
+
+        # altitude du point de décollage par rapport au niveau de la mer
+        coordGPSTakeOff, altiTakeOff = uGPS.TakeOff(planVol['mission']['coord GPS Take Off'])
+        if altiTakeOff < 0 :
+            altiTakeOff = 0
+        print(Style.CYAN, 'Alti Take Off  %.2f m' % altiTakeOff, Style.RESET)
+        #  decoupage de la liste des point en plusieurs segment car le nombre de points de l'API IGN est limite.
         for k in range(0, int(round(len(listImg), 0) / pas) + 1):
             list = listPtGPS[k * pas:(k + 1) * pas]
             altGeo += uGPS.altitude_IGN(list)
-            print('%i / %i ' % (k, int(round(len(listImg), 0) / pas)))
+            print(Style.CYAN, '%i / %.0f ' % (k, len(listImg)/ pas), Style.RESET)
 
         print(Style.CYAN + 'Fin du recalage des altitudes par rapport au sol' + Style.RESET)
-        altGeoPref = altTakeOff  # altitude du point de décollage par rapport au niveau de la mer
+
     else:
         altGeo = [0.0] * len(listPtGPS)
-        altGeoPref = 0.
+        altiTakeOff = 0.
 
     #  Calcule la distance et le cap entre la point P0 et le point suivant P1
     for i in range(len(listImg) - 1):
@@ -503,9 +504,9 @@ def summaryFlight(listImg, altTakeOff=0., seaLevel=False, dirSaveFig=None, mute=
         img = pr.Image(listImg[i][0])
         if not mute:
             print('altitudes : drone / takeOff %f m | sol/ sea level %f m |  drone /sol %f m'
-                  % (listCoordGPS[i][2], altGeo[i], round(listCoordGPS[i][2] + altGeoPref - altGeo[i], 5)))
+                  % (listCoordGPS[i][2], altGeo[i], round(listCoordGPS[i][2] + altiTakeOff - altGeo[i], 5)))
         # altitude du drone par rapport au sol et par rapport au niveau de la mer
-        altDroneSol.append(round(listCoordGPS[i][2] + altGeoPref - altGeo[i], 5))
+        altDroneSol.append(round(listCoordGPS[i][2] + altiTakeOff - altGeo[i], 5))
         altGround.append(altGeo[i])  # altitude du sol par rapport au niveau de la mer
         altDroneSealLevel.append(altGeo[i] + altDroneSol[i])
         distToLastPt = round(distP0P1[i], 2)  # distance au point suivant   (précision au cm !)
@@ -564,6 +565,7 @@ def writeSummaryFlight(flightPlanSynthesis, pathName):
         pass
 
     sheet = workbook['Summary']
+    sheet.protection.sheet=False
     listHeadCol = ['Point',
                    'Image                    Visible',
                    'Image                    Infrarouge',
@@ -586,7 +588,9 @@ def writeSummaryFlight(flightPlanSynthesis, pathName):
         for k in range(len(flightPlanSynthesis[i])):
             sheet.cell(i + 2, k + 2).value = flightPlanSynthesis[i][k]
     sheet = workbook['Plan_de_Vol']
-    sheet.cell(2, 11).value = '*'
+    sheet.protection.sheet = False
+    sheet.cell(11, 2).value = '*'
+    sheet.protection.sheet = False
     workbook.save(pathName)
     workbook.close()
     print(Style.GREEN + 'Ecriture du résumé du vol dans %s  terminée.' % pathName)
@@ -597,9 +601,9 @@ def showFlightProfil(d_list, elev_Drone, elev_Ground, dirSaveFig=None, mute=True
     min_elev = min(elev_Ground)
 
     # PLOT ELEVATION PROFILE
-    base_reg = min_elev-10
+    base_reg = min_elev - 10
     plt.figure(figsize=(10, 4))
-    plt.plot(d_list, elev_Drone, '.r', label='Drone: ', linewidth=1, linestyle='dashed',markersize=0)
+    plt.plot(d_list, elev_Drone, '.r', label='Drone: ', linewidth=1, linestyle='dashed', markersize=0)
     plt.plot(d_list, elev_Ground, 'tab:brown', label='Ground ')
     plt.fill_between(d_list, elev_Ground, base_reg, color='tab:brown', alpha=0.1)
     plt.text(d_list[0], elev_Drone[0], "Start Pt")

@@ -352,7 +352,7 @@ def altitude_IGN(coordGPS, mute=True):
     latitude_formate = re.sub(r'\|$', '', latitude_formate)
     longitude_formate = re.sub(r'\|$', '', longitude_formate)
 
-    tries = 3
+    tries = 2
     for i in range(tries):
         try:
             api_url = f"https://wxs.ign.fr/essentiels/alti/rest/elevation.json?" \
@@ -361,8 +361,15 @@ def altitude_IGN(coordGPS, mute=True):
                 print(f"https://wxs.ign.fr/essentiels/alti/rest/elevation.json?")
 
             dico = json.loads(requests.get(api_url).text)
-            for retour in dico['elevations']:
-                altitude.append(retour)
+            if not isinstance(dico, dict):
+                altitude = sealLevel(coordGPS, 0.)
+            elif list(dico.keys())[0] == 'error':
+                altitude = sealLevel(coordGPS, 0.)
+            else:
+                for retour in dico['elevations']:
+                    altitude.append(retour)
+                if min(altitude) < 0 :
+                    altitude = sealLevel(coordGPS, 0.)
             return altitude
         except:
             if i < tries - 1:
@@ -370,10 +377,19 @@ def altitude_IGN(coordGPS, mute=True):
                 continue
             else:
                 print(Style.RED +
-                      'No response from web server https://wxs.ign.fr/essentiels/alti/rest/',
+                      'No response from web server',
                       '\n Ground level set to zero.'
                       + Style.RESET)
+                altitude = sealLevel(coordGPS, 0.)
+                return altitude
 
+
+
+def sealLevel(coordGPS, hlevel):
+    altitude = []
+    for i in range(len(coordGPS)):
+        altitude.append(hlevel)
+    return altitude
 
 def cumul_Dist(coordLatLongZ):
     """
@@ -450,8 +466,21 @@ def writeGPX(listImgMatch, dirNameVol, dateEtude, mute=True):
                  "version=\"1.1\" " \
                  "xsi:schemaLocation=\"http://www.topografix.com/GPX/1/1 \" "
 
-    fichierGpx = "{0}xmlns=\"http://www.topografix.com/GPX/1/1\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:wptx1=\"http://www.garmin.com/xmlschemas/WaypointExtension/v1\" xmlns:gpxtrx=\"http://www.garmin.com/xmlschemas/GpxExtensions/v3\" xmlns:gpxtpx=\"http://www.garmin.com/xmlschemas/TrackPointExtension/v1\" xmlns:gpxx=\"http://www.garmin.com/xmlschemas/GpxExtensions/v3\" xmlns:trp=\"http://www.garmin.com/xmlschemas/TripExtensions/v1\" xmlns:adv=\"http://www.garmin.com/xmlschemas/AdventuresExtensions/v1\" xmlns:prs=\"http://www.garmin.com/xmlschemas/PressureExtension/v1\" xmlns:tmd=\"http://www.garmin.com/xmlschemas/TripMetaDataExtensions/v1\" xmlns:vptm=\"http://www.garmin.com/xmlschemas/ViaPointTransportationModeExtensions/v1\" xmlns:ctx=\"http://www.garmin.com/xmlschemas/CreationTimeExtension/v1\" xmlns:gpxacc=\"http://www.garmin.com/xmlschemas/AccelerationExtension/v1\" xmlns:gpxpx=\"http://www.garmin.com/xmlschemas/PowerExtension/v1\" xmlns:vidx1=\"http://www.garmin.com/xmlschemas/VideoExtension/v1\">".format(
-        fichierGpx)
+    fichierGpx = "{0}xmlns=\"http://www.topografix.com/GPX/1/1\" xmlns:xsi=\"" \
+                 "http://www.w3.org/2001/XMLSchema-instance\" xmlns:wptx1=\"" \
+                 "http://www.garmin.com/xmlschemas/WaypointExtension/v1\" xmlns:gpxtrx=\"" \
+                 "http://www.garmin.com/xmlschemas/GpxExtensions/v3\" xmlns:gpxtpx=\"" \
+                 "http://www.garmin.com/xmlschemas/TrackPointExtension/v1\" xmlns:gpxx=\"" \
+                 "http://www.garmin.com/xmlschemas/GpxExtensions/v3\" xmlns:trp=\"" \
+                 "http://www.garmin.com/xmlschemas/TripExtensions/v1\" xmlns:adv=\"" \
+                 "http://www.garmin.com/xmlschemas/AdventuresExtensions/v1\" xmlns:prs=\"" \
+                 "http://www.garmin.com/xmlschemas/PressureExtension/v1\" xmlns:tmd=\"" \
+                 "http://www.garmin.com/xmlschemas/TripMetaDataExtensions/v1\" xmlns:vptm=\"" \
+                 "http://www.garmin.com/xmlschemas/ViaPointTransportationModeExtensions/v1\" xmlns:ctx=\"" \
+                 "http://www.garmin.com/xmlschemas/CreationTimeExtension/v1\" xmlns:gpxacc=\"" \
+                 "http://www.garmin.com/xmlschemas/AccelerationExtension/v1\" xmlns:gpxpx=\"" \
+                 "http://www.garmin.com/xmlschemas/PowerExtension/v1\" xmlns:vidx1=\"" \
+                 "http://www.garmin.com/xmlschemas/VideoExtension/v1\">".format(fichierGpx)
 
     """
         Couleur du trait :   Red,Green,Blue,Yellow,Gray, et DarkRed, DarkGreen etc
@@ -526,3 +555,19 @@ def formatCoordGPSforGpx(listImgMatch):
     minLon = min(coordGPSgpxLon)
 
     return pointTrk, maxLat, minLat, maxLon, minLon
+
+
+def TakeOff(coordGPS_TakeOff):
+    """
+
+    :param coordGPS_TakeOff:               (N DD.dddddd  E DD.dddddd)
+    :return: coordGPS, alti_TakeOff       (DD.ddddddd , DD.ddddddd) , float
+    """
+    # take off pt
+    print(coordGPS_TakeOff)
+    takeOff = []
+    coordGPS = (coordGPS_TakeOff.split()[1], coordGPS_TakeOff.split()[3])
+    takeOff.append(coordGPS)
+    alti_TakeOff = altitude_IGN(takeOff, mute=True)
+    alti_TakeOff = alti_TakeOff[0]
+    return coordGPS, alti_TakeOff

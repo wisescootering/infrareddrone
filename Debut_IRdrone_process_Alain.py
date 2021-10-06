@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=C0103, C0301, W0703
 """
-Created on 2021-10-04 15:56:18
+Created on 2021-10-05 19:17:16
 
 @authors: balthazar/alain
 """
@@ -57,8 +57,7 @@ if __name__ == "__main__":
     #     Date, heure, dossier d'images, synchro des horloges, type du drone et de la caméra IR ...
     #     Construction de la liste des images prises lors du vol (Drone et IR)
 
-    planVol, imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, \
-    timeLapseIR, dirNameIRdrone, coordGPS_TakeOff, alti_TakeOff = \
+    planVol, imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR, dirNameIRdrone = \
     IRd.extractFlightPlan(dirPlanVol, mute=True)
     dateMission = planVol['mission']['date']
 
@@ -84,7 +83,7 @@ if __name__ == "__main__":
     #        Génère la trajectoire au format Garmin gpx
 
     print(Style.CYAN + '------ Calcule de la trajectoire du drone et du profil du vol' + Style.RESET)
-    flightPlanSynthesis = IRd.summaryFlight(listImgMatch, altTakeOff=alti_TakeOff, seaLevel=True,
+    flightPlanSynthesis = IRd.summaryFlight(listImgMatch, planVol, seaLevel=True,
                                             dirSaveFig=osp.dirname(dirPlanVol), mute=True)
     IRd.writeSummaryFlight(flightPlanSynthesis, dirPlanVol)
     uGPS.writeGPX(listImgMatch, dirNameIRdrone, dateMission, mute=True)  # écriture  du tracé GPS au format gpx Garmin
