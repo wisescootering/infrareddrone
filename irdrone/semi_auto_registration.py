@@ -103,6 +103,36 @@ class ManualAlignment(ipipe.ProcessBlock):
     """
     refcalib = None
     movingcalib = None
+    alignment_parameters = dict(yaw=0, pitch=0, roll=0)
+
+    def set_refcalib(self, _refcalib):
+        self.refcalib = _refcalib
+
+    def set_movingcalib(self, _movingcalib):
+        self.movingcalib = _movingcalib
+
+    def apply(self, ref, mov, yaw, pitch, roll, geometricscale=None, **kwargs):
+        mov_warped = manual_warp(
+            ref, mov,
+            yaw, pitch, roll,
+            refcalib=self.refcalib, movingcalib=self.movingcalib,
+            geometric_scale=geometricscale
+        )  # manual warp in colors
+        self.alignment_parameters = dict(
+            yaw=yaw,
+            pitch=pitch,
+            roll=roll,
+        )
+        return mov_warped
+
+
+class SemiAutoAlignment(ipipe.ProcessBlock):
+    """
+    Manual 3D rotations
+    Composed with semi automatic refinement
+    """
+    refcalib = None
+    movingcalib = None
     abstraction_offset_ref = 1.
 
     def set_refcalib(self, _refcalib):
@@ -398,13 +428,13 @@ class BlockMatching(ipipe.ProcessBlock):
 def align_demo(ref, mov, cals, params={}, abstraction_offset_ref=1):
     angles_amplitude = (-20., 20, 0.)
     auto_align = None
-    rotate3d = ManualAlignment(
+    rotate3d = SemiAutoAlignment(
         ROTATE,
         slidersName=["YAW", "PITCH", "ROLL", "AUTO"],
         inputs=[1, 2],
         outputs=[0],
         vrange=[
-            angles_amplitude, angles_amplitude,angles_amplitude, (0., 1.01, 0.)
+            angles_amplitude, angles_amplitude, angles_amplitude, (0., 1.01, 0.)
         ]
     )
     rotate3d.set_abstraction_offset_ref(abstraction_offset_ref)
