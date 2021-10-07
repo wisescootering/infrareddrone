@@ -385,9 +385,10 @@ def pyramidal_search(
         iter +=1
     ts_end = time.perf_counter()
     logging.warning("\tTOTAL {:.2f}s elapsed for iterative scheme {}".format(ts_end - ts_start, iterative_scheme))
-    out_img = motion_model.warp(img_mov, downscale=1)
-
-    return out_img, motion_model
+    if debug:
+        out_img = motion_model.warp(img_mov, downscale=1)
+        pr.Image(out_img).save(osp.join(forced_debug_dir, "FULLRES_REGISTERED_REFINED.jpg"))
+    return motion_model
 
 
 # ------------------------------------------------------- Tests --------------------------------------------------------
@@ -459,7 +460,7 @@ def test_alignment_system_multi_scale_multi_iter():
         t_x=20., t_y=120.4, theta =-15.,
         suffix="_Multi_scale_MSR_{}".format(iterative_scheme)
     )
-    out_img, _ = pyramidal_search(
+    motion_model = pyramidal_search(
         vis_img.data, vis_img_moved.data,
         debug_dir=debug_dir, debug=False,
         mode=LAPLACIAN_ENERGIES,
@@ -469,6 +470,7 @@ def test_alignment_system_multi_scale_multi_iter():
         sigma_ref=5,
         affinity=True
     )
+    out_img = motion_model.warp(vis_img_moved.data, scale=1.)
     pr.Image(out_img.astype(np.uint8)).save(osp.join(debug_dir, "REGISTERED_PYR.jpg"))
 
 
@@ -488,7 +490,7 @@ def align_images(
         vis_img.save(osp.join(debug_dir, "REF.jpg"))
         nir_img.save(osp.join(debug_dir, "MOVED.jpg"))
 
-        out_img, _ = pyramidal_search(
+        motion_model = pyramidal_search(
             vis_img.data, nir_img.data,
             debug_dir=None, debug=debug,
             iterative_scheme = iterative_scheme,
@@ -497,6 +499,7 @@ def align_images(
             affinity=affinity
 
         )
+        out_img = motion_model.warp(nir_img, downscale=1)
         pr.Image(out_img.astype(np.uint8)).save(out_img_path)
     else:
         out_img = pr.Image(out_img_path).data

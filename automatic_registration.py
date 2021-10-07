@@ -5,7 +5,6 @@ import numpy as np
 import logging
 import os.path as osp
 import registration.rigid as rigid
-from registration.warp_flow import warp_from_sparse_vector_field
 from irdrone.semi_auto_registration import manual_warp, ManualAlignment, Transparency, Absgrad
 from skimage import transform
 import os
@@ -25,10 +24,11 @@ class VegetationIndex(ipipe.ProcessBlock):
     """
     def apply(self, vis, nir, alpha, **kwargs):
         red = vis[:, :, 0]
-        nir_mono = np.average(nir, axis=2)
+        nir_mono = np.mean(nir, axis=-1)
+        nir_mono *= 0.5/np.mean(nir_mono)  # @TODO: correctly expose the NIR channel
         nir_mono = (1+alpha)*nir_mono*0.5/np.average(nir_mono)
         red = red*0.5/np.average(red)
-        ndvi = ((nir_mono - red)/(nir_mono + red))
+        ndvi = ((nir_mono - red)/(nir_mono + red)) # @TODO: enhance final constrast here
         return ndvi
 
 
@@ -45,21 +45,29 @@ def ndvi(vis_img, nir_img, out_path=None):
     else:
         ipi.set(
             **{
-                "NDVI":[-0.15],
+                "NDVI":[-0.1],
             }
         )
+        # ipi.gui()
         ipi.save(out_path)
 
 
 def vir(vis_img, nir_img, out_path=None):
     vir = vis_img.copy()
     vir[:, :, 0] = np.mean(nir_img, axis=-1)
+    vir[:, :, 0] *= 0.5/np.mean(vir[:, :, 0]) # @TODO: correctly expose the NIR channel
     vir[:, :, 1] = vis_img[:, :, 0]
     vir[:, :, 2] = vis_img[:, :, 1]
     if out_path is None:
         pr.Image(vir).show()
     else:
-        pr.Image(vir).save(out_path)
+        if out_path.lower().endswith("tif"):
+            pr.Image(vir).save(out_path)
+        else:
+            recontrasted_image = (ut.contrast_stretching(vir.clip(0., 1.))[0]*255).astype(np.uint8)
+            pr.Image(recontrasted_image).save(out_path)
+            # pr.Image((vir*255).clip(0, 255).astype(np.uint8)).save(out_path)
+
 
 def user_assisted_manual_alignment(ref, mov, cals):
     ROTATE = "Rotate"
@@ -116,11 +124,12 @@ def coarse_alignment(ref_full, mov_full, cals, yaw_main, pitch_main, roll_main, 
     padded_ref = np.zeros_like(msr_mov)
     padded_ref[pad_y:pad_y+msr_ref.shape[0], pad_x:pad_x+msr_ref.shape[1], :] = msr_ref
     # pr.Image(rigid.viz_msr(mov_w, None)).save(osp.join(debug_dir, "_LOWRES_MOV_INIT.jpg"))
-    pr.Image(rigid.viz_msr(msr_mov, align_config.mode)).save(osp.join(debug_dir, "_PADDED_LOWRES_MOV_MSR.jpg"))
-    pr.Image(rigid.viz_msr(padded_ref, align_config.mode)).save(osp.join(debug_dir, "_PADDED_LOWRES_MSR_REF.jpg"))
+    if debug_dir is not None:
+        pr.Image(rigid.viz_msr(msr_mov, align_config.mode)).save(osp.join(debug_dir, "_PADDED_LOWRES_MOV_MSR.jpg"))
+        pr.Image(rigid.viz_msr(padded_ref, align_config.mode)).save(osp.join(debug_dir, "_PADDED_LOWRES_MSR_REF.jpg"))
     cost_dict = rigid.compute_cost_surfaces_with_traces(
         msr_mov, padded_ref,
-        debug=True, debug_dir=debug_dir,
+        debug=debug, debug_dir=debug_dir,
         prefix="Full Search", suffix="",
         align_config=align_config,
         forced_debug_dir=debug_dir,
@@ -137,7 +146,7 @@ def coarse_alignment(ref_full, mov_full, cals, yaw_main, pitch_main, roll_main, 
     ts_end_coarse_search = time.perf_counter()
     logging.warning("{:.2f}s elapsed in coarse search".format(ts_end_coarse_search - ts_start_coarse_search))
     ts_start_warp = time.perf_counter()
-    if debug:
+    if debug_dir is not None and debug:
         mov_wr = manual_warp(
             msr_ref, cv2.resize(mov_full, (mov_full.shape[1]//ds, mov_full.shape[0]//ds)),
             yaw_main + yaw_refine, pitch_main + pitch_refine, roll_main,
@@ -155,8 +164,9 @@ def coarse_alignment(ref_full, mov_full, cals, yaw_main, pitch_main, roll_main, 
     )
     ts_end_warp = time.perf_counter()
     logging.warning("{:.2f}s elapsed in warping from coarse search".format(ts_end_warp - ts_start_warp))
-    pr.Image(ref_full).save(osp.join(debug_dir, "FULLRES_REF.jpg"))
-    pr.Image(mov_wr_fullres).save(osp.join(debug_dir, "FULLRES_REGISTERED_COARSE.jpg"))
+    if debug_dir is not None:
+        pr.Image(ref_full).save(osp.join(debug_dir, "FULLRES_REF.jpg"))
+        pr.Image(mov_wr_fullres).save(osp.join(debug_dir, "FULLRES_REGISTERED_COARSE.jpg"))
     return mov_wr_fullres, dict(yaw=yaw_main + yaw_refine, pitch=pitch_main + pitch_refine, roll=roll_main)
 
 
@@ -171,7 +181,9 @@ def align_raw(vis_path, nir_path, cals, debug_dir=None, debug=False, extension=1
     """
     if debug_dir is not None and not osp.isdir(debug_dir):
         os.mkdir(debug_dir)
-    motion_model_file = osp.join(debug_dir, "motion_model")
+    motion_model_file = None
+    if debug_dir is not None:
+        motion_model_file = osp.join(debug_dir, "motion_model")
     ts_start = time.perf_counter()
     vis = pr.Image(vis_path)
     nir = pr.Image(nir_path)
@@ -189,7 +201,7 @@ def align_raw(vis_path, nir_path, cals, debug_dir=None, debug=False, extension=1
     mov_full = nir.data
     ts_end_load = time.perf_counter()
     logging.warning("{:.2f}s elapsed in loading full resolution RAW".format(ts_end_load - ts_start))
-    if not osp.isfile(motion_model_file+".npy"):
+    if motion_model_file is None or not osp.isfile(motion_model_file+".npy"):
         if manual:
             alignment_params = user_assisted_manual_alignment(ref_full, mov_full, cals)
             yaw_main, pitch_main, roll_main = alignment_params["yaw"], alignment_params["pitch"], alignment_params["roll"]
@@ -198,10 +210,10 @@ def align_raw(vis_path, nir_path, cals, debug_dir=None, debug=False, extension=1
         mov_wr_fullres, coarse_rotation_estimation = coarse_alignment(
             ref_full, mov_full, cals,
             yaw_main, pitch_main, roll_main,
-            extension=extension, # FOV extension
+            extension=extension,  # FOV extension
             debug_dir=debug_dir, debug=debug
         )
-        mov_w_final, motion_model = rigid.pyramidal_search(
+        motion_model = rigid.pyramidal_search(
             ref_full, mov_wr_fullres,
             iterative_scheme=[(16, 2, 4, 8), (16, 2, 5), (4, 3, 5)],
             # iterative_scheme=[(16, 2, 4, 8),], #@TODO : NOT TO COMMIT!
@@ -211,84 +223,123 @@ def align_raw(vis_path, nir_path, cals, debug_dir=None, debug=False, extension=1
             sigma_ref=5.,
             sigma_mov=3.
         )
-        pr.Image(mov_w_final).save(osp.join(debug_dir, "FULLRES_REGISTERED_REFINED.jpg"))
-
         homog = motion_model.rescale(downscale=1.)
         full_motion_model = coarse_rotation_estimation.copy()
         full_motion_model["homography"] = homog
         full_motion_model["vector_field"] = motion_model.vector_field
         full_motion_model["previous_homography"] = motion_model.previous_model
-        np.save(motion_model_file, full_motion_model, allow_pickle=True)
+        if motion_model_file is not None:
+            np.save(motion_model_file, full_motion_model, allow_pickle=True)
     else:
         logging.warning("Loading motion model!")
         full_motion_model = np.load(motion_model_file+".npy", allow_pickle=True).item()
 
-
-    mov_w_final_yowo_full = manual_warp(
-        ref_full, mov_full,
+    if debug_dir is not None:
+        mov_w_final_yowo_full = manual_warp(
+            ref_full, mov_full,
+            full_motion_model["yaw"], full_motion_model["pitch"], full_motion_model["roll"],
+            refcalib=cals["refcalib"], movingcalib=cals["movingcalib"],
+            geometric_scale=None, refinement_homography=full_motion_model["previous_homography"],
+            vector_field=full_motion_model["vector_field"]
+        )  # you only warp once!
+        pr.Image(mov_w_final_yowo_full).save(osp.join(debug_dir, "FULLRES_REGISTERED_REFINED_WARPED_ONCE_ONLY.jpg"))
+    ts_start_yowo = time.perf_counter()
+    mov_w_linear_local = manual_warp(
+        ref_full, nir.lineardata,
         full_motion_model["yaw"], full_motion_model["pitch"], full_motion_model["roll"],
         refcalib=cals["refcalib"], movingcalib=cals["movingcalib"],
-        geometric_scale=None, refinement_homography=full_motion_model["previous_homography"],
+        geometric_scale=None,
+        refinement_homography=full_motion_model["previous_homography"],
         vector_field=full_motion_model["vector_field"]
     )  # you only warp once!
-    pr.Image(mov_w_final_yowo_full).save(osp.join(debug_dir, "FULLRES_REGISTERED_REFINED_WARPED_ONCE_ONLY.jpg"))
+
+    mov_w_linear_global = manual_warp(
+        ref_full, nir.lineardata,
+        full_motion_model["yaw"], full_motion_model["pitch"], full_motion_model["roll"],
+        refcalib=cals["refcalib"], movingcalib=cals["movingcalib"],
+        geometric_scale=None,
+        refinement_homography=full_motion_model["homography"],
+    )  # global warp!
     ts_end = time.perf_counter()
+    logging.warning("{:.2f}s elapsed in global and local unique warp".format(ts_end - ts_start_yowo))
     logging.warning("{:.2f}s elapsed in total alignment".format(ts_end - ts_start))
-    return ref_full, mov_w_final_yowo_full
+    return vis_undist_lin, mov_w_linear_local, mov_w_linear_global
+    # return ref_full, mov_w_final_yowo_full
 
 
-def process_raw_folder(folder, delta=timedelta(seconds=171), manual=False):
+def process_raw_folder(folder, delta=timedelta(seconds=166.5), manual=False):
     """NIR/VIS image alignment and fusion
     - using a simple synchronization mechanism based on exif and camera deltas
     - camera time delta
     """
     sync_pairs = synchronize_data(folder, replace_dji=(".DNG", "_PL4_DIST.tif"), delta=delta)
     cals = dict(refcalib=ut.cameracalibration(camera="DJI_RAW"), movingcalib=ut.cameracalibration(camera="M20_RAW"))
-    out_dir = osp.join(folder, "_RESULTS")
-    process_raw_pairs(sync_pairs, cals, folder=folder, out_dir=out_dir, manual=manual)
+    out_dir = osp.join(folder, "_RESULTS_delta={:.1f}s".format(delta.seconds+delta.microseconds/(1.E6)))
+    process_raw_pairs(sync_pairs, cals, debug_folder=None, out_dir=out_dir, manual=manual)
 
 
 def process_raw_pairs(
         sync_pairs,
         cals=dict(refcalib=ut.cameracalibration(camera="DJI_RAW"), movingcalib=ut.cameracalibration(camera="M20_RAW")),
-        folder=None, out_dir=None, manual=False, debug=False
+        debug_folder=None, out_dir=None, manual=False, debug=False
     ):
-    if folder is None:
-        folder = osp.dirname(sync_pairs[0][0])
+    # if debug_folder is None:
+    #     debug_folder = osp.dirname(sync_pairs[0][0])
     if out_dir is None:
-        out_dir = osp.join(folder, "_RESULTS")
+        out_dir = osp.join(osp.dirname(sync_pairs[0][0]), "_RESULTS")
     if not osp.exists(out_dir):
         os.mkdir(out_dir)
-    for vis_pth, nir_pth in sync_pairs[::-1]:  # [::-1]  [::-1][4:5]:  [3::40]: [410:415]:
+    for vis_pth, nir_pth in sync_pairs:
         logging.warning("processing {} {}".format(osp.basename(vis_pth), osp.basename(nir_pth)))
-        debug_dir = osp.join(folder, osp.basename(vis_pth)[:-4]+"_align_WARP_ONLY_ONCE" + ("_manual" if manual else ""))
+        if debug_folder is not None:
+            debug_dir = osp.join(debug_folder, osp.basename(vis_pth)[:-4]+"_align_traces" + ("_manual" if manual else ""))
+        else:
+            debug_dir = None
         write_manual_bat_redo(vis_pth, nir_pth, osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO.bat"), debug=False)
         write_manual_bat_redo(vis_pth, nir_pth, osp.join(out_dir, osp.basename(vis_pth[:-4])+"_DEBUG.bat"), debug=True)
-        ref_full, aligned_full = None, None
-        if not osp.isdir(debug_dir) or True:
-            ref_full, aligned_full = align_raw(vis_pth, nir_pth, cals, debug_dir=debug_dir, manual=manual, debug=debug)
-        if osp.isdir(debug_dir):
-            ref_pth = osp.join(debug_dir, "FULLRES_REF.jpg")
-            aligned_pth = osp.join(debug_dir, "FLOW_it09_ds04_WARP_LOCAL.jpg")
-            # ---------------------------------------------------------------------------------------------- copy traces
-            if True:
-                shutil.copy(ref_pth, osp.join(out_dir, osp.basename(vis_pth[:-4]+"_visible_ref.jpg")))
-                shutil.copy(aligned_pth, osp.join(out_dir, osp.basename(vis_pth[:-4]+"_nir_aligned.jpg")))
-            if False:
-                shutil.copy(ref_pth, osp.join(out_dir, osp.basename(vis_pth[:-4])+"_visible_ref.jpg"))
-                shutil.copy(aligned_pth, osp.join(out_dir, osp.basename(vis_pth[:-4])+"_nir_aligned.jpg"))
-                cost_pth = osp.join(debug_dir, "Full Search_blocks_y1x1_search_y25x25_NTG_overview_cost_surfaces_.png")
-                search_pth = osp.join(debug_dir, "Full Search_blocks_y1x1_search_y25x25_NTG_cost_surface_0_0_.png")
-                shutil.copy(cost_pth, osp.join(out_dir, "_COSTS_" + osp.basename(vis_pth[:-4])+"_Global_cost.png"))
-                shutil.copy(search_pth, osp.join(out_dir, "_GLOBAL_SEARCH_" + osp.basename(vis_pth[:-4])+"_Global_cost.png"))
-                local_cost_pth = osp.join(debug_dir, "ds4_laplacian_energies_blocks_y5x5_search_y6x6_NTG_overview_cost_surfaces__it09.png")
-                shutil.copy(local_cost_pth, osp.join(out_dir, "_LOCAL_COSTS_" + osp.basename(vis_pth[:-4])+"_Global_cost.png"))
-            if ref_full is None :
-                ref_full = pr.Image(ref_pth).data
-            if aligned_full is None:
-                aligned_full = pr.Image(aligned_pth).data
-            ndvi(ref_full, aligned_full, out_path=osp.join(out_dir, "_NDVI_" + osp.basename(vis_pth[:-4])+".jpg"))
-            vir(ref_full, aligned_full, out_path=osp.join(out_dir, "_VIR_" + osp.basename(vis_pth[:-4])+".jpg"))
+        ref_full, aligned_full, align_full_global = align_raw(
+            vis_pth, nir_pth, cals,
+            debug_dir=debug_dir, debug=debug,
+            manual=manual
+        )
+        # AGGREGATED RESULTS!
+        if debug:  # SCIENTIFIC LINEAR OUTPUTS
+            pr.Image(aligned_full).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR.tif"))
+            pr.Image(align_full_global).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR.tif"))
+            pr.Image(ref_full).save(osp.join(out_dir, "_RAW_"+ osp.basename(vis_pth[:-4])+"_VIS.tif"))
+        pr.Image((ut.contrast_stretching(ref_full)[0]*255).astype(np.uint8)).save(osp.join(out_dir, osp.basename(vis_pth[:-4])+"_VIS.jpg"))
+        for ali, almode in [(aligned_full, "_local_"), (align_full_global, "_global_")]:
+            ndvi(ref_full, ali, out_path=osp.join(out_dir, "_NDVI_" + almode + osp.basename(vis_pth[:-4])+".jpg"))
+            vir(ref_full, ali, out_path=osp.join(out_dir, "_VIR_" + almode + osp.basename(vis_pth[:-4])+".jpg"))
+            pr.Image((ut.contrast_stretching(ali)[0]*255).astype(np.uint8)).save(
+                osp.join(out_dir, osp.basename(vis_pth[:-4])+"_NIR{}.jpg".format(almode)))
+
+
+
+
+        # MANUAL TRACES COPY TO RESULT FOLDER...
+        # if osp.isdir(debug_dir):
+        #     ref_pth = osp.join(debug_dir, "FULLRES_REF.jpg")
+        #     aligned_pth = osp.join(debug_dir, "FLOW_it09_ds04_WARP_LOCAL.jpg")
+        #     # ---------------------------------------------------------------------------------------------- copy traces
+        #     if True:
+        #         shutil.copy(ref_pth, osp.join(out_dir, osp.basename(vis_pth[:-4]+"_visible_ref.jpg")))
+        #         shutil.copy(aligned_pth, osp.join(out_dir, osp.basename(vis_pth[:-4]+"_nir_aligned.jpg")))
+        #     if False:
+        #         shutil.copy(ref_pth, osp.join(out_dir, osp.basename(vis_pth[:-4])+"_visible_ref.jpg"))
+        #         shutil.copy(aligned_pth, osp.join(out_dir, osp.basename(vis_pth[:-4])+"_nir_aligned.jpg"))
+        #         cost_pth = osp.join(debug_dir, "Full Search_blocks_y1x1_search_y25x25_NTG_overview_cost_surfaces_.png")
+        #         search_pth = osp.join(debug_dir, "Full Search_blocks_y1x1_search_y25x25_NTG_cost_surface_0_0_.png")
+        #         shutil.copy(cost_pth, osp.join(out_dir, "_COSTS_" + osp.basename(vis_pth[:-4])+"_Global_cost.png"))
+        #         shutil.copy(search_pth, osp.join(out_dir, "_GLOBAL_SEARCH_" + osp.basename(vis_pth[:-4])+"_Global_cost.png"))
+        #         local_cost_pth = osp.join(debug_dir, "ds4_laplacian_energies_blocks_y5x5_search_y6x6_NTG_overview_cost_surfaces__it09.png")
+        #         shutil.copy(local_cost_pth, osp.join(out_dir, "_LOCAL_COSTS_" + osp.basename(vis_pth[:-4])+"_Global_cost.png"))
+        #     if ref_full is None :
+        #         ref_full = pr.Image(ref_pth).data
+        #     if aligned_full is None:
+        #         aligned_full = pr.Image(aligned_pth).data
+        #     ndvi(ref_full, aligned_full, out_path=osp.join(out_dir, "_NDVI_" + osp.basename(vis_pth[:-4])+".jpg"))
+        #     vir(ref_full, aligned_full, out_path=osp.join(out_dir, "_VIR_" + osp.basename(vis_pth[:-4])+".jpg"))
 
 
 def write_manual_bat_redo(vis_pth, nir_pth, debug_bat_pth, out_dir=None, debug=False):
@@ -305,7 +356,6 @@ def write_manual_bat_redo(vis_pth, nir_pth, debug_bat_pth, out_dir=None, debug=F
         fi.write("call deactivate\n")
 
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Align images')
     parser.add_argument('--images', nargs='+', help='list of images')
@@ -315,7 +365,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args.manual)
     if args.images is None:
-        process_raw_folder(folder = r"D:\FLY-20210906-Blassac-05ms\AerialPhotography", manual=args.manual)
+        process_raw_folder(folder=r"D:\FLY-20210906-Blassac-05ms\AerialPhotography", manual=args.manual)
     else:
         im_pair = args.images
         if im_pair[0].lower().endswith(".raw"):
@@ -328,7 +378,7 @@ if __name__ == "__main__":
             out_dir = osp.dirname(im_pairs[0][0])
         process_raw_pairs(
             im_pairs,
-            folder=out_dir,
+            debug_folder=out_dir,
             out_dir=out_dir,
             manual=args.manual,
             debug=args.debug,
