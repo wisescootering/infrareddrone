@@ -109,6 +109,8 @@ def brute_force_vector_field_search(costs=None, centers=None, downscale=None):
 
 class MotionModelHomography:
     def __init__(self, model=np.eye(3), **kwargs):
+        self.vector_field = None
+        self.previous_model = None
         if model is None:
             self.estimate(**kwargs)
         else:
@@ -116,10 +118,15 @@ class MotionModelHomography:
             self.model_history = [self.model]
 
     def estimate(self, vector_pos=None, vector_field=None, debug=False, affinity=False, **kwargs):
-        self.model = geometric_rigid_transform_estimation(vector_pos, vector_field, debug=debug, affinity=affinity, **kwargs)
+        self.model = geometric_rigid_transform_estimation(vector_pos, vector_field,
+                                                          debug=debug, affinity=affinity, **kwargs)
         self.model_history = [self.model]
+        self.vector_field = vector_field
 
     def compose(self, new_model):
+        if new_model.vector_field is not None:
+            self.vector_field = new_model.vector_field
+            self.previous_model = self.model.copy()
         self.model = np.dot(new_model.model, self.model)
         self.model_history = [new_model.model] + self.model_history
 
@@ -380,7 +387,7 @@ def pyramidal_search(
     logging.warning("\tTOTAL {:.2f}s elapsed for iterative scheme {}".format(ts_end - ts_start, iterative_scheme))
     out_img = motion_model.warp(img_mov, downscale=1)
 
-    return out_img
+    return out_img, motion_model
 
 
 # ------------------------------------------------------- Tests --------------------------------------------------------
@@ -452,7 +459,7 @@ def test_alignment_system_multi_scale_multi_iter():
         t_x=20., t_y=120.4, theta =-15.,
         suffix="_Multi_scale_MSR_{}".format(iterative_scheme)
     )
-    out_img = pyramidal_search(
+    out_img, _ = pyramidal_search(
         vis_img.data, vis_img_moved.data,
         debug_dir=debug_dir, debug=False,
         mode=LAPLACIAN_ENERGIES,
@@ -481,7 +488,7 @@ def align_images(
         vis_img.save(osp.join(debug_dir, "REF.jpg"))
         nir_img.save(osp.join(debug_dir, "MOVED.jpg"))
 
-        out_img = pyramidal_search(
+        out_img, _ = pyramidal_search(
             vis_img.data, nir_img.data,
             debug_dir=None, debug=debug,
             iterative_scheme = iterative_scheme,

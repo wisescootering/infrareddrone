@@ -5,6 +5,7 @@ import numpy as np
 import logging
 import os.path as osp
 import registration.rigid as rigid
+from registration.warp_flow import warp_from_sparse_vector_field
 from irdrone.semi_auto_registration import manual_warp, ManualAlignment, Transparency, Absgrad
 from skimage import transform
 import os
@@ -88,46 +89,15 @@ def user_assisted_manual_alignment(ref, mov, cals):
     return rotate3d.alignment_parameters
 
 
-def align_raw(vis_path, nir_path, cals, debug_dir=None, debug=False, extension=1.4, manual=True):
-    """
-    :param vis_path: Path to visible DJI DNG image
-    :param nir_path: Path to NIR SJCAM M20 RAW image
-    :param cals: Geometric calibration dictionary.
-    :param debug_dir: traces folder
-    :param extension: extend the FOV of the NIR camera compared to the DJI camera 1.4 by default, 1.75 is ~maximum
-    :return:
-    """
-    if debug_dir is not None and not osp.isdir(debug_dir):
-        os.mkdir(debug_dir)
-    ts_start = time.perf_counter()
-    vis = pr.Image(vis_path)
-    nir = pr.Image(nir_path)
-    if False:
-        vis_undist = warp(vis.data, cals["refcalib"], np.eye(3)) # @TODO: Fix DJI calibration before using this
-        vis_undist = pr.Image(vis_undist)
-        vis_undist_lin = warp(vis.lineardata, cals["refcalib"], np.eye(3))
-    else:
-        vis_undist = vis
-        vis_undist_lin = vis.lineardata
-        cals_ref = cals["refcalib"]
-        cals_ref["dist"] *= 0.
-
-    ref_full = vis_undist.data
-    mov_full = nir.data
-    ts_end_load = time.perf_counter()
-    logging.warning("{:.2f}s elapsed in loading full resolution RAW".format(ts_end_load - ts_start))
-    if manual:
-        alignment_params = user_assisted_manual_alignment(ref_full, mov_full, cals)
-        yaw_main, pitch_main, roll_main = alignment_params["yaw"], alignment_params["pitch"], alignment_params["roll"]
-    else:
-        yaw_main, pitch_main, roll_main = 0., 0., 0.
+def coarse_alignment(ref_full, mov_full, cals, yaw_main, pitch_main, roll_main, extension=1.4,
+                     debug_dir=None, debug=False):
     ts_start_coarse_search = time.perf_counter()
     ds = 32
     # -------------------------------------------------------------- Full res : Undistort NIR fisheye with a larger FOV
     mov_w_full = manual_warp(
         ref_full, mov_full,
         yaw_main, pitch_main, roll_main,
-        refcalib=cals_ref, movingcalib=cals["movingcalib"],
+        refcalib=cals["refcalib"], movingcalib=cals["movingcalib"],
         refinement_homography=None,
         bigger_size_factor=extension,
     )
@@ -155,14 +125,12 @@ def align_raw(vis_path, nir_path, cals, debug_dir=None, debug=False, extension=1
         align_config=align_config,
         forced_debug_dir=debug_dir,
     )
-
-
-    focal = cals_ref["mtx"][0, 0].copy()
-    # translation = -ds*rigid.minimum_cost(cost_dict["costs"][0,0, :, :, :])
+    focal = cals["refcalib"]["mtx"][0, 0].copy()
     try:
         translation = -ds*rigid.minimum_cost_max_hessian(cost_dict["costs"][0,0, :, :, :], debug=debug)
     except:
-        translation = -ds*rigid.minimum_cost(cost_dict["costs"][0,0, :, :, :]) # @ TODO: handle the case of argmax close to the edge!
+        logging.warning("Max of Hessian failed!")  # @ TODO: handle the case of argmax close to the edge!
+        translation = -ds*rigid.minimum_cost(cost_dict["costs"][0, 0, :, :, :])
     yaw_refine = np.rad2deg(np.arctan(translation[0]/focal))
     pitch_refine = np.rad2deg(np.arctan(translation[1]/focal))
     print("2D translation {}".format(translation, yaw_refine, pitch_refine))
@@ -173,36 +141,100 @@ def align_raw(vis_path, nir_path, cals, debug_dir=None, debug=False, extension=1
         mov_wr = manual_warp(
             msr_ref, cv2.resize(mov_full, (mov_full.shape[1]//ds, mov_full.shape[0]//ds)),
             yaw_main + yaw_refine, pitch_main + pitch_refine, roll_main,
-            refcalib=cals_ref, movingcalib=cals["movingcalib"],
+            refcalib=cals["refcalib"], movingcalib=cals["movingcalib"],
             geometric_scale=1/ds, refinement_homography=None,
-        )
+            )
         pr.Image(rigid.viz_msr(mov_wr, None)).save(osp.join(debug_dir, "_LOWRES_REGISTERED.jpg"))
-        pr.Image(rigid.viz_msr(cv2.resize(ref_full, (ref_full.shape[1]//ds, ref_full.shape[0]//ds)), None)).save(osp.join(debug_dir, "_LOWRES_REF.jpg"))
-
+        pr.Image(rigid.viz_msr(cv2.resize(ref_full, (ref_full.shape[1]//ds, ref_full.shape[0]//ds)), None)).save(
+            osp.join(debug_dir, "_LOWRES_REF.jpg"))
     mov_wr_fullres = manual_warp(
         ref_full, mov_full,
         yaw_main + yaw_refine, pitch_main + pitch_refine, roll_main,
-        refcalib=cals_ref, movingcalib=cals["movingcalib"],
+        refcalib=cals["refcalib"], movingcalib=cals["movingcalib"],
         geometric_scale=None, refinement_homography=None,
     )
     ts_end_warp = time.perf_counter()
     logging.warning("{:.2f}s elapsed in warping from coarse search".format(ts_end_warp - ts_start_warp))
     pr.Image(ref_full).save(osp.join(debug_dir, "FULLRES_REF.jpg"))
     pr.Image(mov_wr_fullres).save(osp.join(debug_dir, "FULLRES_REGISTERED_COARSE.jpg"))
-    mov_w_final = rigid.pyramidal_search(
-        ref_full, mov_wr_fullres,
-        iterative_scheme=[(16, 2, 4, 8), (16, 2, 5), (4, 3, 5)],
-        mode=rigid.LAPLACIAN_ENERGIES, dist=rigid.NTG,
-        debug=debug, debug_dir=debug_dir,
-        affinity=False,
-        sigma_ref=5.,
-        sigma_mov=3.
-    )
-    pr.Image(mov_w_final).save(osp.join(debug_dir, "FULLRES_REGISTERED_REFINED.jpg"))
-    # pr.show([ref, mov, mov_w], suptitle="{}".format(mov.shape))
+    return mov_wr_fullres, dict(yaw=yaw_main + yaw_refine, pitch=pitch_main + pitch_refine, roll=roll_main)
+
+
+def align_raw(vis_path, nir_path, cals, debug_dir=None, debug=False, extension=1.4, manual=True):
+    """
+    :param vis_path: Path to visible DJI DNG image
+    :param nir_path: Path to NIR SJCAM M20 RAW image
+    :param cals: Geometric calibration dictionary.
+    :param debug_dir: traces folder
+    :param extension: extend the FOV of the NIR camera compared to the DJI camera 1.4 by default, 1.75 is ~maximum
+    :return:
+    """
+    if debug_dir is not None and not osp.isdir(debug_dir):
+        os.mkdir(debug_dir)
+    motion_model_file = osp.join(debug_dir, "motion_model")
+    ts_start = time.perf_counter()
+    vis = pr.Image(vis_path)
+    nir = pr.Image(nir_path)
+    if False:
+        vis_undist = warp(vis.data, cals["refcalib"], np.eye(3)) # @TODO: Fix DJI calibration before using this
+        vis_undist = pr.Image(vis_undist)
+        vis_undist_lin = warp(vis.lineardata, cals["refcalib"], np.eye(3))
+    else:
+        vis_undist = vis
+        vis_undist_lin = vis.lineardata
+        cals_ref = cals["refcalib"]
+        cals_ref["dist"] *= 0.
+        cals["refcalib"] = cals_ref
+    ref_full = vis_undist.data
+    mov_full = nir.data
+    ts_end_load = time.perf_counter()
+    logging.warning("{:.2f}s elapsed in loading full resolution RAW".format(ts_end_load - ts_start))
+    if not osp.isfile(motion_model_file+".npy"):
+        if manual:
+            alignment_params = user_assisted_manual_alignment(ref_full, mov_full, cals)
+            yaw_main, pitch_main, roll_main = alignment_params["yaw"], alignment_params["pitch"], alignment_params["roll"]
+        else:
+            yaw_main, pitch_main, roll_main = 0., 0., 0.
+        mov_wr_fullres, coarse_rotation_estimation = coarse_alignment(
+            ref_full, mov_full, cals,
+            yaw_main, pitch_main, roll_main,
+            extension=extension, # FOV extension
+            debug_dir=debug_dir, debug=debug
+        )
+        mov_w_final, motion_model = rigid.pyramidal_search(
+            ref_full, mov_wr_fullres,
+            iterative_scheme=[(16, 2, 4, 8), (16, 2, 5), (4, 3, 5)],
+            # iterative_scheme=[(16, 2, 4, 8),], #@TODO : NOT TO COMMIT!
+            mode=rigid.LAPLACIAN_ENERGIES, dist=rigid.NTG,
+            debug=debug, debug_dir=debug_dir,
+            affinity=False,
+            sigma_ref=5.,
+            sigma_mov=3.
+        )
+        pr.Image(mov_w_final).save(osp.join(debug_dir, "FULLRES_REGISTERED_REFINED.jpg"))
+
+        homog = motion_model.rescale(downscale=1.)
+        full_motion_model = coarse_rotation_estimation.copy()
+        full_motion_model["homography"] = homog
+        full_motion_model["vector_field"] = motion_model.vector_field
+        full_motion_model["previous_homography"] = motion_model.previous_model
+        np.save(motion_model_file, full_motion_model, allow_pickle=True)
+    else:
+        logging.warning("Loading motion model!")
+        full_motion_model = np.load(motion_model_file+".npy", allow_pickle=True).item()
+
+
+    mov_w_final_yowo_full = manual_warp(
+        ref_full, mov_full,
+        full_motion_model["yaw"], full_motion_model["pitch"], full_motion_model["roll"],
+        refcalib=cals["refcalib"], movingcalib=cals["movingcalib"],
+        geometric_scale=None, refinement_homography=full_motion_model["previous_homography"],
+        vector_field=full_motion_model["vector_field"]
+    )  # you only warp once!
+    pr.Image(mov_w_final_yowo_full).save(osp.join(debug_dir, "FULLRES_REGISTERED_REFINED_WARPED_ONCE_ONLY.jpg"))
     ts_end = time.perf_counter()
     logging.warning("{:.2f}s elapsed in total alignment".format(ts_end - ts_start))
-    return ref_full, mov_w_final
+    return ref_full, mov_w_final_yowo_full
 
 
 def process_raw_folder(folder, delta=timedelta(seconds=171), manual=False):
@@ -229,11 +261,11 @@ def process_raw_pairs(
         os.mkdir(out_dir)
     for vis_pth, nir_pth in sync_pairs[::-1]:  # [::-1]  [::-1][4:5]:  [3::40]: [410:415]:
         logging.warning("processing {} {}".format(osp.basename(vis_pth), osp.basename(nir_pth)))
-        debug_dir = osp.join(folder, osp.basename(vis_pth)[:-4]+"_align_GLOBAL_MIN_FIXED" + ("_manual" if manual else ""))
+        debug_dir = osp.join(folder, osp.basename(vis_pth)[:-4]+"_align_WARP_ONLY_ONCE" + ("_manual" if manual else ""))
         write_manual_bat_redo(vis_pth, nir_pth, osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO.bat"), debug=False)
         write_manual_bat_redo(vis_pth, nir_pth, osp.join(out_dir, osp.basename(vis_pth[:-4])+"_DEBUG.bat"), debug=True)
         ref_full, aligned_full = None, None
-        if not osp.isdir(debug_dir):
+        if not osp.isdir(debug_dir) or True:
             ref_full, aligned_full = align_raw(vis_pth, nir_pth, cals, debug_dir=debug_dir, manual=manual, debug=debug)
         if osp.isdir(debug_dir):
             ref_pth = osp.join(debug_dir, "FULLRES_REF.jpg")

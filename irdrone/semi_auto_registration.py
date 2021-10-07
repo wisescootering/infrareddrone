@@ -24,7 +24,10 @@ def get_zoom_mat(scale):
 
 
 def manual_warp(ref: pr.Image, mov: pr.Image, yaw_main: float, pitch_main: float, roll_main: float = 0.,
-                refcalib=None, movingcalib=None, geometric_scale=None, refinement_homography=None, bigger_size_factor = None):
+                refcalib=None, movingcalib=None, geometric_scale=None, refinement_homography=None,
+                bigger_size_factor = None,
+                vector_field=None
+    ):
     rot_main, _ = cv2.Rodrigues(np.array([-np.deg2rad(pitch_main), np.deg2rad(yaw_main), np.deg2rad(roll_main)]))
     mov_calib = movingcalib.copy()
     if geometric_scale is None:
@@ -40,16 +43,30 @@ def manual_warp(ref: pr.Image, mov: pr.Image, yaw_main: float, pitch_main: float
         mov_calib["mtx"] = mov_cal
     if refinement_homography is not None:
         h = np.dot(refinement_homography, h)
+    if vector_field is not None:
+        bigger_size_factor = 1.2
+        print("PAD BECAUSE OF VECTOR FIELD")
     if bigger_size_factor is not None:
         outsize= [ref.data.shape[1], ref.data.shape[0]]
         new_out_size = [int(outsize[0]*bigger_size_factor), int(outsize[1]*bigger_size_factor)]
         translation_mat = np.eye(3)
         translation_mat[0, 2] = (new_out_size[0] - outsize[0])/2
         translation_mat[1, 2] = (new_out_size[1] - outsize[1])/2
+        if vector_field is not None:
+            padding = [int(translation_mat[0, 2]), int(translation_mat[1, 2])]
+        else:
+            padding = None
         h = np.dot(translation_mat, h)
-        mov_u = warp(mov, mov_calib, h, outsize=(new_out_size[0], new_out_size[1]))
+        mov_u = warp(mov, mov_calib, h, outsize=(new_out_size[0], new_out_size[1]),
+                     vector_field=vector_field, padding=padding)
+        if vector_field is not None:
+            mov_u = mov_u[
+                    int(translation_mat[1, 2]): int(translation_mat[1, 2])+outsize[1],
+                    int(translation_mat[0, 2]): int(translation_mat[0, 2])+outsize[0],
+                    :
+            ]
     else:
-        mov_u = warp(mov, mov_calib, h, outsize=(ref.data.shape[1], ref.data.shape[0]))
+        mov_u = warp(mov, mov_calib, h, outsize=(ref.data.shape[1], ref.data.shape[0]), vector_field=vector_field)
     return mov_u
 
 
