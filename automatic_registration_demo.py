@@ -24,7 +24,7 @@ def demo_raw_real_application(folder_database=osp.join(osp.dirname(__file__), "F
     # @TODO: FIX WHEN DJI GEOMETRIC CALIBRATION IS FIXED
     pairs_paths = [[osp.join(folder, vis.replace(".RAW", "_PL4_DIST.tif")), osp.join(folder, nir)]
                    for vis, nir in img_pairs]
-    process_raw_pairs(pairs_paths, cals=DJI_SJCAM_CAL, manual=manual, debug=debug)
+    process_raw_pairs(pairs_paths, cals=DJI_SJCAM_CAL, manual=manual, debug=debug, debug_folder=folder_database)
     # ----------------------------------------------------------------------------------------------------------- Vivans
     img_pairs = [
         ["DJI_0618.DNG", "2021_0505_130901_067.RAW"],  # NOT WORKING IN AUTO! -> NEEDS MANUAL
@@ -36,7 +36,7 @@ def demo_raw_real_application(folder_database=osp.join(osp.dirname(__file__), "F
     # @TODO: FIX WHEN DJI GEOMETRIC CALIBRATION IS FIXED
     pairs_paths = [[osp.join(folder, vis.replace(".RAW", "_PL4_DIST.tif")), osp.join(folder, nir)]
                    for vis, nir in img_pairs]
-    process_raw_pairs(pairs_paths, cals=DJI_SJCAM_CAL, manual=manual, debug=debug)
+    process_raw_pairs(pairs_paths, cals=DJI_SJCAM_CAL, manual=manual, debug=debug, debug_folder=folder_database)
 
 
 def demo_raw(folder=osp.join(osp.dirname(__file__), r"Hyperlapse 06_09_2021_sync"), manual=False):
