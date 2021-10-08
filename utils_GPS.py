@@ -5,6 +5,7 @@ import json
 import requests
 from irdrone.utils import Style
 import irdrone.process as pr
+import os
 
 
 # ========================================
@@ -518,7 +519,8 @@ def writeGPX(listImgMatch, dirNameVol, dateEtude, mute=True):
     dirpath = '%s\\TrkGpx-%s-%s-%i.gpx' % (dirNameVol, dayGpx, monthGpx, dateEtude.year)
 
     if not mute: print('Ecriture du fichier gpx %s' % dirpath)
-
+    if not os.path.isdir(dirNameVol):
+        os.mkdir(dirNameVol)
     with open(dirpath, "w") as fichier:
         fichier.write(fichierGpx)
 

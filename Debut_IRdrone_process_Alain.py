@@ -17,6 +17,7 @@ from tkinter.filedialog import askopenfilename
 import argparse
 import sys
 import os.path as osp
+import automatic_registration
 
 
 # ----------------------      ------------------------------------
@@ -94,6 +95,7 @@ if __name__ == "__main__":
     #     Construction des images RiV  et NDVI
     # ----------------------------------------------------
 
+    automatic_registration.process_raw_pairs(listImgMatch, out_dir=dirNameIRdrone)
     # -----------------------------------------------------
     # 4 > Résumé du traitement
     # ----------------------------------------------------
