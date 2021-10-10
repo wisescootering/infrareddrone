@@ -45,7 +45,9 @@ if __name__ == "__main__":
     versionIRdrone = '1.03'  # 02 october 2021
     # ------------ pour test rapide -----------------
     seaLevel = True  # True   pour calculer l'altitude du sol  ... API internet (peut échouer si serveur indispo)
-    seeDualImages = False  # True pour vérifier visuellement les appariements sur l'écran (en phase de test)
+    saveGpsTrack = False
+    seeDualImages = False     # True pour vérifier visuellement les appariements sur l'écran (en phase de test)
+    autoRegistration = False  # true pour lancer effectivement le traitement
 
     # ----------------------------------------------------
     #        Début du programme
@@ -83,19 +85,24 @@ if __name__ == "__main__":
     # ------ Calcule de la trajectoire du drone et du profil du vol
     #        Génère la trajectoire au format Garmin gpx
 
-    print(Style.CYAN + '------ Calcule de la trajectoire du drone et du profil du vol' + Style.RESET)
-    flightPlanSynthesis = IRd.summaryFlight(listImgMatch, planVol, seaLevel=True,
+    print(Style.CYAN + '------ Calcul de la trajectoire du drone et du profil du vol' + Style.RESET)
+    flightPlanSynthesis = IRd.summaryFlight(listImgMatch, planVol, seaLevel=seaLevel,
                                             dirSaveFig=osp.dirname(dirPlanVol), mute=True)
     IRd.writeSummaryFlight(flightPlanSynthesis, dirPlanVol)
-    uGPS.writeGPX(listImgMatch, dirNameIRdrone, dateMission, mute=True)  # écriture  du tracé GPS au format gpx Garmin
+    if saveGpsTrack: uGPS.writeGPX(listImgMatch, dirNameIRdrone, dateMission, mute=True)  # save GPS Track
 
     # -----------------------------------------------------
     #  3 > Traitement des images
     #     Recalage des paires d'images Vi et IR
     #     Construction des images RiV  et NDVI
     # ----------------------------------------------------
+    #listImgMatch = [(vis.replace(".DNG", "_PL4_DIST.tif"), nir) for vis, nir in listImgMatch]
+    if autoRegistration :
+        print(Style.CYAN + '------ automatic_registration.process_raw_pairs' + Style.RESET)
+        automatic_registration.process_raw_pairs(listImgMatch[::1], out_dir=dirNameIRdrone)
+    else :
+        print(Style.YELLOW + '------  automatic_registration.process_raw_pairs NEUTRALISE' + Style.RESET)
 
-    automatic_registration.process_raw_pairs(listImgMatch, out_dir=dirNameIRdrone)
     # -----------------------------------------------------
     # 4 > Résumé du traitement
     # ----------------------------------------------------
