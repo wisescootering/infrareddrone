@@ -110,7 +110,7 @@ def dateExcel2Py(dateExcel):
 # ------------------     Plan de Vol      -------------------------------
 
 
-def readFlightPlan(pathPlanVolExcel, mute = None):
+def readFlightPlan(pathPlanVolExcel, mute=None):
     """
         Read the Flight Plan  in Excel file.
 
@@ -181,7 +181,7 @@ def readFlightPlan(pathPlanVolExcel, mute = None):
     return planVol
 
 
-def extractFlightPlan(dirPlanVol, mute = True):
+def extractFlightPlan(dirPlanVol, mute=True):
     """
     Lecture du plan de vol puis extrcation des données
     > Chemin des images Visible et IR, type de drone et de caméra, synchroniation horloges ...
@@ -213,7 +213,7 @@ def extractFlightPlan(dirPlanVol, mute = True):
     dirNameIR = reformatDirectory(dirNameIR, xlpath=dirPlanVol, makeOutdir=True)
     dirNameIRdrone = reformatDirectory(dirNameIRdrone, xlpath=dirPlanVol, makeOutdir=True)
     imgListDrone = creatListImg(dirNameDrone, dateMission, typeDrone, '*', extDrone, planVol)
-    imgListIR = creatListImgIR(dirNameIR, dateMission, typeIR, '*', extIR, planVol)
+    imgListIR = creatListImgIR(dirNameIR, '*', extIR)
     if not mute:
         if len(imgListDrone) == 0:
             print('Pas d\'images Visibles pour ce vol')
@@ -236,7 +236,7 @@ def extractFlightPlan(dirPlanVol, mute = True):
            imgListIR, deltaTimeIR, timeLapseIR, dirNameIRdrone
 
 
-def creatListImgIR(dirName, dateMission, cameraModel, camera, typImg, planVol, debug=False):
+def creatListImgIR(dirName, camera, typImg):
     """
     :return:  imgList   [(),...,(file name image , path name image, date image),...,()]
     """
@@ -363,7 +363,6 @@ def matchImagesFlightPath_Old_OK(imgListDrone,
     :return:  listImgMatch   [..., (imgListDrone[i][1], imgListIR[k][1]), ...]
     """
 
-
     n = 0
     nRejet = 0
     listImgMatch = []
@@ -459,7 +458,7 @@ def matchImagesFlightPath(imgListDrone,
         imgListA = imgListDrone
         deltaTimeB = deltaTimeIR
         deltaTimeA = deltaTimeDrone
-        timeLapseMini = 5  # c'est le temps d'enregistrement min du DJI Mavic Air 2  (en jpeg + dng)
+        timeDeviation = 0.5 * 2.1  # c'est le 1/2 temps d'enregistrement min du DJI Mavic Air 2  (en jpeg + dng)
         print(Style.RED, Style.UNDERLINE, ' Attention configuration sans time lapse du drone.  En cours de test!',
               Style.RESET)
 
@@ -471,7 +470,7 @@ def matchImagesFlightPath(imgListDrone,
         imgListB = imgListIR
         deltaTimeA = deltaTimeDrone
         deltaTimeB = deltaTimeIR
-        timeLapseMini = timeLapseIR
+        timeDeviation =0.5 * timeLapseIR
 
     else:
         #  timeLapseDrone < timeLapseIR
@@ -482,22 +481,23 @@ def matchImagesFlightPath(imgListDrone,
         imgListA = imgListDrone
         deltaTimeB = deltaTimeIR
         deltaTimeA = deltaTimeDrone
-        timeLapseMini = timeLapseDrone
+        timeDeviation = 0.5 * timeLapseDrone
         # print('la fréquence de prise de vue la plus basse est ', repB, '   ', timeLapseB, " s > ", timeLapseA, ' s')
 
     n = 0
     nRejet = 0
-    listImgMatch = [] = []
+    listImgMatch = []
     dateA = [imgListA[i][2] for i in range(len(imgListA))]
     dateB = [imgListB[k][2] for k in range(len(imgListB))]
     deltaTime = [[datetime.timedelta.total_seconds(dateB[k] - dateA[i]) + deltaTimeA - deltaTimeB
                   for k in range(len(imgListB))] for i in range(len(imgListA))]
 
-
     for i in range(len(imgListA)):
         kBmatch = 0
+        DT = []
         for k in range(len(imgListB)):
-            if abs(deltaTime[i][k]) < 0.5 * timeLapseMini:
+            DT.append(abs(deltaTime[i][k]))
+            if abs(deltaTime[i][k]) < timeDeviation:
                 #  l'image type A  match avec l'image type B
                 kBmatch = k
                 n += 1
@@ -506,11 +506,12 @@ def matchImagesFlightPath(imgListDrone,
             # Aucune image B ne s'apparie avec l'image A
             nRejet += 1
             if not mute: print(Style.YELLOW + 'INFO:  l\'image ', repA, ' ', imgListA[i][0],
-                               'ne s\'apparie avec aucune image ', repB, '.' + Style.RESET)
+                               'ne s\'apparie avec aucune image ', repB,
+                               '.  Ecart temporel mini = ', round(min(DT),2), 's' + Style.RESET)
             pass
         else:
             #   formation de la paire d'image IR & Vi
-            if timeLapseDrone >= timeLapseIR :
+            if timeLapseDrone >= timeLapseIR:
                 listImgMatch.append((imgListB[kBmatch][1], imgListA[i][1]))
             else:
                 listImgMatch.append((imgListA[i][1], imgListB[kBmatch][1]))
@@ -519,7 +520,7 @@ def matchImagesFlightPath(imgListDrone,
                 print(Style.GREEN + 'N°', n, ' DT ', round(deltaTime[i][kBmatch], 2), 's   ',
                       imgListA[i][0], ' | ', imgListB[kBmatch][0] + Style.RESET)
 
-    if timeLapseDrone >= timeLapseIR :
+    if timeLapseDrone >= timeLapseIR:
         print(Style.GREEN + '%i couples d\'images Visible-InfraRouge ont été détectés pour le vol du %s' % (
             len(listImgMatch), dateMission), '\n',
               ' Images ', repB, ' éliminées : %i' % nRejet + Style.RESET)
@@ -570,7 +571,6 @@ def summaryFlight(listImg, planVol, seaLevel=False, dirSaveFig=None, mute=True):
     #  #https://geoservices.ign.fr/documentation/services/api-et-services-ogc/calcul-altimetrique-rest
     #  Teste 189     mais 199 ne marche pas !!!!
     #
-
 
     maxPas = 99
     if len(listImg) < maxPas:

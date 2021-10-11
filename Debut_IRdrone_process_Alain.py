@@ -45,9 +45,9 @@ if __name__ == "__main__":
     versionIRdrone = '1.03'  # 02 october 2021
     # ------------ pour test rapide -----------------
     seaLevel = True  # True   pour calculer l'altitude du sol  ... API internet (peut échouer si serveur indispo)
-    saveGpsTrack = False
-    seeDualImages = False     # True pour vérifier visuellement les appariements sur l'écran (en phase de test)
-    autoRegistration = False  # true pour lancer effectivement le traitement
+    saveGpsTrack = True
+    seeDualImages = False  # True pour vérifier visuellement les appariements sur l'écran (en phase de test)
+    autoRegistration = True  # true pour lancer effectivement le traitement
 
     # ----------------------------------------------------
     #        Début du programme
@@ -61,8 +61,7 @@ if __name__ == "__main__":
     #     Construction de la liste des images prises lors du vol (Drone et IR)
 
     planVol, imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR, dirNameIRdrone = \
-    IRd.extractFlightPlan(dirPlanVol, mute=True)
-    dateMission = planVol['mission']['date']
+        IRd.extractFlightPlan(dirPlanVol, mute=True)
 
     # ----------------------------------------------------
     # 2 > Appariement des images des deux caméras
@@ -76,8 +75,8 @@ if __name__ == "__main__":
     #   - Ecriture dans la feuille Summary du fichier Excel Plan de Vol
     #   - Tracé du profil de vol du drone dans une figure (file format .png)
 
-    listImgMatch = IRd.matchImagesFlightPath(imgListDrone, deltaTimeDrone, timeLapseDrone,
-                                             imgListIR, deltaTimeIR, timeLapseIR, dateMission, mute=True)
+    listImgMatch = IRd.matchImagesFlightPath(imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR,
+                                             deltaTimeIR, timeLapseIR, planVol['mission']['date'], mute=False)
 
     if len(listImgMatch) == 0:
         print('0 couples d\'images Visible-InfraRouge ont été détectés pour ce vol')
@@ -89,18 +88,19 @@ if __name__ == "__main__":
     flightPlanSynthesis = IRd.summaryFlight(listImgMatch, planVol, seaLevel=seaLevel,
                                             dirSaveFig=osp.dirname(dirPlanVol), mute=True)
     IRd.writeSummaryFlight(flightPlanSynthesis, dirPlanVol)
-    if saveGpsTrack: uGPS.writeGPX(listImgMatch, dirNameIRdrone, dateMission, mute=True)  # save GPS Track
+    if saveGpsTrack: uGPS.writeGPX(listImgMatch, dirNameIRdrone, planVol['mission']['date'],
+                                   mute=True)  # save GPS Track
 
     # -----------------------------------------------------
     #  3 > Traitement des images
     #     Recalage des paires d'images Vi et IR
     #     Construction des images RiV  et NDVI
     # ----------------------------------------------------
-    #listImgMatch = [(vis.replace(".DNG", "_PL4_DIST.tif"), nir) for vis, nir in listImgMatch]
-    if autoRegistration :
+    # listImgMatch = [(vis.replace(".DNG", "_PL4_DIST.tif"), nir) for vis, nir in listImgMatch]
+    if autoRegistration:
         print(Style.CYAN + '------ automatic_registration.process_raw_pairs' + Style.RESET)
         automatic_registration.process_raw_pairs(listImgMatch[::1], out_dir=dirNameIRdrone)
-    else :
+    else:
         print(Style.YELLOW + '------  automatic_registration.process_raw_pairs NEUTRALISE' + Style.RESET)
 
     # -----------------------------------------------------
