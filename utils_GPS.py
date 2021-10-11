@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+# pylint: disable=C0103, C0301, W0703
+
 import numpy as np
 import math
 import re
@@ -251,9 +254,9 @@ def UTM2geo(xUTM, yUTM, zoneUTM):
 
 def GPSdms2GPSdd(coord):
     """
-    param coord:   (dd,mm,ss.ssss)
+    :param coord:   (dd,mm,ss.ssss)
 
-    return: coordDD    dd.dddddddd           float
+    :return: coordDD    dd.dddddddd           float
 
     Conversion from dd° mm' ss.sssss"   en dd.dddddddd
     """
@@ -269,10 +272,10 @@ def segmentUTM(lat1, lon1, lat2, lon2):
 
 def calcul_distance(latLongZ):
     """
-    param:  latLongZ   liste de coordonnées GPS des point P0,P1,P2,P3    [...,(lat,long,z),...]
+    :param  latLongZ:   liste de coordonnées GPS des point P0,P1,P2,P3    [...,(lat,long,z),...]
 
-    return: distP0P1  distance entre le point Pi et le point Pi+1   (en metres)
-    return: capP0P1   cap entre le point Pi et le point Pi+1        (en degres)
+    :return: distP0P1  distance entre le point Pi et le point Pi+1   (en metres)
+            capP0P1   cap entre le point Pi et le point Pi+1        (en degres)
 
     Calcule la distance et le cap entre le points GPS d'un chemin (trk).
     """
@@ -369,7 +372,7 @@ def altitude_IGN(coordGPS, mute=True):
             else:
                 for retour in dico['elevations']:
                     altitude.append(retour)
-                if min(altitude) < 0 :
+                if min(altitude) < 0:
                     altitude = sealLevel(coordGPS, 0.)
             return altitude
         except:
@@ -385,12 +388,12 @@ def altitude_IGN(coordGPS, mute=True):
                 return altitude
 
 
-
 def sealLevel(coordGPS, hlevel):
     altitude = []
     for i in range(len(coordGPS)):
         altitude.append(hlevel)
     return altitude
+
 
 def cumul_Dist(coordLatLongZ):
     """
@@ -565,11 +568,11 @@ def TakeOff(coordGPS_TakeOff):
     :param coordGPS_TakeOff:               (N DD.dddddd  E DD.dddddd)
     :return: coordGPS, alti_TakeOff       (DD.ddddddd , DD.ddddddd) , float
     """
-    # take off pt
-    print(coordGPS_TakeOff)
+
     takeOff = []
     coordGPS = (coordGPS_TakeOff.split()[1], coordGPS_TakeOff.split()[3])
     takeOff.append(coordGPS)
     alti_TakeOff = altitude_IGN(takeOff, mute=True)
-    alti_TakeOff = alti_TakeOff[0]
-    return coordGPS, alti_TakeOff
+    print(Style.CYAN, 'Take Off  : %s   %s m' % (coordGPS_TakeOff, alti_TakeOff[0]), Style.RESET)
+
+    return coordGPS, alti_TakeOff[0]

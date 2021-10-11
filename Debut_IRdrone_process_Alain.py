@@ -12,28 +12,16 @@ from irdrone.utils import Style
 import datetime
 import time
 import os
-from tkinter import Tk
-from tkinter.filedialog import askopenfilename
 import argparse
 import sys
 import os.path as osp
 import automatic_registration
 
 
-# ----------------------      ------------------------------------
-
-
-def loadFileGUI():
-    Tk().withdraw()  # we don't want a full GUI, so keep the root window from appearing
-    filename = askopenfilename()  # show an "Open" dialog box and return the path to the selected file
-    print(filename)
-    return filename
-
-
 if __name__ == "__main__":
 
     # ----------------------------------------------------
-    # 0 > Choix interactif du vol
+    # 0 > Choix interactif de la mission
     #
     parser = argparse.ArgumentParser(description='Process Flight Path excel')
     parser.add_argument('--excel', metavar='excel', type=str, help='path to the flight path xlsx')
@@ -41,13 +29,14 @@ if __name__ == "__main__":
     dirPlanVol = args.excel
     if dirPlanVol is None or not os.path.isfile(dirPlanVol):
         print(Style.CYAN + "File browser")
-        dirPlanVol = loadFileGUI()
-    versionIRdrone = '1.03'  # 02 october 2021
-    # ------------ pour test rapide -----------------
-    seaLevel = True  # True   pour calculer l'altitude du sol  ... API internet (peut échouer si serveur indispo)
-    saveGpsTrack = True
-    seeDualImages = False  # True pour vérifier visuellement les appariements sur l'écran (en phase de test)
-    autoRegistration = True  # true pour lancer effectivement le traitement
+        dirPlanVol = IRd.loadFileGUI()
+    versionIRdrone = '1.04'  # 11 october 2021
+    # ------------ options test rapide -----------------
+    seaLevel = True            # pour calculer l'altitude du sol  ... API internet (peut échouer si serveur indispo)
+    saveGpsTrack = True        # pour sauvegarder la trajectoire du drone dans un fichier gps au format Garmin@
+    saveSummary = True         # pour sauvegarder la liste des paires ainsi que les coordonnées GPS des images Vi
+    seeDualImages = False      # pour vérifier visuellement les appariements sur l'écran (en phase de test)
+    autoRegistration = False   # pour lancer effectivement le traitement
 
     # ----------------------------------------------------
     #        Début du programme
@@ -76,19 +65,18 @@ if __name__ == "__main__":
     #   - Tracé du profil de vol du drone dans une figure (file format .png)
 
     listImgMatch = IRd.matchImagesFlightPath(imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR,
-                                             deltaTimeIR, timeLapseIR, planVol['mission']['date'], mute=False)
-
-    if len(listImgMatch) == 0:
-        print('0 couples d\'images Visible-InfraRouge ont été détectés pour ce vol')
-        sys.exit(2)
+                                             deltaTimeIR, timeLapseIR, planVol['mission']['date'],
+                                             timeDeviationFactor=0.5, mute=True)
     # ------ Calcule de la trajectoire du drone et du profil du vol
     #        Génère la trajectoire au format Garmin gpx
 
-    print(Style.CYAN + '------ Calcul de la trajectoire du drone et du profil du vol' + Style.RESET)
+    print(Style.CYAN + '------ Calculation of drone trajectory and flight profile' + Style.RESET)
     flightPlanSynthesis = IRd.summaryFlight(listImgMatch, planVol, seaLevel=seaLevel,
                                             dirSaveFig=osp.dirname(dirPlanVol), mute=True)
-    IRd.writeSummaryFlight(flightPlanSynthesis, dirPlanVol)
-    if saveGpsTrack: uGPS.writeGPX(listImgMatch, dirNameIRdrone, planVol['mission']['date'],
+    if saveSummary:
+        IRd.writeSummaryFlight(flightPlanSynthesis, dirPlanVol)
+    if saveGpsTrack:
+        uGPS.writeGPX(listImgMatch, dirNameIRdrone, planVol['mission']['date'],
                                    mute=True)  # save GPS Track
 
     # -----------------------------------------------------
@@ -101,7 +89,7 @@ if __name__ == "__main__":
         print(Style.CYAN + '------ automatic_registration.process_raw_pairs' + Style.RESET)
         automatic_registration.process_raw_pairs(listImgMatch[::1], out_dir=dirNameIRdrone)
     else:
-        print(Style.YELLOW + '------  automatic_registration.process_raw_pairs NEUTRALISE' + Style.RESET)
+        print(Style.YELLOW + 'Warning :  automatic_registration.process_raw_pairs ... Process neutralized.' + Style.RESET)
 
     # -----------------------------------------------------
     # 4 > Résumé du traitement

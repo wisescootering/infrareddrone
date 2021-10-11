@@ -1,21 +1,18 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=C0103, C0301, W0703
-"""
-Created on Mon Sep 13 15:56:18 2021
 
-@authors: manuel/alain
-"""
-
-from operator import itemgetter
-import irdrone.utils as ut
-import datetime
-import openpyxl
-from irdrone.utils import Style
 import irdrone.process as pr
+import irdrone.utils as ut
+from irdrone.utils import Style
+import utils_GPS as uGPS
 import os
 import sys
-import utils_GPS as uGPS
+from tkinter import Tk
+from tkinter.filedialog import askopenfilename
+from operator import itemgetter
+import datetime
 import matplotlib.pyplot as plt
+import openpyxl
 
 
 # -------------   Convertisseurs de dates   Exif<->Python  Excel->Python  --------------------------------
@@ -183,9 +180,9 @@ def readFlightPlan(pathPlanVolExcel, mute=None):
 
 def extractFlightPlan(dirPlanVol, mute=True):
     """
-    Lecture du plan de vol puis extrcation des données
+    Extract the datas of Fligth Plan
     > Chemin des images Visible et IR, type de drone et de caméra, synchroniation horloges ...
-    > Liste des images Drone et des images IR
+    > Images list of Drone and IR cameras
 
     :param dirPlanVol:  path of Fligth Plan in  a Excel
                mute : affiche des informatios si True  (utile en phase debug)
@@ -216,21 +213,22 @@ def extractFlightPlan(dirPlanVol, mute=True):
     imgListIR = creatListImgIR(dirNameIR, '*', extIR)
     if not mute:
         if len(imgListDrone) == 0:
-            print('Pas d\'images Visibles pour ce vol')
+            print('No visible images detected for this flight.')
             sys.exit(2)
         else:
-            print('%i images visibles détectées ' % len(imgListDrone))
+            print('%i visible images detected for this flight.' % len(imgListDrone))
             print([(imgListDrone[i][0], imgListDrone[i][2]) for i in range(len(imgListDrone))])
 
         if len(imgListIR) == 0:
-            print('Pas d\'images Infrarouges pour ce vol')
+            print('No near infrared images detected for this flight.')
             sys.exit(2)
         else:
-            print('%i images infrarougess détectées ' % len(imgListIR))
+            print('%i near infrared images detected for this flight.' % len(imgListIR))
             print([(imgListIR[i][0], imgListIR[i][2]) for i in range(len(imgListIR))])
 
         if len(imgListDrone) == 0 and len(imgListIR) == 0:
-            print('Il y a %i images Vi et  %i NiR pour ce vol' % (len(imgListDrone), len(imgListIR)))
+            print('%i visible images (Vi) and %i near infrared images (NiR) for this flight.'%
+                  (len(imgListDrone), len(imgListIR)))
 
     return planVol, imgListDrone, deltaTimeDrone, timeLapseDrone, \
            imgListIR, deltaTimeIR, timeLapseIR, dirNameIRdrone
@@ -301,7 +299,7 @@ def creatListImg(dirName, dateMission, cameraModel, camera, typImg, planVol, deb
                     imgList.append((nameImg, imlist[i], dateImg))  # ajout à la liste des images
                 else:
                     if debug: print(Style.YELLOW,
-                                    '%s a été prise le %i %i %i. Cette date est différente de celle de l\'étude %i %i %i'
+                                    '%s a été prise le %i %i %i. Cette date est différente de celle de la mission %i %i %i'
                                     % (imlist[i], dateImg.day, dateImg.month, dateImg.year, dateMission.day,
                                        dateMission.month,
                                        dateMission.year), Style.RESET)
@@ -343,93 +341,6 @@ def printPlanVol(planVol):
     return
 
 
-def matchImagesFlightPath_Old_OK(imgListDrone,
-                                 deltaTimeDrone,
-                                 timeLapseDrone,
-                                 imgListIR,
-                                 deltaTimeIR,
-                                 timeLapseIR,
-                                 dateEtude,
-                                 mute=False):
-    """
-    :param imgListDrone:  [...,(file name, path name, date), ...]
-    :param deltaTimeDrone:
-    :param timeLapseDrone
-    :param imgListIR:     [...,(file name, path name, date), ...]
-    :param deltaTimeIR:
-    :param timeLapseIR:
-    :dateEtude:   date of flight
-    :param mute:
-    :return:  listImgMatch   [..., (imgListDrone[i][1], imgListIR[k][1]), ...]
-    """
-
-    n = 0
-    nRejet = 0
-    listImgMatch = []
-    dateRef = datetime.datetime(2000, 1, 1, 12, 0, 0)
-    for i in range(len(imgListDrone)):
-        indexDT = []
-        DT = []
-        signeDT = []
-        dateDrone = imgListDrone[i][2]
-        ecartTimeDrone = datetime.timedelta.total_seconds(dateDrone - dateRef) - deltaTimeDrone
-        nImgComp = 0
-        for k in range(len(imgListIR)):
-            dateIR = imgListIR[k][2]
-            ecartTimeIR = datetime.timedelta.total_seconds(dateIR - dateRef) - deltaTimeIR
-
-            ecartTimeref = datetime.timedelta.total_seconds(dateIR - dateRef) - \
-                           datetime.timedelta.total_seconds(dateDrone - dateRef)
-            deltaTime = (ecartTimeIR - ecartTimeDrone)
-            if not mute:
-                print('dateDrone = ', dateDrone, ' | ', 'dateIR = ', dateIR, 'n\'',
-                      'ecartTimeref = ', ecartTimeref, '  deltaTime = ', deltaTime)
-            if abs(deltaTime) < timeLapseDrone:
-                #  Potentiellement cette image IR  peut s'apparier avec l'image visible
-                nImgComp += 1
-                # print('nb images compatibles', nImgComp, 'n\'' ,'dateDrone = ',dateDrone, ' | ', 'dateIR = ', dateIR ,'n\'' ,
-                #    'ecartTimeref = ',ecartTimeref , '  deltaTime = ',deltaTime)
-                indexDT.append(k)
-                DT.append(abs(deltaTime))
-                if deltaTime == 0:
-                    signeDT.append(0)
-                else:
-                    signeDT.append(int((ecartTimeIR - ecartTimeDrone) / abs(ecartTimeIR - ecartTimeDrone)))
-            else:
-                pass
-        if len(DT) == 0:
-            # Aucune image IR ne s'apparie avec l'image visible
-            nRejet += 1
-            if not mute: print(Style.YELLOW + 'INFO:  l\'image visible ', imgListDrone[i][0],
-                               'ne s\'apparie avec aucune image IR.' + Style.RESET)
-            pass
-        else:
-            #    Une ou plusieurs iamges IR peuvent s'apparier avec l'image visible.
-            #    On choisi celle qui est la plus proche et on l'ajoute à la liste des images appariées
-
-            kIRmatch = indexDT[DT.index(min(DT))]
-            # print('kIRmatch = ' ,kIRmatch)
-            # On test si cette image n'a pas déjà été utilisée (lié à un pb de précision des horloges!)
-            if n > 1 and listImgMatch[i - 1][1] == imgListIR[kIRmatch][0]:
-                if not mute:
-                    print(Style.RED + 'Attention pb avec les deux images \n'
-                                      'Visible :', imgListDrone[i][0],
-                          '\nInfrarouge :', imgListIR[kIRmatch][0], '\n'
-                                                                    'L\'image infrarouge  est déjà appariée avec l\'image ',
-                          listImgMatch[i - 1][1] + Style.RESET)
-                nRejet += 1
-            else:
-                n += 1
-                listImgMatch.append((imgListDrone[i][1], imgListIR[kIRmatch][1]))
-                if not mute: print(Style.GREEN + 'N°', n, ' DT ', int(signeDT[DT.index(min(DT))] * min(DT)), 's   ',
-                                   imgListDrone[i][0], ' | ', imgListIR[kIRmatch][0] + Style.RESET)
-
-    print(Style.GREEN + '%i couples d\'images Visible-InfraRouge ont été détectés pour le vol du %s' % (
-        len(listImgMatch), dateEtude), '\n',
-          ' Images visibles éliminées : %i' % nRejet + Style.RESET)
-    return listImgMatch
-
-
 def matchImagesFlightPath(imgListDrone,
                           deltaTimeDrone,
                           timeLapseDrone,
@@ -437,6 +348,7 @@ def matchImagesFlightPath(imgListDrone,
                           deltaTimeIR,
                           timeLapseIR,
                           dateMission,
+                          timeDeviationFactor=0.5,
                           mute=False):
     """
     :param imgListDrone:  [...,(file name, path name, date), ...]
@@ -445,44 +357,42 @@ def matchImagesFlightPath(imgListDrone,
     :param imgListIR:     [...,(file name, path name, date), ...]
     :param deltaTimeIR:
     :param timeLapseIR:
-    :dateMission:   date of flight
+    :param dateMission:   date of flight
+    :param timeDeviationFactor : as a percentage of the lowest time lapse
+     Value 1/2 is a good choice for timing deviation |   1/4  is very selective.
     :param mute:
     :return:  listImgMatch   [..., (imgListDrone[i][1], imgListIR[k][1]), ...]
     """
 
     if timeLapseDrone <= 0:
-        # si timeLapseDrone=0 ou -1 c'est que les photos sont prises en mode manuel
+        # if timeLapseDrone=0 or -1 the photos are taken in manual mode
         repB = 'IR'
         repA = 'drone'
         imgListB = imgListIR
         imgListA = imgListDrone
         deltaTimeB = deltaTimeIR
         deltaTimeA = deltaTimeDrone
-        timeDeviation = 0.5 * 2.1  # c'est le 1/2 temps d'enregistrement min du DJI Mavic Air 2  (en jpeg + dng)
-        print(Style.RED, Style.UNDERLINE, ' Attention configuration sans time lapse du drone.  En cours de test!',
-              Style.RESET)
+        timeDeviation = timeDeviationFactor * 2.1 #2s is the weakest time lapse of the drone DJI-Mavic-Air2 (jpeg+dng)
 
-    elif timeLapseDrone >= timeLapseIR:
-        #  La caméra IR  a le timelapse le plus faible
+    elif timeLapseDrone > timeLapseIR:
+        # unwise !
         repA = 'drone'
         repB = 'IR'
         imgListA = imgListDrone
         imgListB = imgListIR
         deltaTimeA = deltaTimeDrone
         deltaTimeB = deltaTimeIR
-        timeDeviation =0.5 * timeLapseIR
+        timeDeviation = timeDeviationFactor * timeLapseIR
 
     else:
-        #  timeLapseDrone < timeLapseIR
-        #  La caméra Vi  a le timelapse le plus faible
+        # timeLapseDrone =< timeLapseIR    This is the best configuration  (2s DJI | 3s SJCam M20]
         repB = 'IR'
         repA = 'drone'
         imgListB = imgListIR
         imgListA = imgListDrone
         deltaTimeB = deltaTimeIR
         deltaTimeA = deltaTimeDrone
-        timeDeviation = 0.5 * timeLapseDrone
-        # print('la fréquence de prise de vue la plus basse est ', repB, '   ', timeLapseB, " s > ", timeLapseA, ' s')
+        timeDeviation = timeDeviationFactor * timeLapseDrone
 
     n = 0
     nRejet = 0
@@ -498,19 +408,19 @@ def matchImagesFlightPath(imgListDrone,
         for k in range(len(imgListB)):
             DT.append(abs(deltaTime[i][k]))
             if abs(deltaTime[i][k]) < timeDeviation:
-                #  l'image type A  match avec l'image type B
+                #  type A image   match with type B image
                 kBmatch = k
                 n += 1
 
         if kBmatch == 0:
-            # Aucune image B ne s'apparie avec l'image A
+            # No match for type B image
             nRejet += 1
-            if not mute: print(Style.YELLOW + 'INFO:  l\'image ', repA, ' ', imgListA[i][0],
-                               'ne s\'apparie avec aucune image ', repB,
-                               '.  Ecart temporel mini = ', round(min(DT),2), 's' + Style.RESET)
+            if not mute: print(Style.YELLOW + 'INFO:  Image ', repA, ' ', imgListA[i][0],
+                               ' does not match any image ', repB,
+                               '.  Minimum time deviation = ', round(min(DT),2), 's' + Style.RESET)
             pass
         else:
-            #   formation de la paire d'image IR & Vi
+            #  construction of the image pair IR & Vi
             if timeLapseDrone >= timeLapseIR:
                 listImgMatch.append((imgListB[kBmatch][1], imgListA[i][1]))
             else:
@@ -521,13 +431,17 @@ def matchImagesFlightPath(imgListDrone,
                       imgListA[i][0], ' | ', imgListB[kBmatch][0] + Style.RESET)
 
     if timeLapseDrone >= timeLapseIR:
-        print(Style.GREEN + '%i couples d\'images Visible-InfraRouge ont été détectés pour le vol du %s' % (
+        print(Style.GREEN + '%i pairs of Visible-Infrared images were detected for the flight on  %s' % (
             len(listImgMatch), dateMission), '\n',
-              ' Images ', repB, ' éliminées : %i' % nRejet + Style.RESET)
+              '%i images  %s  have been eliminated :' % (nRejet, repA) + Style.RESET)
     else:
-        print(Style.GREEN + '%i couples d\'images Visible-InfraRouge ont été détectés pour le vol du %s' % (
+        print(Style.GREEN + '%i pairs of Visible-Infrared images were detected for the flight on  %s' % (
             len(listImgMatch), dateMission), '\n',
-              ' Images ', repA, ' éliminées : %i' % nRejet + Style.RESET)
+              '%i  images Vi (%s) have been eliminated :' % (nRejet, repA) + Style.RESET)
+
+    if len(listImgMatch) == 0:
+        print(Style.RED,'No pair of Visible-Infrared images were detected for this flight.', Style.RESET)
+        sys.exit(2)
 
     return listImgMatch
 
@@ -553,8 +467,15 @@ def summaryFlight(listImg, planVol, seaLevel=False, dirSaveFig=None, mute=True):
         lists the essential elements of flight after treatment by IRdrone.
         This data will be saved in the Excel file of the flight plan  (sheet "Summary")
 
+    For all points of the list, the altitudes of the ground relative to the sea level are determined..
+    For France the code uses the API of the IGN (national geographical institute)
+    Warning : this API limits the number of points that can be sent in the request
+    An attempt is made. If the ground elevation relative to sea level fails, it is set at zero.
+    https://geoservices.ign.fr/documentation/services/api-et-services-ogc/calcul-altimetrique-rest
+    For each request the IGN API accepts in theory 5000 pts. In practice 189 works but 199 fails!
+
     """
-    print(Style.CYAN + 'https://wxs.ign.fr/essentiels/alti/rest/elevation')
+    print(Style.CYAN + 'Request to  https://wxs.ign.fr/essentiels/alti/rest/elevation')
     summary = []
     listPtGPS = []
     listCoordGPS = []
@@ -566,11 +487,6 @@ def summaryFlight(listImg, planVol, seaLevel=False, dirSaveFig=None, mute=True):
     altGround = []
     distFlight = []
     dateVi = []
-    # découpage de la liste de points GPS
-    #  En theorie 5000 pt selon
-    #  #https://geoservices.ign.fr/documentation/services/api-et-services-ogc/calcul-altimetrique-rest
-    #  Teste 189     mais 199 ne marche pas !!!!
-    #
 
     maxPas = 99
     if len(listImg) < maxPas:
@@ -584,56 +500,47 @@ def summaryFlight(listImg, planVol, seaLevel=False, dirSaveFig=None, mute=True):
         listCoordGPS.append((img.gps['latitude'][4], img.gps['longitude'][4], img.gps['altitude']))
         dateVi.append(img.date)
     if seaLevel:
-        #  Pour tout les points de la liste on détermine les altitudes du sol par rapport au niveau de la mer.
-        #  Utilise l'API de l'IGN.
-        #  Attention cette API limite le nombre de points qu'il est possible d'envoyer dans la requette
-        #  On fait trois tentatives. Si échec l'altitude du sol par rapport au niveau de la mer est fixée à zéro.
-
-        # altitude du point de décollage par rapport au niveau de la mer
+        # take-off point altitude relative to sea level
         coordGPSTakeOff, altiTakeOff = uGPS.TakeOff(planVol['mission']['coord GPS Take Off'])
         if altiTakeOff < 0:
             altiTakeOff = 0
-        print(Style.CYAN, 'Alti Take Off  %.2f m' % altiTakeOff, Style.RESET)
-        #  decoupage de la liste des point en plusieurs segment car le nombre de points de l'API IGN est limite.
+        #  Splitting the list of points into multiple segments because the number of points in the IGN API is limited.
         for k in range(0, int(round(len(listImg), 0) / pas) + 1):
             list = listPtGPS[k * pas:(k + 1) * pas]
             altGeo += uGPS.altitude_IGN(list)
             print(Style.CYAN, '%i / %.0f ' % (k, len(listImg) / pas), Style.RESET)
 
-        print(Style.CYAN + 'Fin du recalage des altitudes par rapport au sol' + Style.RESET)
-
     else:
         altGeo = [0.0] * len(listPtGPS)
         altiTakeOff = 0.
 
-    #  Calcule la distance et le cap entre la point P0 et le point suivant P1
+    #  Calculates the distance and heading between point P0 and the next point P1
     for i in range(len(listImg) - 1):
         imgDist, imgCap = uGPS.segmentUTM(listPtGPS[i][0], listPtGPS[i][1], listPtGPS[i + 1][0], listPtGPS[i + 1][1])
         distP0P1.append(imgDist)
         capP0P1.append(imgCap)
-    distP0P1.append(0)  # pas de distance ni de cap au point suivant pour point d'atterrissage !
-    capP0P1.append(0)  # on fixe la valeur arbitrairement à 0
+    distP0P1.append(0)  # no distance or heading to the next point for landing point!
+    capP0P1.append(0)   # arbitrarily set the value to 0
 
     for i in range(len(listImg)):
-        img = pr.Image(listImg[i][0])
         if not mute:
             print('altitudes : drone / takeOff %f m | sol/ sea level %f m |  drone /sol %f m'
                   % (listCoordGPS[i][2], altGeo[i], round(listCoordGPS[i][2] + altiTakeOff - altGeo[i], 5)))
-        # altitude du drone par rapport au sol et par rapport au niveau de la mer
+        # drone altitude relative to ground and sea level
         altDroneSol.append(round(listCoordGPS[i][2] + altiTakeOff - altGeo[i], 5))
-        altGround.append(altGeo[i])  # altitude du sol par rapport au niveau de la mer
+        altGround.append(altGeo[i])  # ground elevation relative to sea level
         altDroneSealLevel.append(altGeo[i] + altDroneSol[i])
-        distToLastPt = round(distP0P1[i], 2)  # distance au point suivant   (précision au cm !)
+        distToLastPt = round(distP0P1[i], 2)  # distance to next point   (accuracy to cm!)
         if i == 0:
             distFlight.append(0.)
         else:
             distFlight.append(distFlight[i - 1] + distToLastPt)
 
         capToLastPt = round(capP0P1[i], 3)
-        #    images visibles
+        # Vi images
         imgNameVi = listImg[i][0].split('\\')[len(listImg[i][0].split('\\')) - 1]
         numeroRef = imgNameVi.split('_')[len(imgNameVi.split('_')) - 1]
-        #    images infra-rouges
+        # IR images
         imgNameIRoriginal = listImg[i][1].split('\\')[len(listImg[i][1].split('\\')) - 1]
         imgNameIR = 'IRdroneIR_%s' % numeroRef
         imgNameViR = 'IRdroneViR_%s' % numeroRef
@@ -649,7 +556,7 @@ def summaryFlight(listImg, planVol, seaLevel=False, dirSaveFig=None, mute=True):
     showFlightProfil(distFlight, altDroneSealLevel, altGround, dirSaveFig=dirSaveFig, mute=False)
 
     if not mute:
-        txtSummary = 'Liste des images du vol :'
+        txtSummary = 'List of images of the flight:'
         for i in range(len(listImg)):
             txtSummary = txtSummary + '\n' + str(summary[i])
         print(Style.GREEN + txtSummary + Style.RESET)
@@ -665,6 +572,7 @@ def writeSummaryFlight(flightPlanSynthesis, pathName):
 
             Write the Flight Plan Summary in Excel file
     """
+    #Todo : écrire le résumé de la mission dans un autre fichier que celui contenant les données de base de la mission
     workbook = openpyxl.load_workbook(pathName)
     listSheets = workbook.sheetnames
     if len(listSheets) < 2:
@@ -682,14 +590,14 @@ def writeSummaryFlight(flightPlanSynthesis, pathName):
     sheet.protection.sheet = False
     listHeadCol = ['Point',
                    'Image                    Visible',
-                   'Image                    Infrarouge',
-                   'Image                    Infrarouge recalée',
-                   'Image                    Multi-Spectrale',
-                   'Date prise de vue',
+                   'Image                    Infrared original',
+                   'Image                    Infrared aligned',
+                   'Image                    Multi-Spectral ViR',
+                   'Date of shooting.',
                    'Latitude                dd°dddddd',
                    'Longitude               dd°dddddd',
-                   'Drone Altitude     / ground       [m]',
-                   'Ground Elevation   / sealevel       [m]',
+                   'Drone Altitude     / ground         [m]',
+                   'Ground Elevation   / sea level      [m]',
                    'Drone Altitude     / Take off       [m]',
                    'Distance point suivant  [°]',
                    'Cap point suivant',
@@ -753,3 +661,10 @@ def reformatDirectory(di, xlpath=None, makeOutdir=False):
             return di
 
     raise NameError("Cannot find directory %s" % di)
+
+
+def loadFileGUI():
+    Tk().withdraw()  # we don't want a full GUI, so keep the root window from appearing
+    filename = askopenfilename()  # show an "Open" dialog box and return the path to the selected file
+    print(filename)
+    return filename
