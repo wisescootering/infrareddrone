@@ -187,16 +187,13 @@ def align_raw(vis_path, nir_path, cals, debug_dir=None, debug=False, extension=1
     ts_start = time.perf_counter()
     vis = pr.Image(vis_path)
     nir = pr.Image(nir_path)
-    if False:
-        vis_undist = warp(vis.data, cals["refcalib"], np.eye(3)) # @TODO: Fix DJI calibration before using this
-        vis_undist = pr.Image(vis_undist)
-        vis_undist_lin = warp(vis.lineardata, cals["refcalib"], np.eye(3))
-    else:
-        vis_undist = vis
-        vis_undist_lin = vis.lineardata
-        cals_ref = cals["refcalib"]
-        cals_ref["dist"] *= 0.
-        cals["refcalib"] = cals_ref
+    vis_undist = warp(vis.data, cals["refcalib"], np.eye(3)) # @TODO: Fix DJI calibration before using this
+    vis_undist = pr.Image(vis_undist)
+    vis_undist_lin = warp(vis.lineardata, cals["refcalib"], np.eye(3))
+    # distorsion has been compensated on the reference.
+    cals_ref = cals["refcalib"]
+    cals_ref["dist"] *= 0.
+    cals["refcalib"] = cals_ref
     ref_full = vis_undist.data
     mov_full = nir.data
     ts_end_load = time.perf_counter()
@@ -274,8 +271,9 @@ def process_raw_folder(folder, delta=timedelta(seconds=166.5), manual=False, deb
     - using a simple synchronization mechanism based on exif and camera deltas
     - camera time delta
     """
-    sync_pairs = synchronize_data(folder, replace_dji=(".DNG", "_PL4_DIST.tif"), delta=delta,
-                                  extension_vis=extension_vis, extension_nir=extension_nir)
+    sync_pairs = synchronize_data(folder, replace_dji=None, delta=delta,
+                                  extension_vis=extension_vis, extension_nir=extension_nir, debug=debug)
+    # replace_dji=(".DNG", "_PL4_DIST.tif")
     cals = dict(refcalib=ut.cameracalibration(camera="DJI_RAW"), movingcalib=ut.cameracalibration(camera="M20_RAW"))
     out_dir = osp.join(folder, "_RESULTS_delta={:.1f}s".format(delta.seconds+delta.microseconds/(1.E6)))
     process_raw_pairs(sync_pairs, cals, debug_folder=None, out_dir=out_dir, manual=manual, debug=debug)
