@@ -10,6 +10,7 @@ import PIL.Image
 import PIL.ExifTags
 import exifread
 import datetime
+import logging
 from os import mkdir
 from irdrone.utils import Style, conversionGPSdms2dd, get_polar_shading_map, contrast_stretching
 import subprocess
@@ -41,7 +42,7 @@ def load_dng(path, template="DJI_neutral.pp3"):
     if not osp.isfile(out_file):
         subprocess.call(cmd)
     else:
-        print("DNG already processed by RAW THERAPEE {}".format(path))
+        logging.info("DNG already processed by RAW THERAPEE {}".format(path))
     return load_tif(out_file)
 
 
@@ -174,7 +175,7 @@ class Image:
                 self.longitude = gpsLongitude
                 self.gps = {"latitude": gpsLatitude, "longitude": gpsLongitude, "altitude": self.altitude}
             except:
-                print(Style.YELLOW + "NO GPS DATA FOUND IN %s"%self.path + Style.RESET)
+                logging.info(Style.YELLOW + "NO GPS DATA FOUND IN %s"%self.path + Style.RESET)
                 self.gps = None
 
     def get_lineardata(self):
@@ -238,6 +239,7 @@ class Image:
                 # self._data = ((linear_data**(gamma)).clip(0., 1.)*255).astype(np.uint8)
             else:
                 self._data = cv2.cvtColor(cv2.imread(self.path), cv2.COLOR_BGR2RGB)  #LOAD AS A RGB CLASSIC ARRAY
+                self._lineardata = self._data  # simply fake linear data...
         else:
             pass
             # print("Reaccessing image %s"%self.path)

@@ -267,15 +267,18 @@ def align_raw(vis_path, nir_path, cals, debug_dir=None, debug=False, extension=1
     # return ref_full, mov_w_final_yowo_full
 
 
-def process_raw_folder(folder, delta=timedelta(seconds=166.5), manual=False):
+def process_raw_folder(folder, delta=timedelta(seconds=166.5), manual=False, debug=False,
+                       extension_vis="*.DNG", extension_nir="*.RAW"
+                       ):
     """NIR/VIS image alignment and fusion
     - using a simple synchronization mechanism based on exif and camera deltas
     - camera time delta
     """
-    sync_pairs = synchronize_data(folder, replace_dji=(".DNG", "_PL4_DIST.tif"), delta=delta)
+    sync_pairs = synchronize_data(folder, replace_dji=(".DNG", "_PL4_DIST.tif"), delta=delta,
+                                  extension_vis=extension_vis, extension_nir=extension_nir)
     cals = dict(refcalib=ut.cameracalibration(camera="DJI_RAW"), movingcalib=ut.cameracalibration(camera="M20_RAW"))
     out_dir = osp.join(folder, "_RESULTS_delta={:.1f}s".format(delta.seconds+delta.microseconds/(1.E6)))
-    process_raw_pairs(sync_pairs, cals, debug_folder=None, out_dir=out_dir, manual=manual)
+    process_raw_pairs(sync_pairs, cals, debug_folder=None, out_dir=out_dir, manual=manual, debug=debug)
 
 
 def process_raw_pairs(
@@ -304,9 +307,9 @@ def process_raw_pairs(
         )
         # AGGREGATED RESULTS!
         if debug:  # SCIENTIFIC LINEAR OUTPUTS
-            pr.Image(aligned_full).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR.tif"))
-            pr.Image(align_full_global).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR.tif"))
-            pr.Image(ref_full).save(osp.join(out_dir, "_RAW_"+ osp.basename(vis_pth[:-4])+"_VIS.tif"))
+            pr.Image(aligned_full).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR.tif"), gps=ref_full.gps)
+            pr.Image(align_full_global).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR.tif"), gps=ref_full.gps)
+            pr.Image(ref_full).save(osp.join(out_dir, "_RAW_"+ osp.basename(vis_pth[:-4])+"_VIS.tif"), gps=ref_full.gps)
         pr.Image((ut.contrast_stretching(ref_full)[0]*255).astype(np.uint8)).save(osp.join(out_dir, osp.basename(vis_pth[:-4])+"_VIS.jpg"))
         for ali, almode in [(aligned_full, "_local_"), (align_full_global, "_global_")]:
             ndvi(ref_full, ali, out_path=osp.join(out_dir, "_NDVI_" + almode + osp.basename(vis_pth[:-4])+".jpg"))
@@ -348,9 +351,9 @@ def write_manual_bat_redo(vis_pth, nir_pth, debug_bat_pth, out_dir=None, debug=F
     with open(debug_bat_pth, "w") as fi:
         fi.write("call activate {}\n".format(os.environ['CONDA_DEFAULT_ENV']))
         fi.write("python {} --images {} {} --manual --outdir {} {}\n".format(
-            osp.abspath(__file__),
-            vis_pth, nir_pth,
-            out_dir,
+            "\""+osp.abspath(__file__)+"\"",
+            "\""+vis_pth+"\"", "\""+nir_pth+"\"",
+            "\""+out_dir+"\"",
             "--debug" if debug else "")
         )
         fi.write("call deactivate\n")
@@ -362,10 +365,20 @@ if __name__ == "__main__":
     parser.add_argument('--manual', action="store_true", help='manual alignement')
     parser.add_argument('--outdir', help='output directory')
     parser.add_argument('--debug', action="store_true", help='full debug traces')
+    parser.add_argument('--folder', help='folder containing images for visible and NIR')
+    parser.add_argument('--delay', help='synchronization (in seconds)', default=0.)
     args = parser.parse_args()
-    print(args.manual)
+
     if args.images is None:
-        process_raw_folder(folder=r"D:\FLY-20210906-Blassac-05ms\AerialPhotography", manual=args.manual)
+        if args.folder is None:
+            logging.error("Please provide image pair through --images  or a full folder to process through --folder")
+        if args.delay == 0.:
+            logging.warning("WARNING: assuming synchronized data, " +
+                            "please make sure you have no delay between image pairs")
+            delta = None
+        else:
+            delta=timedelta(seconds=float(args.delay))
+        process_raw_folder(folder=args.folder, manual=args.manual, debug=args.debug, delta=delta)
     else:
         im_pair = args.images
         if im_pair[0].lower().endswith(".raw"):
