@@ -13,10 +13,8 @@ import datetime
 import time
 import os
 import argparse
-import sys
 import os.path as osp
 import automatic_registration
-
 
 if __name__ == "__main__":
 
@@ -32,11 +30,11 @@ if __name__ == "__main__":
         dirPlanVol = IRd.loadFileGUI()
     versionIRdrone = '1.04'  # 11 october 2021
     # ------------ options test rapide -----------------
-    seaLevel = True            # pour calculer l'altitude du sol  ... API internet (peut échouer si serveur indispo)
-    saveGpsTrack = True        # pour sauvegarder la trajectoire du drone dans un fichier gps au format Garmin@
-    saveSummary = True         # pour sauvegarder la liste des paires ainsi que les coordonnées GPS des images Vi
-    seeDualImages = False      # pour vérifier visuellement les appariements sur l'écran (en phase de test)
-    autoRegistration = False   # pour lancer effectivement le traitement
+    seaLevel = True  # pour calculer l'altitude du sol  ... API internet (peut échouer si serveur indispo)
+    saveGpsTrack = True  # pour sauvegarder la trajectoire du drone dans un fichier gps au format Garmin@
+    saveSummary = True  # pour sauvegarder la liste des paires ainsi que les coordonnées GPS dans un fichier Excel
+    seeDualImages = False  # pour vérifier visuellement les appariements sur l'écran (en phase de test)
+    autoRegistration = False  # pour lancer effectivement le traitement
 
     # ----------------------------------------------------
     #        Début du programme
@@ -73,11 +71,9 @@ if __name__ == "__main__":
     print(Style.CYAN + '------ Calculation of drone trajectory and flight profile' + Style.RESET)
     flightPlanSynthesis = IRd.summaryFlight(listImgMatch, planVol, seaLevel=seaLevel,
                                             dirSaveFig=osp.dirname(dirPlanVol), mute=True)
-    if saveSummary:
-        IRd.writeSummaryFlight(flightPlanSynthesis, dirPlanVol)
+    IRd.writeSummaryFlight(flightPlanSynthesis, dirPlanVol, saveExcel=saveSummary)
     if saveGpsTrack:
-        uGPS.writeGPX(listImgMatch, dirNameIRdrone, planVol['mission']['date'],
-                                   mute=True)  # save GPS Track
+        uGPS.writeGPX(listImgMatch, dirNameIRdrone, planVol['mission']['date'], mute=True)  # save GPS Track
 
     # -----------------------------------------------------
     #  3 > Traitement des images
@@ -89,7 +85,8 @@ if __name__ == "__main__":
         print(Style.CYAN + '------ automatic_registration.process_raw_pairs' + Style.RESET)
         automatic_registration.process_raw_pairs(listImgMatch[::1], out_dir=dirNameIRdrone)
     else:
-        print(Style.YELLOW + 'Warning :  automatic_registration.process_raw_pairs ... Process neutralized.' + Style.RESET)
+        print(
+            Style.YELLOW + 'Warning :  automatic_registration.process_raw_pairs ... Process neutralized.' + Style.RESET)
 
     # -----------------------------------------------------
     # 4 > Résumé du traitement

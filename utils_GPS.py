@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=C0103, C0301, W0703
 
+"""
+Created on 2021-10-05 19:17:16
+
+@authors: balthazar/alain
+"""
+
 import numpy as np
 import math
 import re

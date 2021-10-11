@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=C0103, C0301, W0703
 
+"""
+Created on 2021-10-05 19:17:16
+
+@authors: balthazar/alain
+"""
+
 import irdrone.process as pr
 import irdrone.utils as ut
 from irdrone.utils import Style
@@ -13,9 +19,10 @@ from operator import itemgetter
 import datetime
 import matplotlib.pyplot as plt
 import openpyxl
+from openpyxl import Workbook
 
 
-# -------------   Convertisseurs de dates   Exif<->Python  Excel->Python  --------------------------------
+# -----   Convertisseurs de dates   Exif<->Python  Excel->Python    ------
 
 
 def dateExif2Py(exifTag):
@@ -104,7 +111,7 @@ def dateExcel2Py(dateExcel):
     return datePy
 
 
-# ------------------     Plan de Vol      -------------------------------
+# ------------------     Plan de Vol      ------------------------------
 
 
 def readFlightPlan(pathPlanVolExcel, mute=None):
@@ -227,7 +234,7 @@ def extractFlightPlan(dirPlanVol, mute=True):
             print([(imgListIR[i][0], imgListIR[i][2]) for i in range(len(imgListIR))])
 
         if len(imgListDrone) == 0 and len(imgListIR) == 0:
-            print('%i visible images (Vi) and %i near infrared images (NiR) for this flight.'%
+            print('%i visible images (Vi) and %i near infrared images (NiR) for this flight.' %
                   (len(imgListDrone), len(imgListIR)))
 
     return planVol, imgListDrone, deltaTimeDrone, timeLapseDrone, \
@@ -340,6 +347,8 @@ def printPlanVol(planVol):
           )
     return
 
+# ------------------     Appairement des images      ---------------------
+
 
 def matchImagesFlightPath(imgListDrone,
                           deltaTimeDrone,
@@ -372,7 +381,7 @@ def matchImagesFlightPath(imgListDrone,
         imgListA = imgListDrone
         deltaTimeB = deltaTimeIR
         deltaTimeA = deltaTimeDrone
-        timeDeviation = timeDeviationFactor * 2.1 #2s is the weakest time lapse of the drone DJI-Mavic-Air2 (jpeg+dng)
+        timeDeviation = timeDeviationFactor * 2.1  # 2s is the weakest time lapse of the drone DJI-Mavic-Air2 (jpeg+dng)
 
     elif timeLapseDrone > timeLapseIR:
         # unwise !
@@ -417,7 +426,7 @@ def matchImagesFlightPath(imgListDrone,
             nRejet += 1
             if not mute: print(Style.YELLOW + 'INFO:  Image ', repA, ' ', imgListA[i][0],
                                ' does not match any image ', repB,
-                               '.  Minimum time deviation = ', round(min(DT),2), 's' + Style.RESET)
+                               '.  Minimum time deviation = ', round(min(DT), 2), 's' + Style.RESET)
             pass
         else:
             #  construction of the image pair IR & Vi
@@ -440,10 +449,13 @@ def matchImagesFlightPath(imgListDrone,
               '%i  images Vi (%s) have been eliminated :' % (nRejet, repA) + Style.RESET)
 
     if len(listImgMatch) == 0:
-        print(Style.RED,'No pair of Visible-Infrared images were detected for this flight.', Style.RESET)
+        print(Style.RED, 'No pair of Visible-Infrared images were detected for this flight.', Style.RESET)
         sys.exit(2)
 
     return listImgMatch
+
+
+# -----------   Synthèse de informations sur la mission      --------------
 
 
 def summaryFlight(listImg, planVol, seaLevel=False, dirSaveFig=None, mute=True):
@@ -520,7 +532,7 @@ def summaryFlight(listImg, planVol, seaLevel=False, dirSaveFig=None, mute=True):
         distP0P1.append(imgDist)
         capP0P1.append(imgCap)
     distP0P1.append(0)  # no distance or heading to the next point for landing point!
-    capP0P1.append(0)   # arbitrarily set the value to 0
+    capP0P1.append(0)  # arbitrarily set the value to 0
 
     for i in range(len(listImg)):
         if not mute:
@@ -564,58 +576,68 @@ def summaryFlight(listImg, planVol, seaLevel=False, dirSaveFig=None, mute=True):
     return summary
 
 
-def writeSummaryFlight(flightPlanSynthesis, pathName):
+def writeSummaryFlight(flightPlanSynthesis, pathName, saveExcel=False):
     """
+
+     Write the Flight Plan Summary in Excel file
+    If the file not exist the file FlightSummary.xlsx  is create withe one sheet (sheetname = Summary)
+
     :param flightPlanSynthesis:
     :param pathName:
+    :param saveExcel: save data in Excel file if True
     :return:
 
-            Write the Flight Plan Summary in Excel file
-    """
-    #Todo : écrire le résumé de la mission dans un autre fichier que celui contenant les données de base de la mission
-    workbook = openpyxl.load_workbook(pathName)
-    listSheets = workbook.sheetnames
-    if len(listSheets) < 2:
-        print(Style.YELLOW + ' Création de la feuille Summary' + Style.RESET)
-        ws_sum = workbook.create_sheet("Summary", 1)
-        ws_sum.title = "Summary"
-    elif listSheets[1] != 'Summary':
-        print(Style.YELLOW + ' Création de la feuille Summary' + Style.RESET)
-        ws_sum = workbook.create_sheet("Summary", 1)
-        ws_sum.title = "Summary"
-    else:
-        pass
 
-    sheet = workbook['Summary']
-    sheet.protection.sheet = False
-    listHeadCol = ['Point',
-                   'Image                    Visible',
-                   'Image                    Infrared original',
-                   'Image                    Infrared aligned',
-                   'Image                    Multi-Spectral ViR',
-                   'Date of shooting.',
-                   'Latitude                dd°dddddd',
-                   'Longitude               dd°dddddd',
-                   'Drone Altitude     / ground         [m]',
-                   'Ground Elevation   / sea level      [m]',
-                   'Drone Altitude     / Take off       [m]',
-                   'Distance point suivant  [°]',
-                   'Cap point suivant',
-                   'Distance / Start Pt      [m]'
-                   ]
-    for k in range(len(listHeadCol)):
-        sheet.cell(1, k + 1).value = listHeadCol[k]
-    for i in range(len(flightPlanSynthesis)):
-        sheet.cell(i + 2, 1).value = i
-        for k in range(len(flightPlanSynthesis[i])):
-            sheet.cell(i + 2, k + 2).value = flightPlanSynthesis[i][k]
-    sheet = workbook['Plan_de_Vol']
-    sheet.protection.sheet = False
-    sheet.cell(11, 2).value = '*'
-    sheet.protection.sheet = False
-    workbook.save(pathName)
-    workbook.close()
-    print(Style.GREEN + 'Ecriture du résumé du vol dans %s  terminée.' % pathName)
+    """
+    pathName=os.path.join(os.path.join(os.path.dirname(pathName)), 'FlightSummary.xlsx')
+    if os.path.isfile(pathName):
+        pass
+    else:
+        print(Style.YELLOW + ' Create file FlightSummary.xlsx'+ Style.RESET)
+        wb = Workbook()
+        ws=wb.active
+        ws.title = "Summary"
+        wb.save(pathName)
+
+    if saveExcel:
+        workbook = openpyxl.load_workbook(pathName)
+        listSheets = workbook.sheetnames
+        if listSheets[0] != 'Summary':
+            print(Style.YELLOW + ' Create sheet Summary' + Style.RESET)
+            ws_sum = workbook.create_sheet("Summary", 0)
+            ws_sum.title = "Summary"
+            ws_sum.protection.sheet = False
+        else:
+            pass
+
+        sheet = workbook['Summary']
+        sheet.protection.sheet = False
+        sheet.delete_rows(2,1000)
+        listHeadCol = ['Point',
+                       'Image                    Visible',
+                       'Image                    Infrared original',
+                       'Image                    Infrared aligned',
+                       'Image                    Multi-Spectral ViR',
+                       'Date of shooting.',
+                       'Latitude                dd°dddddd',
+                       'Longitude               dd°dddddd',
+                       'Drone Altitude     / ground         [m]',
+                       'Ground Elevation   / sea level      [m]',
+                       'Drone Altitude     / Take off       [m]',
+                       'Distance point suivant  [°]',
+                       'Cap point suivant',
+                       'Distance / Start Pt      [m]'
+                       ]
+        for k in range(len(listHeadCol)):
+            sheet.cell(1, k + 1).value = listHeadCol[k]
+        for i in range(len(flightPlanSynthesis)):
+            sheet.cell(i + 2, 1).value = i+1
+            for k in range(len(flightPlanSynthesis[i])):
+                sheet.cell(i + 2, k + 2).value = flightPlanSynthesis[i][k]
+        sheet.protection.sheet = False
+        workbook.save(pathName)
+        workbook.close()
+        print(Style.GREEN + 'Ecriture du résumé du vol dans %s  terminée.' % pathName)
 
 
 def showFlightProfil(d_list, elev_Drone, elev_Ground, dirSaveFig=None, mute=True):
@@ -646,6 +668,8 @@ def showFlightProfil(d_list, elev_Drone, elev_Ground, dirSaveFig=None, mute=True
         print(Style.YELLOW + 'Look your Drone Flight profil >>>>' + Style.RESET)
         plt.show()
     plt.close()
+
+# ------------------     Gestion des fichiers      ---------------------
 
 
 def reformatDirectory(di, xlpath=None, makeOutdir=False):
