@@ -410,7 +410,36 @@ def matchImagesFlightPath(imgListDrone,
     dateB = [imgListB[k][2] for k in range(len(imgListB))]
     deltaTime = [[datetime.timedelta.total_seconds(dateB[k] - dateA[i]) + deltaTimeA - deltaTimeB
                   for k in range(len(imgListB))] for i in range(len(imgListA))]
+    DTime =[[abs(deltaTime[i][k]) for k in range(len(imgListB))] for i in range(len(imgListA))]
 
+    for i in range(len(imgListA)):
+        kBmatch=0
+        for k in range(len(imgListB)):
+            if abs(deltaTime[i][k])== min(DTime[i][:]) and abs(deltaTime[i][k])< timeDeviation:
+                kBmatch = k
+                n += 1
+
+        if kBmatch == 0:
+            # No match for type B image
+            nRejet += 1
+            if not mute: print(Style.YELLOW + 'INFO:  Image ', repA, ' ', imgListA[i][0],
+                                   ' does not match any image ', repB,
+                                   '.  Minimum time deviation = ',
+                               round(min(DTime[i][:]), 2), 's' + Style.RESET)
+            pass
+        else:
+            #  construction of the image pair IR & Vi
+            if timeLapseDrone >= timeLapseIR:
+                listImgMatch.append((imgListB[kBmatch][1], imgListA[i][1]))
+            else:
+                listImgMatch.append((imgListA[i][1], imgListB[kBmatch][1]))
+
+            if not mute:
+                    print(Style.GREEN + 'N°', n, ' DT ', round(min(DTime[i][:]), 2), 's   ',
+                          imgListA[i][0], ' | ', imgListB[kBmatch][0] + Style.RESET)
+
+
+    """
     for i in range(len(imgListA)):
         kBmatch = 0
         DT = []
@@ -438,6 +467,7 @@ def matchImagesFlightPath(imgListDrone,
             if not mute:
                 print(Style.GREEN + 'N°', n, ' DT ', round(deltaTime[i][kBmatch], 2), 's   ',
                       imgListA[i][0], ' | ', imgListB[kBmatch][0] + Style.RESET)
+    """
 
     if timeLapseDrone >= timeLapseIR:
         print(Style.GREEN + '%i pairs of Visible-Infrared images were detected for the flight on  %s' % (
