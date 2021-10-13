@@ -59,10 +59,12 @@ class Image:
             self.path = dat
             self.name = osp.basename(dat)
             self._data = None
+            self._lineardata = None
             self.shading_correction = shading_correction
         else:
             self.path = None
             self._data = dat
+            self._lineardata = None
             self.name = name
         if name is not None: self.name = name
         self.date = None

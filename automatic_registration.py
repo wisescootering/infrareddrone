@@ -17,6 +17,7 @@ import irdrone.imagepipe as ipipe
 import shutil
 import cv2
 import argparse
+from copy import deepcopy
 
 
 class VegetationIndex(ipipe.ProcessBlock):
@@ -170,15 +171,16 @@ def coarse_alignment(ref_full, mov_full, cals, yaw_main, pitch_main, roll_main, 
     return mov_wr_fullres, dict(yaw=yaw_main + yaw_refine, pitch=pitch_main + pitch_refine, roll=roll_main)
 
 
-def align_raw(vis_path, nir_path, cals, debug_dir=None, debug=False, extension=1.4, manual=True):
+def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extension=1.4, manual=True):
     """
     :param vis_path: Path to visible DJI DNG image
     :param nir_path: Path to NIR SJCAM M20 RAW image
-    :param cals: Geometric calibration dictionary.
+    :param cals_dict: Geometric calibration dictionary.
     :param debug_dir: traces folder
     :param extension: extend the FOV of the NIR camera compared to the DJI camera 1.4 by default, 1.75 is ~maximum
     :return:
     """
+    cals = deepcopy(cals_dict)
     if debug_dir is not None and not osp.isdir(debug_dir):
         os.mkdir(debug_dir)
     motion_model_file = None
@@ -187,7 +189,7 @@ def align_raw(vis_path, nir_path, cals, debug_dir=None, debug=False, extension=1
     ts_start = time.perf_counter()
     vis = pr.Image(vis_path)
     nir = pr.Image(nir_path)
-    vis_undist = warp(vis.data, cals["refcalib"], np.eye(3)) # @TODO: Fix DJI calibration before using this
+    vis_undist = warp(vis.data, cals["refcalib"], np.eye(3))
     vis_undist = pr.Image(vis_undist)
     vis_undist_lin = warp(vis.lineardata, cals["refcalib"], np.eye(3))
     # distorsion has been compensated on the reference.
@@ -213,7 +215,6 @@ def align_raw(vis_path, nir_path, cals, debug_dir=None, debug=False, extension=1
         motion_model = rigid.pyramidal_search(
             ref_full, mov_wr_fullres,
             iterative_scheme=[(16, 2, 4, 8), (16, 2, 5), (4, 3, 5)],
-            # iterative_scheme=[(16, 2, 4, 8),], #@TODO : NOT TO COMMIT!
             mode=rigid.LAPLACIAN_ENERGIES, dist=rigid.NTG,
             debug=debug, debug_dir=debug_dir,
             affinity=False,
