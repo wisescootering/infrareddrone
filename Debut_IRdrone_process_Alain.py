@@ -34,7 +34,7 @@ if __name__ == "__main__":
     saveGpsTrack = True  # pour sauvegarder la trajectoire du drone dans un fichier gps au format Garmin@
     saveSummary = True  # pour sauvegarder la liste des paires ainsi que les coordonnées GPS dans un fichier Excel
     seeDualImages = False  # pour vérifier visuellement les appariements sur l'écran (en phase de test)
-    autoRegistration = False  # pour lancer effectivement le traitement
+    autoRegistration = True  # pour lancer effectivement le traitement
 
     # ----------------------------------------------------
     #        Début du programme
@@ -57,19 +57,34 @@ if __name__ == "__main__":
     #     Ces images sont  sauvegardées dans le dossier  dirNameIRdrone
     #     qui a été spécifié dans le plan de vol  (.xlxs)
     #
+    #
     #   - Construction de  la trace GPS qui relie les points où ont été prises les paires d'images. (file format .gpx)
     #         (l'altitude est celle du drone / au pt de décollage)
     #   - Ecriture dans la feuille Summary du fichier Excel Plan de Vol
     #   - Tracé du profil de vol du drone dans une figure (file format .png)
+    #
+    # Note:   les images de type A sont celles qui ont le plus petit time lapse ou pas de time Lapse  (fixé < 0 )
+    #         les images de type B sont celles qui ont le plus grand tim lapse
+    #         pour qu'une image A soient considérées comme synchronisées avec une image B on test deux critères :
 
-    listImgMatch = IRd.matchImagesFlightPath(imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR,
+    #   > Choix parmis les images B de celle qui à la différence de date (deltaTime) minimum avec l'image A
+    #   > ET on retient la paire {A,B} si deltaTime < timeDeviation
+    #
+    #    la tolérance  (timeDeviation) est calculée par la formule :  timeDeviation = timeDeviationFactor * timeLapseA
+    #           Rappelons que timeLapseA est le timeLapse minimum.
+    #           Si pas de time lapse (photos DJI prises à la volée)
+    #           on fixe arbitrairement timeDeviation = timeDeviationFactor * 2.1
+    #           (2s est le delai mini d'enregistrement du  DJI ).
+    #
+
+    listImgMatch, DtImgMatch= IRd.matchImagesFlightPath(imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR,
                                              deltaTimeIR, timeLapseIR, planVol['mission']['date'],
-                                             timeDeviationFactor=0.5, mute=True)
+                                             timeDeviationFactor=0.48, mute=True)
     # ------ Calcule de la trajectoire du drone et du profil du vol
     #        Génère la trajectoire au format Garmin gpx
 
     print(Style.CYAN + '------ Calculation of drone trajectory and flight profile' + Style.RESET)
-    flightPlanSynthesis = IRd.summaryFlight(listImgMatch, planVol, seaLevel=seaLevel,
+    flightPlanSynthesis = IRd.summaryFlight(listImgMatch, DtImgMatch, planVol, seaLevel=seaLevel,
                                             dirSaveFig=osp.dirname(dirPlanVol), mute=True)
     IRd.writeSummaryFlight(flightPlanSynthesis, dirPlanVol, saveExcel=saveSummary)
     if saveGpsTrack:

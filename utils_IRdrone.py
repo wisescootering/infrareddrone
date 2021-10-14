@@ -406,6 +406,7 @@ def matchImagesFlightPath(imgListDrone,
     n = 0
     nRejet = 0
     listImgMatch = []
+    DtImgMatch =[]
     dateA = [imgListA[i][2] for i in range(len(imgListA))]
     dateB = [imgListB[k][2] for k in range(len(imgListB))]
     deltaTime = [[datetime.timedelta.total_seconds(dateB[k] - dateA[i]) + deltaTimeA - deltaTimeB
@@ -418,6 +419,7 @@ def matchImagesFlightPath(imgListDrone,
             if abs(deltaTime[i][k])== min(DTime[i][:]) and abs(deltaTime[i][k])< timeDeviation:
                 kBmatch = k
                 n += 1
+                DtImgMatch.append(deltaTime[i][k])
 
         if kBmatch == 0:
             # No match for type B image
@@ -434,40 +436,11 @@ def matchImagesFlightPath(imgListDrone,
             else:
                 listImgMatch.append((imgListA[i][1], imgListB[kBmatch][1]))
 
+
+
             if not mute:
                     print(Style.GREEN + 'N°', n, ' DT ', round(min(DTime[i][:]), 2), 's   ',
                           imgListA[i][0], ' | ', imgListB[kBmatch][0] + Style.RESET)
-
-
-    """
-    for i in range(len(imgListA)):
-        kBmatch = 0
-        DT = []
-        for k in range(len(imgListB)):
-            DT.append(abs(deltaTime[i][k]))
-            if abs(deltaTime[i][k]) < timeDeviation:
-                #  type A image   match with type B image
-                kBmatch = k
-                n += 1
-
-        if kBmatch == 0:
-            # No match for type B image
-            nRejet += 1
-            if not mute: print(Style.YELLOW + 'INFO:  Image ', repA, ' ', imgListA[i][0],
-                               ' does not match any image ', repB,
-                               '.  Minimum time deviation = ', round(min(DT), 2), 's' + Style.RESET)
-            pass
-        else:
-            #  construction of the image pair IR & Vi
-            if timeLapseDrone >= timeLapseIR:
-                listImgMatch.append((imgListB[kBmatch][1], imgListA[i][1]))
-            else:
-                listImgMatch.append((imgListA[i][1], imgListB[kBmatch][1]))
-
-            if not mute:
-                print(Style.GREEN + 'N°', n, ' DT ', round(deltaTime[i][kBmatch], 2), 's   ',
-                      imgListA[i][0], ' | ', imgListB[kBmatch][0] + Style.RESET)
-    """
 
     if timeLapseDrone >= timeLapseIR:
         print(Style.GREEN + '%i pairs of Visible-Infrared images were detected for the flight on  %s' % (
@@ -482,13 +455,13 @@ def matchImagesFlightPath(imgListDrone,
         print(Style.RED, 'No pair of Visible-Infrared images were detected for this flight.', Style.RESET)
         sys.exit(2)
 
-    return listImgMatch
+    return listImgMatch, DtImgMatch
 
 
 # -----------   Synthèse de informations sur la mission      --------------
 
 
-def summaryFlight(listImg, planVol, seaLevel=False, dirSaveFig=None, mute=True):
+def summaryFlight(listImg, DtImgMatch, planVol, seaLevel=False, dirSaveFig=None, mute=True):
     """
     :param listImg:      list of image pairs VI/IR matched at the same point
     :param mute:
@@ -580,14 +553,19 @@ def summaryFlight(listImg, planVol, seaLevel=False, dirSaveFig=None, mute=True):
 
         capToLastPt = round(capP0P1[i], 3)
         # Vi images
-        imgNameVi = listImg[i][0].split('\\')[len(listImg[i][0].split('\\')) - 1]
-        numeroRef = imgNameVi.split('_')[len(imgNameVi.split('_')) - 1]
+        imgNameViOriginal = listImg[i][0].split('\\')[len(listImg[i][0].split('\\')) - 1]
+        str =imgNameViOriginal.split('_')[1]
+        numeroRef = str.split('.')[0]
+        imgViExt = str.split('.')[1]
+        recordType = imgNameViOriginal.split('_')[0]  # DJI (single shoot), TIMELAPSE, HYPERLASE, PANORAMIC  etc
+        imgNameVIS ='%s_%s_VIS.jpg' % (recordType,numeroRef)
         # IR images
         imgNameIRoriginal = listImg[i][1].split('\\')[len(listImg[i][1].split('\\')) - 1]
-        imgNameIR = 'IRdroneIR_%s' % numeroRef
-        imgNameViR = 'IRdroneViR_%s' % numeroRef
+        imgNameNIR = '%s_%s_NIR_local_.jpg' % (recordType,numeroRef)
+        imgNameViR = '_VIR_local_%s_%s.jpg ' % (recordType,numeroRef)
+
         summary.append(
-            (imgNameVi, imgNameIRoriginal, imgNameIR, imgNameViR,
+            (imgNameViOriginal, imgNameIRoriginal, round(DtImgMatch[i],2), imgNameVIS, imgNameNIR, imgNameViR,
              dateVi[i],
              round(listCoordGPS[i][0], 5), round(listCoordGPS[i][1], 5),
              altDroneSol[i], round(altGeo[i], 3), round(listCoordGPS[i][2], 3),
@@ -644,8 +622,10 @@ def writeSummaryFlight(flightPlanSynthesis, pathName, saveExcel=False):
         sheet.protection.sheet = False
         sheet.delete_rows(2,1000)
         listHeadCol = ['Point',
-                       'Image                    Visible',
-                       'Image                    Infrared original',
+                       'Image                    Visible             (original)',
+                       'Image                    Infrared            (original)',
+                       'Time deviation              [s]',
+                       'Image                    Visible aligned',
                        'Image                    Infrared aligned',
                        'Image                    Multi-Spectral ViR',
                        'Date of shooting.',
