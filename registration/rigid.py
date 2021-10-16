@@ -33,14 +33,14 @@ def minimum_cost(cost, amin_index=None):
                       :
                       ]
     hessi, gradi, constants = quadric_approximation(extracted_patch)
-
     new_val = newton_iter(
         np.array([0., 0.]).T,
         gradi,
-        hess_mat = hessi,
+        hess_mat=hessi,
         max_step=None
     )
-    return new_val+init_position
+    new_val = new_val * (np.fabs(new_val)<1.)
+    return new_val+init_position, hessi, gradi
 
 
 def minimum_cost_max_hessian(cost, debug=False):
@@ -58,7 +58,10 @@ def minimum_cost_max_hessian(cost, debug=False):
     cost_selection = cost[
                      amax_index[0]-refinement_neighborhood:amax_index[0]+refinement_neighborhood+1,
                      amax_index[1]-refinement_neighborhood:amax_index[1]+refinement_neighborhood+1]
-    displacement = minimum_cost(cost_selection)
+    displacement, hessi, gradi = minimum_cost(cost_selection)
+    # from registration.utlities import plot_search, quadratic_approximation_plot
+    # plot_search(cost_selection, [displacement[0]], [displacement[1]])
+    # quadratic_approximation_plot(cost_selection, gradi, hessi)
     if debug:
         plt.subplot(1, 3, 1)
         plt.imshow(concavity[:, :, 0])
@@ -102,7 +105,7 @@ def brute_force_vector_field_search(costs=None, centers=None, downscale=None):
                           center_x-extraction_area:center_x+extraction_area+1,
                           :
                           ]
-            vector_field[i, j, :] = minimum_cost(single_cost) * (1. if downscale is None else downscale)
+            vector_field[i, j, :] = minimum_cost(single_cost)[0] * (1. if downscale is None else downscale)
             vpos[i, j, :] = centers[i, j] * (1. if downscale is None else downscale)
     return vpos, vector_field
 

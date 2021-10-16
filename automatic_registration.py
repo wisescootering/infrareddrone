@@ -140,7 +140,8 @@ def coarse_alignment(ref_full, mov_full, cals, yaw_main, pitch_main, roll_main, 
         translation = -ds*rigid.minimum_cost_max_hessian(cost_dict["costs"][0,0, :, :, :], debug=debug)
     except:
         logging.warning("Max of Hessian failed!")  # @ TODO: handle the case of argmax close to the edge!
-        translation = -ds*rigid.minimum_cost(cost_dict["costs"][0, 0, :, :, :])
+        trans, _, _ = rigid.minimum_cost(cost_dict["costs"][0, 0, :, :, :])
+        translation = -ds*trans
     yaw_refine = np.rad2deg(np.arctan(translation[0]/focal))
     pitch_refine = np.rad2deg(np.arctan(translation[1]/focal))
     print("2D translation {}".format(translation, yaw_refine, pitch_refine))
