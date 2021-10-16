@@ -266,7 +266,7 @@ def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extens
 
 
 def process_raw_folder(folder, delta=timedelta(seconds=166.5), manual=False, debug=False,
-                       extension_vis="*.DNG", extension_nir="*.RAW"
+                       extension_vis="*.DNG", extension_nir="*.RAW", extension=1.4,
                        ):
     """NIR/VIS image alignment and fusion
     - using a simple synchronization mechanism based on exif and camera deltas
@@ -277,12 +277,13 @@ def process_raw_folder(folder, delta=timedelta(seconds=166.5), manual=False, deb
     # replace_dji=(".DNG", "_PL4_DIST.tif")
     cals = dict(refcalib=ut.cameracalibration(camera="DJI_RAW"), movingcalib=ut.cameracalibration(camera="M20_RAW"))
     out_dir = osp.join(folder, "_RESULTS_delta={:.1f}s".format(delta.seconds+delta.microseconds/(1.E6)))
-    process_raw_pairs(sync_pairs, cals, debug_folder=None, out_dir=out_dir, manual=manual, debug=debug)
+    process_raw_pairs(sync_pairs, cals, debug_folder=None, out_dir=out_dir, manual=manual, debug=debug, extension=extension)
 
 
 def process_raw_pairs(
         sync_pairs,
         cals=dict(refcalib=ut.cameracalibration(camera="DJI_RAW"), movingcalib=ut.cameracalibration(camera="M20_RAW")),
+        extension=1.4,
         debug_folder=None, out_dir=None, manual=False, debug=False
     ):
     # if debug_folder is None:
@@ -302,7 +303,8 @@ def process_raw_pairs(
         ref_full, aligned_full, align_full_global = align_raw(
             vis_pth, nir_pth, cals,
             debug_dir=debug_dir, debug=debug,
-            manual=manual
+            manual=manual,
+            extension=extension
         )
         # AGGREGATED RESULTS!
         if debug:  # SCIENTIFIC LINEAR OUTPUTS
@@ -366,8 +368,9 @@ if __name__ == "__main__":
     parser.add_argument('--debug', action="store_true", help='full debug traces')
     parser.add_argument('--folder', help='folder containing images for visible and NIR')
     parser.add_argument('--delay', help='synchronization (in seconds)', default=0.)
-    args = parser.parse_args()
 
+    args = parser.parse_args()
+    extension = 1.6
     if args.images is None:
         if args.folder is None:
             logging.error("Please provide image pair through --images  or a full folder to process through --folder")
@@ -377,7 +380,7 @@ if __name__ == "__main__":
             delta = None
         else:
             delta=timedelta(seconds=float(args.delay))
-        process_raw_folder(folder=args.folder, manual=args.manual, debug=args.debug, delta=delta)
+        process_raw_folder(folder=args.folder, manual=args.manual, debug=args.debug, delta=delta, extension=extension)
     else:
         im_pair = args.images
         if im_pair[0].lower().endswith(".raw"):
@@ -394,5 +397,6 @@ if __name__ == "__main__":
             out_dir=out_dir,
             manual=args.manual,
             debug=args.debug,
+            extension=extension
         )
 
