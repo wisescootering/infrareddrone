@@ -7,10 +7,17 @@ import platform
 from datetime import datetime, timedelta
 
 
+def date_from_path_sjcam(img_pth):
+    year, month_date, hours , _ = osp.basename(img_pth).split("_")
+    converted_date =  datetime(year=int(year), month=int(month_date[:2]), day=int(month_date[2:]),
+                               hour=int(hours[:2]), minute=int(hours[2:4]),  second=int(hours[4:]))
+    return  converted_date
+
+
 def synchronize_data(
-        folder = r"D:\FLY-20210906-Blassac-05ms\AerialPhotography",
+        folder = "",
         delta=timedelta(seconds=171),
-        replace_dji=(".DNG", "_PL4_DIST.tif"),
+        replace_dji=None,
         debug=False,
         extension_vis="*.DNG",
         extension_nir="*.RAW"
@@ -29,11 +36,7 @@ def synchronize_data(
     img_list_sjcam = ut.imagepath(imgname=extension_nir, dirname=folder)
     # if platform.system() == 'Windows':
     #     dates_sjcam = [datetime.fromtimestamp(os.path.getmtime(img)) for img in img_list_sjcam]
-    def date_from_path_sjcam(img_pth):
-        year, month_date, hours , _ = osp.basename(img_pth).split("_")
-        converted_date =  datetime(year=int(year), month=int(month_date[:2]), day=int(month_date[2:]),
-                 hour=int(hours[:2]), minute=int(hours[2:4]),  second=int(hours[4:]))
-        return  converted_date
+
     dates_sjcam = [date_from_path_sjcam(img) for img in img_list_sjcam]
     img_list_sjcam_sync = []
     sync_pairs = []
@@ -42,9 +45,9 @@ def synchronize_data(
         best_match = np.argmin(np.fabs(deltas))
         if debug:
             date_matched = dates_sjcam[int(best_match)]
-            print(img_list_sjcam[int(best_match)], img_list_dji[ind], date_matched)
-            print(best_match, date_matched, dat_dji)
-            print("DJI VALID", datetime.fromtimestamp(os.path.getmtime(img_list_dji[ind])))
+            print(
+                osp.basename(osp.basename(img_list_dji[ind])), dat_dji, "  matched  " , img_list_sjcam[int(best_match)],
+                  date_matched - delta, "delta:", deltas[int(best_match)])
         img_list_sjcam_sync.append(img_list_sjcam[int(best_match)])
         sync_pairs.append(
             (

@@ -119,14 +119,22 @@ class Image:
                 print(Style.YELLOW + "NO CAMERA IN %s"%self.path + Style.RESET)
                 self.camera = None
             try:
-                dateTimeOriginal = str(exifTag[prefix+'DateTimeOriginal'])
-                imgYear = int (dateTimeOriginal[0:4])
-                imgMonth = int (dateTimeOriginal[5:7])
-                imgDay = int (dateTimeOriginal[8:11])
-                imgHour = int (dateTimeOriginal[11:13])
-                imgMin = int (dateTimeOriginal[14:16])
-                imgSecond = int (dateTimeOriginal[17:19])
-                self.date = datetime.datetime(imgYear, imgMonth, imgDay, imgHour, imgMin, imgSecond)
+                if self.path.endswith(".RAW"):
+
+                    year, month_date, hours , _ = osp.basename(self.path).split("_")
+                    converted_date = datetime.datetime(year=int(year), month=int(month_date[:2]), day=int(month_date[2:]),
+                                               hour=int(hours[:2]), minute=int(hours[2:4]),  second=int(hours[4:]))
+                    self.date = converted_date
+                    logging.info("DATE FROM FILE NAME .RAW  {}".format(self.date))
+                else:
+                    dateTimeOriginal = str(exifTag[prefix+'DateTimeOriginal'])
+                    imgYear = int (dateTimeOriginal[0:4])
+                    imgMonth = int (dateTimeOriginal[5:7])
+                    imgDay = int (dateTimeOriginal[8:11])
+                    imgHour = int (dateTimeOriginal[11:13])
+                    imgMin = int (dateTimeOriginal[14:16])
+                    imgSecond = int (dateTimeOriginal[17:19])
+                    self.date = datetime.datetime(imgYear, imgMonth, imgDay, imgHour, imgMin, imgSecond)
             except:
                 print(Style.YELLOW + "NO DATE FOUND IN %s"%self.path + Style.RESET)
                 self.date = None
