@@ -292,15 +292,23 @@ def process_raw_pairs(
         out_dir = osp.join(osp.dirname(sync_pairs[0][0]), "_RESULTS")
     if not osp.exists(out_dir):
         os.mkdir(out_dir)
-    for vis_pth, nir_pth in sync_pairs:
+    for index_pair, (vis_pth, nir_pth) in enumerate(sync_pairs):
         logging.warning("processing {} {}".format(osp.basename(vis_pth), osp.basename(nir_pth)))
         if debug_folder is not None:
             debug_dir = osp.join(debug_folder, osp.basename(vis_pth)[:-4]+"_align_traces" + ("_manual" if manual else ""))
         else:
             debug_dir = None
-        write_manual_bat_redo(vis_pth, nir_pth, osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO.bat"), debug=False)
-        write_manual_bat_redo(vis_pth, nir_pth, osp.join(out_dir, osp.basename(vis_pth[:-4])+"_DEBUG.bat"), debug=True)
-        ref_full, aligned_full, align_full_global = align_raw(
+        offset_async = [offset for offset in [0, -1, +1, -2, +2]
+                        if (index_pair+offset >=0 and index_pair+offset<len(sync_pairs))]
+        nir_pth_async = [sync_pairs[index_pair+offset][1] for offset in offset_async]
+        write_manual_bat_redo(vis_pth, nir_pth_async,
+                              osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO_ASYNC.bat"),
+                              async_suffix=offset_async,
+                              debug=False)
+        write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO.bat"), debug=False)
+        write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_DEBUG.bat"), debug=True)
+        # continue
+        ref_full, aligned_full, align_full_global, motion_model = align_raw(
             vis_pth, nir_pth, cals,
             debug_dir=debug_dir, debug=debug,
             manual=manual,
@@ -323,44 +331,23 @@ def process_raw_pairs(
                 osp.join(out_dir, osp.basename(vis_pth[:-4])+"_NIR{}.jpg".format(almode)))
 
 
-
-
-        # MANUAL TRACES COPY TO RESULT FOLDER...
-        # if osp.isdir(debug_dir):
-        #     ref_pth = osp.join(debug_dir, "FULLRES_REF.jpg")
-        #     aligned_pth = osp.join(debug_dir, "FLOW_it09_ds04_WARP_LOCAL.jpg")
-        #     # ---------------------------------------------------------------------------------------------- copy traces
-        #     if True:
-        #         shutil.copy(ref_pth, osp.join(out_dir, osp.basename(vis_pth[:-4]+"_visible_ref.jpg")))
-        #         shutil.copy(aligned_pth, osp.join(out_dir, osp.basename(vis_pth[:-4]+"_nir_aligned.jpg")))
-        #     if False:
-        #         shutil.copy(ref_pth, osp.join(out_dir, osp.basename(vis_pth[:-4])+"_visible_ref.jpg"))
-        #         shutil.copy(aligned_pth, osp.join(out_dir, osp.basename(vis_pth[:-4])+"_nir_aligned.jpg"))
-        #         cost_pth = osp.join(debug_dir, "Full Search_blocks_y1x1_search_y25x25_NTG_overview_cost_surfaces_.png")
-        #         search_pth = osp.join(debug_dir, "Full Search_blocks_y1x1_search_y25x25_NTG_cost_surface_0_0_.png")
-        #         shutil.copy(cost_pth, osp.join(out_dir, "_COSTS_" + osp.basename(vis_pth[:-4])+"_Global_cost.png"))
-        #         shutil.copy(search_pth, osp.join(out_dir, "_GLOBAL_SEARCH_" + osp.basename(vis_pth[:-4])+"_Global_cost.png"))
-        #         local_cost_pth = osp.join(debug_dir, "ds4_laplacian_energies_blocks_y5x5_search_y6x6_NTG_overview_cost_surfaces__it09.png")
-        #         shutil.copy(local_cost_pth, osp.join(out_dir, "_LOCAL_COSTS_" + osp.basename(vis_pth[:-4])+"_Global_cost.png"))
-        #     if ref_full is None :
-        #         ref_full = pr.Image(ref_pth).data
-        #     if aligned_full is None:
-        #         aligned_full = pr.Image(aligned_pth).data
-        #     ndvi(ref_full, aligned_full, out_path=osp.join(out_dir, "_NDVI_" + osp.basename(vis_pth[:-4])+".jpg"))
-        #     vir(ref_full, aligned_full, out_path=osp.join(out_dir, "_VIR_" + osp.basename(vis_pth[:-4])+".jpg"))
-
-
-def write_manual_bat_redo(vis_pth, nir_pth, debug_bat_pth, out_dir=None, debug=False):
+def write_manual_bat_redo(vis_pth, nir_pth_list, debug_bat_pth, out_dir=None, debug=False, async_suffix=None):
     if out_dir is None:
         out_dir = osp.abspath(debug_bat_pth.replace(".bat", ""))
     with open(debug_bat_pth, "w") as fi:
         fi.write("call activate {}\n".format(os.environ['CONDA_DEFAULT_ENV']))
-        fi.write("python {} --images {} {} --manual --outdir {} {}\n".format(
-            "\""+osp.abspath(__file__)+"\"",
-            "\""+vis_pth+"\"", "\""+nir_pth+"\"",
-            "\""+out_dir+"\"",
-            "--debug" if debug else "")
-        )
+        for id_sync, nir_pth in enumerate(nir_pth_list):
+            out_dir_current = out_dir
+            if async_suffix is not None:
+                out_dir_current = out_dir_current + "_async_{}".format(async_suffix[id_sync])
+            fi.write(
+                ("REM " if id_sync>0 else "")+
+                "python {} --images {} {} --manual --outdir {} {}\n".format(
+                "\""+osp.abspath(__file__)+"\"",
+                "\""+vis_pth+"\"", "\""+nir_pth+"\"",
+                "\""+out_dir_current+"\"",
+                "--debug" if debug else "")
+            )
         fi.write("call deactivate\n")
 
 
