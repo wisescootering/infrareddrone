@@ -261,7 +261,7 @@ def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extens
     ts_end = time.perf_counter()
     logging.warning("{:.2f}s elapsed in global and local unique warp".format(ts_end - ts_start_yowo))
     logging.warning("{:.2f}s elapsed in total alignment".format(ts_end - ts_start))
-    return vis_undist_lin, mov_w_linear_local, mov_w_linear_global
+    return vis_undist_lin, mov_w_linear_local, mov_w_linear_global, full_motion_model
     # return ref_full, mov_w_final_yowo_full
 
 
@@ -311,6 +311,10 @@ def process_raw_pairs(
             pr.Image(aligned_full).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR.tif"), gps=ref_full.gps)
             pr.Image(align_full_global).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR.tif"), gps=ref_full.gps)
             pr.Image(ref_full).save(osp.join(out_dir, "_RAW_"+ osp.basename(vis_pth[:-4])+"_VIS.tif"), gps=ref_full.gps)
+        # Systematically write motion model!
+        if motion_model is not None:
+            motion_model_file = osp.join(out_dir, osp.basename(vis_pth[:-4])+"_motion_model")
+            np.save(motion_model_file, motion_model, allow_pickle=True)
         pr.Image((ut.contrast_stretching(ref_full)[0]*255).astype(np.uint8)).save(osp.join(out_dir, osp.basename(vis_pth[:-4])+"_VIS.jpg"))
         for ali, almode in [(aligned_full, "_local_"), (align_full_global, "_global_")]:
             ndvi(ref_full, ali, out_path=osp.join(out_dir, "_NDVI_" + almode + osp.basename(vis_pth[:-4])+".jpg"))
