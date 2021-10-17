@@ -1,0 +1,3 @@
+call activate py39
+python Debut_IRdrone_process_Alain.py
+call deactivate
