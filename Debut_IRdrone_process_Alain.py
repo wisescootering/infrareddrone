@@ -94,7 +94,9 @@ if __name__ == "__main__":
     #  3 > Traitement des images
     #     Recalage des paires d'images Vi et IR
     #     Construction des images RiV  et NDVI
-    # ----------------------------------------------------
+    # ------------------------------------------------%----
+    print(Style.WHITE,'Voulez vous traiter ces %i images ?'%len(listImgMatch))
+    autoRegistration = int(input(  'Oui (1) |  Non (0):'))
     # listImgMatch = [(vis.replace(".DNG", "_PL4_DIST.tif"), nir) for vis, nir in listImgMatch]
     if autoRegistration:
         print(Style.CYAN + '------ automatic_registration.process_raw_pairs' + Style.RESET)
