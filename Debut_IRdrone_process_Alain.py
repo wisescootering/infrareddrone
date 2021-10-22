@@ -34,7 +34,7 @@ if __name__ == "__main__":
     saveGpsTrack = True  # pour sauvegarder la trajectoire du drone dans un fichier gps au format Garmin@
     saveSummary = True  # pour sauvegarder la liste des paires ainsi que les coordonnées GPS dans un fichier Excel
     seeDualImages = False  # pour vérifier visuellement les appariements sur l'écran (en phase de test)
-    autoRegistration = True  # pour lancer effectivement le traitement
+    autoRegistration = False  # pour lancer effectivement le traitement
 
     # ----------------------------------------------------
     #        Début du programme
@@ -94,9 +94,10 @@ if __name__ == "__main__":
     #  3 > Traitement des images
     #     Recalage des paires d'images Vi et IR
     #     Construction des images RiV  et NDVI
-    # ------------------------------------------------%----
-    print(Style.WHITE,'Voulez vous traiter ces %i images ?'%len(listImgMatch))
-    autoRegistration = int(input(  'Oui (1) |  Non (0):'))
+    # ----------------------------------------------------
+    print(Style.MAGENTA +  'Le traitement de ces %i images va durer %.2f h.  Voulez vous continuer  ?'\
+          %(len(listImgMatch), len(listImgMatch)/60.)+ Style.RESET)
+    autoRegistration = IRd.answerYesNo('Oui (1) |  Non (0):')
     # listImgMatch = [(vis.replace(".DNG", "_PL4_DIST.tif"), nir) for vis, nir in listImgMatch]
     if autoRegistration:
         print(Style.CYAN + '------ automatic_registration.process_raw_pairs' + Style.RESET)

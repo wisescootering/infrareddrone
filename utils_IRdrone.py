@@ -647,7 +647,7 @@ def writeSummaryFlight(flightPlanSynthesis, pathName, saveExcel=False):
         sheet.protection.sheet = False
         workbook.save(pathName)
         workbook.close()
-        print(Style.GREEN + 'Ecriture du résumé du vol dans %s  terminée.' % pathName)
+        print(Style.GREEN + 'Ecriture du résumé du vol dans %s  terminée.' % pathName + Style.RESET)
 
 
 def showFlightProfil(d_list, elev_Drone, elev_Ground, dirSaveFig=None, mute=True):
@@ -702,3 +702,34 @@ def loadFileGUI():
     filename = askopenfilename()  # show an "Open" dialog box and return the path to the selected file
     print(filename)
     return filename
+
+
+def answerYesNo(txt):
+    ans = input(txt)
+    tryAgain=True
+    countTry =0
+    while tryAgain:
+        try:
+            ans = int(ans)
+            if ans !=1 and ans != 0:
+                raise ValueError
+            else:
+                ans = bool(int(ans))
+
+            return ans
+
+        except ValueError:
+            try:
+                if countTry < 2 :
+                    print('You need to type 0 or 1' )
+                    ans = input(txt)
+                else:
+                    return
+            except:
+                return ans
+            else:
+                countTry += 1
+                tryAgain = True
+
+
+
