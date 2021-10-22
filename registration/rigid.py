@@ -26,7 +26,7 @@ def minimum_cost(cost, amin_index=None):
     neighborhood_size = 1
     if amin_index[0] < neighborhood_size or amin_index[0] > cost.shape[0]-1-neighborhood_size or \
             amin_index[1] < neighborhood_size or amin_index[1] > cost.shape[1]-1-neighborhood_size:
-        return init_position
+        return init_position, None, None
     extracted_patch = cost[
                       amin_index[0]-neighborhood_size:amin_index[0]+neighborhood_size+1,
                       amin_index[1]-neighborhood_size:amin_index[1]+neighborhood_size+1,
