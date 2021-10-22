@@ -8,6 +8,7 @@ import numpy as np
 import os.path as osp
 import PIL.Image
 import PIL.ExifTags
+import piexif
 import exifread
 import datetime
 import logging
@@ -74,11 +75,34 @@ class Image:
         self.altitude_ref = None
         self.loadMetata()
 
-    def save(self, path):
+    def save(self, path, gps=None, exif=None):
+        if gps is not None:
+            self.gps = gps
         if self._data is None:
             self.data
         if path.lower().endswith("jpg"):
-            cv2.imwrite(path, cv2.cvtColor(self._data, cv2.COLOR_RGB2BGR))
+            if self.gps is not None:
+                gps_exif = dict()
+                gps_exif[0] = (2, 3, 0, 0)
+                gps_exif[1] = self.gps["latitude"][0]
+                gps_exif[2] = ((int(self.gps["latitude"][1]), 1), \
+                               (int(self.gps["latitude"][2]), 1), \
+                               (int(self.gps["latitude"][3]*10000), 10000))
+
+                gps_exif[3] = self.gps["longitude"][0]
+                gps_exif[4] = ((int(self.gps["longitude"][1]), 1), \
+                               (int(self.gps["longitude"][2]), 1), \
+                               (int(self.gps["longitude"][3]*10000), 10000))
+                gps_exif[5] = 1
+                gps_exif[6] = ((int(self.gps["altitude"]*1000), 1000))
+                exif_dict = dict(GPS=gps_exif)
+                if exif is not None:
+                    exif_dict = {**exif_dict, **exif}
+                # print(exif_dict)
+                exif_bytes = piexif.dump(exif_dict)
+                PIL.Image.fromarray(self._data).save(path, "jpeg", exif=exif_bytes)
+            else:
+                cv2.imwrite(path, cv2.cvtColor(self._data, cv2.COLOR_RGB2BGR))
         elif path.lower().endswith("tif"):
             cv2.imwrite(path, cv2.cvtColor(
                 ((2**16-1)*(self._data.clip(0, 1))).astype(np.uint16),

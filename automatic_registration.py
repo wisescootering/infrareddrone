@@ -53,7 +53,7 @@ def ndvi(vis_img, nir_img, out_path=None):
         ipi.save(out_path)
 
 
-def vir(vis_img, nir_img, out_path=None):
+def vir(vis_img, nir_img, out_path=None, exif=None, gps=None):
     vir = vis_img.copy()
     vir[:, :, 0] = np.mean(nir_img, axis=-1)
     vir[:, :, 0] *= 0.5/np.mean(vir[:, :, 0]) # @TODO: correctly expose the NIR channel
@@ -63,10 +63,10 @@ def vir(vis_img, nir_img, out_path=None):
         pr.Image(vir).show()
     else:
         if out_path.lower().endswith("tif"):
-            pr.Image(vir).save(out_path)
+            pr.Image(vir).save(out_path, exif=exif, gps=gps)
         else:
             recontrasted_image = (ut.contrast_stretching(vir.clip(0., 1.))[0]*255).astype(np.uint8)
-            pr.Image(recontrasted_image).save(out_path)
+            pr.Image(recontrasted_image).save(out_path, exif=exif, gps=gps)
             # pr.Image((vir*255).clip(0, 255).astype(np.uint8)).save(out_path)
 
 
@@ -293,6 +293,9 @@ def process_raw_pairs(
         out_dir = osp.join(osp.dirname(sync_pairs[0][0]), "_RESULTS")
     if not osp.exists(out_dir):
         os.mkdir(out_dir)
+
+    exif_dict_minimal = np.load(osp.join(osp.dirname(__file__), "minimum_exif_dji.npy"), allow_pickle=True).item()
+
     for index_pair, (vis_pth, nir_pth) in enumerate(sync_pairs):
         logging.warning("processing {} {}".format(osp.basename(vis_pth), osp.basename(nir_pth)))
         if debug_folder is not None:
@@ -309,6 +312,7 @@ def process_raw_pairs(
         write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO.bat"), debug=False)
         write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_DEBUG.bat"), debug=True)
         # continue
+        gps_vis = pr.Image(vis_pth).gps
         ref_full, aligned_full, align_full_global, motion_model = align_raw(
             vis_pth, nir_pth, cals,
             debug_dir=debug_dir, debug=debug,
@@ -317,19 +321,25 @@ def process_raw_pairs(
         )
         # AGGREGATED RESULTS!
         if debug:  # SCIENTIFIC LINEAR OUTPUTS
-            pr.Image(aligned_full).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR.tif"), gps=ref_full.gps)
-            pr.Image(align_full_global).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR.tif"), gps=ref_full.gps)
-            pr.Image(ref_full).save(osp.join(out_dir, "_RAW_"+ osp.basename(vis_pth[:-4])+"_VIS.tif"), gps=ref_full.gps)
+            pr.Image(aligned_full).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR.tif"), gps=gps_vis, exif=exif_dict_minimal)
+            pr.Image(align_full_global).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR.tif"), gps=gps_vis, exif=exif_dict_minimal)
+            pr.Image(ref_full).save(osp.join(out_dir, "_RAW_"+ osp.basename(vis_pth[:-4])+"_VIS.tif"), gps=gps_vis, exif=exif_dict_minimal)
         # Systematically write motion model!
         if motion_model is not None:
             motion_model_file = osp.join(out_dir, osp.basename(vis_pth[:-4])+"_motion_model")
             np.save(motion_model_file, motion_model, allow_pickle=True)
-        pr.Image((ut.contrast_stretching(ref_full)[0]*255).astype(np.uint8)).save(osp.join(out_dir, osp.basename(vis_pth[:-4])+"_VIS.jpg"))
+        pr.Image((ut.contrast_stretching(ref_full)[0]*255).astype(np.uint8)).save(
+            osp.join(out_dir, osp.basename(vis_pth[:-4])+"_VIS.jpg"), gps=gps_vis, exif=exif_dict_minimal)
         for ali, almode in [(aligned_full, "_local_"), (align_full_global, "_global_")]:
             ndvi(ref_full, ali, out_path=osp.join(out_dir, "_NDVI_" + almode + osp.basename(vis_pth[:-4])+".jpg"))
-            vir(ref_full, ali, out_path=osp.join(out_dir, "_VIR_" + almode + osp.basename(vis_pth[:-4])+".jpg"))
-            pr.Image((ut.contrast_stretching(ali)[0]*255).astype(np.uint8)).save(
-                osp.join(out_dir, osp.basename(vis_pth[:-4])+"_NIR{}.jpg".format(almode)))
+            vir(ref_full, ali, out_path=osp.join(out_dir, "_VIR_" + almode + osp.basename(vis_pth[:-4])+".jpg"),
+                gps=gps_vis, exif=exif_dict_minimal)
+            nir_out = pr.Image((ut.contrast_stretching(ali)[0]*255).astype(np.uint8))
+            nir_out.save(
+                osp.join(out_dir, osp.basename(vis_pth[:-4])+"_NIR{}.jpg".format(almode)),
+                exif=exif_dict_minimal,
+                gps=gps_vis
+            )
 
 
 def write_manual_bat_redo(vis_pth, nir_pth_list, debug_bat_pth, out_dir=None, debug=False, async_suffix=None):
