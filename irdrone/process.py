@@ -93,7 +93,7 @@ class Image:
                 gps_exif[4] = ((int(self.gps["longitude"][1]), 1), \
                                (int(self.gps["longitude"][2]), 1), \
                                (int(self.gps["longitude"][3]*10000), 10000))
-                gps_exif[5] = 1
+                gps_exif[5] = 0
                 gps_exif[6] = ((int(self.gps["altitude"]*1000), 1000))
                 exif_dict = dict(GPS=gps_exif)
                 if exif is not None:
