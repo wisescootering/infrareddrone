@@ -16,7 +16,10 @@ from os import mkdir
 from irdrone.utils import Style, conversionGPSdms2dd, get_polar_shading_map, contrast_stretching
 import subprocess
 RAWTHERAPEEPATH = r"C:\Program Files\RawTherapee\5.8\rawtherapee-cli.exe"
+EXIFTOOLPATH = osp.join(osp.dirname(__file__), "..", "exiftool", "exiftool.exe")
 assert osp.exists(RAWTHERAPEEPATH), "Please install raw therapee first http://www.rawtherapee.com/downloads/5.8/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
+assert osp.exists(EXIFTOOLPATH), "Requires exif tool at {} from https://exiftool.org/".format(EXIFTOOLPATH)
+
 shading_correction_DJI = None
 shading_correction_M20 = None
 SJCAM_M20_PROFILE_CONTROL_POINTS = {
@@ -47,6 +50,20 @@ def load_dng(path, template="DJI_neutral.pp3"):
     return load_tif(out_file)
 
 
+def get_gimbal_info(pth):
+    cmd = [EXIFTOOLPATH, pth]
+    p = subprocess.run(cmd,  capture_output=True, text=True)
+    output_text = p.stdout
+    lines = output_text.split("\n")
+    selection = [li for li in lines if "Degree" in li]
+    dic = dict()
+    for li in selection:
+        key = li.split(" Degree")[0]
+        val = float(li.split(": ")[1])
+        dic[key] = val
+    return dic
+
+
 class Image:
     """
     Fast image class
@@ -73,6 +90,7 @@ class Image:
         self.camera = None
         self.altitude = None
         self.altitude_ref = None
+        self.flight_info = None
         self.loadMetata()
 
     def save(self, path, gps=None, exif=None):
@@ -117,6 +135,9 @@ class Image:
                 if self.path.lower().endswith("dng") or self.path.lower().endswith("raw"):
                     with open(self.path, 'rb') as f:
                         exifTag = exifread.process_file(f)
+                    if self.path.lower().endswith("dng"):
+                        fligh_info = get_gimbal_info(self.path)
+                        self.flight_info = fligh_info
                     prefix = "EXIF "
                 else:
                     pimg = PIL.Image.open(self.path)
@@ -261,7 +282,7 @@ class Image:
                             img_shape=rawimg.shape,
                             calib=SJCAM_M20_PROFILE_CONTROL_POINTS
                         )
-                        print("LOADING SHADING CALIB")
+                        # print("LOADING SHADING CALIB")
                     rawimg = (rawimg * shading_correction_M20)
                 # self._data = ((rawimg.clip(0., 1.)**(gamma)).clip(0., 1.)*255).astype(np.uint8)
                 self._data = (contrast_stretching(rawimg.clip(0., 1.))[0]*255).astype(np.uint8)
