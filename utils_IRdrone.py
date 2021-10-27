@@ -213,10 +213,13 @@ def extractFlightPlan(dirPlanVol, mute=True):
     #    Liste des images de l'étude.
     #    Une liste pour les images du drone et une liste pour les images de la caméra infrarouge
     #    Chaque élément de la liste est un triplet (file name image , path name image, date image)
+    print('Liste des images de l\'étude')
     dirNameDrone = reformatDirectory(dirNameDrone, xlpath=dirPlanVol)
     dirNameIR = reformatDirectory(dirNameIR, xlpath=dirPlanVol, makeOutdir=True)
     dirNameIRdrone = reformatDirectory(dirNameIRdrone, xlpath=dirPlanVol, makeOutdir=True)
+    print('Liste des images VIS de l\'étude')
     imgListDrone = creatListImg(dirNameDrone, dateMission, typeDrone, '*', extDrone, planVol)
+    print('Liste des images IR de l\'étude')
     imgListIR = creatListImgIR(dirNameIR, '*', extIR)
     if not mute:
         if len(imgListDrone) == 0:
@@ -298,8 +301,10 @@ def creatListImg(dirName, dateMission, cameraModel, camera, typImg, planVol, deb
             """
             debug = True
             cameraModelImg = img.camera['model']
+
             if cameraModelImg == cameraModel:  # images prises par d'autres caméras. images ignorées
                 dateImg = img.date
+                print(img.name,'  dateImg  ',dateImg)
                 if (dateImg.year, dateImg.month, dateImg.day) == (dateMission.year, dateMission.month, dateMission.day):
                     j += 1
                     nameImg = imlist[i].split('\\')[len(imlist[i].split('\\')) - 1]
@@ -697,10 +702,10 @@ def reformatDirectory(di, xlpath=None, makeOutdir=False):
     raise NameError("Cannot find directory %s" % di)
 
 
-def loadFileGUI():
+def loadFileGUI(mute=True):
     Tk().withdraw()  # we don't want a full GUI, so keep the root window from appearing
     filename = askopenfilename()  # show an "Open" dialog box and return the path to the selected file
-    print(filename)
+    if not mute: print(filename)
     return filename
 
 

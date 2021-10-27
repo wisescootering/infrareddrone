@@ -27,8 +27,8 @@ if __name__ == "__main__":
     dirPlanVol = args.excel
     if dirPlanVol is None or not os.path.isfile(dirPlanVol):
         print(Style.CYAN + "File browser")
-        dirPlanVol = IRd.loadFileGUI()
-    versionIRdrone = '1.04'  # 11 october 2021
+        dirPlanVol = IRd.loadFileGUI(mute=False)
+    versionIRdrone = '1.05'  # 25 october 2021
     # ------------ options test rapide -----------------
     seaLevel = True  # pour calculer l'altitude du sol  ... API internet (peut échouer si serveur indispo)
     saveGpsTrack = True  # pour sauvegarder la trajectoire du drone dans un fichier gps au format Garmin@
@@ -46,9 +46,9 @@ if __name__ == "__main__":
     # 1 > Extraction des données du vol
     #     Date, heure, dossier d'images, synchro des horloges, type du drone et de la caméra IR ...
     #     Construction de la liste des images prises lors du vol (Drone et IR)
-
+    print(Style.CYAN + '------ Read flight plan' + Style.RESET)
     planVol, imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR, dirNameIRdrone = \
-        IRd.extractFlightPlan(dirPlanVol, mute=True)
+        IRd.extractFlightPlan(dirPlanVol, mute=False)
 
     # ----------------------------------------------------
     # 2 > Appariement des images des deux caméras
@@ -76,10 +76,10 @@ if __name__ == "__main__":
     #           on fixe arbitrairement timeDeviation = timeDeviationFactor * 2.1
     #           (2s est le delai mini d'enregistrement du  DJI ).
     #
-
+    print(Style.CYAN + '------ Matching images VIS & NIR' + Style.RESET)
     listImgMatch, DtImgMatch= IRd.matchImagesFlightPath(imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR,
                                              deltaTimeIR, timeLapseIR, planVol['mission']['date'],
-                                             timeDeviationFactor=0.48, mute=True)
+                                             timeDeviationFactor=0.98, mute=True)
     # ------ Calcule de la trajectoire du drone et du profil du vol
     #        Génère la trajectoire au format Garmin gpx
 
@@ -96,7 +96,7 @@ if __name__ == "__main__":
     #     Construction des images RiV  et NDVI
     # ----------------------------------------------------
     print(Style.MAGENTA +  'Le traitement de ces %i images va durer %.2f h.  Voulez vous continuer  ?'\
-          %(len(listImgMatch), len(listImgMatch)/60.)+ Style.RESET)
+          %(len(listImgMatch), 1.36*len(listImgMatch)/60.)+ Style.RESET)
     autoRegistration = IRd.answerYesNo('Oui (1) |  Non (0):')
     # listImgMatch = [(vis.replace(".DNG", "_PL4_DIST.tif"), nir) for vis, nir in listImgMatch]
     if autoRegistration:
