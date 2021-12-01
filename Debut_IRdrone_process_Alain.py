@@ -48,7 +48,7 @@ if __name__ == "__main__":
     #     Construction de la liste des images prises lors du vol (Drone et IR)
     print(Style.CYAN + '------ Read flight plan' + Style.RESET)
     planVol, imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR, dirNameIRdrone = \
-        IRd.extractFlightPlan(dirPlanVol, mute=False)
+        IRd.extractFlightPlan(dirPlanVol, mute=True)
 
     # ----------------------------------------------------
     # 2 > Appariement des images des deux caméras
@@ -79,7 +79,7 @@ if __name__ == "__main__":
     print(Style.CYAN + '------ Matching images VIS & NIR' + Style.RESET)
     listImgMatch, DtImgMatch= IRd.matchImagesFlightPath(imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR,
                                              deltaTimeIR, timeLapseIR, planVol['mission']['date'],
-                                             timeDeviationFactor=0.98, mute=True)
+                                             timeDeviationFactor=2., mute=True)
     # ------ Calcule de la trajectoire du drone et du profil du vol
     #        Génère la trajectoire au format Garmin gpx
 
