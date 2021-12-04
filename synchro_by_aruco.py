@@ -94,14 +94,14 @@ def synchronization_aruco_rotation(
         np.save(synch_dict_path[:-4], sync_dict, allow_pickle=True)
     # for cam, delta in  [("DJI_RAW" , timedelta(seconds=0.)), ("M20_RAW", timedelta(seconds=196.5))]:
     sig_list = []
-    for indx, (cam, delta, roll_offset) in  enumerate([("DJI_RAW" , timedelta(seconds=delta), 0.), ("M20_RAW", timedelta(seconds=0.), 1.)]):
+    for indx, (cam, _delta, roll_offset) in  enumerate([("DJI_RAW" , timedelta(seconds=delta), 0.), ("M20_RAW", timedelta(seconds=0.), 1.)]):
         cam_dat = np.array([[el["date"],  el["angle"]] for el in sync_dict[cam]])
         angle_list = cam_dat[:, 1]
         modulo = 360*(np.abs(angle_list[1:]-angle_list[:-1])>270.) * (-np.sign(angle_list[1:]-angle_list[:-1]))
         angle_list[1:] += np.cumsum(modulo)+roll_offset
         # plt.plot(cam_dat[:, 0]+delta, angle_list, "-o", label="{} - delta {}".format(cam, float(delta.seconds + delta.microseconds/1E6)))
-        sig_list.append(imagepipe.Signal(cam_dat[:, 0], angle_list, label="{}".format(cam), color=["k--.", "c-o"][indx]))
-    signalplotshift(sig_list)
+        sig_list.append(imagepipe.Signal(cam_dat[:, 0]+_delta, angle_list, label="{}".format(cam), color=["k--.", "c-o"][indx]))
+    signalplotshift(sig_list, init_delta=delta)
         # imagepipe.Signal(x, x, "-b", "base signal"),
     # imagepipe.Signal(x, x, "-b", "ref signal"),
     # plt.ylabel("Angle")
@@ -218,13 +218,13 @@ def aruco_test_image():
     return image
 
 
-def signalplotshift(sigList):
+def signalplotshift(sigList, init_delta=0.):
     class Shift(imagepipe.ProcessBlock):
         def apply(self, sig, shift, **kwargs):
             out = copy.deepcopy(sig)
             out.x = sig.x + timedelta(seconds=shift)
             out.color ="orange"
-            out.label = sig.label + " delay: {:.1f}s".format(shift)
+            out.label = sig.label + " delay: {:.1f}s".format(shift+init_delta)
             return out
 
     AMPLI = Shift(
@@ -256,14 +256,14 @@ if __name__ == "__main__":
 
 
     synchronization_aruco_rotation(
-        folder =r"D:\Synchro_v3",
+        folder =  r"C:\Air-Mission\FLY-20211109-Blassac-1ms\Synchro Horloges" ,#r"D:\Synchro_v3",
         # camera_definition=[("*.JPG", "M20_RAW") , ("101_0394/*.DNG", "DJI_RAW")]
         # camera_definition=[("DJI/*/*/*.JPG", "DJI_RAW"), ("*.JPG", "M20_RAW")],
         # camera_definition=[("DJI/*/*.JPG", "DJI_RAW"), ("IR/*.JPG", "M20_RAW")],
-        camera_definition=[("DJI/*/*/*.DNG", "DJI_RAW"), ("IR/*.JPG", "M20_RAW")],
-
+        # camera_definition=[("DJI/*/*/*.DNG", "DJI_RAW"), ("IR/*.JPG", "M20_RAW")],
+        camera_definition=[("DJI*.JPG", "DJI_RAW"), ("2021*.JPG", "M20_RAW")],
         # camera_definition=[("DJI/*/*.JPG", "DJI_RAW"), ("IR/*.JPG", "M20_RAW")],
-        delta=201.5
+        delta= 3600. #201.5+3600.
     )#DJI\Hyperlapse\101_0414
 
 
