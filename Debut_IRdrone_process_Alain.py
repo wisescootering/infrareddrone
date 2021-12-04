@@ -28,7 +28,7 @@ if __name__ == "__main__":
     if dirPlanVol is None or not os.path.isfile(dirPlanVol):
         print(Style.CYAN + "File browser")
         dirPlanVol = IRd.loadFileGUI(mute=False)
-    versionIRdrone = '1.05'  # 25 october 2021
+    versionIRdrone = '1.05'  # 01 december 2021
     # ------------ options test rapide -----------------
     seaLevel = True  # pour calculer l'altitude du sol  ... API internet (peut échouer si serveur indispo)
     saveGpsTrack = True  # pour sauvegarder la trajectoire du drone dans un fichier gps au format Garmin@
@@ -77,14 +77,16 @@ if __name__ == "__main__":
     #           (2s est le delai mini d'enregistrement du  DJI ).
     #
     print(Style.CYAN + '------ Matching images VIS & NIR' + Style.RESET)
-    listImgMatch, DtImgMatch= IRd.matchImagesFlightPath(imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR,
-                                             deltaTimeIR, timeLapseIR, planVol['mission']['date'],
-                                             timeDeviationFactor=2., mute=True)
-    # ------ Calcule de la trajectoire du drone et du profil du vol
+    listImgMatch, DtImgMatch, listdateMatch = IRd.matchImagesFlightPath(imgListDrone, deltaTimeDrone, timeLapseDrone,
+                                                                        imgListIR,
+                                                                        deltaTimeIR, timeLapseIR,
+                                                                        planVol['mission']['date'],
+                                                                        timeDeviationFactor=2., mute=True)
+    # ------ Calcule  la trajectoire du drone et le profil du vol
     #        Génère la trajectoire au format Garmin gpx
 
     print(Style.CYAN + '------ Calculation of drone trajectory and flight profile' + Style.RESET)
-    flightPlanSynthesis = IRd.summaryFlight(listImgMatch, DtImgMatch, planVol, seaLevel=seaLevel,
+    flightPlanSynthesis = IRd.summaryFlight(listImgMatch, DtImgMatch, listdateMatch, planVol, seaLevel=seaLevel,
                                             dirSaveFig=osp.dirname(dirPlanVol), mute=True)
     IRd.writeSummaryFlight(flightPlanSynthesis, dirPlanVol, saveExcel=saveSummary)
     if saveGpsTrack:
@@ -95,10 +97,10 @@ if __name__ == "__main__":
     #     Recalage des paires d'images Vi et IR
     #     Construction des images RiV  et NDVI
     # ----------------------------------------------------
-    print(Style.MAGENTA +  'Le traitement de ces %i images va durer %.2f h.  Voulez vous continuer  ?'\
-          %(len(listImgMatch), 1.36*len(listImgMatch)/60.)+ Style.RESET)
+    print(Style.MAGENTA + 'Le traitement de ces %i images va durer %.2f h.  Voulez vous continuer  ?' \
+          % (len(listImgMatch), 1.36 * len(listImgMatch) / 60.) + Style.RESET)
     autoRegistration = IRd.answerYesNo('Oui (1) |  Non (0):')
-    #listImgMatch = [(vis.replace(".DNG", "_PL4_DIST.tif"), nir) for vis, nir in listImgMatch]
+    # listImgMatch = [(vis.replace(".DNG", "_PL4_DIST.tif"), nir) for vis, nir in listImgMatch]
     if autoRegistration:
         print(Style.CYAN + '------ automatic_registration.process_raw_pairs' + Style.RESET)
         automatic_registration.process_raw_pairs(listImgMatch[::1], out_dir=dirNameIRdrone)

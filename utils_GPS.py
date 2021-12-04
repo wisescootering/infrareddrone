@@ -450,7 +450,7 @@ def writeGPX(listImgMatch, dirNameVol, dateEtude, mute=True):
         Construction d'un fichier gpx contenant le tracé du plan de vol
         Il y a au début une tres grosse étiquette !!
     """
-
+    print(Style.CYAN + '------ Write Garmin .gpx file' + Style.RESET)
     #  mise en forme de la date pour le format gpx Garmin
     if dateEtude.month < 10:
         monthGpx = str('0' + str(dateEtude.month))

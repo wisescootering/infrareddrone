@@ -27,11 +27,8 @@ from datetime import timedelta
 # -----   Convertisseurs de dates   Exif<->Python  Excel->Python    ------
 def dateExcelString2Py(dateTimeOriginal):
     """
-
     :param dateTimeOriginal: date  d'une image en format string
     :return: datePhotoPython     (datetime python)
-
-
     """
     imgYear = int(dateTimeOriginal[0:4])
     imgMonth = int(dateTimeOriginal[5:7])
@@ -56,7 +53,6 @@ def dateExcelString2Py(dateTimeOriginal):
 
 def dateExif2Py(exifTag):
     """
-
     :param exifTag: données Exif d'une image
     :return: datePhotoPython     (datetime python)
 
@@ -78,25 +74,13 @@ def dateExif2Py(exifTag):
     """
 
     dateTimeOriginal = exifTag.get('DateTimeOriginal')  # date exacte de la prise de vue
-    imgYear = int(dateTimeOriginal[0:4])
-    imgMonth = int(dateTimeOriginal[5:7])
-    imgDay = int(dateTimeOriginal[8:11])
-    imgHour = int(dateTimeOriginal[11:13])
-    imgMin = int(dateTimeOriginal[14:16])
-    imgSecond = int(dateTimeOriginal[17:19])
-    imgMicroSecond = 0
-    # construction de la date python
-    #  Rem: Pour accéder aux éléments individuels de la date python
-    #       datePhotoPython.year(.month | .day | .hour | .minute | .second | .microseconde)
-    #
-    datePy = datetime.datetime(imgYear, imgMonth, imgDay, imgHour, imgMin, imgSecond, imgMicroSecond)
+    datePy = dateExcelString2Py(dateTimeOriginal)
 
     return datePy
 
 
 def datePy2Exif(datePy):
     """
-
     :param datePy:    (Year, Month, Day, Hour, Minute, Second, Microsecond, timezone)
     :return: dateExif  str  format  YYYY:MM:DD hh:mm:ss
     """
@@ -107,7 +91,6 @@ def datePy2Exif(datePy):
 
 def dateExif2Excel(dateExif):
     """
-
     :param dateExif:   str format  YYYY:MM:DD hh:mm:ss
     :return: dateExcel str format  YYYY-MM-DD hh:mm:ss
     """
@@ -121,22 +104,10 @@ def dateExif2Excel(dateExif):
 
 def dateExcel2Py(dateExcel):
     """
-
     :param dateExcel:    str    format  YYYY-MM-DD hh:mm:ss
     :return: datePy     (Year, Month, Day, Hour, Minute, Second, Microsecond, timezone)
     """
-    imgYear = int(dateExcel[0:4])
-    imgMonth = int(dateExcel[5:7])
-    imgDay = int(dateExcel[8:11])
-    imgHour = int(dateExcel[11:13])
-    imgMin = int(dateExcel[14:16])
-    imgSecond = int(dateExcel[17:19])
-    imgMicroSecond = 0
-    # construction de la date python
-    #  Rem: Pour accéder aux éléments individuels de la date python
-    #       datePhotoPython.year(.month | .day | .hour | .minute | .second | .microseconde)
-    #
-    datePy = datetime.datetime(imgYear, imgMonth, imgDay, imgHour, imgMin, imgSecond, imgMicroSecond)
+    datePy =  dateExcelString2Py(dateExcel)
     return datePy
 
 
@@ -421,6 +392,7 @@ def matchImagesFlightPath(imgListDrone,
     nRejet = 0
     listImgMatch = []
     DtImgMatch = []
+    listdateMatch =[]
 
     repA, imgListA, deltaTimeA, repB, imgListB, deltaTimeB, timeDeviation = \
         matchImagesAorB(timeLapseDrone, imgListDrone, deltaTimeDrone,
@@ -444,9 +416,11 @@ def matchImagesFlightPath(imgListDrone,
             DtImgMatch.append(deltaTime[i][k])
             #  construction of the image pair IR & Vi  (with rectified DateTime of images)
             if timeLapseDrone >= timeLapseIR:
-                listImgMatch.append((imgListB[kBmatch][1], imgListA[i][1], imgListB[kBmatch][2], imgListA[i][2]))
+                listImgMatch.append((imgListB[kBmatch][1], imgListA[i][1]))
+                listdateMatch.append((imgListB[kBmatch][2], imgListA[i][2]))
             else:
-                listImgMatch.append((imgListA[i][1], imgListB[kBmatch][1], imgListA[i][2], imgListB[kBmatch][2]))
+                listImgMatch.append((imgListA[i][1], imgListB[kBmatch][1]))
+                listdateMatch.append((imgListA[i][2], imgListB[kBmatch][2]))
 
             if not mute:
                 print(Style.GREEN + 'N°', n, ' DT ', round(deltaTime[i][kBmatch], 3), 's   ',
@@ -474,7 +448,7 @@ def matchImagesFlightPath(imgListDrone,
         print(Style.RED, 'No pair of Visible-Infrared images were detected for this flight.', Style.RESET)
         sys.exit(2)
 
-    return listImgMatch, DtImgMatch
+    return listImgMatch, DtImgMatch ,listdateMatch
 
 
 
@@ -515,7 +489,7 @@ def matchImagesAorB(timeLapseDrone, imgListDrone, deltaTimeDrone, timeLapseIR,  
 # -------------------------     Synthèse de informations sur la mission      ------------------------------------------
 
 
-def summaryFlight(listImg, DtImgMatch, planVol, seaLevel=False, dirSaveFig=None, mute=True):
+def summaryFlight(listImg, DtImgMatch, listdateMatch, planVol, seaLevel=False, dirSaveFig=None, mute=True):
     """
     :param listImg:      list of image pairs VI/IR matched at the same point
     :param mute:
@@ -569,7 +543,7 @@ def summaryFlight(listImg, DtImgMatch, planVol, seaLevel=False, dirSaveFig=None,
         listPtGPS.append((img.gps['latitude'][4], img.gps['longitude'][4]))
         listCoordGPS.append((img.gps['latitude'][4], img.gps['longitude'][4], img.gps['altitude']))
 
-        dateVi.append(listImg[i][2])
+        dateVi.append(listdateMatch[i][0])
 
     if seaLevel:
         # take-off point altitude relative to sea level
@@ -657,9 +631,10 @@ def writeSummaryFlight(flightPlanSynthesis, pathName, saveExcel=False):
     """
     pathName = os.path.join(os.path.join(os.path.dirname(pathName)), 'FlightSummary.xlsx')
     if os.path.isfile(pathName):
+        print(Style.CYAN + '------  Write file FlightSummary.xlsx' + Style.RESET)
         pass
     else:
-        print(Style.YELLOW + ' Create file FlightSummary.xlsx' + Style.RESET)
+        print(Style.YELLOW + '------  Create file FlightSummary.xlsx' + Style.RESET)
         wb = Workbook()
         ws = wb.active
         ws.title = "Summary"
@@ -690,7 +665,7 @@ def writeSummaryFlight(flightPlanSynthesis, pathName, saveExcel=False):
         sheet.protection.sheet = False
         workbook.save(pathName)
         workbook.close()
-        print(Style.GREEN + 'Ecriture du résumé du vol dans %s  terminée.' % pathName + Style.RESET)
+        print(Style.GREEN + ' %s  successfully saved.' % pathName + Style.RESET)
 
 
 def headColumnSummaryFlight():
