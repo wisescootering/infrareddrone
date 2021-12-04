@@ -1,0 +1,24 @@
+<cameraModelDB>
+     <version>19</version>
+     <cameras>
+          <camera name="FC3170_4.5_4000x3000">
+               <imageWidth>4000</imageWidth>
+               <imageHeight>3000</imageHeight>
+               <pixelSize>2.4</pixelSize>
+               <principalPointXmm>6.54</principalPointXmm>
+               <principalPointYmm>4.348008</principalPointYmm>
+               <lensType>perspective</lensType>
+               <focalLengthmm>10.633008</focalLengthmm>
+               <radialK1>0</radialK1>
+               <radialK2>0</radialK2>
+               <radialK3>0</radialK3>
+               <tangentialT1>0</tangentialT1>
+               <tangentialT2>0</tangentialT2>
+               <bandConfig>
+                   <band name="Red" centralWaveLength="660" width="0"/>
+                   <band name="Green" centralWaveLength="550" width="0"/>
+                   <band name="Blue" centralWaveLength="470" width="0"/>
+               </bandConfig>
+          </camera>
+     </cameras>
+ </cameraModelDB>
