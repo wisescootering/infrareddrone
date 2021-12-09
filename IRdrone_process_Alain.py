@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=C0103, C0301, W0703
 """
-Created on 2021-10-05 19:17:16
-
+Created on 2021-10-12 19:02:16
+v 1.05
 @authors: balthazar/alain
 """
 
@@ -18,9 +18,9 @@ import automatic_registration
 
 if __name__ == "__main__":
 
-    # ----------------------------------------------------
+    # ------------------------------------------------------------------------------------------------------------
     # 0 > Choix interactif de la mission
-    #
+    # ------------------------------------------------------------------------------------------------------------
     parser = argparse.ArgumentParser(description='Process Flight Path excel')
     parser.add_argument('--excel', metavar='excel', type=str, help='path to the flight path xlsx')
     args = parser.parse_args()
@@ -31,26 +31,28 @@ if __name__ == "__main__":
     versionIRdrone = '1.05'  # 01 december 2021
     # ------------ options test rapide -----------------
     seaLevel = True  # pour calculer l'altitude du sol  ... API internet (peut échouer si serveur indispo)
-    saveGpsTrack = True  # pour sauvegarder la trajectoire du drone dans un fichier gps au format Garmin@
+    saveGpsTrack = False  # pour sauvegarder la trajectoire du drone dans un fichier gps au format Garmin@
     saveSummary = True  # pour sauvegarder la liste des paires ainsi que les coordonnées GPS dans un fichier Excel
     seeDualImages = False  # pour vérifier visuellement les appariements sur l'écran (en phase de test)
     autoRegistration = False  # pour lancer effectivement le traitement ... choix interactif plus bas
 
-    # ----------------------------------------------------
+    # --------------------------------------------------------------------------------------------------------------
     #        Début du programme
+    # --------------------------------------------------------------------------------------------------------------
     timeDebut = datetime.datetime.now()
     startTime = time.process_time()
     print(Style.CYAN + 'Start IRdrone-v%s  at  %s ' % (versionIRdrone, timeDebut.time()) + Style.RESET)
 
-    # ----------------------------------------------------
+    # --------------------------------------------------------------------------------------------------------------
     # 1 > Extraction des données du vol
     #     Date, heure, dossier d'images, synchro des horloges, type du drone et de la caméra IR ...
     #     Construction de la liste des images prises lors du vol (Drone et IR)
+    # --------------------------------------------------------------------------------------------------------------
     print(Style.CYAN + '------ Read flight plan' + Style.RESET)
     planVol, imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR, dirNameIRdrone = \
         IRd.extractFlightPlan(dirPlanVol, mute=True)
 
-    # ----------------------------------------------------
+    # --------------------------------------------------------------------------------------------------------------
     # 2 > Appariement des images des deux caméras
     #     On cherche les paires d'images Vi et IR prises au même instant.
     #     On peut éventuellement visualiser les paires d'images  IR et Vi.
@@ -75,7 +77,7 @@ if __name__ == "__main__":
     #           Si pas de time lapse (photos DJI prises à la volée)
     #           on fixe arbitrairement timeDeviation = timeDeviationFactor * 2.1
     #           (2s est le delai mini d'enregistrement du  DJI ).
-    #
+    # -------------------------------------------------------------------------------------------------------------
     print(Style.CYAN + '------ Matching images VIS & NIR' + Style.RESET)
     listImgMatch, DtImgMatch, listdateMatch = IRd.matchImagesFlightPath(imgListDrone, deltaTimeDrone, timeLapseDrone,
                                                                         imgListIR,
@@ -92,12 +94,12 @@ if __name__ == "__main__":
     if saveGpsTrack:
         uGPS.writeGPX(listImgMatch, dirNameIRdrone, planVol['mission']['date'], mute=True)  # save GPS Track
 
-    # -----------------------------------------------------
-    #  3 > Traitement des images
+    # -------------------------------------------------------------------------------------------------------------
+    # 3 > Traitement des images
     #     Recalage des paires d'images Vi et IR
     #     Construction des images RiV  et NDVI
-    # ----------------------------------------------------
-    print(Style.MAGENTA + 'Le traitement de ces %i images va durer %.2f h.  Voulez vous continuer  ?' \
+    # -------------------------------------------------------------------------------------------------------------
+    print(Style.MAGENTA + 'Le traitement de ces %i images va durer %.2f h.  Voulez vous continuer  ?'
           % (len(listImgMatch), 1.36 * len(listImgMatch) / 60.) + Style.RESET)
     autoRegistration = IRd.answerYesNo('Oui (1) |  Non (0):')
     # listImgMatch = [(vis.replace(".DNG", "_PL4_DIST.tif"), nir) for vis, nir in listImgMatch]
@@ -108,10 +110,13 @@ if __name__ == "__main__":
         print(
             Style.YELLOW + 'Warning :  automatic_registration.process_raw_pairs ... Process neutralized.' + Style.RESET)
 
-    # -----------------------------------------------------
+    # -------------------------------------------------------------------------------------------------------------
     # 4 > Résumé du traitement
-    # ----------------------------------------------------
+    # -------------------------------------------------------------------------------------------------------------
+
+    # -------------------------------------------------------------------------------------------------------------
     #        Fin du programme
+    # -------------------------------------------------------------------------------------------------------------
     timeFin = datetime.datetime.now()
     stopTime = time.process_time()
     tempsExe = stopTime - startTime

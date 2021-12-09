@@ -11,13 +11,14 @@ import irdrone.process as pr
 import irdrone.utils as ut
 from irdrone.utils import Style
 import utils_GPS as uGPS
+import utils_IRdrone_Plot as IRdplt
 import os
+import os.path as osp
 import sys
 from tkinter import Tk
 from tkinter.filedialog import askopenfilename
 from operator import itemgetter
 import datetime
-import matplotlib.pyplot as plt
 import openpyxl
 from openpyxl import Workbook
 import numpy as np
@@ -50,6 +51,7 @@ def dateExcelString2Py(dateTimeOriginal):
     datePy = datetime.datetime(imgYear, imgMonth, imgDay, imgHour, imgMin, imgSecond, imgMicroSecond)
 
     return datePy
+
 
 def dateExif2Py(exifTag):
     """
@@ -107,7 +109,7 @@ def dateExcel2Py(dateExcel):
     :param dateExcel:    str    format  YYYY-MM-DD hh:mm:ss
     :return: datePy     (Year, Month, Day, Hour, Minute, Second, Microsecond, timezone)
     """
-    datePy =  dateExcelString2Py(dateExcel)
+    datePy = dateExcelString2Py(dateExcel)
     return datePy
 
 
@@ -506,6 +508,9 @@ def summaryFlight(listImg, DtImgMatch, listdateMatch, planVol, seaLevel=False, d
         imgAltRef---------------------- altitude of the drone relative to take-off point  (DJI ref)  [m]
         distToLastPt------------------- distance to next point                                       [m]
         capToLastPt-------------------- direction to the next point relative to the geographic north [°]
+        UTM---------------------------- UTM coordinates of point P     xUTM (west>east) yUTM (south>north) [m],[m]
+        flightAngle-------------------- yaw,pitch,roll of drone        [°]
+        gimbalAngle-------------------- yaw, pitch, roll of gimbal     [°]
 
         lists the essential elements of flight after treatment by IRdrone.
         This data will be saved in the Excel file of the flight plan  (sheet "Summary")
@@ -531,6 +536,8 @@ def summaryFlight(listImg, DtImgMatch, listdateMatch, planVol, seaLevel=False, d
     distFlight = []
     dateVi = []
     UTM =[]
+    flightAngle = []
+    gimbalAngle = []
 
     maxPas = 99
     if len(listImg) < maxPas:
@@ -540,9 +547,11 @@ def summaryFlight(listImg, DtImgMatch, listdateMatch, planVol, seaLevel=False, d
 
     for i in range(len(listImg)):
         img = pr.Image(listImg[i][0])
+        finfo = img.flight_info
+        flightAngle.append((finfo["Flight Yaw"],  finfo["Flight Pitch"], finfo["Flight Roll"]))
+        gimbalAngle.append((finfo["Gimbal Yaw"], finfo["Gimbal Pitch"],  finfo["Gimbal Roll"]))
         listPtGPS.append((img.gps['latitude'][4], img.gps['longitude'][4]))
         listCoordGPS.append((img.gps['latitude'][4], img.gps['longitude'][4], img.gps['altitude']))
-
         dateVi.append(listdateMatch[i][0])
 
     if seaLevel:
@@ -552,8 +561,8 @@ def summaryFlight(listImg, DtImgMatch, listdateMatch, planVol, seaLevel=False, d
             altiTakeOff = 0
         #  Splitting the list of points into multiple segments because the number of points in the IGN API is limited.
         for k in range(0, int(round(len(listImg), 0) / pas) + 1):
-            list = listPtGPS[k * pas:(k + 1) * pas]
-            altGeo += uGPS.altitude_IGN(list)
+            listPairPtGps = listPtGPS[k * pas:(k + 1) * pas]
+            altGeo += uGPS.altitude_IGN(listPairPtGps)
             print(Style.CYAN, '%i / %.0f ' % (k, len(listImg) / pas), Style.RESET)
 
     else:
@@ -597,15 +606,32 @@ def summaryFlight(listImg, DtImgMatch, listdateMatch, planVol, seaLevel=False, d
         imgNameNIR = '%s_%s_NIR_local_.jpg' % (recordType, numeroRef)
         imgNameViR = '_VIR_local_%s_%s.jpg ' % (recordType, numeroRef)
         summary.append(
-            (imgNameViOriginal, imgNameIRoriginal, round(DtImgMatch[i], 3), imgNameVIS, imgNameNIR, imgNameViR,
+            (imgNameViOriginal, imgNameIRoriginal, round(DtImgMatch[i], 3),
+             imgNameVIS,
+             imgNameNIR,
+             imgNameViR,
              dateVi[i].__str__(),
-             round(listCoordGPS[i][0], 5), round(listCoordGPS[i][1], 5),
-             altDroneSol[i], round(altGeo[i], 3), round(listCoordGPS[i][2], 3),
-             distToLastPt, capToLastPt, round(distFlight[i], 2), UTM[i][0], UTM[i][1], UTM[i][2]
+             round(listCoordGPS[i][0], 5),
+             round(listCoordGPS[i][1], 5),
+             altDroneSol[i],
+             round(altGeo[i], 3),
+             round(listCoordGPS[i][2], 3),
+             distToLastPt,
+             capToLastPt,
+             round(distFlight[i], 2),
+             UTM[i][0],
+             UTM[i][1],
+             UTM[i][2],
+             flightAngle[i][0],
+             flightAngle[i][1],
+             flightAngle[i][2],
+             gimbalAngle[i][0],
+             gimbalAngle[i][1],
+             gimbalAngle[i][2]
              )
         )
 
-    showFlightProfil(distFlight, altDroneSealLevel, altGround, dirSaveFig=dirSaveFig, mute=False)
+    IRdplt.flightProfil_plot(distFlight, altDroneSealLevel, altGround, dirSaveFig=dirSaveFig, mute=False)
 
     if not mute:
         txtSummary = 'List of images of the flight:'
@@ -668,58 +694,84 @@ def writeSummaryFlight(flightPlanSynthesis, pathName, saveExcel=False):
         print(Style.GREEN + ' %s  successfully saved.' % pathName + Style.RESET)
 
 
+def readFlightSummary(dir_mission, mute=None):
+    """
+        Read the FlightSummary  in Excel file.
+
+    :param dir_mission: chemin du dossier qui contient les données de la mission  type= string
+    :param mute: affiche des informations si True.                                type= bool
+    :return: listSummaryFlight  liste de données pour chaque couple d'images VIS-NIR (timeDeviation, altitude, etc)
+    """
+    summaryPath = osp.join(dir_mission, "FlightSummary.xlsx")
+    txt = 'lecture des données de  ' + summaryPath
+    print(Style.CYAN +  txt + Style.RESET)
+
+    workbook = openpyxl.load_workbook(summaryPath, read_only=True, data_only=True)
+    sheet = workbook['Summary']
+    listSummaryFlight =[]
+    nulg = 2                                                # première ligne de données
+    while sheet.cell(nulg, 1).value != None:
+        imgVisName = str(sheet.cell(nulg, 2).value)         # nom de l'image VIS
+        imgNirName = str(sheet.cell(nulg, 3).value)         # nom de l'image VIS
+        timeDeviation = float(sheet.cell(nulg, 4).value)    # ecart temporel entre image NIR et VIS (en s)
+        date_string = str(sheet.cell(nulg, 8).value)        # date image VIS (rectifiee si time-lapse)  format string
+        gpsLat = float(sheet.cell(nulg, 9).value)           # latitude  dd.dddddd°
+        gpsLong = float(sheet.cell(nulg, 10).value)         # longitude dd.dddddd°
+        altiDrone2Sol = float(sheet.cell(nulg, 11).value)   # altitude du drone par rapport au sol (en m)
+        distLastPt = float(sheet.cell(nulg, 14).value)      # distance au point suivant (en m)
+        capLastPt = float(sheet.cell(nulg, 15).value)       # cap to last point (en °)
+        xUTM = float(sheet.cell(nulg, 17).value)            # coordonnee UTM x  (East)
+        yUTM = float(sheet.cell(nulg, 18).value)            # coordonnee UTM y  (North)
+        zoneUTM = int(sheet.cell(nulg, 19).value)           # UTM zone
+        yawDrone = float(sheet.cell(nulg, 20).value)        # Yaw drone     (roll NIR camera)
+        pitchDrone = float(sheet.cell(nulg, 21).value)      # Pitch drone   (pitch NIR camera)
+        rollDrone = float(sheet.cell(nulg, 22).value)       # Roll drone    (yaw NIR camera)
+        yawGimbal = float(sheet.cell(nulg, 23).value)       # Yaw gimbal    (roll VIS camera)
+        pitchGimbal = float(sheet.cell(nulg, 24).value)     # Pitch gimbal  (pitch VIS camera)
+        rollGimbal = float(sheet.cell(nulg, 25).value)      # Roll gimbal   (yaw VIS camera)
+        data = timeDeviation, altiDrone2Sol, distLastPt, capLastPt, gpsLat, gpsLong, xUTM, yUTM, date_string, \
+               yawDrone, pitchDrone, rollDrone, yawGimbal, pitchGimbal, rollGimbal,imgVisName, imgNirName
+        listSummaryFlight.append(data)
+        nulg = nulg + 1
+    workbook.close()
+
+    if not mute:
+        print(listSummaryFlight)
+
+    return listSummaryFlight
+
+
 def headColumnSummaryFlight():
     listHeadCol = ['Point',
-                   'Image                    Visible             (original)',
-                   'Image                    Infrared            (original)',
-                   'Time deviation              [s]',
+                   'Image                       Visible                 (original)',
+                   'Image                       Infrared                (original)',
+                   'Time deviation                       [s]',
                    'Image                    Visible aligned',
                    'Image                    Infrared aligned',
                    'Image                    Multi-Spectral ViR',
                    'Date of shooting.',
                    'Latitude                dd°dddddd',
                    'Longitude               dd°dddddd',
-                   'Drone Altitude     / ground         [m]',
-                   'Ground Elevation   / sea level      [m]',
-                   'Drone Altitude     / Take off       [m]',
-                   'Distance point suivant    [m]',
-                   'Cap point suivant         [°]',
-                   'Distance / Start Pt      [m]',
-                   'x UTM                          [m]',
-                   'y UTM                          [m]',
-                   'Zone UTM'
+                   'Drone Altitude     / ground          [m]',
+                   'Ground Elevation   / sea level       [m]',
+                   'Drone Altitude     / Take off        [m]',
+                   'Distance point suivant         [m]',
+                   'Cap point suivant              [°]',
+                   'Distance / Start Pt            [m]',
+                   'x UTM                                [m]',
+                   'y UTM                                [m]',
+                   'Zone UTM',
+                   'Yaw drone                            [°]',
+                   'Pitch drone                          [°]',
+                   'Roll drone                           [°]',
+                   'Yaw Gimbal                           [°]',
+                   'Pitch Gimbal                         [°]',
+                   'Roll Gimbal                          [°]'
                    ]
     return listHeadCol
 
 
-def showFlightProfil(d_list, elev_Drone, elev_Ground, dirSaveFig=None, mute=True):
-    # BASIC STAT INFORMATION
-    min_elev = min(elev_Ground)
 
-    # PLOT ELEVATION PROFILE
-    base_reg = min_elev - 10
-    plt.figure(figsize=(10, 4))
-    plt.plot(d_list, elev_Drone, '.r', label='Drone: ', linewidth=1, linestyle='dashed', markersize=0)
-    plt.plot(d_list, elev_Ground, 'tab:brown', label='Ground ')
-    plt.fill_between(d_list, elev_Ground, base_reg, color='tab:brown', alpha=0.1)
-    plt.text(d_list[0], elev_Drone[0], "Start Pt")
-    plt.text(d_list[-1], elev_Drone[-1], "End Pt")
-    plt.xlabel("Distance (m)")
-    plt.ylabel("Altitude (m)")
-    plt.grid()
-    plt.legend(fontsize='small')
-    filepath = dirSaveFig + '\\Flight profil IRdrone'
-    if dirSaveFig == None:
-        pass
-    else:
-        plt.savefig(filepath, dpi=75, facecolor='w', edgecolor='w', orientation='portrait',
-                    format=None, transparent=False,
-                    bbox_inches='tight', pad_inches=0.1, metadata=None)
-        print(Style.GREEN + 'Save flight profil in %s' % filepath + Style.RESET)
-    if not mute:
-        print(Style.YELLOW + 'Look your Drone Flight profil >>>>' + Style.RESET)
-        plt.show()
-    plt.close()
 
 
 # -------------------------           affichage écran       -----------------------------------------------------------
@@ -803,3 +855,154 @@ def answerYesNo(txt):
             else:
                 countTry += 1
                 tryAgain = True
+
+
+# ------------------    calcul a priori du pitch, yaw "grossier"  ---------------------
+
+
+def speedmeter(listSummaryFlight, timeStep=2., mute=True):
+    """
+    vector   U = u_EW e_EW + u_SN e_SN       |e_EW|=1, |e_SN|=1, e_EW.e_SN=0
+    Axe orientation  e_EW <=> West > East ,   e_SN <=> South > North
+
+        N  e_SN
+          |
+    W ----E ----> E  e_WE
+          |
+          S
+    """
+    speed_WE, speed_SN, speed = [], [], []
+    for i in range(len(listSummaryFlight)):
+        if i == 0:
+            distEW = float(listSummaryFlight[1][6]) - float(listSummaryFlight[0][6])
+            distSN = float(listSummaryFlight[1][7]) - float(listSummaryFlight[0][7])
+            dt = timeStep / 2
+        elif i >= len(listSummaryFlight) - 1:
+            distEW = float(listSummaryFlight[-1][6]) - float(listSummaryFlight[-2][6])
+            distSN = float(listSummaryFlight[-1][7]) - float(listSummaryFlight[-2][7])
+            dt = timeStep / 2
+        else:
+            distEW = float(listSummaryFlight[i + 1][6]) - float(listSummaryFlight[i - 1][6])
+            distSN = float(listSummaryFlight[i + 1][7]) - float(listSummaryFlight[i - 1][7])
+            dt = timeStep
+        u_WE = distEW / (2 * dt)
+        u_SN = distSN / (2 * dt)
+        dist = (distEW ** 2 + distSN ** 2) ** 0.5
+        U = dist / (2 * dt)
+        speed_WE.append(u_WE)
+        speed_SN.append(u_SN)
+        speed.append(U)
+        if not mute:
+            print('u_WE = ', u_WE, ' m/s     u_SN = ', u_SN, ' m/s')
+    return speed_WE, speed_SN, speed
+
+
+def projectSpeed(u_WE, u_SN, listSummaryFlight, mute=True):
+    """
+    Repère géographique:
+    e_EW vecteur  West > East          |e_EW|=1
+    e_SN vecteur  South > North        |e_SN|=1     e_EW . e_SN = 0  ; attention repère indirect (e_z vers le bas!)
+    direction : nord > 0°  ;  est > 90°  ;  sud > 180°  ;  ouest > 270°
+    Repère Drone:
+    e_2  vecteur de l'axe du drone (vers l'avant)    |e_2|=1
+    e_1  vecteur normal à l'axe du drone    |e_1|=1  ;  e_1 . e_2 =0 ; repère direct ( ez vers le haut )
+
+    """
+    speedDrone_1, speedDrone_2 = [], []
+    for i in range(len(listSummaryFlight)):
+        yaw_drone = listSummaryFlight[i][9]
+        a_WE = np.sin(np.deg2rad(float(yaw_drone)))
+        a_SN = np.cos(np.deg2rad(float(yaw_drone)))
+        u_1 = u_WE[i] * a_SN - u_SN[i] * a_WE
+        u_2 = u_WE[i] * a_WE + u_SN[i] * a_SN
+        speedDrone_1.append(u_WE[i] * a_SN - u_SN[i] * a_WE)
+        speedDrone_2.append(u_WE[i] * a_WE + u_SN[i] * a_SN)
+        if not mute:
+            print('u_1 = ', u_1, ' m/s     u_2 = ', u_2, ' m/s')
+    return speedDrone_1, speedDrone_2
+
+
+def average_Timelapse(listSummaryFlight, mute=True):
+    # période réelle du timalapse de la caméra VIS
+    tStart = dateExcelString2Py(listSummaryFlight[0][8])
+    tEnd = dateExcelString2Py(listSummaryFlight[-1][8])
+    total_FlightTime = (tEnd - tStart).total_seconds()
+    av_Timelapse = total_FlightTime / (len(listSummaryFlight) - 1)
+    if not mute:
+        txt = ' ...  Pas d\'acquisition des images VIS  ' + str(np.round(av_Timelapse, 4)) + ' s'
+        print(Style.YELLOW + txt + Style.RESET)
+    return av_Timelapse
+
+
+def average_Speed(listSummaryFlight, mute=True):
+    tStart = dateExcelString2Py(listSummaryFlight[0][8])
+    tEnd = dateExcelString2Py(listSummaryFlight[-1][8])
+    total_FlightTime = (tEnd - tStart).total_seconds()
+    distTotal = ((float(listSummaryFlight[-1][6]) - float(listSummaryFlight[0][6])) ** 2 +
+                 (float(listSummaryFlight[-1][7]) - float(listSummaryFlight[0][7])) ** 2) ** 0.5
+    averageSpeed = distTotal / total_FlightTime  # vitesse du drone   en m/s
+    if not mute:
+        txt = ' ...  Vitesse drone ' + str(averageSpeed) + ' m/s'
+        print(Style.YELLOW + txt + Style.RESET)
+    return averageSpeed
+
+
+def vitesseDansRepereDrone(listSummaryFlight, mute=False):
+    timelapse_Vis = average_Timelapse(listSummaryFlight, mute=mute)
+    u_WE, u_SN, U = speedmeter(listSummaryFlight, timeStep=timelapse_Vis, mute=mute)
+    u_1, u_2 = projectSpeed(u_WE, u_SN, listSummaryFlight, mute=mute)
+    return u_1, u_2
+
+
+def interpolationAngle(motion_list_drone, listSummaryFlight, i, timelapse_Vis, idx=1):
+    """
+    Interpolation linéaire de l'angle du drone à l'instant où l'image NIR a ete prise.
+    dt = tk-t où tk heure camera VIS et t heure caméra NIR.
+    Interpolation "vers l'avant" si dt<0.
+    """
+    dt = float(listSummaryFlight[i][0])
+    if i == 1 or i == len(listSummaryFlight) - 1:
+        alpha = motion_list_drone[i][idx]
+    elif dt < 0:
+        alpha = (motion_list_drone[i][idx] * (dt / timelapse_Vis + 1) -
+                 motion_list_drone[i + 1][idx] * dt / timelapse_Vis)
+    else:
+        alpha = (motion_list_drone[i - 1][idx] * dt / timelapse_Vis -
+                 motion_list_drone[i][idx] * (dt / timelapse_Vis - 1))
+    return alpha, dt
+
+
+def angleDeviation(listSummaryFlight, motion_list_drone, motion_list_cameraDJI, u, idx=1):
+    """
+    u  composante de la vitesse    u = U.e_idx
+    idx=1    Yaw    (le roll du drone correspond au yaw de la caméra NIR!)
+    idx=2    Pitch  (attention offset de 90° pour le DJI)
+    e_2  vecteur de l'axe du drone (vers l'avant)    |e_2|=1
+    e_1  vecteur normal à l'axe du drone    |e_1|=1  ;  e_1 . e_2 =0 ; repère direct
+    """
+    mute = True
+    angle_Theorique = []
+    if len(listSummaryFlight) != len(motion_list_drone):
+        txt = 'CRITICAL: Il faut relancer le process' + str(len(listSummaryFlight)) + '<>' + str(len(motion_list_drone))
+        print(Style.RED + txt + Style.RESET)
+        exit()
+    timelapse_Vis = average_Timelapse(listSummaryFlight, mute=mute)
+    for i in range(len(listSummaryFlight)):
+        alpha, dt = interpolationAngle(motion_list_drone, listSummaryFlight, i, timelapse_Vis, idx=idx)
+        dateImgVis = dateExcelString2Py(listSummaryFlight[i][8])
+        CnirCvis = u[i] * dt
+        H = float(listSummaryFlight[i][1])
+
+        if idx == 1:
+            thetaVis = motion_list_cameraDJI[i][idx]  # Roll Gimbal <=>  Yaw Caméra VIS
+        else:
+            thetaVis = motion_list_cameraDJI[i][idx] + 90.
+        anglePhi = np.rad2deg(np.arctan(CnirCvis / H + np.tan(np.deg2rad(thetaVis))))
+
+        anglePsi = anglePhi - alpha
+
+        data = dateImgVis, anglePsi
+        angle_Theorique.append(data)
+        # print("CnirCvis  ", CnirCvis, " H   ", H, "anglePhi ", anglePhi , "anglePsi   ",anglePsi)
+
+    return angle_Theorique
