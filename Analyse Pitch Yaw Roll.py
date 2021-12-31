@@ -51,13 +51,13 @@ def plotYawPitchRollDroneAndCameraDJI(dir_mission, utilise_cache=False, offsetPi
     # Le 7 septembre 2021 la SJCam M20 a été équipée d'une cale de +3,1°  (+ <=> vision "vers l'avant")
     date_cale = datetime.date(2021, 9, 7)
     angle_wedge = 3.1  # angle of the wedge  in degre
-    #
 
     # Estimation du défaut d'alignement de l'axe de visée caméra SJCam M20  après le 7 septembre 2021
 
     motion_list, motion_list_drone, motion_list_cameraDJI = [], [], []
     motion_list_fin_a, translat_fin_a, normal_fin_a = [], [], []
     motion_list_fin_b, translat_fin_b, normal_fin_b = [], [], []
+    yaw_Theorique, pitch_Theorique, roll_Theorique = [], [], []
     motion_nul = []
 
     image_dir = osp.join(dir_mission, "AerialPhotography")
@@ -75,36 +75,42 @@ def plotYawPitchRollDroneAndCameraDJI(dir_mission, utilise_cache=False, offsetPi
 
     if not osp.exists(motion_cache) or not utilise_cache:
 
-        listSummaryFlight = IRd.readFlightSummary(dirMission, mute=True)
+        listSummaryFlight = IRd.readFlightSummary(dirMission, mute=False)
 
         for ipath in glob.glob(osp.join(image_dir, "*.DNG")):
+
             try:
                 count1 += 1
                 mpath = glob.glob(osp.join(result_dir, osp.basename(ipath)[:-4]) + "*.npy")[0]
                 img = pr.Image(ipath)
                 print(Style.CYAN + img.name + Style.RESET)
                 finfo = img.flight_info
-
                 #  Todo securiser  cette partie   (si nb d'image DNG différent de celui dans flight summary)
-                if img.name == listSummaryFlight[count1 - 1][15]:
+                if img.name == listSummaryFlight[count1 - 1][1]:
                     pass  # print(Style.CYAN + img.name + Style.RESET)
                 else:
                     txt = str(img.name) + ' != ' + listSummaryFlight[count1 - 1][15]
                     print(Style.RED + txt + Style.RESET)
 
-                date = listSummaryFlight[count1 - 1][8]
+                date = listSummaryFlight[count1 - 1][7]
                 date = IRd.dateExcelString2Py(date)
                 # date = img.date
-
                 # roll, pitch & yaw   drone    (NIR camera)
                 mouvement_drone = [date, finfo["Flight Roll"], finfo["Flight Pitch"], finfo["Flight Yaw"]]
                 motion_list_drone.append(mouvement_drone)
                 # roll, pitch & yaw   gimbal  (VIS camera)
                 mouvement_cameraDJI = [date, finfo["Gimbal Roll"], finfo["Gimbal Pitch"], finfo["Gimbal Yaw"]]
                 motion_list_cameraDJI.append(mouvement_cameraDJI)
-                #  yaw & pitch  image NIR recalage grossier
+                #  yaw & pitch  process  image NIR recalage grossier
                 mouvement = np.load(mpath, allow_pickle=True).item()
                 motion_list.append([date, mouvement["yaw"], mouvement["pitch"]])
+                #  yaw,  pitch & roll  théoriques
+                data = date, listSummaryFlight[count1 - 1][27]
+                yaw_Theorique.append(data)
+                data = date, listSummaryFlight[count1 - 1][28]
+                pitch_Theorique.append(data)
+                data = date, listSummaryFlight[count1 - 1][29]
+                roll_Theorique.append(data)
 
                 calculDecompositionHomographie = False
                 if calculDecompositionHomographie:
@@ -116,11 +122,6 @@ def plotYawPitchRollDroneAndCameraDJI(dir_mission, utilise_cache=False, offsetPi
             except:
                 count2 += 1
                 continue
-
-        # Calcul yaw et pitch  théorique de l'image NIR
-        u_1, u_2 = IRd.vitesseDansRepereDrone(listSummaryFlight, mute=True)
-        yaw_Theorique = IRd.angleDeviation(listSummaryFlight, motion_list_drone, motion_list_cameraDJI, u_1, idx=1)
-        pitch_Theorique = IRd.angleDeviation(listSummaryFlight, motion_list_drone, motion_list_cameraDJI, u_2, idx=2)
 
         motion_list = np.array(motion_list)
         motion_list_fin_a = np.array(motion_list_fin_a)
@@ -152,8 +153,7 @@ def plotYawPitchRollDroneAndCameraDJI(dir_mission, utilise_cache=False, offsetPi
         txt = "images retenues" + str(count1 - count2) + "   images rejettées  " + str(count2)
         print(Style.CYAN + txt + Style.RESET)
 
-    else:
-        # utilisation des des mouvements du drone et des angles de correction déjà sauvegardés
+    else:  # utilisation des mouvements du drone et des angles de correction déjà sauvegardés
         print(Style.YELLOW + "Warning : utilisation du cache" + Style.RESET)
         m_cache = np.load(motion_cache, allow_pickle=True).item()
         motion_list = m_cache["motion_list"]
@@ -189,13 +189,11 @@ def plotYawPitchRollDroneAndCameraDJI(dir_mission, utilise_cache=False, offsetPi
     print(' average delta Yaw Drone/Gimbal | |= %.2f' %
           np.average(abs(-motion_list_drone[:, 3] + motion_list_cameraDJI[:, 3])))
 
-    # yaw_drone = listSummaryFlight[:, 9]
-    # print(yaw_drone)
-
-    #  Tracé des courbes
-    #
-    #    Yaw Pitch Roll
-
+# ----------------------------------------------------------------------------------------------------
+#
+#                 Tracé des courbes   Yaw Pitch Roll
+#
+# ----------------------------------------------------------------------------------------------------
     montreAngleCoarseProcess = True
     montreAngleTheorique = True
     montreEcart = True
@@ -270,12 +268,12 @@ if __name__ == "__main__":
     corrige_defaut_axe_visee = True
     if corrige_defaut_axe_visee:
         #   Pitch        Yaw
-        #   -2.03 °    0.83 °         06 septembre 2021   U = 0,5 m/s
-        #   -1.29 °    0.79 °         06 septembre 2021   U = 1,0 m/s
-        #   -X.XX °    X.XX °         08 septembre 2021   U = 1,0 m/s
-        #   -1.33 °    0.9 °         10 novembre  2021   U = 1,0 m/s
-        offsetPitch = - 1.29  # défaut d'alignement (pitch) de l'axe de visée de la caméra NIR  en °
-        offsetYaw = 0.79      # défaut d'alignement (yaw) de l'axe de visée de la caméra NIR    en °
+        #   -2.03 °    0.83 °         06 septembre 2021   U = 0,5 m/s   vent faible (très légères rafales)
+        #   -1.29 °    0.79 °         06 septembre 2021   U = 1,0 m/s   vent faible
+        #   -0.50 °    0.90 °         08 septembre 2021   U = 1,0 m/s   beaucoup de rafales de vent !
+        #   -1.33 °    0.90 °         10 novembre  2021   U = 1,0 m/s   vent très faible
+        offsetPitch = - 1.33  # défaut d'alignement (pitch) de l'axe de visée de la caméra NIR  en °
+        offsetYaw = 0.9      # défaut d'alignement (yaw) de l'axe de visée de la caméra NIR    en °
     else:
         offsetPitch = 0
         offsetYaw = 0
