@@ -15,6 +15,9 @@ import logging
 from os import mkdir
 from irdrone.utils import Style, conversionGPSdms2dd, get_polar_shading_map, contrast_stretching
 import subprocess
+from pathlib import Path
+import json
+
 RAWTHERAPEEPATH = r"C:\Program Files\RawTherapee\5.8\rawtherapee-cli.exe"
 EXIFTOOLPATH = osp.join(osp.dirname(__file__), "..", "exiftool", "exiftool.exe")
 assert osp.exists(RAWTHERAPEEPATH), "Please install raw therapee first http://www.rawtherapee.com/downloads/5.8/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
@@ -50,17 +53,24 @@ def load_dng(path, template="DJI_neutral.pp3"):
     return load_tif(out_file)
 
 
-def get_gimbal_info(pth):
-    cmd = [EXIFTOOLPATH, pth]
-    p = subprocess.run(cmd,  capture_output=True, text=True)
-    output_text = p.stdout
-    lines = output_text.split("\n")
-    selection = [li for li in lines if "Degree" in li]
-    dic = dict()
-    for li in selection:
-        key = li.split(" Degree")[0]
-        val = float(li.split(": ")[1])
-        dic[key] = val
+def get_gimbal_info(pth: Path):
+    exif_file = pth.with_suffix(".exif")
+    if exif_file.exists():
+        with open(exif_file, "r") as fi:
+            dic = json.load(fi)
+    else:
+        cmd = [EXIFTOOLPATH, pth]
+        p = subprocess.run(cmd,  capture_output=True, text=True)
+        output_text = p.stdout
+        lines = output_text.split("\n")
+        selection = [li for li in lines if "Degree" in li]
+        dic = dict()
+        for li in selection:
+            key = li.split(" Degree")[0]
+            val = float(li.split(": ")[1])
+            dic[key] = val
+        with open(exif_file, "w") as fi:
+            json.dump(dic, fi)
     return dic
 
 
@@ -136,7 +146,7 @@ class Image:
                     with open(self.path, 'rb') as f:
                         exifTag = exifread.process_file(f)
                     if self.path.lower().endswith("dng"):
-                        fligh_info = get_gimbal_info(self.path)
+                        fligh_info = get_gimbal_info(Path(self.path))
                         self.flight_info = fligh_info
                     prefix = "EXIF "
                 else:

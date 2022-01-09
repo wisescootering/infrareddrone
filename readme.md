@@ -13,7 +13,7 @@
 ### Overview
 * Drone visible camera (DJI Mavic Air 2) is used to shoots RAW images
 * An action camera with a wide FOV (SJCAM M20) which IR filter has been removed is attached under the drone.
-* Before flying a temporal synchronization procedure has to be performed to sync the 2 cameras clocks. It consists in making the drone spin above a QR code chart. Then  use the [synchro_by_aruco.py](synchro_by_aruco.py) program to manually find the synchronization delay.
+* Before flying a temporal synchronization procedure has to be performed to sync the 2 cameras clocks. It consists in making the drone spin above a QR code chart. Then  use the [synchro_by_aruco.py](synchro_by_aruco_optim.py) program to manually find the synchronization delay.
 * Then the recommended way to capture your data is to go fly with both cameras shooting in timelapse modes. 
 * Once finished, offload your SD cards from IR & Visible cameras into the same folder, create an excel based on a given template. Synchronization delta has to be provided in this excel for the system to work correctly.
 * Data can be processed by [Debut_IRdrone_process_Alain.py](`Debut_IRdrone_process_Alain.py`) to select a given excel file or by using command line interface [automatic_registration.py](automatic_registration.py) 
