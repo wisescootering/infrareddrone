@@ -42,7 +42,7 @@ ARUCO_SELECT = cv2.aruco.Dictionary_get(ARUCO_DICT["DICT_4X4_50"])
 
 def synchronization_aruco_rotation(
         folder="D:\Synchro_data",
-        out_dir  = None,
+        out_dir=None,
         camera_definition=[("*.RAW", "M20_RAW") , ("*.DNG", "DJI_RAW")],
         delta=0.,
         manual=False
@@ -105,14 +105,19 @@ def synchronization_aruco_rotation(
     #print(sync_dict['DJI_RAW'][0]['date'])
     for cle,valeur in sync_dict.items():
         for k in range(len(valeur)):
-            print(cle, " Date : ", valeur[k]['date'], "   Angle : ", valeur[k]['angle'])
+            #print(cle, " Date : ", valeur[k]['date'], "   Angle : ", valeur[k]['angle'])
             dt = (valeur[k]['date'] - sync_dict['DJI_RAW'][0]['date']).seconds
             if cle =="DJI_RAW":
-                x_A.append(dt)
+                x_A.append(float(dt))
                 y_A.append(valeur[k]['angle'])
             else:
-                x_B.append(dt)
+                x_B.append(float((dt-delta)))
                 y_B.append(valeur[k]['angle'])
+
+    y_A = angle_0_360(y_A)
+    y_B = angle_0_360(y_B)
+
+    cost_dict = {'x_A': x_A, 'y_A': y_A, 'x_B': x_B, 'y_B': y_B, 'solverOption': "linear"}
 
     # ========================================================================================================
 
@@ -122,18 +127,17 @@ def synchronization_aruco_rotation(
         cam_dat = np.array([[el["date"],  el["angle"]] for el in sync_dict[cam]])
         angle_list = cam_dat[:, 1]
 
-        #  JE NE COMPRENDS PAS LE 270°   ????
-        #  A VUE DE NEZ ON A [0°, 180°] <=> [0°, 180°] ET [-180°, 0°] <=>> [180°, 360°]
-
-        modulo = 360*(np.abs(angle_list[1:]-angle_list[:-1])>270.) * (-np.sign(angle_list[1:]-angle_list[:-1]))
+        modulo = 360*(np.abs(angle_list[1:]-angle_list[:-1])>180.) * (-np.sign(angle_list[1:]-angle_list[:-1]))
         angle_list[1:] += np.cumsum(modulo)+roll_offset
-        # plt.plot(cam_dat[:, 0]+delta, angle_list, "-o", label="{} - delta {}".format(cam, float(delta.seconds + delta.microseconds/1E6)))
+        #plt.plot(cam_dat[:, 0]+delta, angle_list, "-o", label="{} - delta {}".format(cam, float(delta.seconds + delta.microseconds/1E6)))
         sig_list.append(imagepipe.Signal(cam_dat[:, 0]+_delta, angle_list, label="{}".format(cam), color=["k--.", "c-o"][indx]))
+
+
 
     if manual:
         signalplotshift(sig_list, init_delta=delta)
 
-    return x_A, y_A, x_B, y_B
+    return cost_dict
 
 
 def aruco_detection(image, arucoDict=ARUCO_SELECT, calibration=None, show=False, debug_fig=None, title=""):
@@ -277,82 +281,101 @@ def interpol_func(x, y, option='linear'):
     return f
 
 
-def cost_function(shift_x):
-    # récupération des deux courbes à supperposer
-    # JE NE SAIS PAS PRENDRE x_A, y_A, x_B, y_B  COMME ARGUMENT CAR ...
-    # LORS DE L'APPEL DE minimize
-    x_A, y_A, x_B, y_B = \
-        synchronization_aruco_rotation \
-                (
-                folder=r"C:\Air-Mission\FLY-20211109-Blassac-1ms\Synchro Horloges",
-                camera_definition=[("DJI*.JPG", "DJI_RAW"), ("2021*.JPG", "M20_RAW")],
-                delta=3600.  # ordre de grandeur de l'écart initial (si connu)
-            )
+def cost_function(shift_x, cost_dic):
     # construct interpolator of f_A and f_B
-    f_A = interpol_func(x_A, y_A, option='linear')
-    f_B = interpol_func(x_B, y_B, option='linear')
-    cost_function = 0.
-    for i in range(len(x_A)):
-        if x_B[0] <= x_A[i] + shift_x <= x_B[-1]:
-            cost_function = cost_function + (f_A(x_A[i]) - f_B(x_A[i] + shift_x)) ** 2
-        elif x_B[0] > x_A[i] + shift_x:
-            cost_function = cost_function + (f_A(x_A[i]) - f_B(x_B[0])) ** 2  # assume f_B equal zero before x_B[O]
-        else:   # x_B[-1] < x_A[i] + shift_x
-            cost_function = cost_function + (f_A(x_A[i]) - f_B(x_B[-1])) ** 2
-    #cost_function = np.sqrt(cost_function/np.average(x_A)**2)/len(x_A)
-    cost_function = np.sqrt(cost_function) / len(x_A)
-    return cost_function
+    f_A = interpol_func(cost_dic['x_A'], cost_dic['y_A'], option=cost_dic['solverOption'])
+    f_B = interpol_func(cost_dic['x_B'], cost_dic['y_B'], option=cost_dic['solverOption'])
+    nb_pt = 1000
+    # finds common support for both functions f_A and f_B.
+    x_Ashift = np.array(cost_dic['x_A']).copy() + shift_x
+    x_C = np.linspace(max(min(x_Ashift), min(cost_dic['x_B'])),
+                         min(max(x_Ashift), max(cost_dic['x_B'])), num=nb_pt)
+    x_A = np.round(x_C.copy() - shift_x, 2)
+    cost = np.sqrt(np.sum((f_A(x_A) - f_B(x_C))**2)) / nb_pt
+    #print('Time shift = ', shift_x, '  cost   = ', cost)
+    return cost
+
+def cost_function_1(shift_x, cost_dic):
+    # construct interpolator of f_A and f_B
+    f_A = interpol_func(cost_dic['x_A'], cost_dic['y_A'], option=cost_dic['solverOption'])
+    f_B = interpol_func(cost_dic['x_B'], cost_dic['y_B'], option=cost_dic['solverOption'])
+    cost = 0.
+    for i in range(len(cost_dic['x_A'])):
+        if cost_dic['x_B'][0] <= cost_dic['x_A'][i] + shift_x <= cost_dic['x_B'][-1]:
+            cost = cost + (f_A(cost_dic['x_A'][i]) - f_B(cost_dic['x_A'][i] + shift_x)) ** 2
+        elif cost_dic['x_B'][0] > cost_dic['x_A'][i] + shift_x:
+            cost = cost + (f_A(cost_dic['x_A'][i]) - f_B(cost_dic['x_B'][0])) ** 2
+        else:
+            cost = cost + (f_A(cost_dic['x_A'][i]) - f_B(cost_dic['x_B'][-1])) ** 2
+    cost = np.sqrt(cost) / len(cost_dic['x_A'])
+    return cost
 
 
-def fitPlot(x_A, y_A, x_B, y_B, res):
+def fitPlot(data, res, delta):
     # construction des interpolateurs
-    x_fit = [x_B[i] - res.x for i in range(1, len(x_B))]
-    f_A = interpol_func(x_A, y_A, option='linear')
-    f_B = interpol_func(x_B, y_B, option='linear')
-    plt.plot(x_A, y_A, 'o:', x_B, y_B, 'o:', x_fit, f_B([x_B[i] for i in range(1, len(x_B))]), 'o-')
-    x_B_interp = domaine_interpol(x_B[0:])
+    x_fit = [data['x_B'][i] - res.x for i in range(1, len(data['x_B']))]
+    f_A = interpol_func(data['x_A'], data['y_A'], option=data['solverOption'])
+    f_B = interpol_func(data['x_B'], data['y_B'], option=data['solverOption'])
+    plt.plot(data['x_A'], data['y_A'], 'o:',
+             data['x_B'], data['y_B'], 'o:',
+             x_fit, f_B([data['x_B'][i] for i in range(1, len(data['x_B']))]), 'o-')
+    x_B_interp = domaine_interpol(data['x_B'][0:])
     plt.plot(x_B_interp, f_B(x_B_interp), '--')
     plt.legend(['data_A', 'data_B', ' B fit'], loc='best')
     plt.grid()
-    plt.title(' Time shift  = %.5f  s' % (res.x))
+    plt.title(' Time shift  = %.5f  s' % (res.x + delta))
     plt.show()
+
+def angle_0_360(angle):
+    # quadrants:  1 = [0,90°], 2 = [90°, 180°], 3 = [180°,270°], 4 = [270°,360°]
+    angle = np.array(angle)
+    w = [angle[0]] * len(angle)
+    z = [angle[0]] * len(angle)
+    for i in range(1, len(w)):
+        if angle[i] >= 0:
+            w[i] = angle[i]
+        else:
+            w[i] = 360 + angle[i]
+    for i in range(1, len(w)):
+        if w[i - 1] > 270 and w[i] < 90:     # changement de quadrant 4 > 1 (sens anti horaire)
+            z[i] = z[i - 1] + 360 + w[i] - w[i - 1]
+        elif w[i - 1] < 90 and w[i] > 270:   # changement de quadrant 1 > 4 (sens horaire)
+            z[i] = z[i - 1] - (360 - (w[i] - w[i - 1]))
+        else:
+            z[i] = z[i - 1] + w[i] - w[i - 1]
+    return list(z)
 
 
 if __name__ == "__main__":
-    x_A, y_A, x_B, y_B = \
+    delta = 3600 # ordre de grandeur de l'écart initial (si connu)
+    cost_dict = \
         synchronization_aruco_rotation\
         (
         folder=r"C:\Air-Mission\FLY-20211109-Blassac-1ms\Synchro Horloges",
         camera_definition=[("DJI*.JPG", "DJI_RAW"), ("2021*.JPG", "M20_RAW")],
-        delta=3600.,  # ordre de grandeur de l'écart initial (si connu)
+        delta=delta,
         manual = False
         )
     # --calcul du shift initial (basé sur la distance des pics des deux courbes)
-    n_A = np.argmax(y_A)
-    n_B = np.argmax(y_B)
-    shift_0 = x_B[n_B] - x_A[n_A]    # NE MARCHE PAS BIEN  CAR TROP DE MAX !
-    shift_0 = 3824                   # ON  AIDE UN PEU ...
+    n_A = np.argmax(cost_dict['y_A'])
+    n_B = np.argmax(cost_dict['y_B'])
+    shift_0 = float(cost_dict['x_B'][n_B] - cost_dict['x_A'][n_A])
     # ------- optimisation
-    #
-    # JE NE SAIS PAS COMMENT ENVOYER x_A, y_A, x_B, y_B   A cost_function  QUI NE PRENDS QUE
-    # L'ARGUMENT A MODIFIER POUR MINIMISER LE COUT  ?????
-    # D'OU L'APPEL A synchronization_aruco_rotation AUSSI DANS cost_function   ...
-    # CE QUI EST VRAIMENT CRADO !!!
-    #
-    res = minimize(cost_function, shift_0, method='Nelder-Mead', options={'xatol': 10 ** -8, 'disp': True})
+    res = minimize(cost_function, shift_0, (cost_dict), method='Nelder-Mead', options={'xatol': 10 ** -8, 'disp': True})
 
-    print('Optimum initial   Time shift  = %.5f s.  Coût %.5f \n'
-          'Optimum final     Time shift  = %.5f s.  Coût %.5f '
-          % (shift_0, cost_function(shift_0), res.x, cost_function(res.x)))
+
+    print('optimum initial      Time shift  = %.5f s.  cost = %.5f °\n'
+          'optimum final        Time shift  = %.5f s.  cost = %.5f °'
+          % (shift_0, cost_function(float(shift_0), cost_dict), res.x, cost_function(float(res.x), cost_dict)))
 
     # -------   Visualisation des résultats
-    fitPlot(x_A, y_A, x_B, y_B, res)
+    fitPlot(cost_dict, res, delta)
 
-    x_A, y_A, x_B, y_B = \
+    minimize_dict = \
         synchronization_aruco_rotation \
                 (
                 folder=r"C:\Air-Mission\FLY-20211109-Blassac-1ms\Synchro Horloges",
                 camera_definition=[("DJI*.JPG", "DJI_RAW"), ("2021*.JPG", "M20_RAW")],
-                delta=3600.,  # ordre de grandeur de l'écart initial (si connu)
+                delta=delta,
                 manual = True
             )
