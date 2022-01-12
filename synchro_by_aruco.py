@@ -10,6 +10,7 @@ import copy
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 from scipy.optimize import minimize
+from irdrone.utils import Style
 
 osp = os.path
 
@@ -95,6 +96,7 @@ def synchronization_aruco_rotation(
             sync_dict[cam] = rot_list
         np.save(synch_dict_path[:-4], sync_dict, allow_pickle=True)
 
+    delay = None
     if manual:
         sig_list = []
         for indx, (cam, _delta, roll_offset) in enumerate(
@@ -108,9 +110,10 @@ def synchronization_aruco_rotation(
             sig_list.append(imagepipe.Signal(cam_dat[:, 0] + _delta, angle_list, label="{}".format(cam),
                                              color=["k--.", "c-o"][indx]))
 
-        signalplotshift(sig_list, init_delta=delta)
+        delay = signalplotshift(sig_list, init_delta=delta)
 
-    cost_dict = buildCostDico(sync_dict, optionSolver)
+
+    cost_dict = buildCostDico(sync_dict, optionSolver, init_Delta=delay)
 
     return cost_dict
 
@@ -241,20 +244,28 @@ def signalplotshift(sigList, init_delta=0.):
         sliders=[AMPLI, ])
     ip.gui()
 
+    delay = init_delta + ip.sliders[0].values[0]
 
-def buildCostDico(sync_dict, optionSolver):
-    # estimate time shift  B to A.
-    estimDelta = (sync_dict['M20_RAW'][0]['date'] - sync_dict['DJI_RAW'][0]['date']).seconds
+    return delay
+
+def buildCostDico(sync_dict, optionSolver, init_Delta=None):
+    if init_Delta == None or init_Delta == 0.0:
+        # estimate time shift  B to A.
+        estimDelta= (sync_dict['M20_RAW'][0]['date'] - sync_dict['DJI_RAW'][0]['date']).seconds
+    else:
+        # use manual estimate time shift  B to A.
+        estimDelta = init_Delta
+
     dataDJI = np.array([[el["date"], el["angle"]] for el in sync_dict['DJI_RAW']])
     dataM20 = np.array([[el["date"], el["angle"]] for el in sync_dict['M20_RAW']])
-    # f_A(x_A)    f_B(x_B)
-    x_A = [float((dataDJI[k, 0] - sync_dict['DJI_RAW'][0]['date']).seconds) for k in range(len(dataDJI[:, 0]))]
-    x_B = [float((dataM20[k, 0] - sync_dict['DJI_RAW'][0]['date']).seconds - estimDelta) for k in range(len(dataM20[:, 0]))]
+    # f_A(t_A)    f_B(t_B)
+    t_A = np.float_([(dataDJI[k, 0] - sync_dict['DJI_RAW'][0]['date']).seconds for k in range(len(dataDJI[:, 0]))])
+    t_B = np.float_([(dataM20[k, 0] - sync_dict['DJI_RAW'][0]['date']).seconds - estimDelta for k in range(len(dataM20[:, 0]))])
     # continuity for angle
     f_A = angle_0_360(dataDJI[:, 1])
     f_B = angle_0_360(dataM20[:, 1])
 
-    cost_dict = {'x_A': x_A, 'f_A': f_A, 'x_B': x_B, 'f_B': f_B, 'solverOption': optionSolver, 'timeShift': estimDelta}
+    cost_dict = {'t_A': t_A, 'f_A': f_A, 't_B': t_B, 'f_B': f_B, 'solverOption': optionSolver, 'timeShift': estimDelta}
 
     return cost_dict
 
@@ -291,13 +302,13 @@ def interpol_func(x, y, option='linear'):
 
 def cost_function(shift_x, cost_dic):
     # construct interpolator of f_A and f_B
-    f_A = interpol_func(cost_dic['x_A'], cost_dic['f_A'], option=cost_dic['solverOption'])
-    f_B = interpol_func(cost_dic['x_B'], cost_dic['f_B'], option=cost_dic['solverOption'])
+    f_A = interpol_func(cost_dic['t_A'], cost_dic['f_A'], option=cost_dic['solverOption'])
+    f_B = interpol_func(cost_dic['t_B'], cost_dic['f_B'], option=cost_dic['solverOption'])
     nb_pt = 1000
     # finds common support for both functions f_A and f_B.
-    x_Ashift = np.array(cost_dic['x_A']).copy() + shift_x
-    x_C = np.linspace(max(min(x_Ashift), min(cost_dic['x_B'])),
-                      min(max(x_Ashift), max(cost_dic['x_B'])), num=nb_pt)
+    x_Ashift = np.array(cost_dic['t_A']).copy() + shift_x
+    x_C = np.linspace(max(min(x_Ashift), min(cost_dic['t_B'])),
+                      min(max(x_Ashift), max(cost_dic['t_B'])), num=nb_pt)
     x_A = np.round(x_C.copy() - shift_x, 2)
     cost = np.sqrt(np.sum((f_A(x_A) - f_B(x_C)) ** 2)) / nb_pt
     # print('Time shift = ', shift_x, '  cost   = ', cost)
@@ -306,36 +317,36 @@ def cost_function(shift_x, cost_dic):
 
 def cost_function_1(shift_x, cost_dic):
     # construct interpolator of f_A and f_B
-    f_A = interpol_func(cost_dic['x_A'], cost_dic['f_A'], option=cost_dic['solverOption'])
-    f_B = interpol_func(cost_dic['x_B'], cost_dic['f_B'], option=cost_dic['solverOption'])
+    f_A = interpol_func(cost_dic['t_A'], cost_dic['f_A'], option=cost_dic['solverOption'])
+    f_B = interpol_func(cost_dic['t_B'], cost_dic['f_B'], option=cost_dic['solverOption'])
     cost = 0.
-    for i in range(len(cost_dic['x_A'])):
-        if cost_dic['x_B'][0] <= cost_dic['x_A'][i] + shift_x <= cost_dic['x_B'][-1]:
-            cost = cost + (f_A(cost_dic['x_A'][i]) - f_B(cost_dic['x_A'][i] + shift_x)) ** 2
-        elif cost_dic['x_B'][0] > cost_dic['x_A'][i] + shift_x:
-            cost = cost + (f_A(cost_dic['x_A'][i]) - f_B(cost_dic['x_B'][0])) ** 2
+    for i in range(len(cost_dic['t_A'])):
+        if cost_dic['x_B'][0] <= cost_dic['t_A'][i] + shift_x <= cost_dic['x_B'][-1]:
+            cost = cost + (f_A(cost_dic['t_A'][i]) - f_B(cost_dic['t_A'][i] + shift_x)) ** 2
+        elif cost_dic['x_B'][0] > cost_dic['t_A'][i] + shift_x:
+            cost = cost + (f_A(cost_dic['t_A'][i]) - f_B(cost_dic['t_B'][0])) ** 2
         else:
-            cost = cost + (f_A(cost_dic['x_A'][i]) - f_B(cost_dic['x_B'][-1])) ** 2
-    cost = np.sqrt(cost) / len(cost_dic['x_A'])
+            cost = cost + (f_A(cost_dic['t_A'][i]) - f_B(cost_dic['t_B'][-1])) ** 2
+    cost = np.sqrt(cost) / len(cost_dic['t_A'])
     return cost
 
 
 def fitPlot(data, res):
     # construction des interpolateurs
-    x_fit = [data['x_B'][i] - res.x for i in range(1, len(data['x_B']))]
-    f_A = interpol_func(data['x_A'], data['f_A'], option=data['solverOption'])
-    f_B = interpol_func(data['x_B'], data['f_B'], option=data['solverOption'])
+    x_fit = [data['t_B'][i] - res.x for i in range(1, len(data['t_B']))]
+    f_A = interpol_func(data['t_A'], data['f_A'], option=data['solverOption'])
+    f_B = interpol_func(data['t_B'], data['f_B'], option=data['solverOption'])
     shift_graph = 100.  # Timle shift for graphic representation. Not true time
-    plt.plot(data['x_A'], data['f_A'],
+    plt.plot(data['t_A'], data['f_A'],
              color='black', linestyle='-', linewidth=1.4,
              marker='o', markersize=4, alpha=0.6)
-    plt.plot(np.array(data['x_B']).copy() + shift_graph, data['f_B'],
+    plt.plot(np.array(data['t_B']).copy() + shift_graph, data['f_B'],
              color='cyan', linestyle='-', linewidth=1.4,
              marker='o', markersize=4, alpha=0.6)
-    plt.plot(x_fit, f_B([data['x_B'][i] for i in range(1, len(data['x_B']))]),
+    plt.plot(x_fit, f_B([data['t_B'][i] for i in range(1, len(data['t_B']))]),
              color='orange', linestyle='-', linewidth=1.4,
              marker='o', markersize=2, alpha=0.6)
-    x_B_interp = domaine_interpol(data['x_B'][0:])
+    x_B_interp = domaine_interpol(data['t_B'][0:])
     plt.plot(x_B_interp + shift_graph, f_B(x_B_interp),
              color='blue', linestyle='--', linewidth=0.4)
     plt.legend(['data_A', 'data_B', ' B fit'], loc='best')
@@ -347,26 +358,39 @@ def fitPlot(data, res):
 if __name__ == "__main__":
     initDelta = 3600  # ordre de gandeur timeShift si connu
     optionSolver = 'linear'  # 'linear', 'quadratic', 'cubic'  ...
-    cost_dict = synchronization_aruco_rotation(
-                folder=r"C:\Air-Mission\FLY-20211109-Blassac-1ms\Synchro Horloges",
-                camera_definition=[("DJI*.JPG", "DJI_RAW"), ("2021*.JPG", "M20_RAW")],
-                optionSolver=optionSolver,
-                delta=initDelta,
-                manual=False
-                )
-    # --calcul du shift initial (basé sur la distance des pics des deux courbes)
-    # Attention ici la courbe B a déjà été décalée de la pré estimation cost_dict['timeShift']
-    # On est déjà près de la solution.
-    # Il est parfaitement possible à ce stade de choisir   shift_0 = 0 !
-    shift_0 = float(cost_dict['x_B'][np.argmax(cost_dict['f_A'])] - cost_dict['x_A'][np.argmax(cost_dict['f_B'])])
-    # ------- optimisation avec une méthode sans gradient
-    res = minimize(cost_function, shift_0, (cost_dict), method='Nelder-Mead', options={'xatol': 10 ** -8, 'disp': True})
+    TryAgain = True
+    while TryAgain:
+        try:
+            cost_dict = synchronization_aruco_rotation(
+                    folder=r"C:\Air-Mission\FLY-20211109-Blassac-1ms\Synchro Horloges",
+                    camera_definition=[("DJI*.JPG", "DJI_RAW"), ("2021*.JPG", "M20_RAW")],
+                    optionSolver=optionSolver,
+                    delta=initDelta,
+                    manual=False
+                    )
 
-    print('optimum initial      Time shift  = %.5f s.  cost = %.5f °\n'
-          'optimum final        Time shift  = %.5f s.  cost = %.5f °'
-          % (shift_0 + cost_dict['timeShift'], cost_function(float(shift_0), cost_dict),
-             res.x + cost_dict['timeShift'], cost_function(float(res.x), cost_dict)))
+            #shift_0 = float(cost_dict['t_B'][np.argmax(cost_dict['f_A'])] - cost_dict['t_A'][np.argmax(cost_dict['f_B'])])
+            shift_0 = 0
+        # ------- optimisation avec une méthode sans gradient
 
-    # -------   Visualisation des résultats de l'optimisation automatique
-    fitPlot(cost_dict, res)
+            res = minimize(cost_function, shift_0, (cost_dict), method='Nelder-Mead', options={'xatol': 10 ** -8, 'disp': False})
+
+            if cost_function(float(res.x), cost_dict) > 1. :
+                print(Style.RED + 'Soyez plus précis !' + Style.RESET)
+                ReDo = True
+            else:
+                print('optimum initial      Time shift  = %.5f s.  cost = %.5f °\n'
+                      'optimum final        Time shift  = %.5f s.  cost = %.5f °'
+                      % (shift_0 + cost_dict['timeShift'], cost_function(float(shift_0), cost_dict),
+                         res.x + cost_dict['timeShift'], cost_function(float(res.x), cost_dict)))
+
+                ReDo = False
+            # -------   Visualisation des résultats de l'optimisation automatique
+            fitPlot(cost_dict, res)
+            TryAgain = ReDo
+        except:
+            print(Style.RED + 'Soyez plus précis !'+ Style.RESET)
+            TryAgain = True
+
+
 
