@@ -1,3 +1,4 @@
+import config
 import process as pr
 import utils as ut
 from joblib import Memory
@@ -172,9 +173,6 @@ def calibrate(
 
     # ZHANG CAMERA CALIBRATION FITTING
     ret, mtx, dist, rvecs, tvecs, objpoints = zhangcalibcached(cornerlist, imsize, checkerboardsize=checkerboardsize)
-    # reprojection_error(objpoints, cornerlist, rvecs, tvecs, mtx, dist)
-    # forced_cal = ut.cameracalibration(camera="DJI_RAW")
-    # mtx, dist = forced_cal["mtx"], forced_cal["dist"]
     reprojection_error(objpoints, cornerlist, rvecs, tvecs, mtx, dist, imsize=imsize_full)
 
 

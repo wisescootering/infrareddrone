@@ -165,11 +165,13 @@ class Image:
                 serial_number = str(exifTag[prefix+'BodySerialNumber'])
                 timelapse = 0
                 deltatime = 0
-                self.camera = {"maker": maker,
-                             "model": model,
-                             "serial number": serial_number,
-                             "timelapse": timelapse,
-                             "deltatime": deltatime}
+                self.camera = {
+                    "maker": maker,
+                    "model": model,
+                    "serial number": serial_number,
+                    "timelapse": timelapse,
+                    "deltatime": deltatime
+                }
             except:
                 print(Style.YELLOW + "NO CAMERA IN %s"%self.path + Style.RESET)
                 self.camera = None

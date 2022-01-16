@@ -54,6 +54,7 @@ def imagepath(imgname="2020_1225_091929_004FullSpectrum.JPG", dirname=opj(osp.di
     if not isinstance(dirname, list): dirname = [dirname,]
     imgpthList = []
     for di, img in itertools.product(dirname, imgname):
+
         imgpth = opj(di, img)
         if "*" in imgpth:
             imgpthList += glob.glob(imgpth)
