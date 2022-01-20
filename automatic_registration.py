@@ -9,7 +9,7 @@ from irdrone.semi_auto_registration import manual_warp, ManualAlignment, Transpa
 from skimage import transform
 import os
 osp = os.path
-from synchronization import synchronize_data
+from synchronization.synchronization import synchronize_data
 import time
 from datetime import datetime, timedelta
 from customApplication import colorMapNDVI
