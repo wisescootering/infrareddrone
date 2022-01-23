@@ -272,7 +272,7 @@ if __name__ == "__main__":
         #   -1.29 °    0.79 °         06 septembre 2021   U = 1,0 m/s   vent faible
         #   -0.50 °    0.90 °         08 septembre 2021   U = 1,0 m/s   beaucoup de rafales de vent !
         #   -1.33 °    0.90 °         10 novembre  2021   U = 1,0 m/s   vent très faible
-        offsetPitch = - 1.33  # défaut d'alignement (pitch) de l'axe de visée de la caméra NIR  en °
+        offsetPitch = - 1.83  # défaut d'alignement (pitch) de l'axe de visée de la caméra NIR  en °
         offsetYaw = 0.9      # défaut d'alignement (yaw) de l'axe de visée de la caméra NIR    en °
     else:
         offsetPitch = 0

@@ -1037,9 +1037,9 @@ def angleDeviation(summary, flightAngle, gimbalAngle, u, timelapse_Vis, idx=1):
         H = float(summary[i][10])
 
         if idx == 2:
-            thetaVis = gimbalAngle[i][idx]  # Roll Gimbal <=>  Yaw Camera VIS
+            thetaVis = gimbalAngle[i][idx]            # Roll Gimbal <=>  Yaw Camera VIS
         else:
-            thetaVis = gimbalAngle[i][idx] + 90.  # Pitch Gimbal <=> Pitch Camera VIS
+            thetaVis = gimbalAngle[i][idx] + 90.      # Pitch Gimbal <=> Pitch Camera VIS
         anglePhi = np.rad2deg(np.arctan(CnirCvis / H + np.tan(np.deg2rad(thetaVis))))
 
         anglePsi = anglePhi - alpha

@@ -40,7 +40,7 @@ if __name__ == "__main__":
     #                    options pour les tests rapides
     # --------------------------------------------------------------------------
     seaLevel = True            # Calculer l'altitude du sol  ... API internet (peut échouer si serveur indisponible)
-    saveGpsTrack = True       # Sauvegarder la trajectoire du drone dans un fichier gps au format Garmin@
+    saveGpsTrack = True        # Sauvegarder la trajectoire du drone dans un fichier gps au format Garmin@
     saveSummary = True         # Sauvegarder la liste des paires ainsi que les coordonnées GPS dans un fichier Excel
     seeDualImages = False      # Vvérifier visuellement les appariements sur l'écran (en phase de test)
 
@@ -100,10 +100,8 @@ if __name__ == "__main__":
 
 
     IRd.writeSummaryFlight(flightPlanSynthesis, dirPlanVol, saveExcel=saveSummary)
-    #        Génère la trajectoire au format Garmin gpx
-    if saveGpsTrack:
-        uGPS.writeGPX(listImgMatch, dirNameIRdrone, planVol['mission']['date'], mute=True)  # save GPS Track
-
+    if saveGpsTrack:      # save GPS Track in Garmin format (.gpx)
+        uGPS.writeGPX(listImgMatch, os.path.dirname(dirPlanVol)+'\\Topo', planVol['mission']['date'], mute=True)
     # -------------------------------------------------------------------------------------------------------------
     # 3 > Traitement des images
     #     Recalage des paires d'images Vi et IR
@@ -111,7 +109,7 @@ if __name__ == "__main__":
     # -------------------------------------------------------------------------------------------------------------
     print(Style.YELLOW + 'The processing of these %i images will take %.2f h.  Do you want to continue?'
           % (len(listImgMatch), 1.36 * len(listImgMatch) / 60.) + Style.RESET)
-    autoRegistration = IRd.answerYesNo('Oui (1) |  Non (0):')
+    autoRegistration = IRd.answerYesNo('Yes (1) |  No (0):')
     # listImgMatch = [(vis.replace(".DNG", "_PL4_DIST.tif"), nir) for vis, nir in listImgMatch]
     if autoRegistration:
         print(Style.CYAN + '------ automatic_registration.process_raw_pairs' + Style.RESET)

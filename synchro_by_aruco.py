@@ -239,13 +239,15 @@ def fitPlot(data, res):
     x_B_interp = domaine_interpol(data['t_B'][0:])
     plt.plot(x_B_interp + shift_graph, f_B(x_B_interp),
              color='blue', linestyle='--', linewidth=0.4)
-    plt.legend(['data_A', 'data_B', ' B fit'], loc='best')
+    plt.legend(['Camera VIS', 'Camera NIR', ' NIR fit'], loc='best')
     plt.grid()
     plt.title(' Time shift  = %.2f  s' % (res.x + data['timeShift']))
     plt.show()
 
 
 if __name__ == "__main__":
+    # python.exe synchro_by_aruco.py --folder "C:\Air-Mission\FLY-20220118-Blassac-Synchro\Synchro Horloges" --vis "*.DNG" --nir "20*.RAW" --manual
+
     parser = argparse.ArgumentParser(description='Synchronize IR and Visible cameras based on Aruco')
     parser.add_argument('--folder', help='list of images', required=True)
     parser.add_argument('--vis', default="DJI*.JPG",  help='regexp for visible images, works for DNG & JPG')
