@@ -105,11 +105,17 @@ def synchronization_aruco_rotation(
             continuous_angles = continuify_angles_vectorized(cam_dat[:, 1]) + roll_offset
             sig_list.append(imagepipe.Signal(cam_dat[:, 0] + _delta, continuous_angles, label="{}".format(cam),
                                              color=["k--.", "c-o"][indx]))
-
-        delay = signalplotshift(sig_list, init_delta=delta)
+        delta_init = amplitude_Slider_DeltaTime(sync_dict)
+        delay = signalplotshift(sig_list, init_delta=delta_init)
     cost_dict = buildCostDico(sync_dict, optionSolver, init_Delta=delay)
     return cost_dict
 
+def amplitude_Slider_DeltaTime(sync_dict):
+    estim_delta = (sync_dict['M20_RAW'][0]['date'] - sync_dict['DJI_RAW'][0]['date']).seconds +\
+                  np.sign((sync_dict['M20_RAW'][0]['date'] - sync_dict['DJI_RAW'][0]['date']).seconds) *\
+                  max(((sync_dict['M20_RAW'][-1]['date'] - sync_dict['M20_RAW'][0]['date']).seconds),
+                      ((sync_dict['DJI_RAW'][-1]['date'] - sync_dict['DJI_RAW'][0]['date']).seconds))
+    return estim_delta
 
 def signalplotshift(siglist, init_delta=0.):
     class Shift(imagepipe.ProcessBlock):
@@ -117,13 +123,13 @@ def signalplotshift(siglist, init_delta=0.):
             out = copy.deepcopy(sig)
             out.x = sig.x + timedelta(seconds=shift)
             out.color = "orange"
-            out.label = sig.label + " delay: {:.1f}s".format(shift + init_delta)
+            out.label = sig.label + " delay: {:.1f}s".format(shift)
             return out
 
     delay_block = Shift(
         "Delay",
         vrange=[
-            (-280., 280., 0.),
+            (min(0, init_delta), max(0, init_delta), 0.),
         ],
         mode=[imagepipe.ProcessBlock.SIGNAL, imagepipe.ProcessBlock.SIGNAL]
     )
@@ -133,7 +139,7 @@ def signalplotshift(siglist, init_delta=0.):
         sliders=[delay_block, ])
     ip.gui()
 
-    delay = init_delta + ip.sliders[0].values[0]
+    delay = ip.sliders[0].values[0]
 
     return delay
 
@@ -221,11 +227,14 @@ def cost_function_1(shift_x, cost_dic):
     return cost
 
 
-def fitPlot(data, res):
+def fitPlot(data, res, camera_definition):
     # construction des interpolateurs
     x_fit = [data['t_B'][i] - res.x for i in range(1, len(data['t_B']))]
     f_A = interpol_func(data['t_A'], data['f_A'], option=data['solverOption'])
     f_B = interpol_func(data['t_B'], data['f_B'], option=data['solverOption'])
+    camera_A = camera_definition[0][1]
+    camera_B = camera_definition[1][1]
+    camera_Fit = camera_definition[1][1] + ' fit'
     shift_graph = 100.  # Timle shift for graphic representation. Not true time
     plt.plot(data['t_A'], data['f_A'],
              color='black', linestyle='-', linewidth=1.4,
@@ -235,11 +244,11 @@ def fitPlot(data, res):
              marker='o', markersize=4, alpha=0.6)
     plt.plot(x_fit, f_B([data['t_B'][i] for i in range(1, len(data['t_B']))]),
              color='orange', linestyle='-', linewidth=1.4,
-             marker='o', markersize=2, alpha=0.6)
+             marker='*', markersize=8, alpha=0.4)
     x_B_interp = domaine_interpol(data['t_B'][0:])
     plt.plot(x_B_interp + shift_graph, f_B(x_B_interp),
              color='blue', linestyle='--', linewidth=0.4)
-    plt.legend(['Camera VIS', 'Camera NIR', ' NIR fit'], loc='best')
+    plt.legend([camera_A, camera_B, camera_Fit], loc='best')
     plt.grid()
     plt.title(' Time shift  = %.2f  s' % (res.x + data['timeShift']))
     plt.show()
@@ -283,7 +292,7 @@ if __name__ == "__main__":
             res = minimize(cost_function, shift_0, (cost_dict), method='Nelder-Mead', options={'xatol': 10 ** -8, 'disp': False})
 
             if cost_function(float(res.x), cost_dict) > 1.:
-                print(Style.RED + 'Please be more precise when synchronizing manually !' + Style.RESET)
+                print(Style.RED + 'Please be more precise when synchronizing manually ...' + Style.RESET)
                 ReDo = True
             else:
                 print('optimum initial      Time shift  = %.5f s.  cost = %.5f °\n'
@@ -293,7 +302,7 @@ if __name__ == "__main__":
 
                 ReDo = False
             # -------   Visualisation des résultats de l'optimisation automatique
-            fitPlot(cost_dict, res)
+            fitPlot(cost_dict, res, camera_definition)
             TryAgain = ReDo
         except Exception as exc:
             print(exc)

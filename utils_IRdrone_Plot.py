@@ -46,19 +46,23 @@ def Yaw_plot(motion_list,
 
     plt.title(missionTitle )
     plt.plot(motion_list[:, 0], motion_list[:, 1],
-             color='black', linestyle='-', linewidth=1,
+             color='black', linestyle='-', linewidth=1,marker='o', markersize=1, alpha=1,
              label="yaw_imgNIR       (coarse process)    average = {:.2f}°"
              .format(np.average(motion_list[:, 1], axis=0)))
 
+
+    """
     plt.plot(motion_list[:, 0], motion_list_cameraDJI[:, 1] + offsetYaw - motion_list_drone[:, 1] ,
              color='orange', linestyle=':', linewidth=1,
              label="Theoretical yaw_imgNIR synchro   average = {:.2f}°"
              .format(np.abs(-np.average(motion_list_cameraDJI[:, 1] + offsetYaw - motion_list_drone[:, 1] , axis=0))))
+    """
 
     plt.plot(motion_list[:, 0], yaw_Theorique[:, 1] + offsetYaw,
-             color='magenta', linestyle='-', linewidth=1,
+             color='magenta', linestyle='-', linewidth=1,marker='o', markersize=1, alpha=1,
              label="Theoretical yaw_imgNIR  unsynchro  average = {:.2f}°"
              .format(np.abs(np.average(yaw_Theorique[:, 1] + offsetYaw, axis=0))))
+
 
     if traceFin_a:
         plt.plot(motion_list[:, 0], motion_list[:, 1] - motion_list_fin_a[:, 1],
@@ -87,19 +91,21 @@ def Pitch_plot(motion_list,
 
     plt.title(missionTitle )
     plt.plot(motion_list[:, 0], motion_list[:, 2],
-             color='black', linestyle=' ', linewidth=1, marker='o', markersize=4, alpha=0.4,
+             color='black', linestyle='-', linewidth=1, marker='o', markersize=1, alpha=1,
              label="pitch_imgNIR       (coarse process)    average = {:.2f}°"
              .format(np.average(motion_list[:, 2], axis=0)))
 
+    """
     plt.plot(motion_list[:, 0], motion_list_cameraDJI[:, 2] + 90. - motion_list_drone[:, 2] - offsetPitch,
              color='orange', linestyle=':', linewidth=1, marker='o', markersize=6, alpha=0.4,
              label="Theoretical pitch_imgNIR synchro   average = {:.2f}°"
              .format(np.abs(-np.average(motion_list_cameraDJI[:, 2] + 90.
                                         - motion_list_drone[:, 2]
                                         - offsetPitch, axis=0))))
+    """
 
     plt.plot(motion_list[:, 0], pitch_Theorique[:, 1] - offsetPitch,
-             color='magenta', linestyle='-', linewidth=1, marker='o', markersize=3, alpha=0.4,
+             color='magenta', linestyle='-', linewidth=1, marker='o', markersize=1, alpha=1,
              label="Theoretical pitch_imgNIR  unsynchro  average = {:.2f}°"
              .format(np.abs(np.average(pitch_Theorique[:, 1] - offsetPitch, axis=0))))
 
