@@ -433,14 +433,14 @@ def convertGPSExif_dms2GPSdd(repSign, coord):
 
 
 def printGPS(gpsLatitude, gpsLongitude, gpsAltitude):
-    stringgpsLong = "%s %d° %d\' %.5f\" " % (gpsLongitude[0], gpsLongitude[1], gpsLongitude[2], gpsLongitude[3])
-    stringgpsLat = "%s %d° %d\' %.5f\" " % (gpsLatitude[0], gpsLatitude[1], gpsLatitude[2], gpsLatitude[3])
-    stringgpsAlt = "%.1f" % gpsAltitude
+    stringgpsLong = "%s %d° %d\' %.6f\" " % (gpsLongitude[0], gpsLongitude[1], gpsLongitude[2], gpsLongitude[3])
+    stringgpsLat = "%s %d° %d\' %.6f\" " % (gpsLatitude[0], gpsLatitude[1], gpsLatitude[2], gpsLatitude[3])
+    stringgpsAlt = "%.2f" % gpsAltitude
     print("  Longitude :", stringgpsLong, " |  Latitude :", stringgpsLat, " | Altitude : ", stringgpsAlt, " m")
     return
 
 
-def writeGPX(listImgMatch, dirNameVol, dateEtude, mute=True):
+def writeGPX(listPts, dirNameVol, dateEtude, mute=True):
     """
     :param listImgMatch:
     :param dirNameVol:
@@ -465,7 +465,7 @@ def writeGPX(listImgMatch, dirNameVol, dateEtude, mute=True):
 
     #     mise en forme des coordonnées GPS pour le format gpx
     #     Il faut aussi calculer la zone GPS  définie par le domaine [maxLat,minLat]x[maxLon,minLon]
-    pointTrk, maxLat, minLat, maxLon, minLon = formatCoordGPSforGpx(listImgMatch)
+    pointTrk, maxLat, minLat, maxLon, minLon = formatCoordGPSforGpx(listPts)
 
     # affectation du nom du fichier  et d'une description
     nameTrkGPS = "IRdrone-%s-%s-%i" % (dayGpx, monthGpx, dateEtude.year)
@@ -516,7 +516,7 @@ def writeGPX(listImgMatch, dirNameVol, dateEtude, mute=True):
                                                                                                                                        "</extensions>\n" \
                                                                                                                                        "<trkseg>"
 
-    for k in range(len(listImgMatch)):
+    for k in range(len(listPts)):
         fichierGpx = fichierGpx + pointTrk[k]
 
     fichierGpx = fichierGpx + "\n</trkseg>\n" \
@@ -536,9 +536,8 @@ def writeGPX(listImgMatch, dirNameVol, dateEtude, mute=True):
     return
 
 
-def formatCoordGPSforGpx(listImgMatch):
+def formatCoordGPSforGpx(listPts):
     """
-
     :param listImgMatch: list of images pairs
     :return: pointTrk  list of GPS coordinates (str)    (format gpx Garmin)
              sample      '<trkpt 45.05022 3.89567 >
@@ -546,20 +545,15 @@ def formatCoordGPSforGpx(listImgMatch):
                           </trkpt>'
             maxLat, minLat, maxLon, minLon
     """
-    coordGPSgpxLat = []
-    coordGPSgpxLon = []
-    coordGPSgpxAlt = []
-    pointTrk = []
-    for k in range(len(listImgMatch)):
-        img = pr.Image(listImgMatch[k][0])
-        lat = img.gps['latitude'][4]
-        long = img.gps['longitude'][4]
-        alti = img.gps['altitude']
+    coordGPSgpxLat, coordGPSgpxLon, coordGPSgpxAlt, pointTrk  = [], [], [], []
+    for k in range(len(listPts)):
+        lat = listPts[k].gpsLat
+        long = listPts[k].gpsLon
+        alti = listPts[k].altGeo + listPts[k].altGround
         coordGPSgpxLat.append(lat)
         coordGPSgpxLon.append(long)
         coordGPSgpxAlt.append(alti)
         pointTrk.append("\n<trkpt lat=\"%s\" lon=\"%s\">\n<ele>%s</ele>\n</trkpt>" % (lat, long, alti))
-
     maxLat = max(coordGPSgpxLat)
     minLat = min(coordGPSgpxLat)
     maxLon = max(coordGPSgpxLon)
@@ -576,9 +570,10 @@ def TakeOff(coordGPS_TakeOff):
     """
 
     takeOff = []
-    coordGPS = (coordGPS_TakeOff.split()[1], coordGPS_TakeOff.split()[3])
-    takeOff.append(coordGPS)
+
+    takeOff.append((coordGPS_TakeOff.split()[1], coordGPS_TakeOff.split()[3]))
     alti_TakeOff = altitude_IGN(takeOff, mute=True)
+    coordGPS = (coordGPS_TakeOff.split()[1], coordGPS_TakeOff.split()[3], alti_TakeOff[0])
     print(Style.CYAN, 'Take Off  : %s   %s m' % (coordGPS_TakeOff, alti_TakeOff[0]), Style.RESET)
 
     return coordGPS, alti_TakeOff[0]

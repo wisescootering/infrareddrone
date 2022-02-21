@@ -75,7 +75,7 @@ def plotYawPitchRollDroneAndCameraDJI(dir_mission, utilise_cache=False, offsetPi
 
     if not osp.exists(motion_cache) or not utilise_cache:
 
-        listSummaryFlight = IRd.readFlightSummary(dirMission, mute=False)
+        listSummaryFlight = IRd.readFlightSummary(dirMission, mute=True)
 
         for ipath in glob.glob(osp.join(image_dir, "*.DNG")):
 
@@ -89,11 +89,11 @@ def plotYawPitchRollDroneAndCameraDJI(dir_mission, utilise_cache=False, offsetPi
                 if img.name == listSummaryFlight[count1 - 1][1]:
                     pass  # print(Style.CYAN + img.name + Style.RESET)
                 else:
-                    txt = str(img.name) + ' != ' + listSummaryFlight[count1 - 1][15]
+                    txt = str(img.name) + ' != ' + listSummaryFlight[count1 - 1][1]
                     print(Style.RED + txt + Style.RESET)
 
-                date = listSummaryFlight[count1 - 1][7]
-                date = IRd.dateExcelString2Py(date)
+                date = listSummaryFlight[count1 - 1][6]   # date on time line
+                #date = IRd.dateExcelString2Py(date)
                 # date = img.date
                 # roll, pitch & yaw   drone    (NIR camera)
                 mouvement_drone = [date, finfo["Flight Roll"], finfo["Flight Pitch"], finfo["Flight Yaw"]]
@@ -105,11 +105,11 @@ def plotYawPitchRollDroneAndCameraDJI(dir_mission, utilise_cache=False, offsetPi
                 mouvement = np.load(mpath, allow_pickle=True).item()
                 motion_list.append([date, mouvement["yaw"], mouvement["pitch"]])
                 #  yaw,  pitch & roll  théoriques
-                data = date, listSummaryFlight[count1 - 1][27]
-                yaw_Theorique.append(data)
                 data = date, listSummaryFlight[count1 - 1][28]
-                pitch_Theorique.append(data)
+                yaw_Theorique.append(data)
                 data = date, listSummaryFlight[count1 - 1][29]
+                pitch_Theorique.append(data)
+                data = date, listSummaryFlight[count1 - 1][30]
                 roll_Theorique.append(data)
 
                 calculDecompositionHomographie = False
@@ -168,7 +168,7 @@ def plotYawPitchRollDroneAndCameraDJI(dir_mission, utilise_cache=False, offsetPi
         motion_list_fin_b = m_cache["motion_list_fin_b"]
         translat_fin_b = m_cache["translat_fin_b"]
         normal_fin_b = m_cache["normal_fin_b"]
-
+    """
     dates = motion_list[:, 0]
     # détermination de l'offset théorique de l'image NIR
     date_mission = datetime.date(dates[0].year, dates[0].month, dates[0].day)
@@ -178,6 +178,8 @@ def plotYawPitchRollDroneAndCameraDJI(dir_mission, utilise_cache=False, offsetPi
         calePitchM20 = angle_wedge
     else:
         calePitchM20 = 0
+    """
+    calePitchM20 = angle_wedge
     print('average  flight_Roll %.2f°  Gimbal_Roll %.2f°' %
           (np.average(motion_list_drone[:, 1]), np.average(motion_list_cameraDJI[:, 1])))
     print('average  flight_Yaw %.2f°  Gimbal_Yaw %.2f°' %
@@ -196,7 +198,7 @@ def plotYawPitchRollDroneAndCameraDJI(dir_mission, utilise_cache=False, offsetPi
 # ----------------------------------------------------------------------------------------------------
     montreAngleCoarseProcess = True
     montreAngleTheorique = True
-    montreEcart = True
+    montreEcart = False
     montreAnalyseFourier = False
     montreRefined = False
 
@@ -271,16 +273,18 @@ if __name__ == "__main__":
         #   -2.03 °    0.83 °         06 septembre 2021   U = 0,5 m/s   vent faible (très légères rafales)
         #   -1.29 °    0.79 °         06 septembre 2021   U = 1,0 m/s   vent faible
         #   -0.50 °    0.90 °         08 septembre 2021   U = 1,0 m/s   beaucoup de rafales de vent !
-        #   -1.33 °    0.90 °         10 novembre  2021   U = 1,0 m/s   vent très faible
-        offsetPitch = - 1.83  # défaut d'alignement (pitch) de l'axe de visée de la caméra NIR  en °
-        offsetYaw = 0.9      # défaut d'alignement (yaw) de l'axe de visée de la caméra NIR    en °
+        #   -1.33 °    0.90 °         09 novembre  2021   U = 1,0 m/s   vent très faible
+        #   -1.90 °    0.50°          18 janvier   2022   U = 1,5 m/s  (hyperlapse libre)  vent nul
+        #   -3.90 °    0.40°          25 janvier   2022   U = 3,0 m/s  (hyperlapse libre)  vent nul
+        offsetPitch = - 3.9   # défaut d'alignement (pitch) de l'axe de visée de la caméra NIR  en °
+        offsetYaw = 0.4       # défaut d'alignement (yaw) de l'axe de visée de la caméra NIR    en °
     else:
         offsetPitch = 0
         offsetYaw = 0
 
     # ----------------------------------------------------
     # 1 > Trace les angles Roll, Pitch et Yaw  (roulis, tangage & lacet)
-    #     pour le drone, le gimbal et l'image NIR
+    #     pour le drone, le gimbal et l'image NIR (coarse process et théorique)
     #
 
     plotYawPitchRollDroneAndCameraDJI(dirMission,
