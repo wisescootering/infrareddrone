@@ -18,10 +18,11 @@ import argparse
 osp = os.path
 
 
-def continuify_angles_vectorized(angle_list):
+def continuify_angles_vectorized(angle_list_, forced_offset=0.):
     """Aggregate an array of absolute angles between [-180 , 180]
     into a continuous serie
     """
+    angle_list = np.mod(angle_list_.copy() + forced_offset + 180., 360.) - 180.
     modulo = 360 * (np.abs(angle_list[1:] - angle_list[:-1]) > 180.) * (-np.sign(angle_list[1:] - angle_list[:-1]))
     angle_list_continuous = angle_list.copy()
     angle_list_continuous[1:] += np.cumsum(modulo)
@@ -97,12 +98,15 @@ def synchronization_aruco_rotation(
     camera_definition=[("*.RAW", config.NIR_CAMERA), ("*.DNG", config.VIS_CAMERA)],
 ):
     delay = None
+    forced_offset = None
     if manual:
         sig_list = []
         for indx, (cam, _delta, roll_offset) in enumerate(
                 [(camera_definition[0][1], timedelta(seconds=delta), 0.), (camera_definition[1][1], timedelta(seconds=0.), 0.)]):
             cam_dat = np.array([[el["date"], el["angle"]] for el in sync_dict[cam]])
-            continuous_angles = continuify_angles_vectorized(cam_dat[:, 1]) + roll_offset
+            if forced_offset is None:
+                forced_offset = -cam_dat[0, 1]
+            continuous_angles = continuify_angles_vectorized(cam_dat[:, 1], forced_offset=forced_offset) + roll_offset
             sig_list.append(imagepipe.Signal(cam_dat[:, 0] + _delta, continuous_angles, label="{}".format(cam),
                                              color=["k--.", "c-o"][indx]))
         delta_init = amplitude_Slider_DeltaTime(sync_dict)
@@ -158,8 +162,9 @@ def buildCostDico(sync_dict, optionSolver, init_Delta=None):
     t_A = np.float_([(dataVIS[k, 0] - sync_dict['DJI_RAW'][0]['date']).seconds for k in range(len(dataVIS[:, 0]))])
     t_B = np.float_([(dataNIR[k, 0] - sync_dict['DJI_RAW'][0]['date']).seconds - estimDelta for k in range(len(dataNIR[:, 0]))])
     # continuity for angle
-    f_A = continuify_angles(dataVIS[:, 1])
-    f_B = continuify_angles(dataNIR[:, 1])
+    forced_offset = -dataVIS[0, 1]
+    f_A = continuify_angles_vectorized(dataVIS[:, 1], forced_offset=forced_offset)
+    f_B = continuify_angles_vectorized(dataNIR[:, 1], forced_offset=forced_offset)
 
     cost_dict = {'t_A': t_A, 'f_A': f_A, 't_B': t_B, 'f_B': f_B, 'solverOption': optionSolver, 'timeShift': estimDelta}
 
