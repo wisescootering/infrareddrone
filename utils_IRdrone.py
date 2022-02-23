@@ -4,7 +4,7 @@
 """
 Created on 2021-10-05 19:17:16
 version 1.05 2021-12-01
-version 1.06 2021-12-31 16:41:05.   Theoritical Yaw,Pitch,Roll for NIR images
+version 1.06 2021-12-31 16:41:05.   theoretical Yaw,Pitch,Roll for NIR images
 version 1.07 2022-02-15 18:50:00.   Class ShootPoint
 
 @authors: balthazar/alain
@@ -329,12 +329,12 @@ def creatListImgVIS(dirName, dateMission, cameraModel, camera, typImg, planVol, 
     if float(planVol['drone']['timelapse']) > 0:
         # Dates are only corrected if the images have been taken in hyperlapse.
         # For single shoot images the rectification would not make sense.
-        imgList = timelapseRectification(imgList)
+        imgList = timelapseRectification(imgList, planVol)
 
     return imgList
 
 
-def timelapseRectification(imgList):
+def timelapseRectification(imgList, planVol):
     """
     :param imgList:         [(), ...,(file name image , path name image, original date image), ..., ()]
     :return:  new_imgList   [(), ...,(file name image , path name image, rectified date image ), ..., ()]
@@ -348,16 +348,22 @@ def timelapseRectification(imgList):
 
     imgList = sorted(imgList, key=itemgetter(2), reverse=False)  # Sort according to the date of shooting.
 
-    startTime = imgList[0][2]
+    tBeginMission = planVol['mission']['date']
     stopTime = imgList[-1][2]
-    timelapseStep = (stopTime - startTime) / (len(imgList) - 1)
-    timelapseStep = timedelta(seconds=timelapseStep.seconds,
-                              microseconds=(timelapseStep.total_seconds() - timelapseStep.seconds) * 10 ** 6)
+    nbImage = int(imgList[-1][0].split('_')[-1].split('.')[0])
+
+
+    timelapseStep = round(average_Timelapse(tBeginMission, stopTime, nbImage, mute=False), 6)
+    sec = int(str(timelapseStep).split('.')[0])
+    microsec = int(str(timelapseStep).split('.')[1])
+    timelapseStep = timedelta(seconds=sec,
+                    microseconds=microsec)
+
 
     new_imgList = []
     for i in range(len(imgList)):
         # Substitution by the corrected date.
-        newDate = imgList[0][2] + i * timelapseStep
+        newDate = imgList[-1][2] - (len(imgList) - 1 - i) * timelapseStep
         new_imgList.append((imgList[i][0], imgList[i][1], newDate, imgList[i][2]))
 
     return new_imgList
@@ -386,10 +392,7 @@ def matchImagesFlightPath(imgListDrone,
     :return:  listImgMatch   [..., (imgListDrone[i][1], imgListIR[k][1]), ...]
     """
 
-    listImgMatch = []
-    DtImgMatch = []
-    listdateMatch = []
-    listPts = []
+    listImgMatch, DtImgMatch, listdateMatch,  listPts  = [], [], [], []
 
     repA, imgListA, deltaTimeA, repB, imgListB, deltaTimeB, timeDeviationMax = \
         matchImagesAorB(timeLapseDrone, imgListDrone, deltaTimeDrone, timeLapseIR, imgListIR, deltaTimeIR)
@@ -480,7 +483,7 @@ def matchImagesAorB(timeLapseDrone, imgListDrone, deltaTimeDrone, timeLapseIR, i
 
 # -------------------------     Synthèse de informations sur la mission      ------------------------------------------
 
-def spatialAttitude1(listPts, listImg):
+def spatialAttitude(listPts, listImg):
     flightAngle, gimbalAngle = [], []
     for i in range(len(listImg)):
         img = pr.Image(listImg[i][0])
@@ -651,7 +654,7 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol,
         flightAngle-------------------- yaw,pitch,roll of drone        [°]
         gimbalAngle-------------------- yaw, pitch, roll of gimbal     [°]
         motionDrone-------------------- x_1,x_2,x_3 axis of the drone; orthogonal to the axis of the drone; z axis [m]
-        theoriticalAngleIr2Vi --------- yaw,pitch,roll   [°]
+        theoreticalAngleIr2Vi --------- yaw,pitch,roll   [°]
 
 
         lists the essential elements of flight after treatment by IRdrone.
@@ -660,11 +663,11 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol,
     """
 
     print(Style.CYAN +
-          '------ Calculation of drone attitude, trajectory, flight profile and Theoritical Yaw-Pitch-Roll'
+          '------ Calculation of drone attitude, trajectory, flight profile and theoretical Yaw-Pitch-Roll'
           + Style.RESET)
 
     # ----------- Drone attitude in space. (angles drone and gimbal)
-    listPts, flightAngle, gimbalAngle = spatialAttitude1(listPts, listImg)  #
+    listPts, flightAngle, gimbalAngle = spatialAttitude(listPts, listImg)  #
 
     # ---  GPS coordinates, trajectory, take-off, altitude relative to sea level ...
     coordGPSTakeOff, altiTakeOff = uGPS.TakeOff(planVol['mission']['coord GPS Take Off'])
@@ -678,10 +681,11 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol,
         listPts[i].gpsUTM_X, listPts[i].gpsUTM_Y, listPts[i].gpsZone = \
             uGPS.geo2UTM(listPts[i].gpsLat, listPts[i].gpsLon)
 
-    timelapse_Vis = motion_in_DroneAxis(listPts, planVol['drone']['timelapse'], mute=True)
+    timelapse_Vis = motion_in_DroneAxis(listPts, planVol['drone']['timelapse'],
+                                        planVol['mission']['date'], mute=True)
 
     # -- Theoretical angles (yaw, Pitch, Roll) to overlay the infrared image on the visible image.(coarse process)
-    listPts, theoriticalPitch, theoriticalYaw, theoriticalRoll = theoriticalIrToVi(listPts, timelapse_Vis)
+    listPts, theoreticalPitch, theoreticalYaw, theoreticalRoll = theoreticalIrToVi(listPts, timelapse_Vis)
 
     # ----------  Save summary in Excel format
     if saveExcel:
@@ -864,7 +868,7 @@ def readFlightSummary(dir_mission, mute=None):
         num_pt = int(sheet.cell(nulg, 1).value)                # N° point
         imgVisName = str(sheet.cell(nulg, 2).value)            # name of image VIS
         imgNirName = str(sheet.cell(nulg, 3).value)            # name  of image NIR
-        timeDeviation = float(sheet.cell(nulg, 4).value)       # timeDeviation beetwin  image NIR et VIS (en s)
+        timeDeviation = float(sheet.cell(nulg, 4).value)       # timeDeviation between  image NIR et VIS (en s)
         dateVisString = str(sheet.cell(nulg, 5).value)         # date image VIS (rectifiee si time-lapse)  format string
         dateNirString = str(sheet.cell(nulg, 6).value)         # date image NIR (rectifiee si time-lapse)  format string
         timeLine = float(sheet.cell(nulg, 7).value)            # date image VIS mesurée en secondes  sur la time line
@@ -889,9 +893,9 @@ def readFlightSummary(dir_mission, mute=None):
         x_1 = float(sheet.cell(nulg, 26).value)  # drone motion   drone axis principal
         x_2 = float(sheet.cell(nulg, 27).value)  # drone motion
         x_3 = float(sheet.cell(nulg, 28).value)  # drone motion  # drone motion   Z axis
-        yawIr2Vi = float(sheet.cell(nulg, 29).value)  # theoritical yaw coarse process
-        pitchIr2Vi = float(sheet.cell(nulg, 30).value)  # theoritical pitch coarse process
-        rollIr2Vi = float(sheet.cell(nulg, 31).value)  # theoritical roll coarse process
+        yawIr2Vi = float(sheet.cell(nulg, 29).value)  # theoretical yaw coarse process
+        pitchIr2Vi = float(sheet.cell(nulg, 30).value)  # theoretical pitch coarse process
+        rollIr2Vi = float(sheet.cell(nulg, 31).value)  # theoretical roll coarse process
 
         data = num_pt, imgVisName, imgNirName, timeDeviation, dateVisString, dateNirString, timeLine, date_string, \
                gpsLat, gpsLong, altiDrone2Sol, altGeo, altiDrone2TakeOff, distNextPt, capNextPt, dist2StartPoint, \
@@ -1033,7 +1037,7 @@ def check_numeric(x):
 
 # ----------------------   A priori calculation of the pitch, yaw & roll "coarse".  -----------------------------------
 
-def motion_in_DroneAxis(listPts, timelapseDrone, mute=True):
+def motion_in_DroneAxis(listPts, timelapseDrone, tBeginMission, mute=True):
     """
         Geographical axes:
         e_EW vector  West > East          |e_EW|=1
@@ -1051,7 +1055,9 @@ def motion_in_DroneAxis(listPts, timelapseDrone, mute=True):
 
         """
     if float(timelapseDrone) > 0:
-        timelapse_Vis = average_Timelapse(listPts, mute=False)
+        timelapse_Vis = average_Timelapse(tBeginMission, listPts[-1].dateVis,
+                                          int(nameImageVisSummary(listPts[-1].Vis).split('_')[-1].split('.')[0]),
+                                          mute=False)
         x_WE, y_SN = motionDrone_in_GeographicAxis(listPts, mute=mute)  # motion in geographic axis
 
         for i in range(len(listPts)):
@@ -1106,27 +1112,27 @@ def motionDroneZaxis(listPts):
         listPts[i].x_3 = (listPts[i + 1].altGround - listPts[i].altGround)+(listPts[i + 1].altGeo - listPts[i].altGeo)
 
 
-def theoriticalIrToVi(listPts, timelapse_Vis):
-    #   theoritical  Yaw
+def theoreticalIrToVi(listPts, timelapse_Vis):
+    #   theoretical  Yaw
     angle = [listPts[n].rollDrone for n in range(len(listPts))]
     x = [listPts[n].x_1 for n in range(len(listPts))]
-    theoriticalYaw = theoriticalAngleDeviation(listPts, angle, x, timelapse_Vis, idx=1)
-    #   theoritical  Pitch
+    theoreticalYaw = theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, idx=1)
+    #   theoretical  Pitch
     angle = [listPts[n].pitchDrone for n in range(len(listPts))]
     x = [listPts[n].x_2 for n in range(len(listPts))]
-    theoriticalPitch = theoriticalAngleDeviation(listPts, angle, x, timelapse_Vis, idx=2)
-    #   theoritical  Roll
-    theoriticalRoll = rollDeviation(listPts, timelapse_Vis)
+    theoreticalPitch = theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, idx=2)
+    #   theoretical  Roll
+    theoreticalRoll = rollDeviation(listPts, timelapse_Vis)
 
     for i in range(len(listPts)):
-        listPts[i].yawIR2VI = theoriticalYaw[i]
-        listPts[i].pitchIR2VI = theoriticalPitch[i]
-        listPts[i].rollIR2VI = theoriticalRoll[i]
+        listPts[i].yawIR2VI = theoreticalYaw[i]
+        listPts[i].pitchIR2VI = theoreticalPitch[i]
+        listPts[i].rollIR2VI = theoreticalRoll[i]
 
-    return listPts, theoriticalPitch, theoriticalYaw, theoriticalRoll
+    return listPts, theoreticalPitch, theoreticalYaw, theoreticalRoll
 
 
-def theoriticalAngleDeviation(listPts, angle, x, timelapse_Vis, idx=0):
+def theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, idx=0):
     """
     u  composante du déplacement    x = dist . e_idx
     idx=1    Yaw    (le roll du drone correspond au yaw de la caméra NIR!)
@@ -1134,7 +1140,7 @@ def theoriticalAngleDeviation(listPts, angle, x, timelapse_Vis, idx=0):
     e_2  vecteur de l'axe du drone (vers l'avant)    |e_2|=1
     e_1  vecteur normal à l'axe du drone    |e_1|=1  ;  e_1 . e_2 =0 ; repère direct
     """
-    theoriticalAngle = []
+    theoreticalAngle = []
     for i in range(len(listPts)):
         alpha, dt = interpolationAngle(listPts, angle, i, timelapse_Vis)
         baseline = interpolationBaseLine(x, i, dt, timelapse_Vis)
@@ -1147,9 +1153,9 @@ def theoriticalAngleDeviation(listPts, angle, x, timelapse_Vis, idx=0):
 
         anglePhi = np.rad2deg(np.arctan(baseline / H + np.tan(np.deg2rad(thetaVis))))
         anglePsi = anglePhi - alpha
-        theoriticalAngle.append(anglePsi)
+        theoreticalAngle.append(anglePsi)
 
-    return theoriticalAngle
+    return theoreticalAngle
 
 
 def interpolationAngle(listPts, angle, i, timelapse_Vis):
@@ -1168,16 +1174,17 @@ def interpolationAngle(listPts, angle, i, timelapse_Vis):
     return alpha, dt
 
 
-def average_Timelapse(listPts, mute=True):
+def average_Timelapse(tStart, tEnd, nbImageMission, mute=True):
     """
     Real period of the timelapse of the VIS camera.
     # Note: for the DJI mavic Air 2 with a theoretical timelapse of 2s it takes more than 55 frames to notice a jump
         of one second in the recording dates (real timelapse ~ 2,018s)
+    The calculation is carried out over the total duration of the mission.
+    The start date of the mission is defined in the flight plan (date of the first image in the visible spectrum).
+    Note: listPts[0].dateVis is the date of the first image of the flight AFTER the synchronization phase.
     """
-    tStart = listPts[0].dateVis
-    tEnd = listPts[-1].dateVis
     total_FlightTime = (tEnd - tStart).total_seconds()
-    av_Timelapse = total_FlightTime / (len(listPts) - 1)
+    av_Timelapse = total_FlightTime / (nbImageMission - 1)
     if not mute:
         txt = '...  Visible image acquisition interval : ' + str(np.round(av_Timelapse, 6)) + ' s'
         print(Style.GREEN + txt + Style.RESET)
@@ -1224,9 +1231,9 @@ def rollDeviation(listPts, timelapse_Vis):
     """
     flightYaw = [listPts[n].yawDrone for n in range(len(listPts))]
     gimbalYaw = [listPts[n].yawGimbal for n in range(len(listPts))]
-    theoriticalRoll = []
+    theoreticalRoll = []
     for i in range(len(listPts)):
         rollInterpol_NIR, dt = interpolationAngle(listPts, flightYaw, i, timelapse_Vis)
         rollInterpol_VIS, dt = interpolationAngle(listPts, gimbalYaw, i, timelapse_Vis)
-        theoriticalRoll.append(rollInterpol_NIR - rollInterpol_VIS)
-    return theoriticalRoll
+        theoreticalRoll.append(rollInterpol_NIR - rollInterpol_VIS)
+    return theoreticalRoll

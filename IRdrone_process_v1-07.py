@@ -91,7 +91,7 @@ if __name__ == "__main__":
     #     Construction des images ViR  et NDVI.
     # -------------------------------------------------------------------------------------------------------------
     print(Style.YELLOW + 'The processing of these %i images will take %.2f h.  Do you want to continue?'
-          % (len(listImgMatch), 1.36 * len(listImgMatch) / 60.) + Style.RESET)
+          % (len(listPts), 1.36 * len(listPts) / 60.) + Style.RESET)
     autoRegistration = IRd.answerYesNo('Yes (1) |  No (0):')
     # listImgMatch = [(vis.replace(".DNG", "_PL4_DIST.tif"), nir) for vis, nir in listImgMatch]
     if autoRegistration:
