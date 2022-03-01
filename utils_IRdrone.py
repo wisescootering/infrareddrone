@@ -351,11 +351,10 @@ def timelapseRectification(imgList, planVol):
     tBeginMission = planVol['mission']['date']
     stopTime = imgList[-1][2]
     nbImage = int(imgList[-1][0].split('_')[-1].split('.')[0])
-
-
     timelapseStep = round(average_Timelapse(tBeginMission, stopTime, nbImage, mute=False), 6)
     sec = int(str(timelapseStep).split('.')[0])
-    microsec = int(str(timelapseStep).split('.')[1])
+    mic = float(str(timelapseStep)) - sec
+    microsec = int(round(mic, 6) *10**6)
     timelapseStep = timedelta(seconds=sec,
                     microseconds=microsec)
 
@@ -1057,7 +1056,7 @@ def motion_in_DroneAxis(listPts, timelapseDrone, tBeginMission, mute=True):
     if float(timelapseDrone) > 0:
         timelapse_Vis = average_Timelapse(tBeginMission, listPts[-1].dateVis,
                                           int(nameImageVisSummary(listPts[-1].Vis).split('_')[-1].split('.')[0]),
-                                          mute=False)
+                                          mute=True)
         x_WE, y_SN = motionDrone_in_GeographicAxis(listPts, mute=mute)  # motion in geographic axis
 
         for i in range(len(listPts)):

@@ -269,15 +269,17 @@ if __name__ == "__main__":
 
     corrige_defaut_axe_visee = True
     if corrige_defaut_axe_visee:
-        #   Pitch        Yaw
-        #   -2.03 °    0.83 °         06 septembre 2021   U = 0,5 m/s   vent faible (très légères rafales)
-        #   -1.29 °    0.79 °         06 septembre 2021   U = 1,0 m/s   vent faible
-        #   -0.50 °    0.90 °         08 septembre 2021   U = 1,0 m/s   beaucoup de rafales de vent !
-        #   -1.33 °    0.90 °         09 novembre  2021   U = 1,0 m/s   vent très faible
-        #   -1.90 °    0.50°          18 janvier   2022   U = 1,5 m/s  (hyperlapse libre)  vent nul
-        #   -3.90 °    0.40°          25 janvier   2022   U = 3,0 m/s  (hyperlapse libre)  vent nul
-        offsetPitch = - 3.9   # défaut d'alignement (pitch) de l'axe de visée de la caméra NIR  en °
-        offsetYaw = 0.4       # défaut d'alignement (yaw) de l'axe de visée de la caméra NIR    en °
+        # Pitch      Yaw
+        # -2.03 °  0.83 °    06 septembre 2021   U = 0,5 m/s   vent faible (très légères rafales)
+        # -1.29 °  0.79 °    06 septembre 2021   U = 1,0 m/s   vent faible
+        # -0.50 °  0.90 °    08 septembre 2021   U = 1,0 m/s   beaucoup de rafales de vent !
+        # -1.33 °  0.90 °    09 novembre  2021   U = 1,0 m/s   vent très faible
+        # -1.90 °  0.50 °    18 janvier   2022   U = 1,5 m/s  (hyperlapse libre)  vent nul
+        # -3.90 °  0.40 °    25 janvier   2022   U = 1,5 m/s  (hyperlapse libre)  vent nul
+        # -2.00 °  0.90 ° Peyrelevade partie 2 (hyperlapse libre U=1,5m/s)  très peu de vent (quelques petites rafales)
+
+        offsetPitch = - 1.9   # défaut d'alignement (pitch) de l'axe de visée de la caméra NIR  en °
+        offsetYaw = 0.9       # défaut d'alignement (yaw) de l'axe de visée de la caméra NIR    en °
     else:
         offsetPitch = 0
         offsetYaw = 0

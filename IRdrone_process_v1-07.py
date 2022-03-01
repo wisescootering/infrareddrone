@@ -51,7 +51,9 @@ if __name__ == "__main__":
     #     Construction de la liste des images prises lors du vol (Drone et IR)
     # --------------------------------------------------------------------------------------------------------------
     print(Style.CYAN + '------ Read flight plan' + Style.RESET)
-    planVol, imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR, dirNameIRdrone = \
+    planVol, \
+    imgListDrone, deltaTimeDrone, timeLapseDrone, \
+    imgListIR, deltaTimeIR, timeLapseIR, dirNameIRdrone = \
         IRd.extractFlightPlan(dirPlanVol, mute=True)
 
     print("deltaTimeIR    ", deltaTimeIR)
