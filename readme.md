@@ -8,28 +8,71 @@
 ### Set up
 
 *For practical reasons*, only **windows is supported** as of now.
+* install [Anaconda](https://www.anaconda.com/products/individual) with all default options. [Anaconda for windows, python 3.9](https://repo.anaconda.com/archive/Anaconda3-2021.11-Windows-x86_64.exe)
 * [install.bat](install.bat) will set up the right python environment for you.
 * you have to install [raw therapee](https://www.rawtherapee.com) software at the default windows location.
 
 ### Overview
 * Drone visible camera (DJI Mavic Air 2) is used to shoots RAW images
 * An action camera with a wide FOV (SJCAM M20) which IR filter has been removed is attached under the drone.
-* Before flying a temporal synchronization procedure has to be performed to sync the 2 cameras clocks. It consists in making the drone spin above a QR code chart. Then  use the [synchro_by_aruco.py](synchro_by_aruco_optim.py) program to manually find the synchronization delay.
-* Then the recommended way to capture your data is to go fly with both cameras shooting in timelapse modes. 
-* Once finished, offload your SD cards from IR & Visible cameras into the same folder, create an excel based on a given template. Synchronization delta has to be provided in this excel for the system to work correctly.
-* Data can be processed by [Debut_IRdrone_process_Alain.py](`Debut_IRdrone_process_Alain.py`) to select a given excel file or by using command line interface [automatic_registration.py](automatic_registration.py) 
+* Before flying a temporal synchronization procedure has to be performed to sync the 2 cameras clocks. It consists in making the drone spin above a QR code chart. 
+* Then the recommended way to capture your data is to fly with both cameras shooting in timelapse modes straight away. Do not kill the timelapse 
 
+## **Tutorial** : Step by step processing 
+* Once finished, offload your SD cards from IR & Visible cameras into the same folder:
+  * In `AerialPhotography` where you put all pictures from the flight phase 
+  * In `Synchro` folder where you put all picture from the synchronization phase
+* Create an excel based on the provided template, fill information.
+* There's one special field, you need to double click on `synchro.bat` and select the `Synchro` folder, copy the delay into the excel... 
+
+![synchronization validation](./illustrations/synchro.png)
+
+here you have to copy 197.23 into the excel.
+
+* Now you're ready to process your images. Double click on `run.bat` and select the excel file. 
+* Check the altitude profile displayed.
+
+![flight altitude extracted from Exif data](./illustrations/flight_altitude_profile.png)
+* Confirm you want to run processing on your images. Then be very patient, your files will be processed and stored in the `ImgIRdrone` folder.
+
+![Fused results visible and NIR to provied NDVI for instance](./illustrations/results.png)
+
+* Keep in mind that things are not perfect and there can sometimes be failures. If there's a picture which is very important, you are encouraged to re-run the processing with a manual option to assist the alignment (*next to the processed image, you can find a .bat dedicated to reprocessing your image with manual assistance : example `HYPERLAPSE_0008_REDO.bat`*)
+
+* Original metadata from the DJI drone are copied into the output file therefore these images are ready to be re-used in thirdparty software. For instance, creating a map is possible in Pix4DField in case you own a license *(I used the Trial version which is available for 15days)*
+
+![Stitching NIR images in Pix 4D fields](./illustrations/pix_4dfields.png)
 
 ## Synchronization
 
 * Aruco (=QR code) chart can be downloaded [here](https://drive.google.com/file/d/1rMB6LjY2Mi3gQDq5Mr6PrtMRRrahtkRC/view?usp=sharing) and has to be printed to A4 or A3 paper
-* [full procedure description](https://drive.google.com/drive/folders/1Uk-eWBwteD2reOCdT0kngCWgcddz4C5s?usp=sharing). is available here.
+* [full procedure description](https://drive.google.com/drive/folders/1Uk-eWBwteD2reOCdT0kngCWgcddz4C5s?usp=sharing) is available here.
 * Copy the selected synchronization images into a "Synchro" folder -> visible & NIR images (expected .RAW and .DNG files by default).
 * Double click on [synchro.bat](synchro.bat). *(Advanced users can use CLI obviously in case of other images format)* 
 * Copy paste the delay result to your configuration excel in  `cameraIR` / `deltatime` . You can then close the window.
+* Sample synchro data can be downloaded from [here](https://drive.google.com/drive/folders/10SCdV_wb57L6ODKlqpWORkE1B0559aUL?usp=sharing) 
 
 ## Alignment and Fusion
-* 
+* Data can be processed by double cliking on `run.bat`. This will use [run.py](`run.py`) to select a given excel file. Advanced users can also use command line interface [automatic_registration.py](automatic_registration.py) 
+
+
+## Exploiting data in third-partiy software
+* Putting a timelapse into a software like Hugin allows to stictch these images.
+* Putting a timelapse into [VisualSFM](http://ccwu.me/vsfm/) allows to create a 3D map out of these images 
+  just like you'd do with your drone images
+* Putting these data in [Pix4DFields](https://www.pix4d.com/product/pix4dfields) is possible
+  * you need to copy GPS exif data from the DJI source back to the resulting jpg images.
+    Utilities are provided to copy the right exif. Use at your own risk.
+  ```
+  vir_img = pr.Image(vir_file)
+  vis_img = pr.Image(img_pth)
+  vir_img.gps = vis_img.gps
+  vir_img.gps["altitude"] += initial_altitude # usually DJI drone will assume starting at 0
+  exif_dict_minimal = np.load("minimum_exif_dji.npy", allow_pickle=True).item()
+  vir_img.save(vir_file[:-4]+"_with_exif.jpg"), exif=exif_dict_minimal)
+  ```
+  * When launching Pix4DFields, the DJI camera won't be supported by default. You need to import a [custom camera file](https://support.pix4d.com/hc/en-us/articles/360035481811-What-to-do-when-a-camera-is-not-supported-in-Pix4Dfields).
+  Luckily, we created one for the DJI Mavic Air 2
 
 ----------------------------------------
 # Details on processing
@@ -73,27 +116,6 @@ There's still a way to save your images.
     This will guide the automatic system to a manual initial guess which will eventually lead to an accurate automatic alignment.
   * If synchronization does not seem correct (or there was big wind), you can try your luck with another image by uncommenting the right line in the .bat .
 
-## Exploiting data in third-partiy software
-* Putting a timelapse into a software like Hugin allows to stictch these images.
-* Putting a timelapse into [VisualSFM](http://ccwu.me/vsfm/) allows to create a 3D map out of these images 
-  just like you'd do with your drone images
-* Putting these data in [Pix4DFields](https://www.pix4d.com/product/pix4dfields) is possible
-  * you need to copy GPS exif data from the DJI source back to the resulting jpg images.
-    Utilities are provided to copy the right exif. Use at your own risk.
-  ```
-  vir_img = pr.Image(vir_file)
-  vis_img = pr.Image(img_pth)
-  vir_img.gps = vis_img.gps
-  vir_img.gps["altitude"] += initial_altitude # usually DJI drone will assume starting at 0
-  exif_dict_minimal = np.load("minimum_exif_dji.npy", allow_pickle=True).item()
-  vir_img.save(vir_file[:-4]+"_with_exif.jpg"), exif=exif_dict_minimal)
-  ```
-  * When launching Pix4DFields, the DJI camera won't be supported by default. You need to import a [custom camera file](https://support.pix4d.com/hc/en-us/articles/360035481811-What-to-do-when-a-camera-is-not-supported-in-Pix4Dfields).
-  Luckily, we created one for the DJI Mavic Air 2.
-
-## Synchronization procedure
-* Aruco (=QR code) chart can be downloaded [here](https://drive.google.com/file/d/1rMB6LjY2Mi3gQDq5Mr6PrtMRRrahtkRC/view?usp=sharing) and has to be printed to A4 or A3 paper
-* [full procedure description is available here](https://drive.google.com/drive/folders/1Uk-eWBwteD2reOCdT0kngCWgcddz4C5s?usp=sharing).
 
 ## Camera calibration
 * Officially supported cameras (camera calibrations are pre-stored in the calibration/mycamera folder)
