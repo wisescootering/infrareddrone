@@ -12,12 +12,42 @@ osp = os.path
 from synchronization.synchronization import synchronize_data
 import time
 from datetime import datetime, timedelta
-from customApplication import colorMapNDVI
+from matplotlib.colors import LinearSegmentedColormap
 import irdrone.imagepipe as ipipe
 import shutil
 import cv2
 import argparse
 from copy import deepcopy
+
+
+def colorMapNDVI():
+    #  définition de la palette des couleurs pour l'indice NDVI à partir de couleurs prédéfinies
+    #  voir les couleurs par exemple ici   http://xymaths.free.fr/Informatique-Programmation/Couleurs/Liste.php
+    colors = ["black",
+              "dimgray",
+              "lightgray",
+              "burlywood",
+              "lawngreen",
+              "lightseagreen",
+              "forestgreen",
+              "lightgray"
+              ]
+    #   répartition des plages de couleurs  (entre 0 et 1)
+    nodes = [0.0,
+             35. / 100,
+             45. / 100,
+             51. / 100,
+             60. / 100,
+             65. / 100,
+             75. / 100,
+             1.0
+             ]
+    myColorMap = LinearSegmentedColormap.from_list("mapNDVI", list(zip(nodes, colors)))
+
+    # Autre possibilité: egale répartition entre les couleurs
+    # myColorMap = LinearSegmentedColormap.from_list("mapNDVI", colors)  #
+
+    return myColorMap
 
 
 class VegetationIndex(ipipe.ProcessBlock):

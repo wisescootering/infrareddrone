@@ -2,17 +2,18 @@
 
 # General information
 * Author : Balthazar Neveu , Alain Neveu
-* Tester: Florine
+* Testers: [Pépin Hugonnot](https://www.pepin-hugonnot.fr/vincent-hugonnot-florine-pepin-auvergne_fr.html) : Florine Pépin 
 
-# Application for botanists
-### Set up
+
+# Quick start guide
+## Set up
 
 *For practical reasons*, only **windows is supported** as of now.
 * install [Anaconda](https://www.anaconda.com/products/individual) with all default options. [Anaconda for windows, python 3.9](https://repo.anaconda.com/archive/Anaconda3-2021.11-Windows-x86_64.exe)
 * [install.bat](install.bat) will set up the right python environment for you.
 * you have to install [raw therapee](https://www.rawtherapee.com) software at the default windows location.
 
-### Overview
+## Overview
 * Drone visible camera (DJI Mavic Air 2) is used to shoots RAW images
 * An action camera with a wide FOV (SJCAM M20) which IR filter has been removed is attached under the drone.
 * Before flying a temporal synchronization procedure has to be performed to sync the 2 cameras clocks. It consists in making the drone spin above a QR code chart. 
@@ -37,12 +38,22 @@ here you have to copy 197.23 into the excel.
 
 ![Fused results visible and NIR to provied NDVI for instance](./illustrations/results.png)
 
-* Keep in mind that things are not perfect and there can sometimes be failures. If there's a picture which is very important, you are encouraged to re-run the processing with a manual option to assist the alignment (*next to the processed image, you can find a .bat dedicated to reprocessing your image with manual assistance : example `HYPERLAPSE_0008_REDO.bat`*)
+* Keep in mind that things are not perfect and there can sometimes be failures. If there's a picture which is very important, you are encouraged to re-run the processing with a manual option to assist the alignment (*next to the processed image, you can find a .bat dedicated to reprocessing your image with manual assistance : example `HYPERLAPSE_0008_REDO.bat`*). 
+  * On the left, you can see that the red image has to be shifted to the left side to match the blue image. 
+  * Use the yaw slider to align blue and green, see what happens on the right side? the overlap is correct!
+  * then press `Q` to quit the GUI
+  * process will continue the automatic processing. You have helped the initialization manually that way.
+
+![assisted alignment UI](./illustrations/manual_alignment.png)
 
 * Original metadata from the DJI drone are copied into the output file therefore these images are ready to be re-used in thirdparty software. For instance, creating a map is possible in Pix4DField in case you own a license *(I used the Trial version which is available for 15days)*
+  * When launching Pix4DFields, the DJI camera won't be supported by default. You need to import a [custom camera file](https://support.pix4d.com/hc/en-us/articles/360035481811-What-to-do-when-a-camera-is-not-supported-in-Pix4Dfields).
+  * Luckily, we created one for the DJI Mavic Air 2, see [Pix4DFields_custom_camera](Pix4DFields_custom_camera)
+
 
 ![Stitching NIR images in Pix 4D fields](./illustrations/pix_4dfields.png)
 
+----------------------------------------
 ## Synchronization
 
 * Aruco (=QR code) chart can be downloaded [here](https://drive.google.com/file/d/1rMB6LjY2Mi3gQDq5Mr6PrtMRRrahtkRC/view?usp=sharing) and has to be printed to A4 or A3 paper
@@ -56,23 +67,12 @@ here you have to copy 197.23 into the excel.
 * Data can be processed by double cliking on `run.bat`. This will use [run.py](`run.py`) to select a given excel file. Advanced users can also use command line interface [automatic_registration.py](automatic_registration.py) 
 
 
-## Exploiting data in third-partiy software
-* Putting a timelapse into a software like Hugin allows to stictch these images.
+## Exploiting data in third-party software
+* Putting these data in [Pix4DFields](https://www.pix4d.com/product/pix4dfields) is possible
+* Putting a timelapse into a panorama stitching software like [Hugin](http://hugin.sourceforge.net/) allows to stictch these images.
 * Putting a timelapse into [VisualSFM](http://ccwu.me/vsfm/) allows to create a 3D map out of these images 
   just like you'd do with your drone images
-* Putting these data in [Pix4DFields](https://www.pix4d.com/product/pix4dfields) is possible
-  * you need to copy GPS exif data from the DJI source back to the resulting jpg images.
-    Utilities are provided to copy the right exif. Use at your own risk.
-  ```
-  vir_img = pr.Image(vir_file)
-  vis_img = pr.Image(img_pth)
-  vir_img.gps = vis_img.gps
-  vir_img.gps["altitude"] += initial_altitude # usually DJI drone will assume starting at 0
-  exif_dict_minimal = np.load("minimum_exif_dji.npy", allow_pickle=True).item()
-  vir_img.save(vir_file[:-4]+"_with_exif.jpg"), exif=exif_dict_minimal)
-  ```
-  * When launching Pix4DFields, the DJI camera won't be supported by default. You need to import a [custom camera file](https://support.pix4d.com/hc/en-us/articles/360035481811-What-to-do-when-a-camera-is-not-supported-in-Pix4Dfields).
-  Luckily, we created one for the DJI Mavic Air 2
+
 
 ----------------------------------------
 # Details on processing
@@ -148,6 +148,8 @@ In the sample folder, you'll find image examples, deltatime is ~ 15 seconds.
 
 
 ## Supporting other cameras
+Here are a few words on how to re-calibrate new cameras.  Beware that the code won't run easily for new formats as there may be a bunch of things to modify to support new cameras/drones. Feel free to reach out to balthazarneveu@gmail.com in case you're interested in using this project.
+
 ### Geometric calibrations
 * when using a new camera:
   * to get a planar checkerboard, either print or display on your computer screen  [Generator "8x11"](https://calib.io/pages/camera-calibration-pattern-generator)
@@ -158,7 +160,17 @@ In the sample folder, you'll find image examples, deltatime is ~ 15 seconds.
 
 
 ### Shading calibration
+The [shading calibration script](irdrone/cameravignetting.py) is not publicly supported.
+A white chart shall be shot to calibrate lens shading (luminance and color).
 
+![Adjust the knobs manually to fit the profile](illustrations/shading_profiles_fit.png).
+
+To calibrate the radial shading of a fisheye, we use polar projections (on the left) and extract radial profiles.  ![](./illustrations/shading_profiles.png)
+
+DJI Mavic Air 2 has some color shading (seen as a pink spot in the middle) which can't be fully compensated for. We compensate the slight luminance lens shading though (**on the left, corners aren't darker**).
+![lens shading on DJI](./illustrations/shading_correction.png)
+
+![lens shading correction on SJcam](./illustrations/shading_correction_sjcam.png)
 
 # Testing
 ```pytest irdrone\test.py```

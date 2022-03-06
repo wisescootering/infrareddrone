@@ -1,6 +1,7 @@
 import irdrone.process as pr
 import irdrone.utils as ut
 import irdrone.imagepipe as ipipe
+import numpy as np
 
 
 def imagecompdemo():
@@ -17,7 +18,7 @@ def blendingdemo():
     '''
     DEMO OF A BLENDING BETWEEN 2 IMAGES
     '''
-    imgl = [ut.testimage(xsize=720, ysize=720, sat=sat) for sat in [1., 0.]]
+    imgl = [ut.testimage(xsize=720, ysize=720, sat=sat).astype(np.float64) for sat in [1., 0.]]
     TRANSLATION2 = ipipe.Translation("T2", slidersName=["TX 2", "TY 2"], inputs=[2,], outputs=[2,], vrange=(-50.,50.))
     ipipe.ImagePipe(imgl, sliders=[ipipe.WB, TRANSLATION2, ipipe.ALPHA, ipipe.GAMMA]).gui()
 
@@ -59,10 +60,11 @@ def fuseIRandFullSpectrum():
     }
     ip = ipipe.ImagePipe(
         [
-            pr.loadimage(ut.imagepath(imgname="*Full*",  dirname="samples2"))[0],
-            pr.loadimage(ut.imagepath(imgname="*IR760*", dirname="samples2"))[0],
+            pr.loadimage(ut.imagepath(imgname="*Full*",  dirname="samples2"))[0].astype(np.float64),
+            pr.loadimage(ut.imagepath(imgname="*IR760*", dirname="samples2"))[0].astype(np.float64),
         ],
         sliders=[CM2, ADD, AWB, ipipe.WB, ipipe.GAMMA, ipipe.BRIGHTNESS],
+        floatpipe=False,
         **forcedParams
     )
     ip.gui()

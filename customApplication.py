@@ -14,7 +14,7 @@ import irdrone.utils as ut
 from irdrone.utils import Style
 from irdrone.process import Image, show
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
+
 import irdrone.process as pr
 import irdrone.imagepipe as ipipe
 import os
@@ -868,34 +868,6 @@ def colorMapIRlayer(IRband):
     return myColorMap, myMinColorBar, myMaxColorBar
 
 
-def colorMapNDVI():
-    #  définition de la palette des couleurs pour l'indice NDVI à partir de couleurs prédéfinies
-    #  voir les couleurs par exemple ici   http://xymaths.free.fr/Informatique-Programmation/Couleurs/Liste.php
-    colors = ["black",
-              "dimgray",
-              "lightgray",
-              "burlywood",
-              "lawngreen",
-              "lightseagreen",
-              "forestgreen",
-              "lightgray"
-              ]
-    #   répartition des plages de couleurs  (entre 0 et 1)
-    nodes = [0.0,
-             35. / 100,
-             45. / 100,
-             51. / 100,
-             60. / 100,
-             65. / 100,
-             75. / 100,
-             1.0
-             ]
-    myColorMap = LinearSegmentedColormap.from_list("mapNDVI", list(zip(nodes, colors)))
-
-    # Autre possibilité: egale répartition entre les couleurs
-    # myColorMap = LinearSegmentedColormap.from_list("mapNDVI", colors)  #
-
-    return myColorMap
 
 
 def showDualImages(listImgMatch, modulo=1, seeDualImages=False):

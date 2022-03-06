@@ -3,6 +3,7 @@
 image processing utilities
 """
 import cv2
+import sys
 import matplotlib.pyplot as plt
 import numpy as np
 import os.path as osp
@@ -13,6 +14,7 @@ import exifread
 import datetime
 import logging
 from os import mkdir
+sys.path.append(osp.join(osp.dirname(__file__), ".."))
 from irdrone.utils import Style, conversionGPSdms2dd, get_polar_shading_map, contrast_stretching
 import subprocess
 from pathlib import Path

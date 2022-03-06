@@ -38,6 +38,8 @@ NOTE: the bump in the middle of the frame is probably due to reflections of the 
 
 """
 import os.path as osp
+import sys
+sys.path.append(osp.join(osp.dirname(__file__), ".."))
 import irdrone.process as pr
 import matplotlib.pyplot as plt
 from skimage import filters, transform
