@@ -2,13 +2,14 @@
 
 # General information
 * Author : Balthazar Neveu , Alain Neveu
+* Tester: Florine
 
 # Application for botanists
 ### Set up
 
 *For practical reasons*, only **windows is supported** as of now.
 * [install.bat](install.bat) will set up the right python environment for you.
-* you have to install *raw therapee* software at the default windows location.
+* you have to install [raw therapee](https://www.rawtherapee.com) software at the default windows location.
 
 ### Overview
 * Drone visible camera (DJI Mavic Air 2) is used to shoots RAW images
@@ -18,6 +19,20 @@
 * Once finished, offload your SD cards from IR & Visible cameras into the same folder, create an excel based on a given template. Synchronization delta has to be provided in this excel for the system to work correctly.
 * Data can be processed by [Debut_IRdrone_process_Alain.py](`Debut_IRdrone_process_Alain.py`) to select a given excel file or by using command line interface [automatic_registration.py](automatic_registration.py) 
 
+
+## Synchronization
+
+* Aruco (=QR code) chart can be downloaded [here](https://drive.google.com/file/d/1rMB6LjY2Mi3gQDq5Mr6PrtMRRrahtkRC/view?usp=sharing) and has to be printed to A4 or A3 paper
+* [full procedure description](https://drive.google.com/drive/folders/1Uk-eWBwteD2reOCdT0kngCWgcddz4C5s?usp=sharing). is available here.
+* Copy the selected synchronization images into a "Synchro" folder -> visible & NIR images (expected .RAW and .DNG files by default).
+* Double click on [synchro.bat](synchro.bat). *(Advanced users can use CLI obviously in case of other images format)* 
+* Copy paste the delay result to your configuration excel in  `cameraIR` / `deltatime` . You can then close the window.
+
+## Alignment and Fusion
+* 
+
+----------------------------------------
+# Details on processing
 ## Data processing description
 ## Pre-processing
   * SJCam M20 .RAW files are first converted to DNG using the following program [sjcam_raw2dng](https://github.com/yanburman/sjcam_raw2dng)

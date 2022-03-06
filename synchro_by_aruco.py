@@ -261,37 +261,38 @@ def fitPlot(data, res, camera_definition):
 
 
 if __name__ == "__main__":
-    versionIRdrone = '1.07'  # 01 mars 2022
-    # interactiveChoice =   True           version interactive
-    #                       False          version en ligne de commande dans le terminal
-    interactiveChoice = True
+    parser = argparse.ArgumentParser(description='Synchronize IR and Visible cameras based on Aruco')
+    parser.add_argument('--folder', help='list of images')
+    parser.add_argument('--vis', default="DJI*.JPG",  help='regexp for visible images, works for DNG & JPG')
+    parser.add_argument('--nir', default="20*.JPG",  help='regexp for infrared images, works for RAW & JPG')
+    parser.add_argument('--manual',  action="store_true",  help='manual delay initialization')
+    parser.add_argument('--delay',  default=0, type=float,  help='delay in second \
+                                                            3600 means 1hour which can come from winter or summer times')
 
+    args = parser.parse_args()
+    selection_by_root_excel = False
 # ________________________________________________________________________________________________________________
 #
 # ________________________________________________________________________________________________________________
-
-    if interactiveChoice:
+    if args.folder is None:
+        synchro_folder_names_allowed = ["sync", 'Sync', 'Synchro Horloges', 'Synchro', 'synchronization', 'Synchronization']
         print(Style.CYAN + "File browser")
-        folder = os.path.dirname(IRd.loadFileGUI(mute=True)) + '\\Synchro Horloges'
+        folder = None
+        if selection_by_root_excel:
+            manual_selection = IRd.loadFileGUI(mute=True)
+            for synchro_folder_candidates in synchro_folder_names_allowed:
+                folder = osp.join(os.path.dirname(manual_selection) , synchro_folder_candidates)
+                if osp.isdir(folder):
+                    break
+            assert folder is not None and osp.isdir(folder), Style.RED+ "Could not find synchronization folder: allowded names {}".format(" ,".join(synchro_folder_names_allowed))
+        else:
+            folder = IRd.loadFolderGUI(mute=True)
         print(Style.CYAN + folder + Style.RESET)
         initDelta = 0
-        manual = True
+        manual = False
         camera_definition = [('*.DNG', config.VIS_CAMERA), ('20*.RAW', config.NIR_CAMERA)]
 
     else:
-        # python.exe synchro_by_aruco_Alain.py --folder "C:\Air-Mission\FLY-202202091212-Peyrelevade-Partie1\Synchro Horloges" --vis "*.DNG" --nir "20*.RAW" --manual"
-        # C:\Air-Mission\FLY-20220125-MissionTest
-        # C:\Air-Mission\FLY-202202091212-Peyrelevade-Partie1
-        #
-        parser = argparse.ArgumentParser(description='Synchronize IR and Visible cameras based on Aruco')
-        parser.add_argument('--folder', help='list of images', required=True)
-        parser.add_argument('--vis', default="DJI*.JPG",  help='regexp for visible images, works for DNG & JPG')
-        parser.add_argument('--nir', default="20*.JPG",  help='regexp for infrared images, works for RAW & JPG')
-        parser.add_argument('--manual',  action="store_true",  help='manual delay initialization')
-        parser.add_argument('--delay',  default=0, type=float,  help='delay in second \
-                                                              3600 means 1hour which can come from winter or summer times')
-
-        args = parser.parse_args()
         camera_definition = [(args.vis, config.VIS_CAMERA), (args.nir, config.NIR_CAMERA)]
         manual = args.manual
         initDelta = args.delay
@@ -328,6 +329,7 @@ if __name__ == "__main__":
 
             if cost_function(float(res.x), cost_dict) > 1.:
                 print(Style.RED + 'Please be more precise when synchronizing manually ...' + Style.RESET)
+                manual = True
                 ReDo = True
             else:
                 print('optimum initial      Time shift  = %.5f s.  cost = %.5f °\n'
@@ -343,6 +345,7 @@ if __name__ == "__main__":
             print(exc)
             print(Style.RED + 'Please be more precise !'+Style.RESET)
             TryAgain = True
+            
 
 
 

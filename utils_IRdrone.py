@@ -19,7 +19,7 @@ import os
 import os.path as osp
 import sys
 from tkinter import Tk
-from tkinter.filedialog import askopenfilename
+from tkinter.filedialog import askopenfilename, askdirectory
 from operator import itemgetter
 import datetime
 import openpyxl
@@ -997,6 +997,11 @@ def loadFileGUI(mute=True):
     if not mute: print(filename)
     return filename
 
+def loadFolderGUI(mute=True):
+    Tk().withdraw()  # we don't want a full GUI, so keep the root window from appearing
+    filename = askdirectory()
+    if not mute: print(filename)
+    return filename
 
 def answerYesNo(txt):
     ans = input(txt)
