@@ -19,6 +19,7 @@ import cv2
 import argparse
 from copy import deepcopy
 
+exif_dict_minimal = np.load(osp.join(osp.dirname(__file__), "utils", "minimum_exif_dji.npy"), allow_pickle=True).item()
 
 def colorMapNDVI():
     #  définition de la palette des couleurs pour l'indice NDVI à partir de couleurs prédéfinies
@@ -323,8 +324,6 @@ def process_raw_pairs(
         out_dir = osp.join(osp.dirname(sync_pairs[0][0]), "_RESULTS")
     if not osp.exists(out_dir):
         os.mkdir(out_dir)
-
-    exif_dict_minimal = np.load(osp.join(osp.dirname(__file__), "minimum_exif_dji.npy"), allow_pickle=True).item()
 
     for index_pair, (vis_pth, nir_pth) in enumerate(sync_pairs):
         logging.warning("processing {} {}".format(osp.basename(vis_pth), osp.basename(nir_pth)))

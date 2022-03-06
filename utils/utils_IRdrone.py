@@ -9,14 +9,15 @@ version 1.07 2022-02-15 18:50:00.   Class ShootPoint
 
 @authors: balthazar/alain
 """
-
+import sys
+import os.path as osp
+sys.path.append(osp.join(osp.dirname(__file__), ".."))
 import irdrone.process as pr
 import irdrone.utils as ut
 from irdrone.utils import Style
-import utils_GPS as uGPS
-import utils_IRdrone_Plot as IRdplt
+import utils.utils_GPS as uGPS
+import utils.utils_IRdrone_Plot as IRdplt
 import os
-import os.path as osp
 import sys
 from tkinter import Tk
 from tkinter.filedialog import askopenfilename, askdirectory
@@ -26,7 +27,7 @@ import openpyxl
 from openpyxl import Workbook
 import numpy as np
 from datetime import timedelta
-import utils_IRdrone_Class as IRcl
+import utils.utils_IRdrone_Class as IRcl
 import pickle
 
 

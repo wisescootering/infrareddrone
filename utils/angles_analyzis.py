@@ -1,5 +1,9 @@
+import sys
+import os.path as osp
+sys.path.append(osp.join(osp.dirname(__file__), ".."))
 import utils_IRdrone as IRd
 import utils_IRdrone_Plot as IRdplt
+from version import __version__ as versionIRdrone
 import numpy as np
 import glob
 import irdrone.process as pr
@@ -256,7 +260,6 @@ def plotYawPitchRollDroneAndCameraDJI(dir_mission, utilise_cache=False, offsetPi
 
 
 if __name__ == "__main__":
-    versionIRdrone = '1.05'  # 02 december 2021
     # ----------------------------------------------------
     # 0 > Choix interactif de la mission
     #

@@ -8,7 +8,7 @@ version 1.07 2022-02-17 21:58:00    Class ShootPoint. Save Summary Flight in bin
 @authors: balthazar/alain
 """
 
-import utils_IRdrone as IRd
+import utils.utils_IRdrone as IRd
 from irdrone.utils import Style
 import datetime
 import time
