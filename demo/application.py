@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
+import sys
+import os.path as osp
+root = osp.join(osp.dirname(__file__), "..")
+sys.path.append(root)
 import irdrone.process as pr
 import irdrone.utils as ut
 import irdrone.imagepipe as ipipe
-import irdrone.registration as rg
-from registration.warp_flow import warp_from_sparse_vector_field
+import irdrone.register as rg
+from registration.warp_flow import warp
 import numpy as np
 import cv2
 from joblib import Memory
@@ -154,52 +158,6 @@ def unsharp_mask(image, kernel_size=(5, 5), sigma=1.0, amount=1.0, threshold=0):
         low_contrast_mask = np.absolute(image - blurred) < threshold
         np.copyto(sharpened, image, where=low_contrast_mask)
     return sharpened
-
-
-def warp(im: pr.Image, cal, homog, outsize=None, vector_field=None, padding=None):
-    """
-    Global warp = 3D Rotate (homography) and undistort an image
-    Local warp  = Vector field can be composed to compensate local motion on top of the global warp.
-    Padding is mandatory to get a correct local warp composition.
-    Please note that the padding trick applies only if the global warp is valid on a slightly larger FOV.
-    This is usually the case when the reference camera has a narrower field of view than the moving one.
-    """
-    mtx, dist = cal["mtx"], cal["dist"]
-    if outsize is None:
-        outsize = (im.data.shape[1], im.data.shape[0])
-    map1x, map1y = cv2.initUndistortRectifyMap(
-        mtx,
-        dist,
-        np.eye(3, 3),
-        np.dot(homog, mtx),
-        outsize, cv2.CV_32FC1
-    )
-    if vector_field is not None:
-        # pr.show(
-        #     [(map1x, "vfx"), (map1y, "vfy")]
-        # )
-        res_mapx, res_mapy = warp_from_sparse_vector_field(np.empty(outsize[::-1]), vector_field,
-                                                           get_remap=True, padding=padding)
-        map1x_n = cv2.remap(map1x, res_mapx, res_mapy,
-                            interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0))
-        map1y_n = cv2.remap(map1y, res_mapx, res_mapy,
-                            interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0))
-        # print(res_mapx.shape, map1x.shape, outsize)
-        # pr.show([
-        #     [(map1x, "vfx"), (map1y, "vfy")],
-        #     [(res_mapx, "resx"), (res_mapy, "resy")],
-        #     [(map1x_n, "vfxn"), (map1y_n, "vfxn")]
-        #     ])
-        map1x = map1x_n
-        map1y = map1y_n
-    out = cv2.remap(
-        im if not isinstance(im, pr.Image) else im.data,
-        map1x, map1y,
-        interpolation=cv2.INTER_CUBIC,
-        borderMode=cv2.BORDER_CONSTANT,
-        borderValue=(0, 0, 0, 0)
-    )
-    return out
 
 
 def applicationDjiDroneSJCamIR(imageRange=[4,6], outimage="fused", debug=False, ircamera="sjcam", dirname="flight0001"):

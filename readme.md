@@ -123,14 +123,6 @@ There's still a way to save your images.
   * SJcam M20 RAW
 
 ---------------------------------
-### Sample test
-Sample is broken - *JPG not supported anymore*
-
-2 ways to run the sample
-* simply use `customApplication.py` to run a file browser which will allow you to select your excel file, then search [SampleMission/FlightPath.xslx](SampleMission/FlightPath.xslx) .
-
-* Use `customApplication.py --excel SampleMission/FlightPath.xlsx`
-
 ## Content
 2 cameras are used:
 * drone visible camera
@@ -173,7 +165,7 @@ DJI Mavic Air 2 has some color shading (seen as a pink spot in the middle) which
 ![lens shading correction on SJcam](./illustrations/shading_correction_sjcam.png)
 
 # Testing
-```pytest irdrone\test.py```
+```pytest test.py```
 
 # Image processing and visualization features
 ## Demo content
