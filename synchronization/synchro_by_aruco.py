@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
-import utils_IRdrone as IRd
+import sys
+import os.path as osp
+sys.path.append(osp.join(osp.dirname(__file__), ".."))
+import utils.utils_IRdrone as IRd
 import config
 import cv2
 import numpy as np
 import irdrone.utils as ut
 import irdrone.process as pr
-from synchronization.aruco_helper import aruco_detection
+from aruco_helper import aruco_detection
 import os
 from datetime import timedelta
 from irdrone import imagepipe
