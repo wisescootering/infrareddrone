@@ -1,3 +1,6 @@
+import sys
+import os.path as osp
+sys.path.append(osp.join(osp.dirname(__file__), ".."))
 import irdrone.utils as ut
 from automatic_registration import process_raw_pairs
 import os.path as osp
@@ -10,7 +13,7 @@ DJI_SJCAM_CAL = dict(
 )
 
 
-def demo_raw_real_application(folder_database=osp.join(osp.dirname(__file__), "FlightDatabase"), manual=False, debug=False):
+def demo_raw_real_application(folder_database=osp.join(osp.dirname(__file__), "..", "FlightDatabase"), manual=False, debug=False):
     data_link = "https://drive.google.com/drive/folders/1UJGvq8gWpkkgtAd6cRbNiQIRyabcjPIf?usp=sharing"
     assert osp.isdir(folder_database), "please download {} and put all images in {}".format(data_link, folder_database)
     # -------------------------------------------------------------------------------------------------------- Visargent
@@ -59,4 +62,4 @@ def demo_raw(folder=osp.join(osp.dirname(__file__), r"Hyperlapse 06_09_2021_sync
 
 
 if __name__ == '__main__':
-    demo_raw()
+    demo_raw_real_application()
