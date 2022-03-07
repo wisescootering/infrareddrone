@@ -116,13 +116,25 @@ There's still a way to save your images.
     This will guide the automatic system to a manual initial guess which will eventually lead to an accurate automatic alignment.
   * If synchronization does not seem correct (or there was big wind), you can try your luck with another image by uncommenting the right line in the .bat .
 
+-------------------------
+# References
+* Normalized Total Gradient: A New Measure for Multispectral Image Registration *Shu-Jie Chen and Hui-Liang* [Paper](https://arxiv.org/pdf/1702.04562.pdf)
+* Robust multi-sensor image alignment, *Michal Irani and P Anandan* [Paper](https://www.cs.ccu.edu.tw/~tsaic/teaching/spring2005_grad/irani-iccv98.pdf)
+* Burst photography for high dynamic range and low-light imaging on mobile cameras, *Samuel W. Hasinoff, Dillon Sharlet, Ryan Geiss, Andrew Adams, Jonathan T. Barron, Florian Kainz, Jiawen Chen, and Marc Levoy*,  [Supplemental Material](https://static.googleusercontent.com/media/hdrplusdata.org/fr//hdrplus_supp.pdf)
+* Registration of visible and near infrared unmanned aerial vehicle images based on Fourier-Mellin transform *Gilles Rabatel, S. Labbe* [Paper](https://hal.archives-ouvertes.fr/hal-01684135/document)
+* Two-step multi-spectral registration via key-point detector and gradient similarity. Application to agronomic scenes for proxy-sensing *Jehan-Antoine Vayssade, Gawain Jones, Jean-Noël Paoli, Christelle Gée* [paper](https://hal-agrosup-dijon.archives-ouvertes.fr/hal-02499730)
 
-## Camera calibration
+
+## Technical notes
+* Please note that feature based method did not work correctly and generally speaking. Using Phase correlation/Fourier (including Melin Fourier) didn't bring fully satisfying results either for the coarse approach.
+* The Normalized Total Gradient was retained as a cost function. Motion regularization is not implemented here and some form of regularization shall be implemented for the local estimation in the near future.
+----------------------------------
+# Camera calibration
 * Officially supported cameras (camera calibrations are pre-stored in the calibration/mycamera folder)
   * DJI RAW
   * SJcam M20 RAW
 
----------------------------------
+
 ## Content
 2 cameras are used:
 * drone visible camera
@@ -155,7 +167,7 @@ Here are a few words on how to re-calibrate new cameras.  Beware that the code w
 The [shading calibration script](irdrone/cameravignetting.py) is not publicly supported.
 A white chart shall be shot to calibrate lens shading (luminance and color).
 
-![Adjust the knobs manually to fit the profile](illustrations/shading_profiles_fit.png).
+![Adjust the knobs manually to fit the profile](./illustrations/shading_profiles_fit.png).
 
 To calibrate the radial shading of a fisheye, we use polar projections (on the left) and extract radial profiles.  ![](./illustrations/shading_profiles.png)
 
@@ -164,12 +176,16 @@ DJI Mavic Air 2 has some color shading (seen as a pink spot in the middle) which
 
 ![lens shading correction on SJcam](./illustrations/shading_correction_sjcam.png)
 
+-------------------------
 # Testing
 ```pytest test.py```
 
+-------------------------
 # Image processing and visualization features
+With this project comes a few useful tool, especially the interactive image processing GUI which makes complex pipelines easily tunable.
+
 ## Demo content
-Run [demo.py](demo.py) to test the image processing features.
+Run [demo/demo.py](demo/demo.py) to test the image processing features.
 
 ### I/O management
 * [irdrone.process](irdrone/process.py) contains helpers
@@ -190,6 +206,7 @@ pr.show(
 
 
 # Image processing pipeline
+
 [irdrone.imagepipe.Imagepipe](irdrone/imagepipe.py) class is designed to build a simple image processing pipeline
 * multiple inputs support
 * configured through parameters which can be tuned with GUI sliders
@@ -215,15 +232,9 @@ Will create an image processing pipeline where first,
 * then white balance can be applied (separate multiplications on blue and red channels)
 * and finally a gamma tone curve is applied
 
-```puml
-@startuml 
-Image_1->Image_0 : initalization [float conversion]
-Image_0->Image_0: BRIGHTNESS
-Image_0->Image_0: WB
-Image_0->Image_0: GAMMA
-Image_0->Output : output [8 bit conversion]
-@enduml
-```
+
+![Single image interactive pipe with sliders](./illustrations/interactive_pipe.png)
+
 
 ### Multi-image processing
 ```
@@ -236,19 +247,13 @@ ip = ImagePipe(imgl, sliders=[WB, TRANSLATION2, ALPHA, GAMMA]).gui()
   which images to apply the processingBlock to and where to redirect the output.
   
 
-```puml
-@startuml 
-Image_1->Image_0: initialization [float conversion]
-Image_0<-Image_0: WB
-Image_2->Image_2: TRANSLATION2
-Image_0<-Image_0: x (alpha) x Image0
-Image_0<-Image_2: + (1-alpha) x Image2
-Image_0->Image_0 : GAMMA
-Image_0 -> Output : output [8 bit]
-@enduml
-```
+![Multi image interactive pipe with sliders](./illustrations/interactive_pipe_multiimages.png)
 
-# Legacy registration approach
+
+
+
+-------------------------
+# Legacy - classic registration approach
 ## Image registration code
 * Images from the drone are nearly distorsion-less
 * Images from the fisheye IR camera have a much wider field of view and distorsions
