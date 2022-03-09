@@ -9,6 +9,7 @@ version 1.07 2022-02-15 18:50:00.   Class ShootPoint
 
 @authors: balthazar/alain
 """
+import logging
 import sys
 import os.path as osp
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
@@ -29,7 +30,7 @@ import numpy as np
 from datetime import timedelta
 import utils.utils_IRdrone_Class as IRcl
 import pickle
-
+from copy import copy, deepcopy
 
 # -----   Convertisseurs de dates   Exif<->Python  Excel->Python    ------
 def dateExcelString2Py(dateTimeOriginal):
@@ -199,7 +200,7 @@ def readFlightPlan(pathPlanVolExcel, mute=None):
     """
     workbook = openpyxl.load_workbook(pathPlanVolExcel, read_only=True, data_only=True)
 
-    sheet = workbook['Plan_de_Vol']
+    sheet = workbook.worksheets[0]
 
     nuetude = 2  # 2      numéro première ligne de données du fichier Excel
     nudrone = (nuetude + 8) + 1  # 2+8+1 =11
@@ -299,6 +300,8 @@ def creatListImgVIS(dirName, dateMission, cameraModel, camera, typImg, planVol, 
 
     imgList = []
     j = 0
+    if dateMission is None:
+        dateMission = pr.Image(imlist[0]).date
     for i in range(len(imlist)):
         img = pr.Image(imlist[i])
         img.camera["timelapse"] = float(planVol['drone']['timelapse'])
@@ -330,12 +333,12 @@ def creatListImgVIS(dirName, dateMission, cameraModel, camera, typImg, planVol, 
     if float(planVol['drone']['timelapse']) > 0:
         # Dates are only corrected if the images have been taken in hyperlapse.
         # For single shoot images the rectification would not make sense.
-        imgList = timelapseRectification(imgList, planVol)
+        imgList = timelapseRectification(imgList, dateMission)
 
     return imgList
 
 
-def timelapseRectification(imgList, planVol):
+def timelapseRectification(imgList, date_mission):
     """
     :param imgList:         [(), ...,(file name image , path name image, original date image), ..., ()]
     :return:  new_imgList   [(), ...,(file name image , path name image, rectified date image ), ..., ()]
@@ -351,7 +354,7 @@ def timelapseRectification(imgList, planVol):
 
     stopTime = imgList[-1][2]
     nbImage = int(imgList[-1][0].split('_')[-1].split('.')[0])
-    _, av_Timelapse_timedelta = average_Timelapse(planVol['mission']['date'], stopTime, nbImage, mute=False)
+    _, av_Timelapse_timedelta = average_Timelapse(date_mission, stopTime, nbImage, mute=False)
 
     new_imgList = []
     for i in range(len(imgList)):
@@ -371,7 +374,7 @@ def matchImagesFlightPath(imgListDrone,
                           imgListIR,
                           deltaTimeIR,
                           timeLapseIR,
-                          dateMission,
+                          dateMission=None,
                           mute=False):
     """
     :param imgListDrone:  [...,(file name, path name, date), ...]
@@ -380,7 +383,7 @@ def matchImagesFlightPath(imgListDrone,
     :param imgListIR:     [...,(file name, path name, date), ...]
     :param deltaTimeIR:
     :param timeLapseIR:
-    :param dateMission:   date of flight
+    :param dateMission:   date of first DNG used for synchronization
     :param mute:
     :return:  listImgMatch   [..., (imgListDrone[i][1], imgListIR[k][1]), ...]
     """
@@ -404,14 +407,17 @@ def matchImagesFlightPath(imgListDrone,
     DTime = [[abs(deltaTime[i][k]) for k in range(len(imgListB))] for i in range(len(imgListA))]
     n = 0
     nRejet = 0
-    originDate = dateMission
+    if dateMission is None:
+        logging.warning("Please provide the date of the first synchronization DNG image")
+        logging.warning("you may get bad image pairing therefore parallax / bad alignment results")
+    originDate = copy(imgListA[0][2]) if dateMission is None else copy(dateMission)
     for i in range(len(imgListA)):
         k = np.argmin(DTime[i][:])
         if -timeDeviationMax <= deltaTime[i][k] <= timeDeviationMax:
             # Construction of the image pair IR & Vi  (with rectified DateTime of images)
             # Warning : assume  timeLapseDrone =< timeLapseIR:
             if n == 0:  # first image. Defined time line origin
-                originDate = imgListA[i][2]
+                originDate = copy(imgListA[i][2])
             kBmatch = k
             n += 1
             timeline = (imgListA[i][2] - originDate).total_seconds()
@@ -654,7 +660,12 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol,
         This data will be saved in the Excel file of the flight directory  (sheet "Summary")
         and in binary file
     """
-
+    # ---  GPS coordinates, trajectory, take-off, altitude relative to sea level ...
+    if planVol['mission']['coord GPS Take Off'] is None:
+        logging.warning("Ignoring flight anaytics (altitude of the flight etc...)")
+        raise Exception("No GPS take off coordinate in excel - Ignoring flight analytics")
+    coordGPSTakeOff, altiTakeOff = uGPS.TakeOff(planVol['mission']['coord GPS Take Off'])
+        
     print(Style.CYAN +
           '------ Calculation of drone attitude, trajectory, flight profile and theoretical Yaw-Pitch-Roll'
           + Style.RESET)
@@ -662,8 +673,8 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol,
     # ----------- Drone attitude in space. (angles drone and gimbal)
     listPts, flightAngle, gimbalAngle = spatialAttitude(listPts, listImg)  #
 
-    # ---  GPS coordinates, trajectory, take-off, altitude relative to sea level ...
-    coordGPSTakeOff, altiTakeOff = uGPS.TakeOff(planVol['mission']['coord GPS Take Off'])
+
+
 
     listPts, altGeo, altDroneSol, altGround, altDroneSealLevel = \
         spatialCoordinates(listPts, listImg, coordGPSTakeOff, seaLevel)
@@ -707,11 +718,14 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol,
     # dicMission, listDicPts, listPtPickl = IRd.readMissionAndPtsPickl(fileNamePickl)
 
     # ---------  Plot the flight profile.
+    dirSaveFig = osp.join(dirSaveFig, "Flight Analytics")
+    if not osp.isdir(dirSaveFig):
+        os.mkdir(dirSaveFig)
     IRdplt.flightProfil_plot(distFlight, altDroneSealLevel, altGround, dirSaveFig=dirSaveFig, mute=False)
 
     # ---------  Save GPS Track in Garmin format (.gpx)
     if saveGpsTrack:
-        uGPS.writeGPX(listPts, os.path.dirname(dirPlanVol) + '\\Topo', planVol['mission']['date'], mute=True)
+        uGPS.writeGPX(listPts, dirSaveFig, planVol['mission']['date'], mute=True)
 
     return
 
@@ -1010,13 +1024,11 @@ def answerYesNo(txt):
     countTry = 0
     while tryAgain:
         try:
-            ans = int(ans)
-            if ans != 1 and ans != 0:
-                raise ValueError
-            else:
-                ans = bool(int(ans))
-
-            return ans
+            if ans.lower() in ["y", "yes", "1"]:
+                return True
+            elif ans.lower() in ["n", "no", "0"]:
+                return False
+            raise ValueError
 
         except ValueError:
             try:

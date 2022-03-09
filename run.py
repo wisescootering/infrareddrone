@@ -8,6 +8,7 @@ version 1.07 2022-02-17 21:58:00    Class ShootPoint. Save Summary Flight in bin
 @authors: balthazar/alain
 """
 
+import logging
 import utils.utils_IRdrone as IRd
 from irdrone.utils import Style
 import datetime
@@ -41,7 +42,7 @@ if __name__ == "__main__":
     #                    options pour les tests rapides
     # --------------------------------------------------------------------------
     seaLevel = True        # Calculer l'altitude du sol  ... API internet (peut échouer si serveur indisponible)
-    saveGpsTrack = True   # Sauvegarder la trajectoire du drone dans un fichier gps au format Garmin@
+    saveGpsTrack = True    # Sauvegarder la trajectoire du drone dans un fichier gps au format Garmin@
     saveExcel = True       # Sauvegarder la liste des paires, les coordonnées GPS, les angles ... dans un fichier Excel
     savePickle = True      # Sauvegarder les données de la mission (plan vol, listPts) dans un fichier binaire.
 
@@ -77,16 +78,22 @@ if __name__ == "__main__":
     #   - Tracé du profil de vol du drone  (file format .png)
     # -------------------------------------------------------------------------------------------------------------
     print(Style.CYAN + '------ Matching images VIS & NIR' + Style.RESET)
+    synchro_date = planVol['mission']['date']
+    if synchro_date is None:
+        raise NameError(Style.RED + "Synchro start date needs to be provided!" + Style.RESET)
     listImgMatch, DtImgMatch, listdateMatch, listPts = \
         IRd.matchImagesFlightPath(imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR,
-                                  planVol['mission']['date'], mute=True)
-    IRd.summaryFlight(listPts, listImgMatch, planVol, dirPlanVol,
-                      seaLevel=seaLevel,
-                      dirSaveFig=osp.dirname(dirPlanVol),
-                      saveGpsTrack=saveGpsTrack,
-                      saveExcel=saveExcel,
-                      savePickle=savePickle,
-                      mute=True)
+                                  synchro_date, mute=True)
+    try:
+        IRd.summaryFlight(listPts, listImgMatch, planVol, dirPlanVol,
+                        seaLevel=seaLevel,
+                        dirSaveFig=osp.dirname(dirPlanVol),
+                        saveGpsTrack=saveGpsTrack,
+                        saveExcel=saveExcel,
+                        savePickle=savePickle,
+                        mute=True)
+    except Exception as exc:
+        logging.error(Style.RED + "Cannot compute flight analytics - you can still process your images but you won't get altitude profiles and gpx\nError = {}".format(exc)+ Style.RESET)
     # -------------------------------------------------------------------------------------------------------------
     # 3 > Traitement des images.
     #     Recalage des paires d'images Vi et IR.
@@ -94,8 +101,7 @@ if __name__ == "__main__":
     # -------------------------------------------------------------------------------------------------------------
     print(Style.YELLOW + 'The processing of these %i images will take %.2f h.  Do you want to continue?'
           % (len(listPts), 1.36 * len(listPts) / 60.) + Style.RESET)
-    autoRegistration = IRd.answerYesNo('Yes (1) |  No (0):')
-    # listImgMatch = [(vis.replace(".DNG", "_PL4_DIST.tif"), nir) for vis, nir in listImgMatch]
+    autoRegistration = IRd.answerYesNo('Yes (y/1) |  No (n/0):')
     if autoRegistration:
         print(Style.CYAN + '------ automatic_registration.process_raw_pairs' + Style.RESET)
         automatic_registration.process_raw_pairs(listImgMatch[::1], out_dir=dirNameIRdrone)

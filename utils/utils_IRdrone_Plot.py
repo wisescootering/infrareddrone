@@ -1,4 +1,5 @@
 import numpy as np
+import os.path as osp
 import matplotlib.pyplot as plt
 import matplotlib.transforms as mtrans
 import scipy.fft
@@ -21,10 +22,12 @@ def flightProfil_plot(d_list, elev_Drone, elev_Ground, dirSaveFig=None, mute=Tru
     plt.ylabel("Altitude (m)")
     plt.grid()
     plt.legend(fontsize='small')
-    filepath = dirSaveFig  +'\\Topo'+ '\\Flight profil IRdrone'
+    
     if dirSaveFig == None:
         pass
     else:
+        assert osp.isdir(dirSaveFig), "no figure directory"
+        filepath = osp.join(dirSaveFig, 'Flight profil IRdrone')
         plt.savefig(filepath, dpi=75, facecolor='w', edgecolor='w', orientation='portrait',
                     format=None, transparent=False,
                     bbox_inches='tight', pad_inches=0.1, metadata=None)

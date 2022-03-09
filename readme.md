@@ -1,4 +1,7 @@
-# Aerial drone photography project
+# infrared & visible Aerial photography
+![](./illustrations/drone.png)!
+
+![infrared+visible](./illustrations/irfusion_mini.gif)
 
 # General information
 * Author : Balthazar Neveu , Alain Neveu
@@ -6,6 +9,7 @@
 
 
 # Quick start guide
+
 ## Set up
 
 *For practical reasons*, only **windows is supported** as of now.
@@ -13,22 +17,36 @@
 * [install.bat](install.bat) will set up the right python environment for you.
 * you have to install [raw therapee](https://www.rawtherapee.com) software at the default windows location.
 
+Download our [sample folder](https://drive.google.com/drive/folders/1khi0WdWyZ6H7Z7Lc5Q_i-Mm0Xq2sgpd1?usp=sharing)
+
 ## Overview
 * Drone visible camera (DJI Mavic Air 2) is used to shoots RAW images
 * An action camera with a wide FOV (SJCAM M20) which IR filter has been removed is attached under the drone.
+
+![](./illustrations/hardware.png)
+
 * Before flying a temporal synchronization procedure has to be performed to sync the 2 cameras clocks. It consists in making the drone spin above a QR code chart. 
-* Then the recommended way to capture your data is to fly with both cameras shooting in timelapse modes straight away. Do not kill the timelapse 
+* Then the recommended way to capture your data is to fly with both cameras shooting in timelapse modes straight away. 
+* Do not kill the timelapse! keep on flying after synchronization
 
 ## **Tutorial** : Step by step processing 
 * Once finished, offload your SD cards from IR & Visible cameras into the same folder:
-  * In `AerialPhotography` where you put all pictures from the flight phase 
+  * In `AerialPhotography` where you put all pictures from the flight phase (*the folder name can be changed in the configuration excel*) 
   * In `Synchro` folder where you put all picture from the synchronization phase
 * Create an excel based on the provided template, fill information.
-* There's one special field, you need to double click on `synchro.bat` and select the `Synchro` folder, copy the delay into the excel... 
+* There are some fields where, you will need synchronization info so everything runs correctly.
+* double click on `synchro.bat` and select the `Synchro` folder
 
 ![synchronization validation](./illustrations/synchro.png)
 
-here you have to copy 197.23 into the excel.
+here you have to copy/paste into the excel 
+  * `3894.74`  = delta time.
+  * `25/01/2022 11:59:49` = date
+  * `N 45.16954 E 3.40005` = Coord GPS Take Off
+
+
+![configuration excel](./illustrations/configuration_excel.png)
+
 
 * Now you're ready to process your images. Double click on `run.bat` and select the excel file. 
 * Check the altitude profile displayed.

@@ -236,7 +236,7 @@ def cost_function_1(shift_x, cost_dic):
     return cost
 
 
-def fitPlot(data, res, camera_definition):
+def fitPlot(data, res, camera_definition, extra_title=""):
     # construction des interpolateurs
     x_fit = [data['t_B'][i] - res.x for i in range(1, len(data['t_B']))]
     f_A = interpol_func(data['t_A'], data['f_A'], option=data['solverOption'])
@@ -259,7 +259,7 @@ def fitPlot(data, res, camera_definition):
              color='blue', linestyle='--', linewidth=0.4)
     plt.legend([camera_A, camera_B, camera_Fit], loc='best')
     plt.grid()
-    plt.title(' Time shift  = %.2f  s' % (res.x + data['timeShift']))
+    plt.title(' Time shift  = %.2f  s | %s' % (res.x + data['timeShift'], extra_title))
     plt.show()
 
 
@@ -313,6 +313,8 @@ if __name__ == "__main__":
         folder,
         camera_definition=camera_definition,
     )
+    gps_start = pr.Image(sync_dict[config.VIS_CAMERA][len(sync_dict[config.VIS_CAMERA])//2]["path"]).gps
+    gps_str = "{} {:.5f} {} {:.5f}".format(gps_start["latitude"][0], gps_start["latitude"][-1], gps_start["longitude"][0], gps_start["longitude"][-1])
     while TryAgain and iterations < 5:
         iterations += 1
         try:
@@ -339,10 +341,18 @@ if __name__ == "__main__":
                       'optimum final        Time shift  = %.5f s.  cost = %.5f °'
                       % (shift_0 + cost_dict['timeShift'], cost_function(float(shift_0), cost_dict),
                          res.x + cost_dict['timeShift'], cost_function(float(res.x), cost_dict)))
-
+                
+                print(100*'_'+'\nIn configuration, please report the following results:\n\tSync Delta Time:\t{:.2f}\n\tSync Start Date:\t{}\n\tCoord GPS take off:\t{}'.format(
+                    (float(res.x) + cost_dict['timeShift']),
+                    sync_dict[config.VIS_CAMERA][0]["date"].strftime("%d/%m/%Y %H:%M:%S"),
+                    gps_str
+                    )
+                )
                 ReDo = False
             # -------   Visualisation des résultats de l'optimisation automatique
-            fitPlot(cost_dict, res, camera_definition)
+            fitPlot(cost_dict, res, camera_definition, extra_title="Sync Start Date: {}\nGPS: {}".format(
+                sync_dict[config.VIS_CAMERA][0]["date"].strftime("%d/%m/%Y %H:%M:%S"), gps_str)
+            )
             TryAgain = ReDo
         except Exception as exc:
             print(exc)
