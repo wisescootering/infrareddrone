@@ -25,9 +25,16 @@ Download our [sample folder](https://drive.google.com/drive/folders/1khi0WdWyZ6H
 
 ![](./illustrations/hardware.png)
 
-* Before flying a temporal synchronization procedure has to be performed to sync the 2 cameras clocks. It consists in making the drone spin above a QR code chart. 
+* Before flying a temporal synchronization procedure has to be performed to sync the 2 cameras clocks.
+* It consists in making the drone spin above a QR code (Aruco) chart. Or rotating the QR code. **Synchronization is key**
+
+![](./illustrations/sync_nir_mini.gif) ![](./illustrations/sync_vis_mini.gif)
+
 * Then the recommended way to capture your data is to fly with both cameras shooting in timelapse modes straight away. 
-* Do not kill the timelapse! keep on flying after synchronization
+* Do not kill the timelapse after the synchro phase! keep on flying after synchronization
+
+![](./illustrations/vis_lapse_mini.gif) ![](./illustrations/vir_lapse.gif)
+
 
 ## **Tutorial** : Step by step processing 
 * Once finished, offload your SD cards from IR & Visible cameras into the same folder:
@@ -100,6 +107,8 @@ here you have to copy/paste into the excel
   * SJCAM .DNG & DJI .DNG files are processed using Raw Therapee to **linear demosaicked RGB 16bits** TIF files.
   * Lens Shading is automatically corrected while loading the TIF files.
 ## Alignment
+![](./illustrations/nir_lapse_mini.gif)
+
 * We first undistort the DJI visible image and undisort the infrared fisheye. In case of wind, the misalignment between both cameras can be of up to 20°s. 
   Roll of the drone leads to camera yaw, Pitch of the drone leads to camera pitch. Camera roll misalignment is usually zero because of the gimbal lock when the camera points towards the ground. 
   Hopefully, the fisheye has a much wider field of view than the DJI visible camera, therefore we're able to align the NIR image onto the visible image.
