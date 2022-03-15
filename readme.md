@@ -40,7 +40,7 @@ Download our [sample folder](https://drive.google.com/drive/folders/1khi0WdWyZ6H
 * Once finished, offload your SD cards from IR & Visible cameras into the same folder:
   * In `AerialPhotography` where you put all pictures from the flight phase (*the folder name can be changed in the configuration excel*) 
   * In `Synchro` folder where you put all picture from the synchronization phase
-* Create an excel based on the provided template [Templates/config.xlsx](./Templates/config.xlsx), fill mandatory information.
+* Create an excel based on the provided template [Templates/config.xlsx](./Templates/config.xlsx), fill mandatory information. You can also create a json configuration from the following template [Templates/config.json](./Templates/config.json).
 * There are some fields where, you will need synchronization info so everything runs correctly.
 * double click on `synchro.bat` and select the `Synchro` folder
 

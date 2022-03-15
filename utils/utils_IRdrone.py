@@ -30,6 +30,7 @@ import numpy as np
 from datetime import timedelta
 import utils.utils_IRdrone_Class as IRcl
 import pickle
+import json
 from copy import copy, deepcopy
 
 # -----   Convertisseurs de dates   Exif<->Python  Excel->Python    ------
@@ -142,29 +143,56 @@ def extractFlightPlan(dirPlanVol, mute=True):
     :return: (planVol,imgListDrone,deltaTimeDrone,timeLapseDrone,imgListIR,deltaTimeIR,timeLapseIR,
     dirNameIRdrone,coordGPS_TakeOff,altiTakeOff)   )
     """
-    planVol = readFlightPlan(dirPlanVol, mute=mute)
-    dirNameIRdrone = planVol['images']['repertoireViR  (save)']  # folder for save photography  VIR,  NDVI (output)
-    dirNameDrone = planVol['images']['repertoireDrone']  # Drone photography folder   (input)
-    dirNameIR = planVol['images']['repertoireIR']  # IR photography folder (input)
-    dateMission = planVol['mission']['date']  # date of flight > format DD MM et YYYY
-    typeDrone = planVol['drone']['type']  # type of drone (see in the Exif tag of the image of the drone)
-    extDrone = planVol['images']['extDrone']  # file format Vi
-    typeIR = planVol['cameraIR']['type']  # type of camera in use (see in the Exif tag of the image of the IR camera)
-    timeLapseDrone = float(planVol['drone']['timelapse'])  # Time Lapse of Drone camera
-    timeLapseIR = float(planVol['cameraIR']['timelapse'])  # Time Lapse of IR camera
-    extIR = planVol['images']['extIR']  # file format  IR
-    deltaTimeDrone = float(planVol['drone']['deltatime'])  # decalage horloge caméra du drone / horloge de référence
-    deltaTimeIR = float(planVol['cameraIR']['deltatime'])  # decalage horloge caméra infrarouge /horloge de référence
+    timeLapseDrone, deltaTimeDrone, timeLapseIR, deltaTimeIR = 2.0, 0., 3.0, None
+    # typeDrone, typeIR = "FC3170", "M20"
+    typeDrone = None
+    if osp.basename(dirPlanVol).lower().endswith(".xlsx"):
+        planVol = readFlightPlan(dirPlanVol, mute=mute)
+        dirNameIRdrone = planVol['images']['repertoireViR  (save)']  # folder for save photography  VIR,  NDVI (output)
+        dirNameDrone = planVol['images']['repertoireDrone']  # Drone photography folder   (input)
+        dirNameIR = planVol['images']['repertoireIR']  # IR photography folder (input)
+        dateMission = planVol['mission']['date']  # date of flight > format DD MM et YYYY
+        typeDrone = planVol['drone']['type']  # type of drone (see in the Exif tag of the image of the drone)
+        extDrone = planVol['images']['extDrone']  # file format Vi
+        typeIR = planVol['cameraIR']['type']  # type of camera in use (see in the Exif tag of the image of the IR camera)
+        timeLapseDrone = float(planVol['drone']['timelapse'])  # Time Lapse of Drone camera
+        timeLapseIR = float(planVol['cameraIR']['timelapse'])  # Time Lapse of IR camera
+        extIR = planVol['images']['extIR']  # file format  IR
+        deltaTimeDrone = float(planVol['drone']['deltatime'])  # decalage horloge caméra du drone / horloge de référence
+        deltaTimeIR = float(planVol['cameraIR']['deltatime'])  # decalage horloge caméra infrarouge /horloge de référence
+    elif osp.basename(dirPlanVol).lower().endswith(".json"):
+        with open(dirPlanVol, 'r') as openfile:
+            di = json.load(openfile)
+        dirNameIRdrone = di["output"]
 
+        dirNameDrone = osp.dirname(di["visible"])
+        extDrone = osp.basename(di["visible"]).split('.')[-1]
+        
+        dirNameIR = osp.dirname(di["nir"])
+        extIR = osp.basename(di["nir"]).split('.')[-1]
+        
+        if "synchro_date" in di.keys():
+            dateMission = datetime.datetime.strptime(di["synchro_date"], r'%d/%m/%Y %H:%M:%S')
+        if "synchro_deltatime" in di.keys():
+            deltaTimeIR = di["synchro_deltatime"]
+        if "coord_GPS_take_off" in di.keys():
+            coord_GPS_take_off = di["coord_GPS_take_off"]
+        else:
+            coord_GPS_take_off = None
+        planVol = dict(mission={}, drone={})
+        planVol['mission']['date'] = dateMission
+        planVol['mission']['coord GPS Take Off'] = coord_GPS_take_off
+        planVol['drone']['timelapse'] = timeLapseDrone
+    else:
+        raise NameError("File not supported")
+    assert deltaTimeDrone is not None, "Need to provide decent synchronization"
     #    Liste des images de l'étude.
     #    Une liste pour les images du drone et une liste pour les images de la caméra infrarouge
     #    Chaque élément de la liste est un triplet (file name image , path name image, date image)
-
     dirNameDrone = reformatDirectory(dirNameDrone, xlpath=dirPlanVol)
     dirNameIR = reformatDirectory(dirNameIR, xlpath=dirPlanVol, makeOutdir=True)
     dirNameIRdrone = reformatDirectory(dirNameIRdrone, xlpath=dirPlanVol, makeOutdir=True)
-
-    imgListDrone = creatListImgVIS(dirNameDrone, dateMission, typeDrone, '*', extDrone, planVol)
+    imgListDrone = creatListImgVIS(dirNameDrone, dateMission, '*', extDrone, timeLapseDrone, deltaTimeDrone, cameraModel=typeDrone)
 
     imgListIR = creatListImgNIR(dirNameIR, '*', extIR)
 
@@ -279,14 +307,14 @@ def creatListImgNIR(dirName, camera, typImg):
     return imgList
 
 
-def creatListImgVIS(dirName, dateMission, cameraModel, camera, typImg, planVol, debug=False):
+def creatListImgVIS(dirName, dateMission, camera, typImg, timelapse, deltatime, cameraModel=None, debug=False):
     """
     :param dirName:
     :param dateMission:
-    :param cameraModel:
     :param camera:
     :param typImg:
     :param debug:
+    :param cameraModel: optional to filter out wrong cameras
     :return:  imgList   [(), ...,(file name image , path name image, date image), ..., ()]
     """
 
@@ -304,14 +332,14 @@ def creatListImgVIS(dirName, dateMission, cameraModel, camera, typImg, planVol, 
         dateMission = pr.Image(imlist[0]).date
     for i in range(len(imlist)):
         img = pr.Image(imlist[i])
-        img.camera["timelapse"] = float(planVol['drone']['timelapse'])
-        img.camera["deltatime"] = float(planVol['drone']['deltatime'])
+        img.camera["timelapse"] = float(timelapse)
+        img.camera["deltatime"] = float(deltatime)
         try:
             # Extract Exif data from the image. If no Exif data, image is ignored.
             debug = True
             cameraModelImg = img.camera['model']
 
-            if cameraModelImg == cameraModel:  # Image was taken by another camera. This image is ignored.
+            if cameraModel is None or cameraModelImg == cameraModel:  # Image was taken by another camera. This image is ignored.
                 dateImg = img.date
                 if (dateImg.year, dateImg.month, dateImg.day) == (dateMission.year, dateMission.month, dateMission.day):
                     j += 1
@@ -330,7 +358,7 @@ def creatListImgVIS(dirName, dateMission, cameraModel, camera, typImg, planVol, 
         except:
             if debug: print("No Exif tags in %s" % imlist[i])
 
-    if float(planVol['drone']['timelapse']) > 0:
+    if float(timelapse) > 0:
         # Dates are only corrected if the images have been taken in hyperlapse.
         # For single shoot images the rectification would not make sense.
         imgList = timelapseRectification(imgList, dateMission)

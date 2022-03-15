@@ -1,0 +1,8 @@
+{
+    "output": "ImgIRdrone",
+    "visible": "AerialPhotography/*.DNG",
+    "nir": "AerialPhotography/*.RAW",
+    "synchro_deltatime": 3894.74037,
+    "synchro_date": "25/01/2022  11:59:49",
+    "coord_GPS_take_off": "N 45.16969 E 3.39996"
+}
