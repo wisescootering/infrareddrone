@@ -172,15 +172,22 @@ def extractFlightPlan(dirPlanVol, mute=True):
         extDrone = osp.basename(di["visible"]).split('.')[-1]
         dirNameIR = osp.dirname(di["nir"])
         extIR = osp.basename(di["nir"]).split('.')[-1]
-        
         if "synchro_date" in di.keys():
             dateMission = datetime.datetime.strptime(di["synchro_date"], r'%d/%m/%Y %H:%M:%S')
-        if "synchro_deltatime" in di.keys():
-            deltaTimeIR = di["synchro_deltatime"]
-        if "coord_GPS_take_off" in di.keys():
-            coord_GPS_take_off = di["coord_GPS_take_off"]
-        else:
-            coord_GPS_take_off = None
+        for inpkey in ["timelapse_nir", "nir_timelapse",  "timelapse nir", "nir timelapse", "interval nir", "interval_nir"]:
+            if  inpkey in di.keys():
+                timeLapseIR = di[inpkey]
+        for inpkey in ["timelapse_visible", "visible_timelapse" ,"timelapse visible", "visible timelapse", "interval visible", "interval_visible"]:
+            if  inpkey in di.keys():
+                timeLapseDrone = di[inpkey]
+        for inpkey in ["synchro_deltatime", "synchro deltatime", "deltatime"]:
+            if  inpkey in di.keys():
+                deltaTimeIR = di[inpkey]
+
+        coord_GPS_take_off = None
+        for inpkey in ["coord_GPS_take_off", "coord GPS take off", "coord GPS Take Off"]:
+            if inpkey in di.keys():
+                coord_GPS_take_off = di[inpkey]
         planVol = dict(mission={}, drone={})
         planVol['mission']['date'] = dateMission
         planVol['mission']['coord GPS Take Off'] = coord_GPS_take_off
