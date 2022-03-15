@@ -40,7 +40,24 @@ Download our [sample folder](https://drive.google.com/drive/folders/1khi0WdWyZ6H
 * Once finished, offload your SD cards from IR & Visible cameras into the same folder:
   * In `AerialPhotography` where you put all pictures from the flight phase (*the folder name can be changed in the configuration excel*) 
   * In `Synchro` folder where you put all picture from the synchronization phase
-* Create an excel based on the provided template [Templates/config.xlsx](./Templates/config.xlsx), fill mandatory information. You can also create a json configuration from the following template [Templates/config.json](./Templates/config.json). You can use the `input` key (or `rootdir`) to provide a direct link to a specific folder (that would allow you to store all configurations at a unique place... including keeping your projects configurations under git revision).
+* Create configuration file ( **.xlsx** or **.json**)
+  * an excel based on the provided template [Templates/config.xlsx](./Templates/config.xlsx), fill mandatory information.
+  * You can also create a json configuration from the following template [Templates/config.json](./Templates/config.json). 
+    * You can use the `input` key (or `rootdir`) to provide a direct link to a specific folder (that would allow you to store all configurations at a unique place... including keeping your projects configurations under git revision).
+    * Regexp use are suggested in `visible` or `nir` keys to search the images. Please not that this way you can use 2 different folders for NIR and visible images.
+    ```
+    {
+      "output": "ImgIRdrone",
+      "visible": "AerialPhotography/*.DNG",
+      "nir": "AerialPhotography/*.RAW",
+      "visible_timelapse": 2.0,
+      "nir_timelapse": 3.0,
+      "synchro_deltatime": 3894.74037,
+      "synchro_date": "25/01/2022  11:59:49",
+      "coord_GPS_take_off": "N 45.16969 E 3.39996"
+    }
+    ```
+
 * There are some fields where, you will need synchronization info so everything runs correctly.
 * double click on `synchro.bat` and select the `Synchro` folder
 

@@ -160,6 +160,7 @@ def extractFlightPlan(dirPlanVol, mute=True):
         extIR = planVol['images']['extIR']  # file format  IR
         deltaTimeDrone = float(planVol['drone']['deltatime'])  # decalage horloge caméra du drone / horloge de référence
         deltaTimeIR = float(planVol['cameraIR']['deltatime'])  # decalage horloge caméra infrarouge /horloge de référence
+        regex_nir, regex_drone = "*.%s"%extIR, '*.%s'%extDrone
     elif osp.basename(dirPlanVol).lower().endswith(".json"):
         with open(dirPlanVol, 'r') as openfile:
             di = json.load(openfile)
@@ -168,10 +169,12 @@ def extractFlightPlan(dirPlanVol, mute=True):
                 assert osp.isdir(di[inpkey]), "Please provide a correct folder for key {} = {}".format(inpkey, di[inpkey])
                 dirPlanVol = di[inpkey]
         dirNameIRdrone = di["output"]
-        dirNameDrone = osp.dirname(di["visible"])
-        extDrone = osp.basename(di["visible"]).split('.')[-1]
-        dirNameIR = osp.dirname(di["nir"])
-        extIR = osp.basename(di["nir"]).split('.')[-1]
+        # dirNameDrone = osp.dirname(di["visible"])
+        # extDrone = osp.basename(di["visible"]).split('.')[-1]
+        # dirNameIR = osp.dirname(di["nir"])
+        # extIR = osp.basename(di["nir"]).split('.')[-1]
+        dirNameIR, dirNameDrone = None, None
+        regex_nir, regex_drone = di["nir"], di["visible"]
         if "synchro_date" in di.keys():
             dateMission = datetime.datetime.strptime(di["synchro_date"], r'%d/%m/%Y %H:%M:%S')
         for inpkey in ["timelapse_nir", "nir_timelapse",  "timelapse nir", "nir timelapse", "interval nir", "interval_nir"]:
@@ -192,6 +195,7 @@ def extractFlightPlan(dirPlanVol, mute=True):
         planVol['mission']['date'] = dateMission
         planVol['mission']['coord GPS Take Off'] = coord_GPS_take_off
         planVol['drone']['timelapse'] = timeLapseDrone
+        
     else:
         raise NameError("File not supported")
     assert deltaTimeDrone is not None, "Need to provide decent synchronization"
@@ -203,9 +207,9 @@ def extractFlightPlan(dirPlanVol, mute=True):
     dirNameDrone = reformatDirectory(dirNameDrone, rootdir=dirPlanVol)
     dirNameIR = reformatDirectory(dirNameIR, rootdir=dirPlanVol, makeOutdir=True)
     dirNameIRdrone = reformatDirectory(dirNameIRdrone, rootdir=dirPlanVol, makeOutdir=True)
-    imgListDrone = creatListImgVIS(dirNameDrone, dateMission, '*', extDrone, timeLapseDrone, deltaTimeDrone, cameraModel=typeDrone)
+    imgListDrone = creatListImgVIS(dirNameDrone, dateMission, regex_drone, timeLapseDrone, deltaTimeDrone, cameraModel=typeDrone)
 
-    imgListIR = creatListImgNIR(dirNameIR, '*', extIR)
+    imgListIR = creatListImgNIR(dirNameIR, regex_nir)
 
     if not mute:
         if len(imgListDrone) == 0:
@@ -300,7 +304,7 @@ def readFlightPlan(pathPlanVolExcel, mute=None):
     return planVol
 
 
-def creatListImgNIR(dirName, camera, typImg):
+def creatListImgNIR(dirName, rege):
     """
     :return:  imgList   [(),...,(file name image , path name image, date image),...,()]
     Creation of the list of IR photos (raw given extension) and contained in the dirName directory
@@ -309,7 +313,7 @@ def creatListImgNIR(dirName, camera, typImg):
     the SJCam RAW file is unreadable by exifread or PIL software. ExifTags
     """
     print(Style.CYAN + '------ Creating the list of near-infrared spectrum images' + Style.RESET)
-    imlist = sorted(ut.imagepath(imgname="*%s*.%s" % (camera, typImg), dirname=dirName))
+    imlist = sorted(ut.imagepath(imgname=rege, dirname=dirName))
     imgList = []
     for i in range(len(imlist)):
         nameImg = imlist[i].split('\\')[len(imlist[i].split('\\')) - 1]
@@ -318,7 +322,7 @@ def creatListImgNIR(dirName, camera, typImg):
     return imgList
 
 
-def creatListImgVIS(dirName, dateMission, camera, typImg, timelapse, deltatime, cameraModel=None, debug=False):
+def creatListImgVIS(dirName, dateMission, rege, timelapse, deltatime, cameraModel=None, debug=False):
     """
     :param dirName:
     :param dateMission:
@@ -335,7 +339,7 @@ def creatListImgVIS(dirName, dateMission, camera, typImg, timelapse, deltatime, 
     # It is not possible to filter the SJcam images with the file name (you have to look at the Exif data of the image).
 
     print(Style.CYAN + '------ Creating the list of visible spectrum images' + Style.RESET)
-    imlist = sorted(ut.imagepath(imgname="*%s*.%s" % (camera, typImg), dirname=dirName))
+    imlist = sorted(ut.imagepath(imgname=rege, dirname=dirName))
 
     imgList = []
     j = 0
@@ -1031,6 +1035,8 @@ def printPlanVol(planVol):
 # ------------------     Gestion des fichiers      ---------------------
 
 def reformatDirectory(di, rootdir=None, makeOutdir=False):
+    if di is None:
+        return rootdir
     if os.path.exists(di):
         return di
     else:
