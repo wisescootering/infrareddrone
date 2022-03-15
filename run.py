@@ -31,12 +31,14 @@ if __name__ == "__main__":
     # 0 > Choix interactif de la mission
     # ------------------------------------------------------------------------------------------------------------
     parser = argparse.ArgumentParser(description='Process Flight Path excel')
-    parser.add_argument('--excel', metavar='excel', type=str, help='path to the flight path xlsx')
+    parser.add_argument('--config', type=str, help='path to the flight configuration')
+    # parser.add_argument('--excel', metavar='excel', type=str, help='path to the flight path xlsx')
     args = parser.parse_args()
-    dirPlanVol = args.excel
+    dirPlanVol = args.config
     if dirPlanVol is None or not os.path.isfile(dirPlanVol):
         print(Style.CYAN + "File browser")
         dirPlanVol = IRd.loadFileGUI(mute=False)
+
 
     # --------------------------------------------------------------------------
     #                    options pour les tests rapides
