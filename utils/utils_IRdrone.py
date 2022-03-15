@@ -154,7 +154,7 @@ def extractFlightPlan(dirPlanVol, mute=True):
         dateMission = planVol['mission']['date']  # date of flight > format DD MM et YYYY
         typeDrone = planVol['drone']['type']  # type of drone (see in the Exif tag of the image of the drone)
         extDrone = planVol['images']['extDrone']  # file format Vi
-        typeIR = planVol['cameraIR']['type']  # type of camera in use (see in the Exif tag of the image of the IR camera)
+        # typeIR = planVol['cameraIR']['type']  # type of camera in use (see in the Exif tag of the image of the IR camera)
         timeLapseDrone = float(planVol['drone']['timelapse'])  # Time Lapse of Drone camera
         timeLapseIR = float(planVol['cameraIR']['timelapse'])  # Time Lapse of IR camera
         extIR = planVol['images']['extIR']  # file format  IR
@@ -163,11 +163,13 @@ def extractFlightPlan(dirPlanVol, mute=True):
     elif osp.basename(dirPlanVol).lower().endswith(".json"):
         with open(dirPlanVol, 'r') as openfile:
             di = json.load(openfile)
+        for inpkey in ["input", "rootdir", "folder", "main"]:
+            if inpkey in di.keys():
+                assert osp.isdir(di[inpkey]), "Please provide a correct folder for key {} = {}".format(inpkey, di[inpkey])
+                dirPlanVol = di[inpkey]
         dirNameIRdrone = di["output"]
-
         dirNameDrone = osp.dirname(di["visible"])
         extDrone = osp.basename(di["visible"]).split('.')[-1]
-        
         dirNameIR = osp.dirname(di["nir"])
         extIR = osp.basename(di["nir"]).split('.')[-1]
         
@@ -189,9 +191,11 @@ def extractFlightPlan(dirPlanVol, mute=True):
     #    Liste des images de l'étude.
     #    Une liste pour les images du drone et une liste pour les images de la caméra infrarouge
     #    Chaque élément de la liste est un triplet (file name image , path name image, date image)
-    dirNameDrone = reformatDirectory(dirNameDrone, xlpath=dirPlanVol)
-    dirNameIR = reformatDirectory(dirNameIR, xlpath=dirPlanVol, makeOutdir=True)
-    dirNameIRdrone = reformatDirectory(dirNameIRdrone, xlpath=dirPlanVol, makeOutdir=True)
+    if osp.isfile(dirPlanVol):
+        dirPlanVol = os.path.dirname(dirPlanVol)
+    dirNameDrone = reformatDirectory(dirNameDrone, rootdir=dirPlanVol)
+    dirNameIR = reformatDirectory(dirNameIR, rootdir=dirPlanVol, makeOutdir=True)
+    dirNameIRdrone = reformatDirectory(dirNameIRdrone, rootdir=dirPlanVol, makeOutdir=True)
     imgListDrone = creatListImgVIS(dirNameDrone, dateMission, '*', extDrone, timeLapseDrone, deltaTimeDrone, cameraModel=typeDrone)
 
     imgListIR = creatListImgNIR(dirNameIR, '*', extIR)
@@ -1019,13 +1023,13 @@ def printPlanVol(planVol):
 
 # ------------------     Gestion des fichiers      ---------------------
 
-def reformatDirectory(di, xlpath=None, makeOutdir=False):
+def reformatDirectory(di, rootdir=None, makeOutdir=False):
     if os.path.exists(di):
         return di
     else:
-        if xlpath is not None:
-            newdi = os.path.join(os.path.dirname(xlpath), di)
-            return reformatDirectory(newdi, xlpath=None, makeOutdir=makeOutdir)
+        if rootdir is not None:
+            newdi = os.path.join(rootdir, di)
+            return reformatDirectory(newdi, rootdir=None, makeOutdir=makeOutdir)
         if makeOutdir:
             os.mkdir(di)
             print("creating output dir: %s" % di)
