@@ -18,6 +18,7 @@ import shutil
 import cv2
 import argparse
 from copy import deepcopy
+from config import CROP
 
 exif_dict_minimal = np.load(osp.join(osp.dirname(__file__), "utils", "minimum_exif_dji.npy"), allow_pickle=True).item()
 
@@ -316,7 +317,8 @@ def process_raw_pairs(
         sync_pairs,
         cals=dict(refcalib=ut.cameracalibration(camera="DJI_RAW"), movingcalib=ut.cameracalibration(camera="M20_RAW")),
         extension=1.4,
-        debug_folder=None, out_dir=None, manual=False, debug=False
+        debug_folder=None, out_dir=None, manual=False, debug=False,
+        crop=None
     ):
     # if debug_folder is None:
     #     debug_folder = osp.dirname(sync_pairs[0][0])
@@ -324,7 +326,7 @@ def process_raw_pairs(
         out_dir = osp.join(osp.dirname(sync_pairs[0][0]), "_RESULTS")
     if not osp.exists(out_dir):
         os.mkdir(out_dir)
-
+    motion_model_list = []
     for index_pair, (vis_pth, nir_pth) in enumerate(sync_pairs):
         logging.warning("processing {} {}".format(osp.basename(vis_pth), osp.basename(nir_pth)))
         if debug_folder is not None:
@@ -348,7 +350,12 @@ def process_raw_pairs(
             manual=manual,
             extension=extension
         )
+        
         # AGGREGATED RESULTS!
+        if crop is not None:
+            aligned_full = aligned_full[crop:-crop, crop:-crop, :]
+            align_full_global = align_full_global[crop:-crop, crop:-crop, :]
+            ref_full = ref_full[crop:-crop, crop:-crop, :]
         if debug:  # SCIENTIFIC LINEAR OUTPUTS
             pr.Image(aligned_full).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR.tif"), gps=gps_vis, exif=exif_dict_minimal)
             pr.Image(align_full_global).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR.tif"), gps=gps_vis, exif=exif_dict_minimal)
@@ -369,6 +376,8 @@ def process_raw_pairs(
                 exif=exif_dict_minimal,
                 gps=gps_vis
             )
+        motion_model_list.append(motion_model)
+    return motion_model_list
 
 
 def write_manual_bat_redo(vis_pth, nir_pth_list, debug_bat_pth, out_dir=None, debug=False, async_suffix=None):
@@ -428,6 +437,7 @@ if __name__ == "__main__":
             out_dir=out_dir,
             manual=args.manual,
             debug=args.debug,
-            extension=extension
+            extension=extension,
+            crop=CROP
         )
 
