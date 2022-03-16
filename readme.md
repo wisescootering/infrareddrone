@@ -42,26 +42,31 @@ Download our [sample folder](https://drive.google.com/drive/folders/1khi0WdWyZ6H
   * In `Synchro` folder where you put all picture from the synchronization phase
 * Create configuration file ( **.xlsx** or **.json**)
   * an excel based on the provided template [Templates/config.xlsx](./Templates/config.xlsx), fill mandatory information.
-  * You can also create a json configuration from the following template [Templates/config.json](./Templates/config.json). 
-    * You can use the `input` key (or `rootdir`) to provide a direct link to a specific folder (that would allow you to store all configurations at a unique place... including keeping your projects configurations under git revision).
-    * Regexp use are suggested in `visible` or `nir` keys to search the images. Please not that this way you can use 2 different folders for NIR and visible images.
-    ```
-    {
-      "output": "ImgIRdrone",
-      "visible": "AerialPhotography/*.DNG",
-      "nir": "AerialPhotography/*.RAW",
-      "visible_timelapse": 2.0,
-      "nir_timelapse": 3.0,
-      "synchro_deltatime": 3894.74037,
-      "synchro_date": "25/01/2022  11:59:49",
-      "coord_GPS_take_off": "N 45.16969 E 3.39996"
-    }
-    ```
-
-* There are some fields where, you will need synchronization info so everything runs correctly.
+  * another option is to create a json configuration from the following template [Templates/config.json](./Templates/config.json). 
 * double click on `synchro.bat` and select the `Synchro` folder
 
 ![synchronization validation](./illustrations/synchro.png)
+
+### JSON configuration approach
+
+* You can use the `input` key (or `rootdir`) to provide a direct link to a specific folder (that would allow you to store all configurations at a unique place... including keeping your projects configurations under git revision).
+* Regexp use are suggested in `visible` or `nir` keys to search the images. Please not that this way you can use 2 different folders for NIR and visible images.
+```
+{
+  "synchro":"Synchro/synchro.npy",
+  "output": "ImgIRdrone",
+  "visible": "AerialPhotography/*.DNG",
+  "nir": "AerialPhotography/*.RAW",
+  "visible_timelapse": 2.0,
+  "nir_timelapse": 3.0,
+}
+```
+* `synchro` field  links to the synchronization file obtained when running `synchro.bat` (double click on `synchro.bat` and select the `Synchro` folder)
+* optional fields `synchro_deltatime`, `synchro_date`, `coord_GPS_take_off` exists to override synchronization parameters.
+
+
+### Excel configuration approach
+* There are some fields where, you will need synchronization info so everything runs correctly.
 
 here you have to copy/paste into the excel 
   * `3894.74`  = delta time.
@@ -72,7 +77,7 @@ here you have to copy/paste into the excel
 ![configuration excel](./illustrations/configuration_excel.png)
 
 
-* Now you're ready to process your images. Double click on `run.bat` and select the excel file. 
+* Now you're ready to process your images. Double click on `run.bat` and select the configuration file (either .json or .xlsx). 
 * Check the altitude profile displayed.
 
 ![flight altitude extracted from Exif data](./illustrations/flight_altitude_profile.png)

@@ -118,6 +118,20 @@ def dateExcel2Py(dateExcel):
     return datePy
 
 
+def extract_synchro_from_dict(di):
+    # Allow manual override
+    dateMission, deltaTimeIR, coord_GPS_take_off = None, None, None
+    if di is not None:
+        if "synchro_date" in di.keys():
+            dateMission = datetime.datetime.strptime(di["synchro_date"], r'%d/%m/%Y %H:%M:%S')
+        for inpkey in ["synchro_deltatime", "synchro deltatime", "deltatime"]:
+            if  inpkey in di.keys():
+                deltaTimeIR = di[inpkey]
+        for inpkey in ["coord_GPS_take_off", "coord GPS take off", "coord GPS Take Off"]:
+            if inpkey in di.keys():
+                coord_GPS_take_off = di[inpkey]
+    return dateMission, deltaTimeIR, coord_GPS_take_off
+
 def extractDateNir(nameImg):
     imgYear = int(nameImg[0:4])
     imgMonth = int(nameImg[5:7])
@@ -168,29 +182,48 @@ def extractFlightPlan(dirPlanVol, mute=True):
             if inpkey in di.keys():
                 assert osp.isdir(di[inpkey]), "Please provide a correct folder for key {} = {}".format(inpkey, di[inpkey])
                 dirPlanVol = di[inpkey]
+        if osp.isfile(dirPlanVol):
+            dirPlanVol = os.path.dirname(dirPlanVol)
         dirNameIRdrone = di["output"]
+        
         # dirNameDrone = osp.dirname(di["visible"])
         # extDrone = osp.basename(di["visible"]).split('.')[-1]
         # dirNameIR = osp.dirname(di["nir"])
         # extIR = osp.basename(di["nir"]).split('.')[-1]
         dirNameIR, dirNameDrone = None, None
         regex_nir, regex_drone = di["nir"], di["visible"]
-        if "synchro_date" in di.keys():
-            dateMission = datetime.datetime.strptime(di["synchro_date"], r'%d/%m/%Y %H:%M:%S')
+        dateMission, deltaTimeIR, coord_GPS_take_off = extract_synchro_from_dict(None)
+        if "synchro" in di.keys():
+            if osp.isfile(di["synchro"]):
+                synchro_file = di["synchro"] # provided an absolute path
+            else:
+                synchro_file = osp.join(dirPlanVol, di["synchro"])
+            assert osp.isfile(synchro_file), "Synchro file shall be provided {}".format(synchro_file)
+            di_synchro = None
+            if osp.basename(synchro_file).lower().endswith(".json"):
+                with open(synchro_file, 'r') as openfile:
+                    di_synchro = json.load(openfile)
+            elif osp.basename(synchro_file).lower().endswith(".pkl") or osp.basename(synchro_file).lower().endswith(".npy") or osp.basename(synchro_file).lower().endswith(".synchro") :
+                di_synchro = np.load(synchro_file, allow_pickle=True).item()
+            dateMission, deltaTimeIR, coord_GPS_take_off = extract_synchro_from_dict(di_synchro)
         for inpkey in ["timelapse_nir", "nir_timelapse",  "timelapse nir", "nir timelapse", "interval nir", "interval_nir"]:
             if  inpkey in di.keys():
                 timeLapseIR = di[inpkey]
         for inpkey in ["timelapse_visible", "visible_timelapse" ,"timelapse visible", "visible timelapse", "interval visible", "interval_visible"]:
             if  inpkey in di.keys():
                 timeLapseDrone = di[inpkey]
-        for inpkey in ["synchro_deltatime", "synchro deltatime", "deltatime"]:
-            if  inpkey in di.keys():
-                deltaTimeIR = di[inpkey]
-
-        coord_GPS_take_off = None
-        for inpkey in ["coord_GPS_take_off", "coord GPS take off", "coord GPS Take Off"]:
-            if inpkey in di.keys():
-                coord_GPS_take_off = di[inpkey]
+        # Allow manual override
+        dateMission_over, deltaTimeIR_over, coord_GPS_take_off_over = extract_synchro_from_dict(di)
+        if dateMission_over is not None:
+            logging.warning("Manually overriden synchro_date")
+            dateMission = dateMission_over
+        if deltaTimeIR_over is not None:
+            logging.warning("Manually overriden synchro_deltatime")
+            deltaTimeIR = deltaTimeIR_over
+        if coord_GPS_take_off_over is not None:
+            logging.warning("Manually overriden GPS take off coordinate")
+            coord_GPS_take_off = coord_GPS_take_off_over
+    
         planVol = dict(mission={}, drone={})
         planVol['mission']['date'] = dateMission
         planVol['mission']['coord GPS Take Off'] = coord_GPS_take_off

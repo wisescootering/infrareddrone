@@ -1,10 +1,8 @@
 {
+    "synchro":"Synchro/synchro.npy",
     "output": "ImgIRdrone",
     "visible": "AerialPhotography/*.DNG",
     "visible_timelapse": 2.0,
     "nir": "AerialPhotography/*.RAW",
-    "nir_timelapse": 3.0,
-    "synchro_deltatime": 3894.74037,
-    "synchro_date": "25/01/2022  11:59:49",
-    "coord_GPS_take_off": "N 45.16969 E 3.39996"
+    "nir_timelapse": 3.0
 }
