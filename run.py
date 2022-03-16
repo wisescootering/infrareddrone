@@ -18,6 +18,7 @@ import argparse
 import os.path as osp
 import automatic_registration
 from version import __version__ as versionIRdrone
+from config import CROP
 
 if __name__ == "__main__":
     # --------------------------------------------------------------------------------------------------------------
@@ -106,7 +107,7 @@ if __name__ == "__main__":
     autoRegistration = IRd.answerYesNo('Yes (y/1) |  No (n/0):')
     if autoRegistration:
         print(Style.CYAN + '------ automatic_registration.process_raw_pairs' + Style.RESET)
-        automatic_registration.process_raw_pairs(listImgMatch[::1], out_dir=dirNameIRdrone)
+        automatic_registration.process_raw_pairs(listImgMatch[::1], out_dir=dirNameIRdrone, crop=CROP)
     else:
         print(
             Style.YELLOW + 'Warning :  automatic_registration.process_raw_pairs ... Process neutralized.' + Style.RESET)
