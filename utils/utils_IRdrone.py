@@ -162,10 +162,24 @@ def extractFlightPlan(dirPlanVol, mute=True):
     typeDrone = None
     if osp.basename(dirPlanVol).lower().endswith(".xlsx"):
         planVol = readFlightPlan(dirPlanVol, mute=mute)
+        
+        dateMission, deltaTimeIR, coord_GPS_take_off = extract_synchro_from_dict(None)
+        if planVol["synchro"] is not None:
+            synchro_file = osp.join(osp.dirname(dirPlanVol), planVol["synchro"])
+            assert osp.isfile(synchro_file), "no synchro file {}".format(synchro_file)
+            di_synchro = np.load(synchro_file, allow_pickle=True).item()
+            dateMission, deltaTimeIR, coord_GPS_take_off = extract_synchro_from_dict(di_synchro)
+            if coord_GPS_take_off is not None:
+                planVol['mission']['coord GPS Take Off'] = coord_GPS_take_off
+            if dateMission is not None:
+                planVol['mission']['date'] = dateMission
+            if deltaTimeIR is not None:
+                planVol['mission']['deltatime'] = deltaTimeIR
         dirNameIRdrone = planVol['images']['repertoireViR  (save)']  # folder for save photography  VIR,  NDVI (output)
         dirNameDrone = planVol['images']['repertoireDrone']  # Drone photography folder   (input)
         dirNameIR = planVol['images']['repertoireIR']  # IR photography folder (input)
-        dateMission = planVol['mission']['date']  # date of flight > format DD MM et YYYY
+        if planVol['mission']['date'] is not None:
+            dateMission = planVol['mission']['date']  # date of flight > format DD MM et YYYY
         typeDrone = planVol['drone']['type']  # type of drone (see in the Exif tag of the image of the drone)
         extDrone = planVol['images']['extDrone']  # file format Vi
         # typeIR = planVol['cameraIR']['type']  # type of camera in use (see in the Exif tag of the image of the IR camera)
@@ -173,7 +187,9 @@ def extractFlightPlan(dirPlanVol, mute=True):
         timeLapseIR = float(planVol['cameraIR']['timelapse'])  # Time Lapse of IR camera
         extIR = planVol['images']['extIR']  # file format  IR
         deltaTimeDrone = float(planVol['drone']['deltatime'])  # decalage horloge caméra du drone / horloge de référence
-        deltaTimeIR = float(planVol['cameraIR']['deltatime'])  # decalage horloge caméra infrarouge /horloge de référence
+        if planVol['cameraIR']['deltatime'] is not None:
+            deltaTimeIR = float(planVol['cameraIR']['deltatime'])  # decalage horloge caméra infrarouge /horloge de référence
+
         regex_nir, regex_drone = "*.%s"%extIR, '*.%s'%extDrone
     elif osp.basename(dirPlanVol).lower().endswith(".json"):
         with open(dirPlanVol, 'r') as openfile:
@@ -327,7 +343,8 @@ def readFlightPlan(pathPlanVolExcel, mute=None):
                     'vent': sheet.cell(numeteo + 2, 2).value,
                     'temperature': sheet.cell(numeteo + 3, 2).value,
                     'humidite': sheet.cell(numeteo + 4, 2).value
-                    }
+                    },
+                'synchro': sheet.cell(numeteo + 5, 2).value
                }
     workbook.close()
 

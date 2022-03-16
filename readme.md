@@ -37,20 +37,20 @@ Download our [sample folder](https://drive.google.com/drive/folders/1khi0WdWyZ6H
 
 
 ## **Tutorial** : Step by step processing 
-* Once finished, offload your SD cards from IR & Visible cameras into the same folder:
+* 1/ Once finished, offload your SD cards from IR & Visible cameras into the same folder:
   * In `AerialPhotography` where you put all pictures from the flight phase (*the folder name can be changed in the configuration excel*) 
   * In `Synchro` folder where you put all picture from the synchronization phase
-* Create configuration file ( **.xlsx** or **.json**)
-  * an excel based on the provided template [Templates/config.xlsx](./Templates/config.xlsx), fill mandatory information.
+* 2/ Create configuration file from the template ( **.xlsx** for beginers or **.json** for advanced users)
+  * based on excel on the provided template [Templates/config.xlsx](./Templates/config.xlsx), fill mandatory information in green and red.
   * another option is to create a json configuration from the following template [Templates/config.json](./Templates/config.json). 
-* double click on `synchro.bat` and select the `Synchro` folder
+* 3/ Double click on `synchro.bat` and select the `Synchro` folder. 
+  * This will open a graph, please make sure that the black and orange curves overlap correctly. Then you can close the graph.
+  * This will generate a `syncho.npy` binary file  in the `Synchro` folder ... which you will re-use as a configuration parameter
 
 ![synchronization validation](./illustrations/synchro.png)
 
 ### JSON configuration approach
 
-* You can use the `input` key (or `rootdir`) to provide a direct link to a specific folder (that would allow you to store all configurations at a unique place... including keeping your projects configurations under git revision).
-* Regexp use are suggested in `visible` or `nir` keys to search the images. Please not that this way you can use 2 different folders for NIR and visible images.
 ```
 {
   "synchro":"Synchro/synchro.npy",
@@ -61,27 +61,21 @@ Download our [sample folder](https://drive.google.com/drive/folders/1khi0WdWyZ6H
   "nir_timelapse": 3.0,
 }
 ```
-* `synchro` field  links to the synchronization file obtained when running `synchro.bat` (double click on `synchro.bat` and select the `Synchro` folder)
-* optional fields `synchro_deltatime`, `synchro_date`, `coord_GPS_take_off` exists to override synchronization parameters.
-
+* **`synchro` field  links to the synchronization file obtained when running `synchro.bat` previously**
+* You can change the `output` folder here. 
+* glob regexp use are suggested in `visible` or `nir` keys to search the images. *Please not that this way you can use 2 different folders for NIR and visible images.*
 
 ### Excel configuration approach
-* There are some fields where, you will need synchronization info so everything runs correctly.
-
-here you have to copy/paste into the excel 
-  * `3894.74`  = delta time.
-  * `25/01/2022 11:59:49` = date
-  * `N 45.16954 E 3.40005` = Coord GPS Take Off
-
+* You can simply put the relative path to `synchro.npy` and you should be good to go
 
 ![configuration excel](./illustrations/configuration_excel.png)
 
 
-* Now you're ready to process your images. Double click on `run.bat` and select the configuration file (either .json or .xlsx). 
-* Check the altitude profile displayed.
+* 4/ Now you're ready to process your images. Double click on `run.bat` and select the configuration file (either .json or .xlsx). 
+* 5/ Check the altitude profile displayed.
 
 ![flight altitude extracted from Exif data](./illustrations/flight_altitude_profile.png)
-* Confirm you want to run processing on your images. Then be very patient, your files will be processed and stored in the `ImgIRdrone` folder.
+* 6/ Confirm you want to run processing on your images. Then be very patient, your files will be processed and stored in the `ImgIRdrone` folder.
 
 ![Fused results visible and NIR to provied NDVI for instance](./illustrations/results.png)
 
@@ -104,11 +98,33 @@ here you have to copy/paste into the excel
 ## Synchronization
 
 * Aruco (=QR code) chart can be downloaded [here](https://drive.google.com/file/d/1rMB6LjY2Mi3gQDq5Mr6PrtMRRrahtkRC/view?usp=sharing) and has to be printed to A4 or A3 paper
-* [full procedure description](https://drive.google.com/drive/folders/1Uk-eWBwteD2reOCdT0kngCWgcddz4C5s?usp=sharing) is available here.
+
+* Several procedures were tested:
+  * Spinning the chart under the static drone **!RECOMMENDED!**
+    * [full procedure here](https://docs.google.com/presentation/d/1h4Z3gMXSZpbntx-dJ7GK4vR63rED0lpN/edit?usp=sharing&ouid=107424034863786906577&rtpof=true&sd=true)
+    * [arduino code for the spinning table](https://drive.google.com/file/d/1ECo0p3RrOPgs_Xkl1UeffkmGnplZRWYM/view?usp=sharing)
+  * Rotating the drone above the static chart: *more complicated to manipulate, not recommended* [description](https://drive.google.com/drive/folders/1Uk-eWBwteD2reOCdT0kngCWgcddz4C5s?usp=sharing) is available here.
+* Sample synchro data can be downloaded from [here](https://drive.google.com/drive/folders/10SCdV_wb57L6ODKlqpWORkE1B0559aUL?usp=sharing) 
 * Copy the selected synchronization images into a "Synchro" folder -> visible & NIR images (expected .RAW and .DNG files by default).
 * Double click on [synchro.bat](synchro.bat). *(Advanced users can use CLI obviously in case of other images format)* 
-* Copy paste the delay result to your configuration excel in  `cameraIR` / `deltatime` . You can then close the window.
-* Sample synchro data can be downloaded from [here](https://drive.google.com/drive/folders/10SCdV_wb57L6ODKlqpWORkE1B0559aUL?usp=sharing) 
+* Unless you want to do manual manipulations, do not paste the delay result to your configuration excel in  `cameraIR` / `deltatime` . You can simply close the window, the program saved a synchro.npy file in the Synchro folder!
+
+
+### Manual fallback : forcing parameters
+* Mastering the config.json:
+  * *optional: You can use the `input` key (or `rootdir`) to provide a direct link to a specific folder (that would allow you to store all configurations at a unique place... including keeping your projects configurations under git revision).*
+  * optional fields in config.json, these fields exist to override synchronization parameters coming from synchro.npy
+    * `synchro_deltatime`
+    * `synchro_date`
+    * `coord_GPS_take_off` 
+* In the excel template, there are some fields marked in blue where you can also override the values from synchro.npy
+
+for instance, you have to copy/paste into the excel 
+  * `3894.74`  = delta time.
+  * `25/01/2022 11:59:49` = date
+  * `N 45.16954 E 3.40005` = Coord GPS Take Off
+
+
 
 ## Alignment and Fusion
 * Data can be processed by double cliking on `run.bat`. This will use [run.py](`run.py`) to select a given excel file. Advanced users can also use command line interface [automatic_registration.py](automatic_registration.py) 
