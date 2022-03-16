@@ -342,12 +342,23 @@ if __name__ == "__main__":
                       % (shift_0 + cost_dict['timeShift'], cost_function(float(shift_0), cost_dict),
                          res.x + cost_dict['timeShift'], cost_function(float(res.x), cost_dict)))
                 
-                print(100*'_'+'\nIn configuration, please report the following results:\n\tSync Delta Time:\t{:.2f}\n\tSync Start Date:\t{}\n\tCoord GPS take off:\t{}'.format(
+                print(100*'_'+'\nIn configuration excel, please report the following results:\n\tSync Delta Time:\t{:.2f}\n\tSync Start Date:\t{}\n\tCoord GPS take off:\t{}'.format(
                     (float(res.x) + cost_dict['timeShift']),
                     sync_dict[config.VIS_CAMERA][0]["date"].strftime("%d/%m/%Y %H:%M:%S"),
                     gps_str
                     )
                 )
+                
+                sync_results_file = osp.join(folder, "synchro.npy")
+                np.save(
+                    sync_results_file,
+                    {
+                        "synchro_deltatime": float(res.x) + cost_dict['timeShift'],
+                        "synchro_date": sync_dict[config.VIS_CAMERA][0]["date"].strftime("%d/%m/%Y %H:%M:%S"),
+                        "coord_GPS_take_off": gps_str
+                    }
+                )
+                print(100*'_'+'\nIn configuration json, you can link the pickle file\n\t'+ "\"synchro\":\"{}\",".format(sync_results_file))
                 ReDo = False
             # -------   Visualisation des résultats de l'optimisation automatique
             fitPlot(cost_dict, res, camera_definition, extra_title="Sync Start Date: {}\nGPS: {}".format(
