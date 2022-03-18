@@ -1,3 +1,5 @@
+__version__ = 1.1
+
 VIS_CAMERA = "DJI_RAW"
 NIR_CAMERA = "M20_RAW"
 CROP = 50
