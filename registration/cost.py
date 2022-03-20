@@ -1,8 +1,12 @@
 from skimage import filters, transform
+import sys
+import os.path as osp
+root = osp.join(osp.dirname(__file__), "..")
+sys.path.append(root)
 import numpy as np
 from irdrone.utils import c2g, g2c
 from numba import jit
-import os.path as osp
+
 import logging
 import irdrone.process as pr
 from registration.constants import LAPLACIAN_ENERGIES, GRAY_SCALE, COLORED, SSD, NTG
@@ -102,7 +106,7 @@ def multispectral_representation(img, sigma_gaussian=None, mode=LAPLACIAN_ENERGI
 
 
 
-@jit(nopython=True)
+@jit(nopython=True, parallel=True)
 def cost_surface_SSD(patch_ref, patch_mov_search, search_y, search_x):
     """Sum of squared difference optimized by Numba
     """
@@ -115,7 +119,7 @@ def cost_surface_SSD(patch_ref, patch_mov_search, search_y, search_x):
     return cost
 
 
-@jit(nopython=True)
+@jit(nopython=True, parallel=True)
 def cost_surface_NTG(patch_ref, patch_mov_search, search_y, search_x):
     """Normalized Correlation Coefficient - optimized by Numba
     """
@@ -143,7 +147,7 @@ def get_patch(ref, mov, crop):
     return patch_ref, patch_mov
 
 
-@jit(nopython=True)
+@jit(nopython=True, parallel=True)
 def compute_cost_surfaces(
         ref, mov,
         y_n=3, x_n=3, search_y=3, search_x=3,
@@ -152,16 +156,16 @@ def compute_cost_surfaces(
     y_s, x_s, c_s = ref.shape
     p_size_x = int(np.floor(x_s / x_n))
     p_size_y = int(np.floor(y_s / y_n))
-    costs = np.empty((y_n, x_n, 2*search_y+1, 2*search_x+1, c_s))
-    centers = np.empty((y_n, x_n, 2))
-    patch_coords = np.empty((y_n, x_n, 4))
+    costs = np.zeros((y_n, x_n, 2*search_y+1, 2*search_x+1, c_s))
+    centers = np.zeros((y_n, x_n, 2))
+    patch_coords = np.zeros((y_n, x_n, 4))
     for y_id in range(y_n):
         for x_id in range(x_n):
             y_start, y_end = y_id*p_size_y, (y_id+1)*p_size_y
             x_start, x_end = x_id*p_size_x, (x_id+1)*p_size_x
             y_center, x_center = (y_start+y_end)/2., (x_start+x_end)/2.
-            patch_coords[y_id, x_id, :] = [y_start, y_end, x_start, x_end]
-            centers[y_id, x_id, :] = [x_center, y_center]
+            patch_coords[y_id, x_id, 0], patch_coords[y_id, x_id, 1], patch_coords[y_id, x_id, 2], patch_coords[y_id, x_id, 3] = y_start, y_end, x_start, x_end
+            centers[y_id, x_id, 0], centers[y_id, x_id, 1] = x_center, y_center
             patch_ref, patch_mov = get_patch(ref, mov, (y_start, y_end, x_start, x_end))
             patch_mov_search = patch_mov[search_y:-search_y, search_x:-search_x, :]
             if dist_mode == SSD:
