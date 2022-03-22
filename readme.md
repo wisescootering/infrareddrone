@@ -13,11 +13,34 @@
 
 ------------
 
-------------
-## 🔥 Software installation
 
 ------------
-*For practical reasons*, only **windows is supported** as of now.
+## 🐋 Docker 
+
+------------
+* First of all
+  * `git clone https://github.com/wisescootering/infrareddrone.git`
+  * `cd infrareddrone`
+* Once you have [docker](https://www.docker.com/) running,
+* Build the docker image `docker build -t irdrone -f .\Dockerfile .`
+* Download our sample folder [FLY_TEST](https://drive.google.com/drive/folders/1khi0WdWyZ6H7Z7Lc5Q_i-Mm0Xq2sgpd1?usp=sharing)
+* Run the docker image. `docker run -v C:\Users\xxxx\Documents\FLY_test:/home/samples/FLY_test -it irdrone`
+  * `python3 synchronization/synchro_by_aruco.py --folder /home/samples/FLY_test/Synchro/ --vis "*.DNG" --nir "*.RAW"`
+  * `python3 run.py --config /home/samples/FLY_test/config.json`
+
+
+Note:
+ * *press CTRL+D to escape*
+ * *Once you are inside the docker session  make sure you have access to exiftool & rawtherapee-cli...*
+ * *There are no visual checks through graphs*
+
+
+
+------------
+## 🔥 Classic software installation
+
+------------
+*For practical reasons*, only **windows is supported** as of now... For anything else please use the docker version!
 * install [Anaconda](https://www.anaconda.com/products/individual) with all default options. [Anaconda for windows, python 3.9](https://repo.anaconda.com/archive/Anaconda3-2021.11-Windows-x86_64.exe)
 * [install.bat](install.bat) will set up the right python environment for you. 
 * you have to install [raw therapee](https://www.rawtherapee.com) software at the default windows location.
