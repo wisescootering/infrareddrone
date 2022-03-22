@@ -336,12 +336,13 @@ def process_raw_pairs(
         offset_async = [offset for offset in [0, -1, +1, -2, +2]
                         if (index_pair+offset >=0 and index_pair+offset<len(sync_pairs))]
         nir_pth_async = [sync_pairs[index_pair+offset][1] for offset in offset_async]
-        write_manual_bat_redo(vis_pth, nir_pth_async,
+        if os.name == "nt":
+            write_manual_bat_redo(vis_pth, nir_pth_async,
                               osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO_ASYNC.bat"),
                               async_suffix=offset_async,
                               debug=False)
-        write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO.bat"), debug=False)
-        write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_DEBUG.bat"), debug=True)
+            write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO.bat"), debug=False)
+            write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_DEBUG.bat"), debug=True)
         # continue
         gps_vis = pr.Image(vis_pth).gps
         ref_full, aligned_full, align_full_global, motion_model = align_raw(

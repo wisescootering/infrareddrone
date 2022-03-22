@@ -20,8 +20,11 @@ import utils.utils_GPS as uGPS
 import utils.utils_IRdrone_Plot as IRdplt
 import os
 import sys
-from tkinter import Tk
-from tkinter.filedialog import askopenfilename, askdirectory
+try:
+	from tkinter import Tk
+	from tkinter.filedialog import askopenfilename, askdirectory
+except:
+	pass
 from operator import itemgetter
 import datetime
 import openpyxl
@@ -366,7 +369,8 @@ def creatListImgNIR(dirName, rege):
     imlist = sorted(ut.imagepath(imgname=rege, dirname=dirName))
     imgList = []
     for i in range(len(imlist)):
-        nameImg = imlist[i].split('\\')[len(imlist[i].split('\\')) - 1]
+        sep = '``' if os.name =="nt" else "/"
+        nameImg = imlist[i].split(sep)[len(imlist[i].split(sep)) - 1]
         dateImg = extractDateNir(nameImg)
         imgList.append((nameImg, imlist[i], dateImg))  # added to image list
     return imgList
