@@ -1,7 +1,9 @@
 import os.path as osp
+import sys
+sys.path.append(osp.join(osp.dirname(__file__), ".."))
 import numpy as np
 from registration.newton import newton_iter, quadric_approximation
-from irdrone.registration import geometric_rigid_transform_estimation
+from irdrone.register import geometric_rigid_transform_estimation
 from registration.warp_flow import warp_from_sparse_vector_field
 # from irdrone.utils import c2g, g2c
 import matplotlib.pyplot as plt

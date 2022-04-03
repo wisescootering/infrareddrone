@@ -7,6 +7,7 @@ import os.path as osp
 import copy
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider #PYPLOT BACKEND
+from copy import deepcopy
 
 CONTROLWINDOW = "Press S to save / I to display tuning parameters / Q to quit"
 
@@ -251,8 +252,8 @@ class ImagePipe:
         self.maxColorBar = maxColorBar
 
     def engine(self, imglst, geometricscale=None):
-        if not self.signalIn and self.floatpipe: result = [1. * imglst[0]] + list(map(lambda x: x.astype(np.float), imglst))
-        else: result = [imglst[0]] + imglst
+        if not self.signalIn and self.floatpipe: result = [1. * deepcopy(imglst[0])] + list(map(lambda x: x.astype(np.float), imglst.copy()))
+        else: result = [deepcopy(imglst[0])] + deepcopy(imglst)
         for prc in self.sliders:
             if prc is None:
                 continue
@@ -487,9 +488,9 @@ class ImagePipe:
 if __name__ == "__main__":
     import utils
     # DEMO OF A BLENDING BETWEEN 2 IMAGES
-    imgl = [utils.testimage(xsize=720, ysize=720, sat=sat) for sat in [1., 0.]]
+    imgl = [utils.testimage(xsize=720, ysize=720, sat=sat).astype(np.float32) for sat in [1., 0.]]
     TRANSLATION2 = Translation("TIMAGE2", slidersName=["TX 2", "TY 2"], inputs=[2,], outputs=[2,], vrange=(-50.,50.,0.))
-    ip = ImagePipe(imgl, sliders=[WB, TRANSLATION2, ALPHA, GAMMA])
+    ip = ImagePipe(imgl, sliders=[WB, TRANSLATION2, ALPHA, GAMMA], floatpipe=False)
     ip.gui()
 
     # FUSION OF 2 DIFFERENT SPRECTRUMS
@@ -497,9 +498,9 @@ if __name__ == "__main__":
     GLIN2 = GammaFixed("LINEARIZATION_IMG2", slidersName=[], inputs=[2,], outputs=[2,]);GLIN2.setGamma(1./2.2)
     ip = ImagePipe(
         [
-            process.loadimage(utils.imagepath(imgname="*Full*"))[0],
-            process.loadimage(utils.imagepath(imgname="*IR760*"))[0],
+            process.loadimage(utils.imagepath(imgname="*Full*"))[0].astype(np.float32),
+            process.loadimage(utils.imagepath(imgname="*IR760*"))[0].astype(np.float32),
         ],
-        sliders=[GLIN, BRIGHTNESS, WB, GLIN2, TRANSLATION2, ADD, GAMM, GAMMA]
+        sliders=[GLIN, BRIGHTNESS, WB, GLIN2, TRANSLATION2, ADD, GAMM, GAMMA],
     )
     ip.gui()

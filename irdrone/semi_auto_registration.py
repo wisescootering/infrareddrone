@@ -1,17 +1,21 @@
+import sys
+import os
+osp = os.path
+root = osp.join(osp.dirname(__file__), "..")
+sys.path.append(root)
 from skimage.registration import phase_cross_correlation
 from skimage.transform import warp_polar
 from skimage import filters
 from skimage import exposure
 import irdrone.utils as ut
 import irdrone.process as pr
-from application import warp
+from registration.warp_flow import warp
 import irdrone.imagepipe as ipipe
-from irdrone.registration import register_by_blocks, estimateFeaturePoints
+from irdrone.register import register_by_blocks, estimateFeaturePoints
 import numpy as np
 import cv2
 import logging
-import os
-osp = os.path
+
 ROTATE = "Rotate"
 
 

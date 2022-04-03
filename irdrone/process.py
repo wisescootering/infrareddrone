@@ -3,8 +3,10 @@
 image processing utilities
 """
 import cv2
+import sys
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 import os.path as osp
 import PIL.Image
 import PIL.ExifTags
@@ -13,15 +15,21 @@ import exifread
 import datetime
 import logging
 from os import mkdir
+sys.path.append(osp.join(osp.dirname(__file__), ".."))
 from irdrone.utils import Style, conversionGPSdms2dd, get_polar_shading_map, contrast_stretching
 import subprocess
 from pathlib import Path
 import json
 
-RAWTHERAPEEPATH = r"C:\Program Files\RawTherapee\5.8\rawtherapee-cli.exe"
-EXIFTOOLPATH = osp.join(osp.dirname(__file__), "..", "exiftool", "exiftool.exe")
-assert osp.exists(RAWTHERAPEEPATH), "Please install raw therapee first http://www.rawtherapee.com/downloads/5.8/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
-assert osp.exists(EXIFTOOLPATH), "Requires exif tool at {} from https://exiftool.org/".format(EXIFTOOLPATH)
+if os.name == 'nt':
+    RAWTHERAPEEPATH = r"C:\Program Files\RawTherapee\5.8\rawtherapee-cli.exe"
+    assert osp.exists(RAWTHERAPEEPATH), "Please install raw therapee first http://www.rawtherapee.com/downloads/5.8/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
+    EXIFTOOLPATH = osp.join(osp.dirname(__file__), "..", "exiftool", "exiftool.exe")
+    assert osp.exists(EXIFTOOLPATH), "Requires exif tool at {} from https://exiftool.org/".format(EXIFTOOLPATH)
+
+else:
+    RAWTHERAPEEPATH = "rawtherapee-cli"
+    EXIFTOOLPATH = "exiftool"
 
 shading_correction_DJI = None
 shading_correction_M20 = None
@@ -272,12 +280,15 @@ class Image:
                 self._lineardata = rawimg
 # -------------------------------------------------------------------------------------------------------- SJCAM M20 RAW
             elif str.lower(osp.basename(self.path)).endswith("raw"):
-                sjcam_converter = osp.join(osp.dirname(osp.abspath(__file__)), "..", "sjcam_raw2dng", "sjcam_raw2dng.exe")
-                sjconverter_link = "https://github.com/yanburman/sjcam_raw2dng/releases/tag/v1.2.0"
-                assert osp.isfile(sjcam_converter), "{} does not exist - please download from {}".format(
-                    sjcam_converter,
-                    sjconverter_link
-                )
+                if os.name == "nt":
+                    sjcam_converter = osp.join(osp.dirname(osp.abspath(__file__)), "..", "sjcam_raw2dng", "sjcam_raw2dng.exe")
+                    sjconverter_link = "https://github.com/yanburman/sjcam_raw2dng/releases/tag/v1.2.0"
+                    assert osp.isfile(sjcam_converter), "{} does not exist - please download from {}".format(
+                        sjcam_converter,
+                        sjconverter_link
+                    )
+                else:
+                    sjcam_converter = osp.join(osp.dirname(osp.abspath(__file__)), "..", "sjcam_raw2dng_linux", "sjcam_raw2dng")
                 conv_dir = osp.join(osp.dirname(self.path), "_conversion_sjcam")
                 if not osp.isdir(conv_dir):
                     mkdir(conv_dir)

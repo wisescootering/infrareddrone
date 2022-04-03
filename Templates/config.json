@@ -1,0 +1,8 @@
+{
+    "synchro":"Synchro/synchro.npy",
+    "output": "ImgIRdrone",
+    "visible": "AerialPhotography/*.DNG",
+    "visible_timelapse": 2.0,
+    "nir": "AerialPhotography/*.RAW",
+    "nir_timelapse": 3.0
+}

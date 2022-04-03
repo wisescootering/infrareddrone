@@ -1,6 +1,6 @@
 import irdrone.utils as ut
 import irdrone.process as pr
-from application import warp
+from registration.warp_flow import warp
 import numpy as np
 import logging
 import os.path as osp
@@ -12,12 +12,44 @@ osp = os.path
 from synchronization.synchronization import synchronize_data
 import time
 from datetime import datetime, timedelta
-from customApplication import colorMapNDVI
+from matplotlib.colors import LinearSegmentedColormap
 import irdrone.imagepipe as ipipe
 import shutil
 import cv2
 import argparse
 from copy import deepcopy
+from config import CROP
+
+exif_dict_minimal = np.load(osp.join(osp.dirname(__file__), "utils", "minimum_exif_dji.npy"), allow_pickle=True).item()
+
+def colorMapNDVI():
+    #  définition de la palette des couleurs pour l'indice NDVI à partir de couleurs prédéfinies
+    #  voir les couleurs par exemple ici   http://xymaths.free.fr/Informatique-Programmation/Couleurs/Liste.php
+    colors = ["black",
+              "dimgray",
+              "lightgray",
+              "burlywood",
+              "lawngreen",
+              "lightseagreen",
+              "forestgreen",
+              "lightgray"
+              ]
+    #   répartition des plages de couleurs  (entre 0 et 1)
+    nodes = [0.0,
+             35. / 100,
+             45. / 100,
+             51. / 100,
+             60. / 100,
+             65. / 100,
+             75. / 100,
+             1.0
+             ]
+    myColorMap = LinearSegmentedColormap.from_list("mapNDVI", list(zip(nodes, colors)))
+
+    # Autre possibilité: egale répartition entre les couleurs
+    # myColorMap = LinearSegmentedColormap.from_list("mapNDVI", colors)  #
+
+    return myColorMap
 
 
 class VegetationIndex(ipipe.ProcessBlock):
@@ -172,7 +204,7 @@ def coarse_alignment(ref_full, mov_full, cals, yaw_main, pitch_main, roll_main, 
     return mov_wr_fullres, dict(yaw=yaw_main + yaw_refine, pitch=pitch_main + pitch_refine, roll=roll_main)
 
 
-def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extension=1.4, manual=True):
+def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extension=1.4, manual=True, init_angles=[0., 0., 0.]):
     """
     :param vis_path: Path to visible DJI DNG image
     :param nir_path: Path to NIR SJCAM M20 RAW image
@@ -206,7 +238,7 @@ def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extens
             alignment_params = user_assisted_manual_alignment(ref_full, mov_full, cals)
             yaw_main, pitch_main, roll_main = alignment_params["yaw"], alignment_params["pitch"], alignment_params["roll"]
         else:
-            yaw_main, pitch_main, roll_main = 0., 0., 0.
+            yaw_main, pitch_main, roll_main = init_angles
         mov_wr_fullres, coarse_rotation_estimation = coarse_alignment(
             ref_full, mov_full, cals,
             yaw_main, pitch_main, roll_main,
@@ -285,7 +317,8 @@ def process_raw_pairs(
         sync_pairs,
         cals=dict(refcalib=ut.cameracalibration(camera="DJI_RAW"), movingcalib=ut.cameracalibration(camera="M20_RAW")),
         extension=1.4,
-        debug_folder=None, out_dir=None, manual=False, debug=False
+        debug_folder=None, out_dir=None, manual=False, debug=False,
+        crop=None, listPts=None
     ):
     # if debug_folder is None:
     #     debug_folder = osp.dirname(sync_pairs[0][0])
@@ -293,9 +326,7 @@ def process_raw_pairs(
         out_dir = osp.join(osp.dirname(sync_pairs[0][0]), "_RESULTS")
     if not osp.exists(out_dir):
         os.mkdir(out_dir)
-
-    exif_dict_minimal = np.load(osp.join(osp.dirname(__file__), "minimum_exif_dji.npy"), allow_pickle=True).item()
-
+    motion_model_list = []
     for index_pair, (vis_pth, nir_pth) in enumerate(sync_pairs):
         logging.warning("processing {} {}".format(osp.basename(vis_pth), osp.basename(nir_pth)))
         if debug_folder is not None:
@@ -305,21 +336,28 @@ def process_raw_pairs(
         offset_async = [offset for offset in [0, -1, +1, -2, +2]
                         if (index_pair+offset >=0 and index_pair+offset<len(sync_pairs))]
         nir_pth_async = [sync_pairs[index_pair+offset][1] for offset in offset_async]
-        write_manual_bat_redo(vis_pth, nir_pth_async,
+        if os.name == "nt":
+            write_manual_bat_redo(vis_pth, nir_pth_async,
                               osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO_ASYNC.bat"),
                               async_suffix=offset_async,
                               debug=False)
-        write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO.bat"), debug=False)
-        write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_DEBUG.bat"), debug=True)
+            write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO.bat"), debug=False)
+            write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_DEBUG.bat"), debug=True)
         # continue
-        gps_vis = pr.Image(vis_pth).gps
+        gps_vis = pr.Image(vis_pth).gps #@TODO: alain-neveu provide absolute altitude from listPts
         ref_full, aligned_full, align_full_global, motion_model = align_raw(
             vis_pth, nir_pth, cals,
             debug_dir=debug_dir, debug=debug,
             manual=manual,
-            extension=extension
+            extension=extension,
+            init_angles=[0., 0., 0.] # @TODO: alain-neveu please init with angles from listPts from drone/gimbal angles
         )
+        
         # AGGREGATED RESULTS!
+        if crop is not None:
+            aligned_full = aligned_full[crop:-crop, crop:-crop, :]
+            align_full_global = align_full_global[crop:-crop, crop:-crop, :]
+            ref_full = ref_full[crop:-crop, crop:-crop, :]
         if debug:  # SCIENTIFIC LINEAR OUTPUTS
             pr.Image(aligned_full).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR.tif"), gps=gps_vis, exif=exif_dict_minimal)
             pr.Image(align_full_global).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR.tif"), gps=gps_vis, exif=exif_dict_minimal)
@@ -340,6 +378,8 @@ def process_raw_pairs(
                 exif=exif_dict_minimal,
                 gps=gps_vis
             )
+        motion_model_list.append(motion_model)
+    return motion_model_list
 
 
 def write_manual_bat_redo(vis_pth, nir_pth_list, debug_bat_pth, out_dir=None, debug=False, async_suffix=None):
@@ -399,6 +439,7 @@ if __name__ == "__main__":
             out_dir=out_dir,
             manual=args.manual,
             debug=args.debug,
-            extension=extension
+            extension=extension,
+            crop=CROP
         )
 
