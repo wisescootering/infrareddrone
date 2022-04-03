@@ -19,6 +19,7 @@ from irdrone.utils import Style
 import utils.utils_GPS as uGPS
 import utils.utils_IRdrone_Plot as IRdplt
 import os
+import pandas as pd
 import sys
 try:
 	from tkinter import Tk
@@ -1005,7 +1006,7 @@ def writeSummaryFlightExcel(flightPlanSynthesis, pathName):
     print(Style.CYAN + ' %s  successfully saved.' % pathName + Style.RESET)
 
 
-def readFlightSummary(dir_mission, mute=None):
+def readFlightSummary(dir_mission, mute=None, no_pandas=False):
     """
         Read the FlightSummary  in Excel file.
 
@@ -1014,14 +1015,18 @@ def readFlightSummary(dir_mission, mute=None):
     :return: listSummaryFlight  data list for each pair of VIS-NIR images (timeDeviation, altitude, etc.)
     """
     summaryPath = osp.join(dir_mission, "FlightSummary.xlsx")
+    
     txt = 'Read data from  ' + summaryPath
     print(Style.CYAN + txt + Style.RESET)
-
+    if not no_pandas:
+        df = pd.read_excel(summaryPath) 
+        return df.values.tolist()
     workbook = openpyxl.load_workbook(summaryPath, read_only=True, data_only=True)
     sheet = workbook['Summary']
     listSummaryFlight = []
     nulg = 2  # first line of data
     while sheet.cell(nulg, 1).value != None:
+        print("new line")
         num_pt = int(sheet.cell(nulg, 1).value)  # N° point
         imgVisName = str(sheet.cell(nulg, 2).value)  # name of image VIS
         imgNirName = str(sheet.cell(nulg, 3).value)  # name  of image NIR
