@@ -204,7 +204,7 @@ def coarse_alignment(ref_full, mov_full, cals, yaw_main, pitch_main, roll_main, 
     return mov_wr_fullres, dict(yaw=yaw_main + yaw_refine, pitch=pitch_main + pitch_refine, roll=roll_main)
 
 
-def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extension=1.4, manual=True):
+def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extension=1.4, manual=True, init_angles=[0., 0., 0.]):
     """
     :param vis_path: Path to visible DJI DNG image
     :param nir_path: Path to NIR SJCAM M20 RAW image
@@ -238,7 +238,7 @@ def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extens
             alignment_params = user_assisted_manual_alignment(ref_full, mov_full, cals)
             yaw_main, pitch_main, roll_main = alignment_params["yaw"], alignment_params["pitch"], alignment_params["roll"]
         else:
-            yaw_main, pitch_main, roll_main = 0., 0., 0.
+            yaw_main, pitch_main, roll_main = init_angles
         mov_wr_fullres, coarse_rotation_estimation = coarse_alignment(
             ref_full, mov_full, cals,
             yaw_main, pitch_main, roll_main,
@@ -318,7 +318,7 @@ def process_raw_pairs(
         cals=dict(refcalib=ut.cameracalibration(camera="DJI_RAW"), movingcalib=ut.cameracalibration(camera="M20_RAW")),
         extension=1.4,
         debug_folder=None, out_dir=None, manual=False, debug=False,
-        crop=None
+        crop=None, listPts=None
     ):
     # if debug_folder is None:
     #     debug_folder = osp.dirname(sync_pairs[0][0])
@@ -344,12 +344,13 @@ def process_raw_pairs(
             write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO.bat"), debug=False)
             write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_DEBUG.bat"), debug=True)
         # continue
-        gps_vis = pr.Image(vis_pth).gps
+        gps_vis = pr.Image(vis_pth).gps #@TODO: alain-neveu provide absolute altitude from listPts
         ref_full, aligned_full, align_full_global, motion_model = align_raw(
             vis_pth, nir_pth, cals,
             debug_dir=debug_dir, debug=debug,
             manual=manual,
-            extension=extension
+            extension=extension,
+            init_angles=[0., 0., 0.] # @TODO: alain-neveu please init with angles from listPts from drone/gimbal angles
         )
         
         # AGGREGATED RESULTS!

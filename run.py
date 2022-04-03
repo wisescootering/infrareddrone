@@ -84,6 +84,7 @@ if __name__ == "__main__":
     synchro_date = planVol['mission']['date']
     if synchro_date is None:
         raise NameError(Style.RED + "Synchro start date needs to be provided!" + Style.RESET)
+    listPts = None # process_raw_pairs shall work with None listPts
     listImgMatch, DtImgMatch, listdateMatch, listPts = \
         IRd.matchImagesFlightPath(imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR,
                                   synchro_date, mute=True)
@@ -105,9 +106,10 @@ if __name__ == "__main__":
     print(Style.YELLOW + 'The processing of these %i images will take %.2f h.  Do you want to continue?'
           % (len(listPts), 1.36 * len(listPts) / 60.) + Style.RESET)
     autoRegistration = IRd.answerYesNo('Yes (y/1) |  No (n/0):')
+    
     if autoRegistration:
         print(Style.CYAN + '------ automatic_registration.process_raw_pairs' + Style.RESET)
-        automatic_registration.process_raw_pairs(listImgMatch[::1], out_dir=dirNameIRdrone, crop=CROP)
+        automatic_registration.process_raw_pairs(listImgMatch[::1], out_dir=dirNameIRdrone, crop=CROP, listPts=listPts)
     else:
         print(
             Style.YELLOW + 'Warning :  automatic_registration.process_raw_pairs ... Process neutralized.' + Style.RESET)
