@@ -369,7 +369,7 @@ def creatListImgNIR(dirName, rege):
     imlist = sorted(ut.imagepath(imgname=rege, dirname=dirName))
     imgList = []
     for i in range(len(imlist)):
-        sep = '``' if os.name =="nt" else "/"
+        sep = '\\' if os.name =="nt" else "/"
         nameImg = imlist[i].split(sep)[len(imlist[i].split(sep)) - 1]
         dateImg = extractDateNir(nameImg)
         imgList.append((nameImg, imlist[i], dateImg))  # added to image list
