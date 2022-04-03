@@ -13,6 +13,7 @@ import os
 import os.path as osp
 import cv2
 import irdrone.utils as ut
+import argparse
 
 
 def plotYawPitchRollDroneAndCameraDJI(dir_mission,
@@ -268,16 +269,26 @@ def decompositionHomography(mouvement, date, cal,
     return motion_list_fin_a, translat_fin_a, normal_fin_a, motion_list_fin_b, translat_fin_b, normal_fin_b
 
 def interactifChoice():
-    print(Style.CYAN + "File browser")
-    dirMission = os.path.dirname(IRd.loadFileGUI(mute=True))
-    print(Style.CYAN + dirMission + Style.RESET)
+    """Command line interface or manual file browser interface"""
+    parser = argparse.ArgumentParser(description='Process flight summary - visualize angles')
+    parser.add_argument('--summary', type=str, help='path to the flight summary data')
+    parser.add_argument('--cache', help='cache', action="store_true")
+    
+    args = parser.parse_args()
+    dirMission = args.summary
+    if dirMission is None or not os.path.isfile(dirMission):
+        print(Style.CYAN + "File browser")
+        dirMission = os.path.dirname(IRd.loadFileGUI(mute=True))
+        print(Style.CYAN + dirMission + Style.RESET)
 
-    print(Style.MAGENTA + 'Voulez vous utiliser les données en cache  ?' + Style.RESET)
-    utilise_cache = IRd.answerYesNo('Oui (1) |  Non (0):')
+        print(Style.MAGENTA + 'Do you want to use cached data?' + Style.RESET)
+        utilise_cache = IRd.answerYesNo('Yes (1) |  No (0):')
+    else:
+        dirMission = os.path.dirname(dirMission)
+        utilise_cache = args.cache
     return dirMission, utilise_cache
 
 if __name__ == "__main__":
-    versionIRdrone = '1.07'  # 16 mars 2022
     # ---------------------------- Options ---------------------------------------------------------------------------
     coarseProcess = True
     theoreticalAngle = True
@@ -307,6 +318,7 @@ if __name__ == "__main__":
     # ----------------------------------------------------------------------------------------------------------------
     # 0 > Choix interactif de la mission
     #
+
     dirMission, utilise_cache = interactifChoice()
 
 

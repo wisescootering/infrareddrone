@@ -53,8 +53,8 @@ if __name__ == "__main__":
     savePickle = True      # Sauvegarder les données de la mission (plan vol, listPts) dans un fichier binaire.
     createMappingList = True  # Create a list of best synchronous images for mapping with ODM
     #  options des courbes pour l'analyse
-    coarseProcess = False
-    theoreticalAngle = False
+    coarseProcess = True
+    theoreticalAngle = True
     gap = False
     spectralAnalysis = False
     dispersion = False
