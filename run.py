@@ -106,7 +106,7 @@ if __name__ == "__main__":
                         saveGpsTrack=saveGpsTrack,
                         saveExcel=saveExcel,
                         savePickle=savePickle,
-                      createMappingList=createMappingList,
+                        createMappingList=createMappingList,
                         mute=True)
     except Exception as exc:
         logging.error(Style.RED + "Cannot compute flight analytics - you can still process your images but you won't get altitude profiles and gpx\nError = {}".format(exc)+ Style.RESET)

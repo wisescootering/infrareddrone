@@ -345,12 +345,17 @@ def process_raw_pairs(
             write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_DEBUG.bat"), debug=True)
         # continue
         gps_vis = pr.Image(vis_pth).gps #@TODO: alain-neveu provide absolute altitude from listPts
+        yaw_init, pitch_init = 0., 0.
+        if listPts is not None:
+            yaw_init = listPts[index_pair].yawIR2VI
+            pitch_init = listPts[index_pair].pitchIR2VI
+            logging.info(f"INIT ANGLES FROM EXIF: yaw {yaw_init}, pitch {pitch_init}")
         ref_full, aligned_full, align_full_global, motion_model = align_raw(
             vis_pth, nir_pth, cals,
             debug_dir=debug_dir, debug=debug,
             manual=manual,
             extension=extension,
-            init_angles=[0., 0., 0.] # @TODO: alain-neveu please init with angles from listPts from drone/gimbal angles
+            init_angles=[yaw_init, pitch_init, 0.]
         )
         
         # AGGREGATED RESULTS!
