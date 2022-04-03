@@ -16,6 +16,7 @@ import os
 import argparse
 import os.path as osp
 import automatic_registration
+import AnalysePitchYawRoll as analys
 
 if __name__ == "__main__":
     # --------------------------------------------------------------------------------------------------------------
@@ -37,13 +38,24 @@ if __name__ == "__main__":
         print(Style.CYAN + "File browser")
         dirPlanVol = IRd.loadFileGUI(mute=False)
 
+    dirMission = os.path.dirname(dirPlanVol)
+
+
     # --------------------------------------------------------------------------
     #                    options pour les tests rapides
     # --------------------------------------------------------------------------
     seaLevel = True        # Calculer l'altitude du sol  ... API internet (peut échouer si serveur indisponible)
-    saveGpsTrack = True   # Sauvegarder la trajectoire du drone dans un fichier gps au format Garmin@
+    saveGpsTrack = False   # Sauvegarder la trajectoire du drone dans un fichier gps au format Garmin@
     saveExcel = True       # Sauvegarder la liste des paires, les coordonnées GPS, les angles ... dans un fichier Excel
     savePickle = True      # Sauvegarder les données de la mission (plan vol, listPts) dans un fichier binaire.
+    createMappingList = True  # Create a list of best synchronous images for mapping with ODM
+    #  options des courbes pour l'analyse
+    coarseProcess = False
+    theoreticalAngle = False
+    gap = False
+    spectralAnalysis = False
+    dispersion = False
+    refined = False  # Attention extraction des homographies pour construire le cache ... long
 
     # --------------------------------------------------------------------------------------------------------------
     # 1 > Extraction des données du vol
@@ -56,7 +68,7 @@ if __name__ == "__main__":
     imgListIR, deltaTimeIR, timeLapseIR, dirNameIRdrone = \
         IRd.extractFlightPlan(dirPlanVol, mute=True)
 
-    print("deltaTimeIR    ", deltaTimeIR)
+    print("deltaTimeIR    ", deltaTimeIR, "  First image shooting at  ", planVol["mission"]["date"])
 
     # --------------------------------------------------------------------------------------------------------------
     # 2 > Appariement des images des deux caméras
@@ -86,6 +98,7 @@ if __name__ == "__main__":
                       saveGpsTrack=saveGpsTrack,
                       saveExcel=saveExcel,
                       savePickle=savePickle,
+                      createMappingList=createMappingList,
                       mute=True)
     # -------------------------------------------------------------------------------------------------------------
     # 3 > Traitement des images.
@@ -103,6 +116,50 @@ if __name__ == "__main__":
         print(
             Style.YELLOW + 'Warning :  automatic_registration.process_raw_pairs ... Process neutralized.' + Style.RESET)
 
+    # -------------------------------------------------------------------------------------------------------------
+    # 4 > Analyse
+    #   Trace les angles Roll, Pitch et Yaw  (roulis, tangage & lacet)
+    #     pour le drone, le gimbal et l'image NIR (coarse process et théorique)
+    # -------------------------------------------------------------------------------------------------------------
+
+    # Correction angles de visée.
+    corrige_defaut_axe_visee = True
+    if corrige_defaut_axe_visee:
+        offsetPitch = 1.30    # défaut d'alignement (pitch) de l'axe de visée de la caméra NIR  en °
+        offsetYaw = 1.02      # défaut d'alignement (yaw) de l'axe de visée de la caméra NIR    en °
+    else:
+        offsetPitch = 0
+        offsetYaw = 0
+
+    # Pitch --- Yaw ----------------------------------- Mission -----------------------------------------------------
+    # 2.03 °   0.83 °   06 septembre 2021   U = 0,5 m/s  hyperlapse auto | vent faible (très légères rafales)
+    # 1.33 °   0.90 °   06 septembre 2021   U = 1,0 m/s  hyperlapse auto | vent faible
+    # 0.50 °   0.90 °   08 septembre 2021   U = 1,0 m/s  hyperlapse auto | beaucoup de rafales de vent !
+    # 1.30 °   0.90 °   OK 09 novembre  2021   U = 1,0 m/s  hyperlapse auto | vent très faible | longue séquence :-)
+    # 1.63 °   0.25 °   OK 18 janvier   2022   U = 1,5 m/s  hyperlapse libre| vent nul | test synchro
+    # 1.92 °   0.41 °   OK 25 janvier   2022   U = 1,5 m/s  hyperlapse libre| vent nul | Support du cas TEST pour GitHub
+    # 1.30 °   1.02 °   OK Peyrelevade-P 2 (hyperlapse libre U=1,5m/s)  très peu de vent (quelques petites rafales)
+    # 1.30 °   1.02 °   OK Peyrelevade-P 1 (hyperlapse libre U=1,5m/s)  très peu de vent (quelques petites rafales)
+    # 2.57 °   0.20 °   0K 25 janvier   2022   phase de Synchro  hyperlapse libre| vent nul |
+
+    if autoRegistration:
+        print(Style.CYAN + 'Construction of drone attitude data.' + Style.RESET)
+        utilise_cache = False
+    else:
+        print(Style.MAGENTA + 'Do you want to use cached data?' + Style.RESET)
+        utilise_cache = IRd.answerYesNo('Yes (1) |  No (0):')
+
+    analys.plotYawPitchRollDroneAndCameraDJI(dirMission,
+                                      utilise_cache=utilise_cache,
+                                      offsetPitch=offsetPitch,
+                                      offsetYaw=offsetYaw,
+                                      showAngleCoarseProcess=coarseProcess,
+                                      showTheoreticalAngle=theoreticalAngle,
+                                      showGap=gap,
+                                      showSpectralAnalysis=spectralAnalysis,
+                                      showDispersion=dispersion,
+                                      showRefined=refined
+                                      )
 
     # -------------------------------------------------------------------------------------------------------------
     #        Fin  de la mesure du temps de calcul.

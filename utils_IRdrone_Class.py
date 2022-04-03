@@ -47,9 +47,9 @@ class ShootPoint:
         self.yawGimbal = 0
         self.pitchGimbal = 0
         self.rollGimbal = 0
-        self.x_1 = 0  # drone axis
-        self.x_2 = 0  # e_3 ^ e_1 = e_2
-        self.x_3 = 0  # z axis   bottom > top
+        self.x_1 = 0  # axis e_1          x axis
+        self.x_2 = 0  # axis e_2          y axis  (drone axis)   e_3 ^ e_1 = e_2
+        self.x_3 = 0  # axis e_3          z axis  bottom up
         self.yawIR2VI = 0
         self.pitchIR2VI = 0
         self.rollIR2VI = 0
@@ -60,7 +60,7 @@ class ShootPoint:
 
     def __str__(self):
         return "___________________________________________________________________________________________________\n" \
-               "Point {0}                                  IRDrone                                                 \n" \
+               "Point {0} .....IRDrone.....IRDrone.....IRDrone.....IRDrone.....IRDrone.....IRDrone.....IRDron..... \n" \
                "___________________________________________________________________________________________________\n" \
                "Visible image        :  {1}    |  Date of shooting: {3}                                            \n" \
                "Near Infrared image :   {2}    |  Date of shooting: {4}                                            \n" \

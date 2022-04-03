@@ -198,7 +198,10 @@ def readFlightPlan(pathPlanVolExcel, mute=None):
     """
     workbook = openpyxl.load_workbook(pathPlanVolExcel, read_only=True, data_only=True)
 
-    sheet = workbook['Plan_de_Vol']
+    try:
+        sheet = workbook['Plan_de_Vol']
+    except:
+        sheet = workbook['Flight-Plan']
 
     nuetude = 2  # 2      numéro première ligne de données du fichier Excel
     nudrone = (nuetude + 8) + 1  # 2+8+1 =11
@@ -624,7 +627,7 @@ def nameImageNIRSummary(nameImageComplet):
 
 def summaryFlight(listPts, listImg, planVol, dirPlanVol,
                   seaLevel=False, dirSaveFig=None, saveGpsTrack=False,
-                  saveExcel=False, savePickle=True, mute=True):
+                  saveExcel=False, savePickle=True, createMappingList=False, mute=True):
     """
     :param listImg:      list of image pairs VI/IR matched at the same point
     :param mute:
@@ -661,7 +664,7 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol,
     # ----------- Drone attitude in space. (angles drone and gimbal)
     listPts, flightAngle, gimbalAngle = spatialAttitude(listPts, listImg)  #
 
-    # ---  GPS coordinates, trajectory, take-off, altitude relative to sea level ...
+    # ---  GPS coordinates, trajectory, take-off, altitude relative to sea level ...  ---------------------
     coordGPSTakeOff, altiTakeOff = uGPS.TakeOff(planVol['mission']['coord GPS Take Off'])
 
     listPts, altGeo, altDroneSol, altGround, altDroneSealLevel = \
@@ -675,18 +678,16 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol,
 
     if float(planVol['drone']['timelapse']) > 0:
         av_timelapse_Vis, _ = average_Timelapse(planVol['mission']['date'], listPts[-1].dateVis,
-                                          int(nameImageVisSummary(listPts[-1].Vis).split('_')[-1].split('.')[0]),
-                                          mute=True)
+                                                int(nameImageVisSummary(listPts[-1].Vis).split('_')[-1].split('.')[0]),
+                                                mute=True)
         motion_in_DroneAxis(listPts, planVol['drone']['timelapse'], mute=True)
     else:
         av_timelapse_Vis = planVol['drone']['timelapse']
 
-
-
     # -- Theoretical angles (yaw, Pitch, Roll) to overlay the infrared image on the visible image.(coarse process)
     listPts, theoreticalPitch, theoreticalYaw, theoreticalRoll = theoreticalIrToVi(listPts, av_timelapse_Vis)
 
-    # ----------  Save summary in Excel format
+    # ----------  Save summary in Excel format -----------------------------------------------------------
     if saveExcel:
         summaryExcel = buildSummaryExcel(listPts, listImg)
         writeSummaryFlightExcel(summaryExcel, dirPlanVol)
@@ -697,7 +698,7 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol,
                 txtSummary = txtSummary + '\n' + listSummary[i].__str__()
             print(Style.GREEN + txtSummary + Style.RESET)
 
-    # ----------  Save summary in Pickle format
+    # ----------  Save summary in Pickle format -----------------------------------------------------------
     summaryPickl = buildMissionAndPtsDicPickl(planVol, listPts)
     if savePickle:
         fileNamePickl = 'MissionSummary.npy'
@@ -705,14 +706,63 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol,
     # essai de relecture
     # dicMission, listDicPts, listPtPickl = IRd.readMissionAndPtsPickl(fileNamePickl)
 
-    # ---------  Plot the flight profile.
+    # ---------  Plot the flight profile --------------------------------------------------------------------
     IRdplt.flightProfil_plot(distFlight, altDroneSealLevel, altGround, dirSaveFig=dirSaveFig, mute=False)
 
-    # ---------  Save GPS Track in Garmin format (.gpx)
+    # ---------  Save GPS Track in Garmin format (.gpx) -----------------------------------------------------
     if saveGpsTrack:
         uGPS.writeGPX(listPts, os.path.dirname(dirPlanVol) + '\\Topo', planVol['mission']['date'], mute=True)
+    # --------- Select best synchronous images for mapping with ODM ------------------------------------------
+    print(Style.YELLOW +
+          '//  // //   CHANTIER  // // //  Creation de la liste pour MAPPING  //  //  // CHANTIER   //  //  //'
+          + Style.YELLOW)
+    if createMappingList:
+        mappingList = buildMappingList(listPts, planVol)
 
     return
+
+
+def buildMappingList(listPts, planVol):
+    mappingList = []
+    DTmin = planVol['drone']['timelapse'] / 4
+    Hav = avAltitude(listPts)   # Average altitude above the ground
+
+    lPix = 1.6*10**-6     # pixel size for camera VIS           en m
+    lCapt_x = 4000        # image size VIS  axe e_1             en pixels
+    lCapt_y = 3000        # image size VIS  axe e_2             en pixels
+    f = 2898.5            # focal length camera VIS             en pixels
+    f_m = f * lPix        # focal length camera VIS             en m
+    overlap_x = 0.30      # percentage of overlap between two images  axe e_1
+    overlap_y = 0.50      # percentage of overlap between two images  axe e_2   50% à 75%
+    lImg_x = Hav * lCapt_x / f
+    lImg_y = Hav * lCapt_y / f
+    d_x = lImg_x * (1 - overlap_x)
+    d_y = lImg_y * (1 - overlap_y)
+    # ------------------------------------------------------------------------------------------
+    d = 0
+    firstImg = False
+    for pointImage in listPts:
+        if -DTmin <= pointImage.timeDeviation <= DTmin:
+            if d == 0:  # premier point de la série
+                mappingList.append(pointImage)
+                firstImg =True
+                print("%s     synchro %.3f s    echelle 1/%i "
+                      %(pointImage.Vis, pointImage.timeDeviation, pointImage.altGround//f_m))
+            elif d >= d_y:   # point suivant de la série
+                mappingList.append(pointImage)
+                d = 0
+                print("%s     synchro %.3f s    echelle 1/%i "
+                      % (pointImage.Vis, pointImage.timeDeviation, pointImage.altGround // f_m))
+
+        if firstImg:
+            d = d + (pointImage.x_1**2 + pointImage.x_2**2)**0.5
+
+    return mappingList
+
+
+def avAltitude(listPts):
+    Hav = sum(listPts[i].altGround for i in range(len(listPts))) / len(listPts)
+    return Hav
 
 
 def buildSummaryExcel(listPts, listImg):
@@ -998,7 +1048,7 @@ def loadFileGUI(mute=True):
     return filename
 
 
-def answerYesNo(txt):
+def answerYesNo(txt) -> object:
     ans = input(txt)
     tryAgain = True
     countTry = 0
@@ -1052,7 +1102,7 @@ def motion_in_DroneAxis(listPts, timelapseDrone, mute=True):
     x_2  distance travelled along the drone axis
     x_3  distance travelled along the vertical axis.
     """
-    x_WE, y_SN = motionDrone_in_GeographicAxis(listPts, mute=mute)              # motion in geographic axis
+    x_WE, y_SN = motionDrone_in_GeographicAxis(listPts, mute=mute)  # motion in geographic axis
     for i in range(len(listPts)):
         sin_Yaw = np.sin(np.deg2rad(listPts[i].yawDrone))
         cos_Yaw = np.cos(np.deg2rad(listPts[i].yawDrone))
@@ -1103,11 +1153,11 @@ def theoreticalIrToVi(listPts, timelapse_Vis):
     #   theoretical  Yaw
     angle = [listPts[n].rollDrone for n in range(len(listPts))]
     x = [listPts[n].x_1 for n in range(len(listPts))]
-    theoreticalYaw = theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, idx=1)
+    theoreticalYaw = theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, axe=1)
     #   theoretical  Pitch
     angle = [listPts[n].pitchDrone for n in range(len(listPts))]
     x = [listPts[n].x_2 for n in range(len(listPts))]
-    theoreticalPitch = theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, idx=2)
+    theoreticalPitch = theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, axe=2)
     #   theoretical  Roll
     theoreticalRoll = rollDeviation(listPts, timelapse_Vis)
 
@@ -1119,30 +1169,53 @@ def theoreticalIrToVi(listPts, timelapse_Vis):
     return listPts, theoreticalPitch, theoreticalYaw, theoreticalRoll
 
 
-def theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, idx=0):
+def theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, axe=0):
     """
     u  composante du déplacement    x = dist . e_idx
     idx=1    Yaw    (le roll du drone correspond au yaw de la caméra NIR!)
     idx=2    Pitch  (attention offset de 90° pour le DJI)
     e_2  vecteur de l'axe du drone (vers l'avant)    |e_2|=1
     e_1  vecteur normal à l'axe du drone    |e_1|=1  ;  e_1 . e_2 =0 ; repère direct
+
+    The distance between the lenses of two cameras (DJI Mavic Air 2 and SJCam M20) is CnirCvis_0 = 46 mm.
+    This distance is not negligible if the drone is at very low altitude.
+    For example during the synchronization step the drone is 2 m above the ground.
+    This distance must be added to the projection of the base line on the axis of the drone (Axis 2) for the
+    calculation of the pitch.
     """
     theoreticalAngle = []
+    CnirCvis_0 = 0.046
     for i in range(len(listPts)):
         alpha, dt = interpolationAngle(listPts, angle, i, timelapse_Vis)
-        baseline = interpolationBaseLine(x, i, dt, timelapse_Vis)
+        Cvi_t_Cvi_tk = interpolationCameraCenterVis(x, i, dt, timelapse_Vis)  # Algebraic !!!
         H = listPts[i].altGround
-
-        if idx == 1:
-            thetaVis = listPts[i].rollGimbal  # Roll Gimbal <=>  Yaw Camera VIS
+        if axe == 1:
+            thetaVis = listPts[i].rollGimbal          # Roll Gimbal <=>  Yaw Camera VIS
+            baseline = Cvi_t_Cvi_tk
         else:
-            thetaVis = listPts[i].pitchGimbal + 90.  # Pitch Gimbal <=> Pitch Camera VIS
+            thetaVis = listPts[i].pitchGimbal + 90.   # Pitch Gimbal <=> Pitch Camera VIS
+            baseline = Cvi_t_Cvi_tk + CnirCvis_0
 
         anglePhi = np.rad2deg(np.arctan(baseline / H + np.tan(np.deg2rad(thetaVis))))
         anglePsi = anglePhi - alpha
         theoreticalAngle.append(anglePsi)
 
     return theoreticalAngle
+
+
+def rollDeviation(listPts, timelapse_Vis):
+    """
+    yaw drone  <=> roll NIR camera
+    yaw gimbal <=> roll VIS camera
+    """
+    flightYaw = [listPts[n].yawDrone for n in range(len(listPts))]
+    gimbalYaw = [listPts[n].yawGimbal for n in range(len(listPts))]
+    theoreticalRoll = []
+    for i in range(len(listPts)):
+        rollInterpol_NIR, dt = interpolationAngle(listPts, flightYaw, i, timelapse_Vis)
+        rollInterpol_VIS, dt = interpolationAngle(listPts, gimbalYaw, i, timelapse_Vis)
+        theoreticalRoll.append(rollInterpol_NIR - gimbalYaw[i])   # -  rollInterpol_VIS)
+    return theoreticalRoll
 
 
 def interpolationAngle(listPts, angle, i, timelapse_Vis):
@@ -1161,6 +1234,41 @@ def interpolationAngle(listPts, angle, i, timelapse_Vis):
     return alpha, dt
 
 
+def interpolationCameraCenterVis(x, k, dt, timelapse_Vis):
+    """
+    DeltaCvis =(Cvis_t Cvis_tk) is the distance ( algebraic) between the center Cvis_t of the Vis  camera at  time t
+    and the center Cvis_tk of the Vis camera at time tk. Linear interpolation of the base line is used..
+    A simple rule of three is used since x is directly the distance travelled during the period of the VIS timelapse.
+    TimeDeviation :   dt = (tk - t)  .
+                  > tk Date of the image  VIS
+                  > t  Date of nearest NIR image.
+    The dates are measured on the time-line (synchronized clocks).
+    x_k is the distance (Cvis(k+1)  Cvis(k)). This  distance is > 0  if drone flight forward and < 0 if backward.
+
+    "Forward" interpolation if dt<0.
+
+    Taking into account the possibility of a missing NIR image in the time lapse series.
+    (The phenomenon is related to a recording fault on the SD card of the SJCam M20 camera.)
+
+    """
+    try:
+        if dt < 0:
+            if abs(dt) > timelapse_Vis:
+                DeltaCvis = (x[k + 1] - x[k]) + x[k + 1] * (dt / timelapse_Vis)
+            else:
+                DeltaCvis = x[k] * (dt / timelapse_Vis)
+        else:
+            if dt > timelapse_Vis:
+                DeltaCvis = (x[k - 1] - x[k - 2]) + x[k - 2] * (dt / timelapse_Vis)
+            else:
+                DeltaCvis = x[k - 1] * (dt / timelapse_Vis)
+    except:
+        DeltaCvis = 0
+
+
+    return DeltaCvis
+
+
 def average_Timelapse(tStart, tEnd, nbImageMission, mute=True):
     """
     Real period of the timelapse of the VIS camera.
@@ -1174,56 +1282,14 @@ def average_Timelapse(tStart, tEnd, nbImageMission, mute=True):
     av_Timelapse = round(total_FlightTime / (nbImageMission - 1), 6)
     microsec = float(str(av_Timelapse)) - int(str(av_Timelapse).split('.')[0])
     av_Timelapse_timedelta = timedelta(seconds=int(str(av_Timelapse).split('.')[0]),
-                              microseconds=int(round(microsec, 6) * 10 ** 6))
+                                       microseconds=int(round(microsec, 6) * 10 ** 6))
     if not mute:
         txt = '...  Visible image acquisition interval : ' + str(np.round(av_Timelapse, 6)) + ' s'
         print(Style.GREEN + txt + Style.RESET)
     return av_Timelapse, av_Timelapse_timedelta
 
 
-def interpolationBaseLine(x, k, dt, timelapse_Vis):
-    """
-    The base line (Cnir Cvis) is the distance ( algebraic) between the center of the NIR Cnir camera and the
-    VIS Cvis camera. Linear interpolation of the base line is used..
-    A simple rule of three is used since x is directly the distance travelled during the period of the VIS timelapse.
-    TimeDeviation :   dt = (tk - t)  .
-                  > tk Date of the image  VIS
-                  > t  Date of nearest NIR image.
-    The dates are measured on the time-line (synchronized clocks).
-    x is the distance |Cvis(k+1) - Cvis(k)| (always >0!).
-
-    "Forward" interpolation if dt<0.
-    If dt is negative the base line (Cnir Cvis) is negative since the NIR image is taken after the VIS image.
-
-    Taking into account the possibility of a missing NIR image in the time lapse series.
-    (The phenomenon is related to a recording fault on the SD card of the SJCam M20 camera.)
-    """
-    try:
-        if dt < 0:
-            if abs(dt) > timelapse_Vis:
-                baseline = (x[k + 1] - x[k]) + x[k + 1] * (dt / timelapse_Vis)
-            else:
-                baseline = x[k] * (dt / timelapse_Vis)
-        else:
-            if dt > timelapse_Vis:
-                baseline = (x[k - 1] - x[k - 2]) + x[k - 2] * (dt / timelapse_Vis)
-            else:
-                baseline = x[k - 1] * (dt / timelapse_Vis)
-    except:
-        baseline = 0
-    return baseline
 
 
-def rollDeviation(listPts, timelapse_Vis):
-    """
-    yaw drone  <=> roll NIR camera
-    yaw gimbal <=> roll VIS camera
-    """
-    flightYaw = [listPts[n].yawDrone for n in range(len(listPts))]
-    gimbalYaw = [listPts[n].yawGimbal for n in range(len(listPts))]
-    theoreticalRoll = []
-    for i in range(len(listPts)):
-        rollInterpol_NIR, dt = interpolationAngle(listPts, flightYaw, i, timelapse_Vis)
-        rollInterpol_VIS, dt = interpolationAngle(listPts, gimbalYaw, i, timelapse_Vis)
-        theoreticalRoll.append(rollInterpol_NIR - rollInterpol_VIS)
-    return theoreticalRoll
+
+

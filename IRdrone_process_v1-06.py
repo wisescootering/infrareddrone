@@ -40,7 +40,7 @@ if __name__ == "__main__":
     #                    options pour les tests rapides
     # --------------------------------------------------------------------------
     seaLevel = True            # Calculer l'altitude du sol  ... API internet (peut échouer si serveur indisponible)
-    saveGpsTrack = True        # Sauvegarder la trajectoire du drone dans un fichier gps au format Garmin@
+    saveGpsTrack = False        # Sauvegarder la trajectoire du drone dans un fichier gps au format Garmin@
     saveSummary = True         # Sauvegarder la liste des paires ainsi que les coordonnées GPS dans un fichier Excel
     seeDualImages = False      # Vvérifier visuellement les appariements sur l'écran (en phase de test)
 
@@ -51,7 +51,9 @@ if __name__ == "__main__":
     # --------------------------------------------------------------------------------------------------------------
     print(Style.CYAN + '------ Read flight plan' + Style.RESET)
     planVol, imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR, dirNameIRdrone = \
-        IRd.extractFlightPlan(dirPlanVol, mute=True)
+        IRd.extractFlightPlan(dirPlanVol, mute=False)
+
+    print("deltaTimeIR    ", deltaTimeIR)
 
     # --------------------------------------------------------------------------------------------------------------
     # 2 > Appariement des images des deux caméras
@@ -89,7 +91,7 @@ if __name__ == "__main__":
                                                                         imgListIR,
                                                                         deltaTimeIR, timeLapseIR,
                                                                         planVol['mission']['date'],
-                                                                        timeDeviationFactor=2., mute=True)
+                                                                        timeDeviationFactor=10., mute=True)
     # ------ Calcule  la trajectoire du drone et le profil du vol
     #        Calcule yaw et pitch  théorique de l'image NIR vers VIS.
 
@@ -100,6 +102,7 @@ if __name__ == "__main__":
 
 
     IRd.writeSummaryFlight(flightPlanSynthesis, dirPlanVol, saveExcel=saveSummary)
+
     if saveGpsTrack:      # save GPS Track in Garmin format (.gpx)
         uGPS.writeGPX(listImgMatch, os.path.dirname(dirPlanVol)+'\\Topo', planVol['mission']['date'], mute=True)
     # -------------------------------------------------------------------------------------------------------------
