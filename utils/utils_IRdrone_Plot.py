@@ -1,5 +1,4 @@
 import numpy as np
-import os.path as osp
 import matplotlib.pyplot as plt
 import matplotlib.transforms as mtrans
 import scipy.fft
@@ -22,12 +21,10 @@ def flightProfil_plot(d_list, elev_Drone, elev_Ground, dirSaveFig=None, mute=Tru
     plt.ylabel("Altitude (m)")
     plt.grid()
     plt.legend(fontsize='small')
-    
+    filepath = dirSaveFig + '\\Topo' + '\\Flight profil IRdrone'
     if dirSaveFig is None:
         pass
     else:
-        assert osp.isdir(dirSaveFig), "no figure directory"
-        filepath = osp.join(dirSaveFig, 'Flight profil IRdrone')
         plt.savefig(filepath, dpi=75, facecolor='w', edgecolor='w', orientation='portrait',
                     format=None, transparent=False,
                     bbox_inches='tight', pad_inches=0.1, metadata=None)
@@ -50,6 +47,8 @@ def Fourier_plot_2(signal, missionTitle, titleSignal='', color='p'):
         signal[i] = signal[i] / np.max(signal[i])  # normalisation du signal entre -1 et +1
         nombre_image.append(signal[i].size)  #
         N.append(nombre_image[i] // 2)  # echantillonnage du signal pour la fft
+        if N[i] <= x_min:
+            x_min = 0
 
         # ----------------------- Calcul et trace la transformée de Fourier du signal----------------------------------
 

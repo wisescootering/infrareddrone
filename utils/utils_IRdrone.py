@@ -381,8 +381,6 @@ def creatListImgVIS(dirName, dateMission, rege, timelapse, deltatime, cameraMode
     """
     :param dirName:
     :param dateMission:
-    :param camera:
-    :param typImg:
     :param debug:
     :param cameraModel: optional to filter out wrong cameras
     :return:  imgList   [(), ...,(file name image , path name image, date image), ..., ()]
@@ -727,7 +725,7 @@ def nameImageNIRSummary(nameImageComplet):
     return imgName
 
 
-def summaryFlight(listPts, listImg, planVol, dirPlanVol,
+def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=None,
                   seaLevel=False, dirSaveFig=None, saveGpsTrack=False,
                   saveExcel=False, savePickle=True, createMappingList=False, mute=True):
     """
@@ -792,7 +790,8 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol,
         av_timelapse_Vis = planVol['drone']['timelapse']
 
     # -- Theoretical angles (yaw, Pitch, Roll) to overlay the infrared image on the visible image.(coarse process)
-    listPts, theoreticalPitch, theoreticalYaw, theoreticalRoll = theoreticalIrToVi(listPts, av_timelapse_Vis)
+    listPts, theoreticalPitch, theoreticalYaw, theoreticalRoll = \
+        theoreticalIrToVi(listPts, av_timelapse_Vis, offset=offsetTheoreticalAngle)
 
     # ----------  Save summary in Excel format -----------------------------------------------------------
     if saveExcel:
@@ -1268,7 +1267,7 @@ def motionDroneZaxis(listPts):
         listPts[i].x_3 = (listPts[i + 1].altGround - listPts[i].altGround) + (listPts[i + 1].altGeo - listPts[i].altGeo)
 
 
-def theoreticalIrToVi(listPts, timelapse_Vis):
+def theoreticalIrToVi(listPts, timelapse_Vis, offset=None):
     #   theoretical  Yaw
     angle = [listPts[n].rollDrone for n in range(len(listPts))]
     x = [listPts[n].x_1 for n in range(len(listPts))]
@@ -1280,7 +1279,14 @@ def theoreticalIrToVi(listPts, timelapse_Vis):
     #   theoretical  Roll
     theoreticalRoll = rollDeviation(listPts, timelapse_Vis)
 
+
     for i in range(len(listPts)):
+        try:
+            theoreticalYaw[i] = theoreticalYaw[i] + offset[0]
+            theoreticalPitch[i] = theoreticalPitch[i] + offset[1]
+            theoreticalRoll[i] = theoreticalRoll[i] + offset[2]
+        except:
+            pass
         listPts[i].yawIR2VI = theoreticalYaw[i]
         listPts[i].pitchIR2VI = theoreticalPitch[i]
         listPts[i].rollIR2VI = theoreticalRoll[i]

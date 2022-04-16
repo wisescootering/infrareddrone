@@ -23,14 +23,14 @@ from config import CROP
 
 if __name__ == "__main__":
     # --------------------------------------------------------------------------------------------------------------
-    #                    Initialisation de la mesure du temps de calcul.
+    #                    Start of calculation time measurement.
     # --------------------------------------------------------------------------------------------------------------
     timeDebut = datetime.datetime.now()
     startTime = time.process_time()
     print(Style.CYAN + 'Start IRdrone-v%s  at  %s ' % (versionIRdrone, timeDebut.time()) + Style.RESET)
 
     # ------------------------------------------------------------------------------------------------------------
-    # 0 > Choix interactif de la mission
+    # 0 > Interactive choice of mission
     # ------------------------------------------------------------------------------------------------------------
     parser = argparse.ArgumentParser(description='Process Flight Path excel')
     parser.add_argument('--config', type=str, help='path to the flight configuration')
@@ -45,7 +45,7 @@ if __name__ == "__main__":
 
 
     # --------------------------------------------------------------------------
-    #                    options pour les tests rapides
+    #                    options       (for rapid tests and analysis)
     # --------------------------------------------------------------------------
     seaLevel = True        # Calculer l'altitude du sol  ... API internet (peut échouer si serveur indisponible)
     saveGpsTrack = True    # Sauvegarder la trajectoire du drone dans un fichier gps au format Garmin@
@@ -53,8 +53,9 @@ if __name__ == "__main__":
     savePickle = True      # Sauvegarder les données de la mission (plan vol, listPts) dans un fichier binaire.
     createMappingList = True  # Create a list of best synchronous images for mapping with ODM
     #  options des courbes pour l'analyse
+    corrige_defaut_axe_visee = False
     coarseProcess = True
-    theoreticalAngle = True
+    theoreticalAngle = False
     gap = False
     spectralAnalysis = False
     dispersion = False
@@ -90,6 +91,18 @@ if __name__ == "__main__":
     #   - Construction de la trace GPS entre les paires d'images. (file format .gpx)
     #   - Ecriture des données dans des fichiers Excel et Binaires.
     #   - Tracé du profil de vol du drone  (file format .png)
+    #
+    # Offset theoritical angles
+    # [Yaw, Pitch,Roll]  -------------------------------- Mission ------------------------------------------------
+    # [0.83,  2.03, 0.]  06 septembre 2021   U = 0,5 m/s  hyperlapse auto | vent faible (très légères rafales)
+    # [0.90,  1.33, 0.]  06 septembre 2021   U = 1,0 m/s  hyperlapse auto | vent faible
+    # [0.90,  0.50, 0.]  08 septembre 2021   U = 1,0 m/s  hyperlapse auto | beaucoup de rafales de vent !
+    # [0.90,  1.30, 0.]  OK 09 novembre  2021   U = 1,0 m/s  hyperlapse auto | vent très faible | longue séquence :-)
+    # [0.25,  1.63, 0.]  OK 18 janvier   2022   U = 1,5 m/s  hyperlapse libre| vent nul | test synchro
+    # [0.33,  1.81, 0.]  OK 25 janvier   2022   U = 1,5 m/s  hyperlapse libre| vent nul | Support cas TEST pour GitHub
+    # [0.86,  1.43, 0.]  OK Peyrelevade-P 2 (hyperlapse libre U=1,5m/s)  très peu de vent (quelques petites rafales)
+    # [1.02,  1.30, 0.]  OK Peyrelevade-P 1 (hyperlapse libre U=1,5m/s)  très peu de vent (quelques petites rafales)
+    # [0.20,  2.57, 0.]  0K 25 janvier   2022   phase de Synchro  hyperlapse libre| vent nul |
     # -------------------------------------------------------------------------------------------------------------
     print(Style.CYAN + '------ Matching images VIS & NIR' + Style.RESET)
     synchro_date = planVol['mission']['date']
@@ -100,7 +113,13 @@ if __name__ == "__main__":
         IRd.matchImagesFlightPath(imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR,
                                   synchro_date, mute=True)
     try:
+        # Fixed the alignment defect [yaw,pitch,roll] of the NIR camera aiming axis in °
+        offsetTheoretical = [0., 0., 0.]          # default set
+        if corrige_defaut_axe_visee:
+            offsetTheoretical = [0.86,  1.43, 0.]   # offset Yaw, Pitch, Roll for theoretical angles
+
         IRd.summaryFlight(listPts, listImgMatch, planVol, dirPlanVol,
+                        offsetTheoreticalAngle=offsetTheoretical,
                         seaLevel=seaLevel,
                         dirSaveFig=osp.dirname(dirPlanVol),
                         saveGpsTrack=saveGpsTrack,
@@ -110,10 +129,12 @@ if __name__ == "__main__":
                         mute=True)
     except Exception as exc:
         logging.error(Style.RED + "Cannot compute flight analytics - you can still process your images but you won't get altitude profiles and gpx\nError = {}".format(exc)+ Style.RESET)
+
+
     # -------------------------------------------------------------------------------------------------------------
-    # 3 > Traitement des images.
-    #     Recalage des paires d'images Vi et IR.
-    #     Construction des images ViR  et NDVI.
+    # 3 > Image processing.
+    #     Automatic_registration of Vi and IR image pairs.
+    #     Build ViR and NDVI images.
     # -------------------------------------------------------------------------------------------------------------
     print(Style.YELLOW + 'The processing of these %i images will take %.2f h.  Do you want to continue?'
           % (len(listPts), 1.36 * len(listPts) / 60.) + Style.RESET)
@@ -127,30 +148,10 @@ if __name__ == "__main__":
             Style.YELLOW + 'Warning :  automatic_registration.process_raw_pairs ... Process neutralized.' + Style.RESET)
 
     # -------------------------------------------------------------------------------------------------------------
-    # 4 > Analyse
-    #   Trace les angles Roll, Pitch et Yaw  (roulis, tangage & lacet)
-    #     pour le drone, le gimbal et l'image NIR (coarse process et théorique)
+    # 4 > Analysis
+    #     Draws roll, pitch and Yaw angles (roll, pitch & yaw)
+    #     for the drone, the gimbal and the NIR image (coarse process and theoretical)
     # -------------------------------------------------------------------------------------------------------------
-
-    # Correction angles de visée.
-    corrige_defaut_axe_visee = True
-    if corrige_defaut_axe_visee:
-        offsetPitch = 1.30    # défaut d'alignement (pitch) de l'axe de visée de la caméra NIR  en °
-        offsetYaw = 1.02      # défaut d'alignement (yaw) de l'axe de visée de la caméra NIR    en °
-    else:
-        offsetPitch = 0
-        offsetYaw = 0
-
-    # Pitch --- Yaw ----------------------------------- Mission -----------------------------------------------------
-    # 2.03 °   0.83 °   06 septembre 2021   U = 0,5 m/s  hyperlapse auto | vent faible (très légères rafales)
-    # 1.33 °   0.90 °   06 septembre 2021   U = 1,0 m/s  hyperlapse auto | vent faible
-    # 0.50 °   0.90 °   08 septembre 2021   U = 1,0 m/s  hyperlapse auto | beaucoup de rafales de vent !
-    # 1.30 °   0.90 °   OK 09 novembre  2021   U = 1,0 m/s  hyperlapse auto | vent très faible | longue séquence :-)
-    # 1.63 °   0.25 °   OK 18 janvier   2022   U = 1,5 m/s  hyperlapse libre| vent nul | test synchro
-    # 1.92 °   0.41 °   OK 25 janvier   2022   U = 1,5 m/s  hyperlapse libre| vent nul | Support du cas TEST pour GitHub
-    # 1.30 °   1.02 °   OK Peyrelevade-P 2 (hyperlapse libre U=1,5m/s)  très peu de vent (quelques petites rafales)
-    # 1.30 °   1.02 °   OK Peyrelevade-P 1 (hyperlapse libre U=1,5m/s)  très peu de vent (quelques petites rafales)
-    # 2.57 °   0.20 °   0K 25 janvier   2022   phase de Synchro  hyperlapse libre| vent nul |
 
     if autoRegistration:
         print(Style.CYAN + 'Construction of drone attitude data.' + Style.RESET)
@@ -159,10 +160,10 @@ if __name__ == "__main__":
         print(Style.MAGENTA + 'Do you want to use cached data?' + Style.RESET)
         utilise_cache = IRd.answerYesNo('Yes (1) |  No (0):')
 
+    utilise_cache = False
+
     analys.plotYawPitchRollDroneAndCameraDJI(dirMission,
                                       utilise_cache=utilise_cache,
-                                      offsetPitch=offsetPitch,
-                                      offsetYaw=offsetYaw,
                                       showAngleCoarseProcess=coarseProcess,
                                       showTheoreticalAngle=theoreticalAngle,
                                       showGap=gap,
@@ -172,7 +173,7 @@ if __name__ == "__main__":
                                       )
 
     # -------------------------------------------------------------------------------------------------------------
-    #        Fin  de la mesure du temps de calcul.
+    #        End of calculation time measurement.
     # -------------------------------------------------------------------------------------------------------------
     timeFin = datetime.datetime.now()
     stopTime = time.process_time()

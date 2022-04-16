@@ -54,29 +54,28 @@ def plotYawPitchRollDroneAndCameraDJI(dir_mission,
 
     # -------------------- Tracé des courbes   Yaw Pitch Roll ---------------------------------------------
 
-    plotAngles(motion_list, pitch_Theorique, yaw_Theorique, offsetPitch, offsetYaw,
+    plotAngles(motion_list, pitch_Theorique, yaw_Theorique, offsetYaw, offsetPitch,
                motion_list_drone, motion_list_cameraDJI, motion_list_fin_a, motion_list_fin_b,  missionTitle,
                showAngleCoarseProcess, showTheoreticalAngle, showGap, showSpectralAnalysis, showDispersion, showRefined
                )
 
-def plotAngles(motion_list, pitch_Theorique, yaw_Theorique, offsetPitch, offsetYaw,
+def plotAngles(motion_list, pitch_Theorique, yaw_Theorique, offsetYaw, offsetPitch,
                motion_list_drone, motion_list_cameraDJI, motion_list_fin_a, motion_list_fin_b,  missionTitle,
                showAngleCoarseProcess, showTheoreticalAngle, showGap, showSpectralAnalysis, showDispersion, showRefined
                ):
     motion_nul = []
     if showAngleCoarseProcess:
-        IRdplt.YawPitchTeoriticalAndCoarse_plot(motion_list, pitch_Theorique, yaw_Theorique, offsetPitch, offsetYaw,
-                                                missionTitle)
+        IRdplt.YawPitchTeoriticalAndCoarse_plot(motion_list, pitch_Theorique, yaw_Theorique, offsetYaw, offsetPitch, missionTitle)
 
     if showTheoreticalAngle:
-        IRdplt.Pitch_plot(motion_list,  pitch_Theorique, offsetPitch,
-                          missionTitle, motion_list_fin_a, motion_list_fin_b, traceFin_a=False, traceFin_b=False)
-        IRdplt.Yaw_plot(motion_list,  yaw_Theorique, offsetYaw,
-                        missionTitle, motion_list_fin_a, motion_list_fin_b, traceFin_a=False, traceFin_b=False)
+        IRdplt.Pitch_plot(motion_list, pitch_Theorique, offsetPitch, missionTitle, motion_list_fin_a, motion_list_fin_b,
+                          traceFin_a=False, traceFin_b=False)
+        IRdplt.Yaw_plot(motion_list, yaw_Theorique, offsetYaw, missionTitle, motion_list_fin_a, motion_list_fin_b,
+                        traceFin_a=False, traceFin_b=False)
 
     if showGap:
         IRdplt.DeltaAngle_plot(motion_list, pitch_Theorique, offsetPitch, missionTitle, idx=2, nameAngle='Pitch')
-        IRdplt.DeltaAngle_plot(motion_list, yaw_Theorique, - offsetYaw, missionTitle, idx=1, nameAngle='Yaw unsynchro')
+        IRdplt.DeltaAngle_plot(motion_list, yaw_Theorique, offsetYaw, missionTitle, idx=1, nameAngle='Yaw unsynchro')
         IRdplt.DeltaYawSynchro_Unsynchro_plot(motion_list, motion_list_drone, motion_list_cameraDJI, yaw_Theorique,
                                               offsetYaw, missionTitle, nameAngle='Yaw synchro / unsynchro')
 
@@ -88,7 +87,7 @@ def plotAngles(motion_list, pitch_Theorique, yaw_Theorique, offsetPitch, offsetY
         IRdplt.Fourier_plot_2([motion_list[:, 1], yaw_Theorique[:, 1] - offsetYaw],
                               missionTitle,
                               titleSignal=['Yaw  Coarse process', 'Yaw  Theoretical'],
-                             color=['black', 'magenta', 'orange'])
+                              color=['black', 'magenta', 'orange'])
 
     # Etude de la dispersion  Pitch et Yaw des caméras (donc des images)
     if showDispersion:
@@ -292,19 +291,11 @@ if __name__ == "__main__":
     # ---------------------------- Options ---------------------------------------------------------------------------
     coarseProcess = True
     theoreticalAngle = True
-    gap = False
-    spectralAnalysis = False
-    dispersion = False
+    gap = True
+    spectralAnalysis = True
+    dispersion = True
     refined = False   # Attention extraction des homographies pour construire le cache ... long
     # ------------------------- Correction angles de visée  ---------------------------------------------------------
-    corrige_defaut_axe_visee = True
-    if corrige_defaut_axe_visee:
-        offsetPitch = 0   # défaut d'alignement (pitch) de l'axe de visée de la caméra NIR  en °
-        offsetYaw = 0     # défaut d'alignement (yaw) de l'axe de visée de la caméra NIR    en °
-    else:
-        offsetPitch = 0
-        offsetYaw = 0
-
     # Pitch --- Yaw ----------------------------------- Mission -----------------------------------------------------
     # 2.03 °   0.83 °   06 septembre 2021   U = 0,5 m/s  hyperlapse auto | vent faible (très légères rafales)
     # 1.33 °   0.90 °   06 septembre 2021   U = 1,0 m/s  hyperlapse auto | vent faible
@@ -321,16 +312,14 @@ if __name__ == "__main__":
 
     dirMission, utilise_cache = interactifChoice()
 
-
-
     # ---------------------------------------------------------------------------------------------------------------
     # 1 > Trace les angles Roll, Pitch et Yaw  (roulis, tangage & lacet)
     #     pour le drone, le gimbal et l'image NIR (coarse process et théorique)
     #
     plotYawPitchRollDroneAndCameraDJI(dirMission,
                                       utilise_cache=utilise_cache,
-                                      offsetPitch=offsetPitch,
-                                      offsetYaw=offsetYaw,
+                                      offsetPitch=0,
+                                      offsetYaw=0,
                                       showAngleCoarseProcess=coarseProcess,
                                       showTheoreticalAngle=theoreticalAngle,
                                       showGap=gap,
