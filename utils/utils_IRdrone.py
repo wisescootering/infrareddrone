@@ -36,6 +36,7 @@ import utils.utils_IRdrone_Class as IRcl
 import pickle
 import json
 from copy import copy, deepcopy
+from pathlib import Path
 
 # -----   Convertisseurs de dates   Exif<->Python  Excel->Python    ------
 def dateExcelString2Py(dateTimeOriginal):
@@ -813,9 +814,9 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
     # dicMission, listDicPts, listPtPickl = IRd.readMissionAndPtsPickl(fileNamePickl)
 
     # ---------  Plot the flight profile --------------------------------------------------------------------
-    dirSaveFig = osp.join(dirSaveFig, "Flight Analytics")
+    dirSaveFig = osp.join(dirSaveFig, "Flight Analytics", "Topo")
     if not osp.isdir(dirSaveFig):
-        os.mkdir(dirSaveFig)
+        Path(dirSaveFig).mkdir(parents=True, exist_ok=True)
     IRdplt.flightProfil_plot(distFlight, altDroneSealLevel, altGround, dirSaveFig=dirSaveFig, mute=False)
 
     # ---------  Save GPS Track in Garmin format (.gpx) -----------------------------------------------------

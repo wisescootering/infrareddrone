@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 import matplotlib.transforms as mtrans
 import scipy.fft
 from irdrone.utils import Style
+import os.path as osp
+import os
 
 
 def flightProfil_plot(d_list, elev_Drone, elev_Ground, dirSaveFig=None, mute=True):
@@ -21,7 +23,7 @@ def flightProfil_plot(d_list, elev_Drone, elev_Ground, dirSaveFig=None, mute=Tru
     plt.ylabel("Altitude (m)")
     plt.grid()
     plt.legend(fontsize='small')
-    filepath = dirSaveFig + '\\Topo' + '\\Flight profil IRdrone'
+    filepath = osp.join(dirSaveFig, 'Flight profil IRdrone')
     if dirSaveFig is None:
         pass
     else:
