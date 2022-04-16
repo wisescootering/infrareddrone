@@ -345,7 +345,18 @@ def process_raw_pairs(
             write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO.bat"), debug=False)
             write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_DEBUG.bat"), debug=True)
         # continue
-        gps_vis = pr.Image(vis_pth).gps #@TODO: alain-neveu provide absolute altitude from listPts
+        gps_vis = pr.Image(vis_pth).gps
+
+        try:
+            # Substitutes of drone altitude to the takeoff by altitude of ground to sea level
+            gps_vis['altitude'] = listPts[index_pair].altGeo
+            logging.info(f"Use altitude of ground to sea level : {gps_vis['altitude']} m")
+            # Substitutes of drone altitude to the takeoff by drone altitude to ground.
+            # gps_vis['altitude'] = listPts[index_pair].altGround
+        except Exception as exc:
+            logging.warning(f"{exc} use altitude drone to takeoff instead: {gps_vis['altitude']} m")
+
+
         yaw_init, pitch_init = 0., 0.
         if listPts is not None:
             yaw_init = listPts[index_pair].yawIR2VI
