@@ -10,6 +10,7 @@ version 1.07 2022-02-17 21:58:00    Class ShootPoint. Save Summary Flight in bin
 
 import logging
 import utils.utils_IRdrone as IRd
+from utils.utils_odm import odm_mapping
 from irdrone.utils import Style
 import datetime
 import time
@@ -20,6 +21,7 @@ import automatic_registration
 import utils.angles_analyzis as analys
 from version import __version__ as versionIRdrone
 from config import CROP
+from pathlib import Path
 
 if __name__ == "__main__":
     # --------------------------------------------------------------------------------------------------------------
@@ -34,7 +36,6 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------------------------------------------------
     parser = argparse.ArgumentParser(description='Process Flight Path excel')
     parser.add_argument('--config', type=str, help='path to the flight configuration')
-    # parser.add_argument('--excel', metavar='excel', type=str, help='path to the flight path xlsx')
     args = parser.parse_args()
     dirPlanVol = args.config
     if dirPlanVol is None or not os.path.isfile(dirPlanVol):
@@ -73,7 +74,7 @@ if __name__ == "__main__":
         IRd.extractFlightPlan(dirPlanVol, mute=True)
 
     print("deltaTimeIR    ", deltaTimeIR, "  First image shooting at  ", planVol["mission"]["date"])
-
+    
     # --------------------------------------------------------------------------------------------------------------
     # 2 > Appariement des images des deux caméras
     #     On cherche les paires d'images Vi et IR prises au "même instant".
@@ -148,7 +149,15 @@ if __name__ == "__main__":
             Style.YELLOW + 'Warning :  automatic_registration.process_raw_pairs ... Process neutralized.' + Style.RESET)
 
     # -------------------------------------------------------------------------------------------------------------
-    # 4 > Analysis
+    # 4 > Open Drone map 
+    #      Prepare ODM folders (with .bat, images and camera calibrations)
+    # -------------------------------------------------------------------------------------------------------------
+    for ext in ["VIS", "NIR_local", "NDVI__local", "VIR__local"]:
+        cp_list = Path(dirNameIRdrone).glob(f"*{ext}*.jpg")
+        odm_image_directory = odm_mapping(dirMission, multispectral_modality=ext, copy_list=cp_list)
+
+    # -------------------------------------------------------------------------------------------------------------
+    # 5 > Analysis
     #     Draws roll, pitch and Yaw angles (roll, pitch & yaw)
     #     for the drone, the gimbal and the NIR image (coarse process and theoretical)
     # -------------------------------------------------------------------------------------------------------------
