@@ -65,7 +65,7 @@ class VegetationIndex(ipipe.ProcessBlock):
         return ndvi
 
 
-def ndvi(vis_img, nir_img, out_path=None):
+def ndvi(vis_img, nir_img, out_path=None, exif=None, gps=None):
     ndvi = VegetationIndex("NDVI", vrange=[(-1., 1., 0)], inputs=[1, 2], outputs=[0,], )
     ipi = ipipe.ImagePipe(
         [vis_img, nir_img],
@@ -82,7 +82,12 @@ def ndvi(vis_img, nir_img, out_path=None):
             }
         )
         # ipi.gui()
-        ipi.save(out_path)
+        try:
+            # todo: fix missing exif datas in ndvi file.  La ligne en dessous ne marche pas !!!
+            pr.Image(ipi).save(out_path, exif=exif, gps=gps)
+        except:
+            ipi.save(out_path)
+
 
 
 def vir(vis_img, nir_img, out_path=None, exif=None, gps=None):
@@ -319,7 +324,7 @@ def process_raw_pairs(
         cals=dict(refcalib=ut.cameracalibration(camera="DJI_RAW"), movingcalib=ut.cameracalibration(camera="M20_RAW")),
         extension=1.4,
         debug_folder=None, out_dir=None, manual=False, debug=False,
-        crop=None, listPts=None
+        crop=None, listPts=None, option_alti='takeoff'
     ):
     # if debug_folder is None:
     #     debug_folder = osp.dirname(sync_pairs[0][0])
@@ -346,18 +351,31 @@ def process_raw_pairs(
             write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_DEBUG.bat"), debug=True)
         # continue
         gps_vis = pr.Image(vis_pth).gps
-
+        date_vis = pr.Image(vis_pth).date   # todo fix error  date Exif (Date/Time Original and Create Date
         try:
-            # Substitutes of drone altitude to the takeoff by altitude of ground to sea level
-            gps_vis['altitude'] = listPts[index_pair].altGeo
-            logging.info(f"Use altitude of ground to sea level : {gps_vis['altitude']} m")
-            # Substitutes of drone altitude to the takeoff by drone altitude to ground.
-            # gps_vis['altitude'] = listPts[index_pair].altGround
+            #option_alti = 'sealevel'  #   geo, ground, sealevel, takeoff
+
+            if option_alti == 'geo':
+                # Substitutes of drone altitude to the takeoff by altitude of ground to sea level
+                gps_vis['altitude'] = listPts[index_pair].altGeo
+                logging.info(f"Use altitude of ground to sea level : {gps_vis['altitude']} m")
+            if option_alti == 'ground':
+                #Substitutes of drone altitude to the takeoff by drone altitude to ground.
+                gps_vis['altitude'] = listPts[index_pair].altGround
+                logging.info(f"Use altitude of drone to ground  : {gps_vis['altitude']} m")
+            if option_alti == 'sealevel':
+                #Substitutes of drone altitude to the takeoff by drone altitude to ground.
+                gps_vis['altitude'] = listPts[index_pair].altGeo + listPts[index_pair].altGround
+                logging.info(f"Use altitude of drone to sea level  : {gps_vis['altitude']} m")
+            if option_alti == 'takeoff':
+                # altitude of droe to the takeoff.
+                logging.info(f"Use altitude of drone to takeoff  : {gps_vis['altitude']} m")
+                gps_vis['altitude'] = listPts[index_pair].altTakeOff
         except Exception as exc:
             logging.warning(f"{exc} use altitude drone to takeoff instead: {gps_vis['altitude']} m")
 
 
-        yaw_init, pitch_init = 0., 0.
+        yaw_init, pitch_init, roll_init = 0., 0., 0.
         if listPts is not None:
             yaw_init = listPts[index_pair].yawIR2VI
             pitch_init = listPts[index_pair].pitchIR2VI
@@ -367,7 +385,7 @@ def process_raw_pairs(
             debug_dir=debug_dir, debug=debug,
             manual=manual,
             extension=extension,
-            init_angles=[yaw_init, pitch_init, 0.]
+            init_angles=[yaw_init, pitch_init, roll_init]
         )
         
         # AGGREGATED RESULTS!
@@ -386,7 +404,9 @@ def process_raw_pairs(
         pr.Image((ut.contrast_stretching(ref_full)[0]*255).astype(np.uint8)).save(
             osp.join(out_dir, osp.basename(vis_pth[:-4])+"_VIS.jpg"), gps=gps_vis, exif=exif_dict_minimal)
         for ali, almode in [(aligned_full, "_local_"), (align_full_global, "_global_")]:
-            ndvi(ref_full, ali, out_path=osp.join(out_dir, "_NDVI_" + almode + osp.basename(vis_pth[:-4])+".jpg"))
+            # todo fix missing exif datas in ndvi file.
+            ndvi(ref_full, ali, out_path=osp.join(out_dir, "_NDVI_" + almode + osp.basename(vis_pth[:-4])+".jpg"),
+                 gps=gps_vis, exif=exif_dict_minimal)
             vir(ref_full, ali, out_path=osp.join(out_dir, "_VIR_" + almode + osp.basename(vis_pth[:-4])+".jpg"),
                 gps=gps_vis, exif=exif_dict_minimal)
             nir_out = pr.Image((ut.contrast_stretching(ali)[0]*255).astype(np.uint8))

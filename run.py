@@ -9,8 +9,9 @@ version 1.07 2022-02-17 21:58:00    Class ShootPoint. Save Summary Flight in bin
 """
 
 import logging
+import utils.angles_analyzis as analys
 import utils.utils_IRdrone as IRd
-from utils.utils_odm import odm_mapping
+from utils.utils_odm import odm_mapping_optim
 from irdrone.utils import Style
 import datetime
 import time
@@ -18,7 +19,6 @@ import os
 import argparse
 import os.path as osp
 import automatic_registration
-import utils.angles_analyzis as analys
 from version import __version__ as versionIRdrone
 from config import CROP
 from pathlib import Path
@@ -53,8 +53,9 @@ if __name__ == "__main__":
     saveExcel = True       # Sauvegarder la liste des paires, les coordonnées GPS, les angles ... dans un fichier Excel
     savePickle = True      # Sauvegarder les données de la mission (plan vol, listPts) dans un fichier binaire.
     createMappingList = True  # Create a list of best synchronous images for mapping with ODM
+    option_alti = 'sealevel'  # Altitude GPS  for Exif data. Options: ['takeoff', 'sealevel', 'ground', 'geo']
     #  options des courbes pour l'analyse
-    corrige_defaut_axe_visee = False
+    corrige_defaut_axe_visee = True
     coarseProcess = True
     theoreticalAngle = False
     gap = False
@@ -119,7 +120,7 @@ if __name__ == "__main__":
         if corrige_defaut_axe_visee:
             offsetTheoretical = [0.86,  1.43, 0.]   # offset Yaw, Pitch, Roll for theoretical angles
 
-        IRd.summaryFlight(listPts, listImgMatch, planVol, dirPlanVol,
+        mappingList = IRd.summaryFlight(listPts, listImgMatch, planVol, dirPlanVol,
                         offsetTheoreticalAngle=offsetTheoretical,
                         seaLevel=seaLevel,
                         dirSaveFig=osp.dirname(dirPlanVol),
@@ -130,31 +131,32 @@ if __name__ == "__main__":
                         mute=True)
     except Exception as exc:
         logging.error(Style.RED + "Cannot compute flight analytics - you can still process your images but you won't get altitude profiles and gpx\nError = {}".format(exc)+ Style.RESET)
-
+        mappingList = None
 
     # -------------------------------------------------------------------------------------------------------------
     # 3 > Image processing.
     #     Automatic_registration of Vi and IR image pairs.
     #     Build ViR and NDVI images.
     # -------------------------------------------------------------------------------------------------------------
+
     print(Style.YELLOW + 'The processing of these %i images will take %.2f h.  Do you want to continue?'
           % (len(listPts), 1.36 * len(listPts) / 60.) + Style.RESET)
     autoRegistration = IRd.answerYesNo('Yes (y/1) |  No (n/0):')
     
     if autoRegistration:
         print(Style.CYAN + '------ automatic_registration.process_raw_pairs' + Style.RESET)
-        automatic_registration.process_raw_pairs(listImgMatch[::1], out_dir=dirNameIRdrone, crop=CROP, listPts=listPts)
+        automatic_registration.process_raw_pairs(listImgMatch[::1], out_dir=dirNameIRdrone, crop=CROP, listPts=listPts, option_alti=option_alti)
     else:
         print(
             Style.YELLOW + 'Warning :  automatic_registration.process_raw_pairs ... Process neutralized.' + Style.RESET)
 
     # -------------------------------------------------------------------------------------------------------------
-    # 4 > Open Drone map 
+    # 4 > Open Drone Map
     #      Prepare ODM folders (with .bat, images and camera calibrations)
     # -------------------------------------------------------------------------------------------------------------
+
     for ext in ["VIS", "NIR_local", "NDVI__local", "VIR__local"]:
-        cp_list = Path(dirNameIRdrone).glob(f"*{ext}*.jpg")
-        odm_image_directory = odm_mapping(dirMission, multispectral_modality=ext, copy_list=cp_list)
+        odm_image_directory = odm_mapping_optim(dirMission, dirNameIRdrone, multispectral_modality=ext, mappingList=mappingList)
 
     # -------------------------------------------------------------------------------------------------------------
     # 5 > Analysis
@@ -166,10 +168,8 @@ if __name__ == "__main__":
         print(Style.CYAN + 'Construction of drone attitude data.' + Style.RESET)
         utilise_cache = False
     else:
-        print(Style.MAGENTA + 'Do you want to use cached data?' + Style.RESET)
-        utilise_cache = IRd.answerYesNo('Yes (1) |  No (0):')
-
-    utilise_cache = False
+        print(Style.YELLOW + 'Do you want to use cached data?' + Style.RESET)
+        utilise_cache = IRd.answerYesNo('Yes (y/1) |  No (n/0):')
 
     analys.plotYawPitchRollDroneAndCameraDJI(dirMission,
                                       utilise_cache=utilise_cache,

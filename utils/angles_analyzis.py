@@ -4,6 +4,7 @@ sys.path.append(osp.join(osp.dirname(__file__), ".."))
 import utils.utils_IRdrone as IRd
 import utils.utils_IRdrone_Plot as IRdplt
 from version import __version__ as versionIRdrone
+
 import numpy as np
 import glob
 import irdrone.process as pr
@@ -29,6 +30,7 @@ def plotYawPitchRollDroneAndCameraDJI(dir_mission,
 
     # Estimation du défaut d'alignement de l'axe de visée caméra SJCam M20  après le 7 septembre 2021
     result_dir = osp.join(dir_mission, "ImgIRdrone")
+    dirSaveFig = osp.join(dir_mission, "Flight Analytics")
     desync = timedelta(seconds=-0)
     txt = str('Delay  ' + str(desync) + "s")
     print(Style.YELLOW + txt + Style.RESET)
@@ -50,22 +52,24 @@ def plotYawPitchRollDroneAndCameraDJI(dir_mission,
         motion_list_drone, motion_list_cameraDJI, listSummaryFlight, yaw_Theorique, pitch_Theorique =\
             noMotionCache(dir_mission, cal, showRefined)
 
-    infoMotion(motion_list_drone, motion_list_cameraDJI)
+    #infoMotion(motion_list_drone, motion_list_cameraDJI)
 
     # -------------------- Tracé des courbes   Yaw Pitch Roll ---------------------------------------------
 
+    print(Style.YELLOW + 'Look at the yaw and pitch angles graph of NIR images  >>>>' + Style.RESET)
     plotAngles(motion_list, pitch_Theorique, yaw_Theorique, offsetYaw, offsetPitch,
                motion_list_drone, motion_list_cameraDJI, motion_list_fin_a, motion_list_fin_b,  missionTitle,
-               showAngleCoarseProcess, showTheoreticalAngle, showGap, showSpectralAnalysis, showDispersion, showRefined
-               )
+               showAngleCoarseProcess, showTheoreticalAngle, showGap, showSpectralAnalysis, showDispersion, showRefined,
+               dirSaveFig=dirSaveFig)
 
 def plotAngles(motion_list, pitch_Theorique, yaw_Theorique, offsetYaw, offsetPitch,
                motion_list_drone, motion_list_cameraDJI, motion_list_fin_a, motion_list_fin_b,  missionTitle,
-               showAngleCoarseProcess, showTheoreticalAngle, showGap, showSpectralAnalysis, showDispersion, showRefined
-               ):
+               showAngleCoarseProcess, showTheoreticalAngle, showGap, showSpectralAnalysis, showDispersion, showRefined,
+               dirSaveFig=None):
     motion_nul = []
     if showAngleCoarseProcess:
-        IRdplt.YawPitchTeoriticalAndCoarse_plot(motion_list, pitch_Theorique, yaw_Theorique, offsetYaw, offsetPitch, missionTitle)
+        IRdplt.YawPitchTeoriticalAndCoarse_plot(motion_list, pitch_Theorique, yaw_Theorique, offsetYaw, offsetPitch, missionTitle, dirSaveFig=dirSaveFig)
+
 
     if showTheoreticalAngle:
         IRdplt.Pitch_plot(motion_list, pitch_Theorique, offsetPitch, missionTitle, motion_list_fin_a, motion_list_fin_b,
@@ -128,30 +132,31 @@ def noMotionCache(dirMission, cal, calculDecompositionHomographie):
     count1 = 0
     count2 = 0
 
-    for ipath in glob.glob(osp.join(image_dir, "*.DNG")):
+    """
+    for k in range(len(listSummaryFlight)):
+        print(listSummaryFlight[k][1])
+    """
+    for ipath in glob.glob(osp.join(result_dir, "*VIS*.jpg")):
+        count1 += 1
+        mpath = glob.glob(osp.join(result_dir, osp.basename(ipath)[:-8]) + "*.npy")[0]
+        img = pr.Image(ipath)
 
-        try:
-            count1 += 1
-            mpath = glob.glob(osp.join(result_dir, osp.basename(ipath)[:-4]) + "*.npy")[0]
-            img = pr.Image(ipath)
-            print(Style.CYAN + img.name + Style.RESET)
-            finfo = img.flight_info
-            if img.name == listSummaryFlight[count1 - 1][1]:
-                pass  # print(Style.CYAN + img.name + Style.RESET)
-            else:
-                txt = str(img.name) + ' != ' + listSummaryFlight[count1 - 1][1]
-                print(Style.RED + txt + Style.RESET)
-
+        if osp.basename(ipath)[:-8] == listSummaryFlight[count1-1][1][:-4]:
             date = listSummaryFlight[count1 - 1][6]  # date on time line
+
             # roll, pitch & yaw   drone    (NIR camera)
-            mouvement_drone = [date, finfo["Flight Roll"], finfo["Flight Pitch"], finfo["Flight Yaw"]]
+            mouvement_drone = [date,
+                               listSummaryFlight[count1 - 1][21],
+                               listSummaryFlight[count1 - 1][20],
+                               listSummaryFlight[count1 - 1][19]]
             motion_list_drone.append(mouvement_drone)
             # roll, pitch & yaw   gimbal  (VIS camera)
-            mouvement_cameraDJI = [date, finfo["Gimbal Roll"], finfo["Gimbal Pitch"], finfo["Gimbal Yaw"]]
+            mouvement_cameraDJI = [date,
+                               listSummaryFlight[count1 - 1][24],
+                               listSummaryFlight[count1 - 1][23],
+                               listSummaryFlight[count1 - 1][12]]
             motion_list_cameraDJI.append(mouvement_cameraDJI)
-            #  yaw & pitch  process  image NIR recalage grossier
-            mouvement = np.load(mpath, allow_pickle=True).item()
-            motion_list.append([date, mouvement["yaw"], mouvement["pitch"]])
+
             #  yaw,  pitch & roll  théoriques
             data = date, listSummaryFlight[count1 - 1][28]
             yaw_Theorique.append(data)
@@ -160,15 +165,20 @@ def noMotionCache(dirMission, cal, calculDecompositionHomographie):
             data = date, listSummaryFlight[count1 - 1][30]
             roll_Theorique.append(data)
 
+            #  yaw & pitch  process  image NIR recalage grossier
+            mouvement = np.load(mpath, allow_pickle=True).item()
+            motion_list.append([date, mouvement["yaw"], mouvement["pitch"]])
+
             if calculDecompositionHomographie:
                 motion_list_fin_a, translat_fin_a, normal_fin_a, motion_list_fin_b, translat_fin_b, normal_fin_b \
                     = decompositionHomography(mouvement, date, cal,
                                               motion_list_fin_a, translat_fin_a, normal_fin_a,
                                               motion_list_fin_b, translat_fin_b, normal_fin_b)
+        else:
+            txt = str(img.name) + ' != ' + listSummaryFlight[count1 - 1][1]
+            print(count1 - 1)
+            print(Style.RED + txt + Style.RESET)
 
-        except:
-            count2 += 1
-            continue
 
     motion_list = np.array(motion_list)
     motion_list_fin_a = np.array(motion_list_fin_a)
@@ -197,8 +207,10 @@ def noMotionCache(dirMission, cal, calculDecompositionHomographie):
                                 "translat_fin_b": translat_fin_b,
                                 "normal_fin_b": normal_fin_b
                                 })
-    txt = "images retenues" + str(count1 - count2) + "   images rejettées  " + str(count2)
-    print(Style.CYAN + txt + Style.RESET)
+    txt = 'The angles of ' + str(count1 - count2) + ' pairs of Visible-Infrared images were analyzed. \n'+ \
+          str(count2) + "   pairs have been eliminated :  "
+    print(Style.GREEN + txt + Style.RESET)
+
 
     return motion_list, motion_list_fin_a, translat_fin_a, normal_fin_a, motion_list_fin_b, translat_fin_b, \
     normal_fin_b, motion_list_drone, motion_list_cameraDJI, listSummaryFlight, yaw_Theorique, pitch_Theorique
@@ -280,7 +292,7 @@ def interactifChoice():
         dirMission = os.path.dirname(IRd.loadFileGUI(mute=True))
         print(Style.CYAN + dirMission + Style.RESET)
 
-        print(Style.MAGENTA + 'Do you want to use cached data?' + Style.RESET)
+        print(Style.YELLOW + 'Do you want to use cached data?' + Style.RESET)
         utilise_cache = IRd.answerYesNo('Yes (1) |  No (0):')
     else:
         dirMission = os.path.dirname(dirMission)

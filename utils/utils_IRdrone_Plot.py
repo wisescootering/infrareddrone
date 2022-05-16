@@ -27,7 +27,7 @@ def flightProfil_plot(d_list, elev_Drone, elev_Ground, dirSaveFig=None, mute=Tru
     if dirSaveFig is None:
         pass
     else:
-        plt.savefig(filepath, dpi=75, facecolor='w', edgecolor='w', orientation='portrait',
+        plt.savefig(filepath, dpi=150, facecolor='w', edgecolor='w', orientation='portrait',
                     format=None, transparent=False,
                     bbox_inches='tight', pad_inches=0.1, metadata=None)
         print(Style.CYAN + '----- Save flight profil in %s' % filepath + Style.RESET)
@@ -92,21 +92,22 @@ def YawPitchTeoriticalAndCoarse_plot(motion_list,
                                      yaw_Theorique,
                                      offsetPitch,
                                      offsetYaw,
-                                     missionTitle):
+                                     missionTitle,
+                                     dirSaveFig=None):
     fig, ax = plt.subplots()
-    plt.plot(motion_list[:, 0], motion_list[:, 1], "b--",
-             label="Yaw  Coarse process.      average = {:.2f}°".format(
+    plt.plot(motion_list[:, 0], motion_list[:, 1], color='navy', linestyle='--', linewidth=0.8,
+             zorder=1, label="Yaw  Coarse process.      average = {:.2f}°".format(
                  np.average(motion_list[:, 1], axis=0)))
 
-    plt.plot(motion_list[:, 0], yaw_Theorique[:, 1] + offsetYaw, "c-",
-             label="Yaw  Theoretical.             average = {:.2f}°"
+    plt.plot(motion_list[:, 0], yaw_Theorique[:, 1] + offsetYaw, color='deepskyblue', linestyle='-', linewidth=0.8,
+             zorder=0,label="Yaw  Theoretical.             average = {:.2f}°"
              .format(np.average(yaw_Theorique[:, 1] + offsetYaw, axis=0)))
 
-    plt.plot(motion_list[:, 0], motion_list[:, 2], color='black', linestyle='-', linewidth=0.8,
-             label="Pitch   Coarse process.    average = {:.2f}°"
+    plt.plot(motion_list[:, 0], motion_list[:, 2], color='darkgreen', linestyle='--', linewidth=0.8,
+             zorder=1, label="Pitch   Coarse process.    average = {:.2f}°"
              .format(np.average(motion_list[:, 2], axis=0)))
-    plt.plot(motion_list[:, 0], pitch_Theorique[:, 1] + offsetPitch, "m-",
-             label="Pitch  Theoretical.           average = {:.2f}°"
+    plt.plot(motion_list[:, 0], pitch_Theorique[:, 1] + offsetPitch, color='yellowgreen', linestyle='-', linewidth=0.8,
+             zorder=0, label="Pitch  Theoretical.           average = {:.2f}°"
              .format(np.average(pitch_Theorique[:, 1] + offsetPitch, axis=0)))
     if False:
         plt.plot(motion_list[:, 0], motion_list_drone[:, 3] - motion_list_cameraDJI[:, 3], "g-",
@@ -115,11 +116,27 @@ def YawPitchTeoriticalAndCoarse_plot(motion_list,
     plt.grid()
     plt.xlim(0, np.max(motion_list[:, 0]))
     # ---------------------------------------- Legendes ---------------------------------------------------------------
-    ax.set_title(missionTitle, fontsize=8)
-    ax.set_xlabel('Time line  [s]', fontsize=8)
-    ax.set_ylabel('Angle [°]', fontsize=8)
-    ax.legend()
+    ax.set_title(missionTitle, fontsize=6)
+    ax.set_xlabel('Time line  [s]', fontsize=6)
+    ax.set_ylabel('Angle [°]', fontsize=6)
+    plt.tick_params(axis='both', labelsize=6)
+
+    ax.legend(loc='best', fontsize=6)
+    fig.set_size_inches(10, 5)
+
+    # ---------------------------
+    filepath = osp.join(dirSaveFig, 'Angles analysis')
+    if dirSaveFig is None:
+        pass
+    else:
+        plt.savefig(filepath, dpi=600, facecolor='w', edgecolor='w', orientation='portrait',
+                    format=None, transparent=False,
+                    bbox_inches='tight', pad_inches=0.1, metadata=None)
+        print(Style.CYAN + '----- Save Angles analysis in %s' % filepath + Style.RESET)
+
+    print(Style.YELLOW + 'Look at the Angles analysis  >>>>' + Style.RESET)
     plt.show()
+    plt.close()
 
 
 def Yaw_plot(motion_list,

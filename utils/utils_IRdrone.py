@@ -12,20 +12,23 @@ version 1.07 2022-02-15 18:50:00.   Class ShootPoint
 import logging
 import sys
 import os.path as osp
+
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
 import irdrone.process as pr
 import irdrone.utils as ut
 from irdrone.utils import Style
 import utils.utils_GPS as uGPS
 import utils.utils_IRdrone_Plot as IRdplt
+import  utils.utils_odm as odm
 import os
 import pandas as pd
 import sys
+
 try:
-	from tkinter import Tk
-	from tkinter.filedialog import askopenfilename, askdirectory
+    from tkinter import Tk
+    from tkinter.filedialog import askopenfilename, askdirectory
 except:
-	pass
+    pass
 from operator import itemgetter
 import datetime
 import openpyxl
@@ -37,6 +40,7 @@ import pickle
 import json
 from copy import copy, deepcopy
 from pathlib import Path
+
 
 # -----   Convertisseurs de dates   Exif<->Python  Excel->Python    ------
 def dateExcelString2Py(dateTimeOriginal):
@@ -130,12 +134,13 @@ def extract_synchro_from_dict(di):
         if "synchro_date" in di.keys():
             dateMission = datetime.datetime.strptime(di["synchro_date"], r'%d/%m/%Y %H:%M:%S')
         for inpkey in ["synchro_deltatime", "synchro deltatime", "deltatime"]:
-            if  inpkey in di.keys():
+            if inpkey in di.keys():
                 deltaTimeIR = di[inpkey]
         for inpkey in ["coord_GPS_take_off", "coord GPS take off", "coord GPS Take Off"]:
             if inpkey in di.keys():
                 coord_GPS_take_off = di[inpkey]
     return dateMission, deltaTimeIR, coord_GPS_take_off
+
 
 def extractDateNir(nameImg):
     imgYear = int(nameImg[0:4])
@@ -167,7 +172,7 @@ def extractFlightPlan(dirPlanVol, mute=True):
     typeDrone = None
     if osp.basename(dirPlanVol).lower().endswith(".xlsx"):
         planVol = readFlightPlan(dirPlanVol, mute=mute)
-        
+
         dateMission, deltaTimeIR, coord_GPS_take_off = extract_synchro_from_dict(None)
         if planVol["synchro"] is not None:
             synchro_file = osp.join(osp.dirname(dirPlanVol), planVol["synchro"])
@@ -193,20 +198,22 @@ def extractFlightPlan(dirPlanVol, mute=True):
         extIR = planVol['images']['extIR']  # file format  IR
         deltaTimeDrone = float(planVol['drone']['deltatime'])  # decalage horloge caméra du drone / horloge de référence
         if planVol['cameraIR']['deltatime'] is not None:
-            deltaTimeIR = float(planVol['cameraIR']['deltatime'])  # decalage horloge caméra infrarouge /horloge de référence
+            deltaTimeIR = float(
+                planVol['cameraIR']['deltatime'])  # decalage horloge caméra infrarouge /horloge de référence
 
-        regex_nir, regex_drone = "*.%s"%extIR, '*.%s'%extDrone
+        regex_nir, regex_drone = "*.%s" % extIR, '*.%s' % extDrone
     elif osp.basename(dirPlanVol).lower().endswith(".json"):
         with open(dirPlanVol, 'r') as openfile:
             di = json.load(openfile)
         for inpkey in ["input", "rootdir", "folder", "main"]:
             if inpkey in di.keys():
-                assert osp.isdir(di[inpkey]), "Please provide a correct folder for key {} = {}".format(inpkey, di[inpkey])
+                assert osp.isdir(di[inpkey]), "Please provide a correct folder for key {} = {}".format(inpkey,
+                                                                                                       di[inpkey])
                 dirPlanVol = di[inpkey]
         if osp.isfile(dirPlanVol):
             dirPlanVol = os.path.dirname(dirPlanVol)
         dirNameIRdrone = di["output"]
-        
+
         # dirNameDrone = osp.dirname(di["visible"])
         # extDrone = osp.basename(di["visible"]).split('.')[-1]
         # dirNameIR = osp.dirname(di["nir"])
@@ -216,7 +223,7 @@ def extractFlightPlan(dirPlanVol, mute=True):
         dateMission, deltaTimeIR, coord_GPS_take_off = extract_synchro_from_dict(None)
         if "synchro" in di.keys():
             if osp.isfile(di["synchro"]):
-                synchro_file = di["synchro"] # provided an absolute path
+                synchro_file = di["synchro"]  # provided an absolute path
             else:
                 synchro_file = osp.join(dirPlanVol, di["synchro"])
             assert osp.isfile(synchro_file), "Synchro file shall be provided {}".format(synchro_file)
@@ -224,14 +231,17 @@ def extractFlightPlan(dirPlanVol, mute=True):
             if osp.basename(synchro_file).lower().endswith(".json"):
                 with open(synchro_file, 'r') as openfile:
                     di_synchro = json.load(openfile)
-            elif osp.basename(synchro_file).lower().endswith(".pkl") or osp.basename(synchro_file).lower().endswith(".npy") or osp.basename(synchro_file).lower().endswith(".synchro") :
+            elif osp.basename(synchro_file).lower().endswith(".pkl") or osp.basename(synchro_file).lower().endswith(
+                    ".npy") or osp.basename(synchro_file).lower().endswith(".synchro"):
                 di_synchro = np.load(synchro_file, allow_pickle=True).item()
             dateMission, deltaTimeIR, coord_GPS_take_off = extract_synchro_from_dict(di_synchro)
-        for inpkey in ["timelapse_nir", "nir_timelapse",  "timelapse nir", "nir timelapse", "interval nir", "interval_nir"]:
-            if  inpkey in di.keys():
+        for inpkey in ["timelapse_nir", "nir_timelapse", "timelapse nir", "nir timelapse", "interval nir",
+                       "interval_nir"]:
+            if inpkey in di.keys():
                 timeLapseIR = di[inpkey]
-        for inpkey in ["timelapse_visible", "visible_timelapse" ,"timelapse visible", "visible timelapse", "interval visible", "interval_visible"]:
-            if  inpkey in di.keys():
+        for inpkey in ["timelapse_visible", "visible_timelapse", "timelapse visible", "visible timelapse",
+                       "interval visible", "interval_visible"]:
+            if inpkey in di.keys():
                 timeLapseDrone = di[inpkey]
         # Allow manual override
         dateMission_over, deltaTimeIR_over, coord_GPS_take_off_over = extract_synchro_from_dict(di)
@@ -244,12 +254,12 @@ def extractFlightPlan(dirPlanVol, mute=True):
         if coord_GPS_take_off_over is not None:
             logging.warning("Manually overriden GPS take off coordinate")
             coord_GPS_take_off = coord_GPS_take_off_over
-    
+
         planVol = dict(mission={}, drone={})
         planVol['mission']['date'] = dateMission
         planVol['mission']['coord GPS Take Off'] = coord_GPS_take_off
         planVol['drone']['timelapse'] = timeLapseDrone
-        
+
     else:
         raise NameError("File not supported")
     assert deltaTimeDrone is not None, "Need to provide decent synchronization"
@@ -261,7 +271,8 @@ def extractFlightPlan(dirPlanVol, mute=True):
     dirNameDrone = reformatDirectory(dirNameDrone, rootdir=dirPlanVol)
     dirNameIR = reformatDirectory(dirNameIR, rootdir=dirPlanVol, makeOutdir=True)
     dirNameIRdrone = reformatDirectory(dirNameIRdrone, rootdir=dirPlanVol, makeOutdir=True)
-    imgListDrone = creatListImgVIS(dirNameDrone, dateMission, regex_drone, timeLapseDrone, deltaTimeDrone, cameraModel=typeDrone)
+    imgListDrone = creatListImgVIS(dirNameDrone, dateMission, regex_drone, timeLapseDrone, deltaTimeDrone,
+                                   cameraModel=typeDrone)
 
     imgListIR = creatListImgNIR(dirNameIR, regex_nir)
 
@@ -349,7 +360,7 @@ def readFlightPlan(pathPlanVolExcel, mute=None):
                     'temperature': sheet.cell(numeteo + 3, 2).value,
                     'humidite': sheet.cell(numeteo + 4, 2).value
                     },
-                'synchro': sheet.cell(numeteo + 5, 2).value
+               'synchro': sheet.cell(numeteo + 5, 2).value
                }
     workbook.close()
 
@@ -371,7 +382,7 @@ def creatListImgNIR(dirName, rege):
     imlist = sorted(ut.imagepath(imgname=rege, dirname=dirName))
     imgList = []
     for i in range(len(imlist)):
-        sep = '\\' if os.name =="nt" else "/"
+        sep = '\\' if os.name == "nt" else "/"
         nameImg = imlist[i].split(sep)[len(imlist[i].split(sep)) - 1]
         dateImg = extractDateNir(nameImg)
         imgList.append((nameImg, imlist[i], dateImg))  # added to image list
@@ -563,6 +574,17 @@ def matchImagesAorB(timeLapseDrone, imgListDrone, deltaTimeDrone, timeLapseIR, i
         deltaTimeB = deltaTimeIR
         deltaTimeA = deltaTimeDrone
         timeDeviationMax = timeLapseIR
+
+        # $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+        #
+        #  Modif temporaire pour tests de l'influence des altitudes Exif sur le résultat du mapping
+        #  On conserve uniquement les paires dont le "deltaTime" entre image VIS et NIR est inférieur à 0,5s.
+        #  Cela a pour conséquence d'éliminer environ 2 images sur 3.
+        #
+        bestSynchro = False
+        if bestSynchro:
+            timeDeviationMax = 0.499999999
+        # $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 
     else:
         # unwise !
@@ -762,7 +784,7 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
         logging.warning("Ignoring flight anaytics (altitude of the flight etc...)")
         raise Exception("No GPS take off coordinate in excel - Ignoring flight analytics")
     coordGPSTakeOff, altiTakeOff = uGPS.TakeOff(planVol['mission']['coord GPS Take Off'])
-        
+
     print(Style.CYAN +
           '------ Calculation of drone attitude, trajectory, flight profile and theoretical Yaw-Pitch-Roll'
           + Style.RESET)
@@ -771,7 +793,6 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
     listPts, flightAngle, gimbalAngle = spatialAttitude(listPts, listImg)  #
 
     # ---  GPS coordinates, trajectory, take-off, altitude relative to sea level ...  ---------------------
-
 
     listPts, altGeo, altDroneSol, altGround, altDroneSealLevel = \
         spatialCoordinates(listPts, listImg, coordGPSTakeOff, seaLevel)
@@ -823,49 +844,10 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
     if saveGpsTrack:
         uGPS.writeGPX(listPts, dirSaveFig, planVol['mission']['date'], mute=True)
     # --------- Select best synchronous images for mapping with ODM ------------------------------------------
-    print(Style.YELLOW +
-          '//  // //   CHANTIER  // // //  Creation de la liste pour MAPPING  //  //  // CHANTIER   //  //  //'
-          + Style.YELLOW)
     if createMappingList:
-        mappingList = buildMappingList(listPts, planVol)
-
-    return
-
-
-def buildMappingList(listPts, planVol):
-    mappingList = []
-    DTmin = planVol['drone']['timelapse'] / 4
-    Hav = avAltitude(listPts)   # Average altitude above the ground
-
-    lPix = 1.6*10**-6     # pixel size for camera VIS           en m
-    lCapt_x = 4000        # image size VIS  axe e_1             en pixels
-    lCapt_y = 3000        # image size VIS  axe e_2             en pixels
-    f = 2898.5            # focal length camera VIS             en pixels
-    f_m = f * lPix        # focal length camera VIS             en m
-    overlap_x = 0.30      # percentage of overlap between two images  axe e_1
-    overlap_y = 0.50      # percentage of overlap between two images  axe e_2   50% à 75%
-    lImg_x = Hav * lCapt_x / f
-    lImg_y = Hav * lCapt_y / f
-    d_x = lImg_x * (1 - overlap_x)
-    d_y = lImg_y * (1 - overlap_y)
-    # ------------------------------------------------------------------------------------------
-    d = 0
-    firstImg = False
-    for pointImage in listPts:
-        if -DTmin <= pointImage.timeDeviation <= DTmin:
-            if d == 0:  # premier point de la série
-                mappingList.append(pointImage)
-                firstImg =True
-                print("%s     synchro %.3f s    echelle 1/%i "
-                      %(pointImage.Vis, pointImage.timeDeviation, pointImage.altGround//f_m))
-            elif d >= d_y:   # point suivant de la série
-                mappingList.append(pointImage)
-                d = 0
-                print("%s     synchro %.3f s    echelle 1/%i "
-                      % (pointImage.Vis, pointImage.timeDeviation, pointImage.altGround // f_m))
-
-        if firstImg:
-            d = d + (pointImage.x_1**2 + pointImage.x_2**2)**0.5
+        mappingList = odm.buildMappingList(listPts, planVol, dirSaveFig=dirSaveFig)
+    else:
+        mappingList = None
 
     return mappingList
 
@@ -940,7 +922,7 @@ def readMissionAndPtsPickl(fileName):
     unpickler = pickle.Unpickler(fh)
     # mission dictionary
     dicplanVol = unpickler.load()
-    # list of points and pint dictionary
+    # list of points and point dictionary
     n = 0
     listDicPts, listPtPy = [], []
     while endFile is not True:
@@ -1015,11 +997,11 @@ def readFlightSummary(dir_mission, mute=None, no_pandas=False):
     :return: listSummaryFlight  data list for each pair of VIS-NIR images (timeDeviation, altitude, etc.)
     """
     summaryPath = osp.join(dir_mission, "FlightSummary.xlsx")
-    
+
     txt = 'Read data from  ' + summaryPath
     print(Style.CYAN + txt + Style.RESET)
     if not no_pandas:
-        df = pd.read_excel(summaryPath) 
+        df = pd.read_excel(summaryPath)
         return df.values.tolist()
     workbook = openpyxl.load_workbook(summaryPath, read_only=True, data_only=True)
     sheet = workbook['Summary']
@@ -1163,11 +1145,13 @@ def loadFileGUI(mute=True):
     if not mute: print(filename)
     return filename
 
+
 def loadFolderGUI(mute=True):
     Tk().withdraw()  # we don't want a full GUI, so keep the root window from appearing
     filename = askdirectory()
     if not mute: print(filename)
     return filename
+
 
 def answerYesNo(txt) -> object:
     ans = input(txt)
@@ -1280,7 +1264,6 @@ def theoreticalIrToVi(listPts, timelapse_Vis, offset=None):
     #   theoretical  Roll
     theoreticalRoll = rollDeviation(listPts, timelapse_Vis)
 
-
     for i in range(len(listPts)):
         try:
             theoreticalYaw[i] = theoreticalYaw[i] + offset[0]
@@ -1316,10 +1299,10 @@ def theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, axe=0):
         Cvi_t_Cvi_tk = interpolationCameraCenterVis(x, i, dt, timelapse_Vis)  # Algebraic !!!
         H = listPts[i].altGround
         if axe == 1:
-            thetaVis = listPts[i].rollGimbal          # Roll Gimbal <=>  Yaw Camera VIS
+            thetaVis = listPts[i].rollGimbal  # Roll Gimbal <=>  Yaw Camera VIS
             baseline = Cvi_t_Cvi_tk
         else:
-            thetaVis = listPts[i].pitchGimbal + 90.   # Pitch Gimbal <=> Pitch Camera VIS
+            thetaVis = listPts[i].pitchGimbal + 90.  # Pitch Gimbal <=> Pitch Camera VIS
             baseline = Cvi_t_Cvi_tk + CnirCvis_0
 
         anglePhi = np.rad2deg(np.arctan(baseline / H + np.tan(np.deg2rad(thetaVis))))
@@ -1340,7 +1323,7 @@ def rollDeviation(listPts, timelapse_Vis):
     for i in range(len(listPts)):
         rollInterpol_NIR, dt = interpolationAngle(listPts, flightYaw, i, timelapse_Vis)
         rollInterpol_VIS, dt = interpolationAngle(listPts, gimbalYaw, i, timelapse_Vis)
-        theoreticalRoll.append(rollInterpol_NIR - gimbalYaw[i])   # -  rollInterpol_VIS)
+        theoreticalRoll.append(rollInterpol_NIR - gimbalYaw[i])  # -  rollInterpol_VIS)
     return theoreticalRoll
 
 
@@ -1391,7 +1374,6 @@ def interpolationCameraCenterVis(x, k, dt, timelapse_Vis):
     except:
         DeltaCvis = 0
 
-
     return DeltaCvis
 
 
@@ -1413,9 +1395,3 @@ def average_Timelapse(tStart, tEnd, nbImageMission, mute=True):
         txt = '...  Visible image acquisition interval : ' + str(np.round(av_Timelapse, 6)) + ' s'
         print(Style.GREEN + txt + Style.RESET)
     return av_Timelapse, av_Timelapse_timedelta
-
-
-
-
-
-
