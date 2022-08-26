@@ -3,10 +3,24 @@
 
 ![infrared+visible](./illustrations/irfusion_mini.gif)
 
+
 # General information
 * 🚀 Current version: 1.2
 * ⌨️ Authors : Balthazar Neveu , Alain Neveu
 * 🕹️ Testers: [Pépin Hugonnot](https://www.pepin-hugonnot.fr/vincent-hugonnot-florine-pepin-auvergne_fr.html) : Florine Pépin 
+
+## Main features
+* preprocess
+  * synchronize the RGB DJI camera with the NIR camera using a "QR code"
+  * best synchronized pairs: find the images pairs with lowest delay
+* process
+  * convert RAW files to linear RGB files
+  * align NIR images with the visible RGB images
+* postprocess for cartography
+  * prepare tiles to be stitched in [opendronemap](https://opendronemap.org) 
+  * and later visualize under [QGIS](https://www.qgis.org) with access to maps.
+
+
 
 ------------
 # 🔋 Set up
@@ -119,7 +133,9 @@ Note:
 ![flight altitude extracted from Exif data](./illustrations/flight_altitude_profile.png)
 * 6/ 💤 Confirm you want to run processing on your images. Then be very patient, your files will be processed and stored in the 📁 `ImgIRdrone` folder.
 
-![Fused results visible and NIR to provied NDVI for instance](./illustrations/results.png)
+![Fused results visible and NIR to provided NDVI for instance](./illustrations/results.png)
+
+
 
 ❌ Keep in mind that things are not perfect and there can sometimes be failures. If there's a picture which is very important, you are encouraged to re-run the processing with a manual option to assist the alignment (*next to the processed image, you can find a .bat dedicated to reprocessing your image with manual assistance : example `HYPERLAPSE_0008_REDO.bat`*). 
 * On the left, you can see that the red image has to be shifted to the left side to match the blue image. 
@@ -129,7 +145,29 @@ Note:
 
 ![assisted alignment UI](./illustrations/manual_alignment.png)
 
-💲 Original metadata from the DJI drone are copied into the output file therefore these images are ready to be re-used in thirdparty software. For instance, creating a map is possible in Pix4DField in case you own a license *(I used the Trial version which is available for 15days)*
+
+### 🗺️ Third party maps software
+Original metadata from the DJI drone are copied into the output file therefore these images are ready to be re-used in thirdparty software. 
+We'll prepare tiles to be stitched in [opendronemap](https://opendronemap.org) and later allow you to visualize under [QGIS](https://www.qgis.org) with access to maps.
+
+
+#### 🗺️Open Drone Map
+You'll need to have 🐋 Docker running to be able to stitch maps using open drone maps.  
+* Next to `ImgIRdrone` folder, you can find several folders `mapping_XXX` for each spectral modality (visible, nir, ndvi, vir)
+* inside this folder, we have prepared everything you need to run the ODM stitching:
+  * images with correct overlap and correct exif
+  * camera calibration
+  * `odm_mapping.bat` allows you to run the right docker with the right options.
+* Once the process has finished, you'll find a png with the stitched maps. `mapping_XXX/odm_orthophoto/odm_orthophoto.png`
+
+
+![Stitching NIR images in QGIS](./illustrations/qgis_map.jpg)
+
+
+#### 💲 Pix4DFields
+
+*For instance, creating a map is possible in Pix4DField in case you own a license (I used the Trial version which is available for 15days)*
+
 * When launching Pix4DFields, the DJI camera won't be supported by default. You need to import a [custom camera file](https://support.pix4d.com/hc/en-us/articles/360035481811-What-to-do-when-a-camera-is-not-supported-in-Pix4Dfields).
 * Luckily, we created one for the DJI Mavic Air 2, see [Pix4DFields_custom_camera](Pix4DFields_custom_camera)
 
