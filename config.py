@@ -1,4 +1,4 @@
-__version__ = 1.1
+__version__ = 1.2
 
 VIS_CAMERA = "DJI_RAW"
 NIR_CAMERA = "M20_RAW"

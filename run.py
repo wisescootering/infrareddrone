@@ -36,7 +36,9 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------------------------------------------------
     parser = argparse.ArgumentParser(description='Process Flight Path excel')
     parser.add_argument('--config', type=str, help='path to the flight configuration')
+    parser.add_argument('--clean-proxy', action="store_true", help='clean proxy tif files to save storage')
     args = parser.parse_args()
+    clean_proxy = args.clean_proxy
     dirPlanVol = args.config
     if dirPlanVol is None or not os.path.isfile(dirPlanVol):
         print(Style.CYAN + "File browser")
@@ -145,7 +147,7 @@ if __name__ == "__main__":
     
     if autoRegistration:
         print(Style.CYAN + '------ automatic_registration.process_raw_pairs' + Style.RESET)
-        automatic_registration.process_raw_pairs(listImgMatch[::1], out_dir=dirNameIRdrone, crop=CROP, listPts=listPts, option_alti=option_alti)
+        automatic_registration.process_raw_pairs(listImgMatch[::1], out_dir=dirNameIRdrone, crop=CROP, listPts=listPts, option_alti=option_alti, clean_proxy=clean_proxy)
     else:
         print(
             Style.YELLOW + 'Warning :  automatic_registration.process_raw_pairs ... Process neutralized.' + Style.RESET)

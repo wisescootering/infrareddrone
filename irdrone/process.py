@@ -2,6 +2,8 @@
 """
 image processing utilities
 """
+from genericpath import isfile
+import shutil
 import cv2
 import sys
 import matplotlib.pyplot as plt
@@ -45,9 +47,11 @@ def load_tif(in_file):
     flags |= cv2.IMREAD_IGNORE_ORIENTATION
     return cv2.cvtColor(cv2.imread(in_file, flags=flags), cv2.COLOR_BGR2RGB)/(2.**16-1)
 
+def cached_tif(path):
+    return path[:-4]+"_RawTherapee.tif"
 
 def load_dng(path, template="DJI_neutral.pp3"):
-    out_file = path[:-4]+"_RawTherapee.tif"
+    out_file = cached_tif(path)
     cmd = [
         RAWTHERAPEEPATH,
         "-t", "-o", out_file,
@@ -58,7 +62,7 @@ def load_dng(path, template="DJI_neutral.pp3"):
         subprocess.call(cmd)
     else:
         logging.info("DNG already processed by RAW THERAPEE {}".format(path))
-    return load_tif(out_file)
+    return load_tif(out_file), out_file
 
 
 def get_gimbal_info(pth: Path):
@@ -89,6 +93,7 @@ class Image:
     image[1] = image name
     """
     def __init__(self, dat, name=None, shading_correction=True):
+        self.proxy = None
         if isinstance(dat, str):
             if not osp.isfile(dat):
                 raise NameError("File %s does not exist"%dat)
@@ -97,6 +102,13 @@ class Image:
             self._data = None
             self._lineardata = None
             self.shading_correction = shading_correction
+            self.conv_dir = osp.join(osp.dirname(self.path), "_conversion_sjcam")
+            # This piece of code is a dirty, the proxies are RGB temporary conversions of raw files
+            # The list self.proxy is used to later clear (methode clean_proxy)
+            dng_file = osp.join(self.conv_dir, osp.basename(self.path).replace(".RAW", ".dng"))
+            proxypth = cached_tif(self.path)
+            proxypth_from_dng = cached_tif(dng_file)
+            self.proxy = [dng_file, proxypth, proxypth_from_dng]
         else:
             self.path = None
             self._data = dat
@@ -264,7 +276,8 @@ class Image:
             assert osp.exists(self.path), "%s not an image"%self.path
 # ---------------------------------------------------------------------------------------------------- DJI Mavic Air RAW
             if str.lower(osp.basename(self.path)).endswith("dng"):
-                rawimg = load_dng(self.path, template="DJI_neutral.pp3") # COLOR MATRIX IS APPLIED, LINEAR
+                rawimg, proxypth = load_dng(self.path, template="DJI_neutral.pp3") # COLOR MATRIX IS APPLIED, LINEAR
+                self.proxy = [proxypth]
                 # lens shading correction for DJI
                 if self.shading_correction:
                     global shading_correction_DJI
@@ -289,13 +302,14 @@ class Image:
                     )
                 else:
                     sjcam_converter = osp.join(osp.dirname(osp.abspath(__file__)), "..", "sjcam_raw2dng_linux", "sjcam_raw2dng")
-                conv_dir = osp.join(osp.dirname(self.path), "_conversion_sjcam")
+                conv_dir = self.conv_dir
                 if not osp.isdir(conv_dir):
                     mkdir(conv_dir)
                 dng_file = osp.join(conv_dir, osp.basename(self.path).replace(".RAW", ".dng"))
                 if not osp.isfile(dng_file):
                     subprocess.call([sjcam_converter, "-o", conv_dir, self.path])
-                rawimg = load_dng(dng_file, template="SJCAM.pp3")
+                rawimg, proxypth = load_dng(dng_file, template="SJCAM.pp3")
+                self.proxy = [dng_file, proxypth]
                 bp_sjcam = 0.255
                 rawimg = rawimg - bp_sjcam
                 if self.shading_correction:
@@ -397,6 +411,14 @@ class Image:
 
     def hsv(self):
         self.data = cv2.cvtColor(self.data, cv2.COLOR_RGB2HSV)
+
+    def clean_proxy(self):
+        if self.proxy is None:
+            return
+        for img_pth in self.proxy:
+            if os.path.isfile(img_pth):
+                logging.info(f"CLEANING {img_pth}")
+                os.remove(img_pth)
 
 
 def loadimage(imgpth, numpyMode=True):

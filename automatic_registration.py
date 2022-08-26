@@ -324,7 +324,8 @@ def process_raw_pairs(
         cals=dict(refcalib=ut.cameracalibration(camera="DJI_RAW"), movingcalib=ut.cameracalibration(camera="M20_RAW")),
         extension=1.4,
         debug_folder=None, out_dir=None, manual=False, debug=False,
-        crop=None, listPts=None, option_alti='takeoff'
+        crop=None, listPts=None, option_alti='takeoff',
+        clean_proxy=False
     ):
     # if debug_folder is None:
     #     debug_folder = osp.dirname(sync_pairs[0][0])
@@ -416,6 +417,9 @@ def process_raw_pairs(
                 gps=gps_vis
             )
         motion_model_list.append(motion_model)
+        if clean_proxy:
+            pr.Image(vis_pth).clean_proxy()
+            pr.Image(nir_pth).clean_proxy()
     return motion_model_list
 
 

@@ -38,6 +38,7 @@ def prepare_synchronization_data(
         folder,
         out_dir=None,
         camera_definition=[("*.RAW", config.NIR_CAMERA), ("*.DNG", config.VIS_CAMERA)],
+        clean_proxy=False
 ):
     """Caches temporary results into a _synchro_check folder
     In case you didn't use the right regexp for input images, you can remove  _synchro_check/rotations_analyzis.npy
@@ -67,12 +68,12 @@ def prepare_synchronization_data(
                 #     pr.Image(img_thmb).save(osp.join(out_dir, "_thumb_" + img_name + ".jpg"))
                 # else:
                 #     img = pr.Image(out_file)
-                img = pr.Image(img_pth)
                 detection_file = osp.join(out_dir, "_detection" + img_name + ".npy")
                 if osp.isfile(detection_file):
                     results = np.load(detection_file, allow_pickle=True).item()
                     angle = results["angle"]
                 else:
+                    img = pr.Image(img_pth)
                     out = aruco_detection(
                         img.data,
                         show=False,
@@ -87,6 +88,8 @@ def prepare_synchronization_data(
                         "corners": corners,
                     }
                     np.save(detection_file[:-4], results, allow_pickle=True)
+                    if clean_proxy:
+                        img.clean_proxy()
                 if angle is not None:
                     rot_list.append({"date": date, "path": img_pth, "angle": angle})
             sync_dict[cam] = rot_list
@@ -272,6 +275,7 @@ if __name__ == "__main__":
     parser.add_argument('--delay',  default=0, type=float,  help='delay in second \
                                                             3600 means 1hour which can come from winter or summer times')
 
+    parser.add_argument('--clean-proxy', action="store_true", help='clean proxy tif files to save storage')
     args = parser.parse_args()
     selection_by_root_excel = False
 # ________________________________________________________________________________________________________________
@@ -312,6 +316,7 @@ if __name__ == "__main__":
     sync_dict = prepare_synchronization_data(
         folder,
         camera_definition=camera_definition,
+        clean_proxy=args.clean_proxy
     )
     gps_start = pr.Image(sync_dict[config.VIS_CAMERA][len(sync_dict[config.VIS_CAMERA])//2]["path"]).gps
     gps_str = "{} {:.5f} {} {:.5f}".format(gps_start["latitude"][0], gps_start["latitude"][-1], gps_start["longitude"][0], gps_start["longitude"][-1])
