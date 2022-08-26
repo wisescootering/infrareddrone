@@ -1,10 +1,10 @@
 {
-    "dji fc3170 3892 2892 brown 0.6666": {
+    "dji fc3170 3892 2892 brown 0.75": {
         "projection_type": "brown",
         "width": 3892,
         "height": 2892,
-        "focal_x": 0.6666666666666666,
-        "focal_y": 0.6666666666666666,
+        "focal_x": 0.75,
+        "focal_y": 0.75,
         "c_x": 0.0,
         "c_y": 0.0,
         "k1": 0.0,
