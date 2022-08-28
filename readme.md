@@ -18,7 +18,7 @@
   * align NIR images with the visible RGB images
 * postprocess for cartography
   * prepare tiles to be stitched in [opendronemap](https://opendronemap.org) 
-  * and later visualize under [QGIS](https://www.qgis.org) with access to maps.
+  * and later visualize under [QGIS](https://www.qgis.org) with overlay on top of Google maps / IGN maps for instance.
 
 
 
