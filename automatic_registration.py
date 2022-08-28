@@ -314,7 +314,7 @@ def process_raw_folder(folder, delta=timedelta(seconds=166.5), manual=False, deb
                                   extension_vis=extension_vis, extension_nir=extension_nir, debug=debug)
     # replace_dji=(".DNG", "_PL4_DIST.tif")
     cals = dict(refcalib=ut.cameracalibration(camera="DJI_RAW"), movingcalib=ut.cameracalibration(camera="M20_RAW"))
-    out_dir = osp.join(folder, "_RESULTS_delta={:.1f}s".format(delta.seconds+delta.microseconds/(1.E6)))
+    out_dir = osp.join(folder, "_RESULTS_delta={:.1f}s".format(delta.total_seconds()))
     process_raw_pairs(sync_pairs, cals, debug_folder=None, out_dir=out_dir, manual=manual,
                       debug=debug, extension=extension)
 

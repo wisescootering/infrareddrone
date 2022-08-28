@@ -122,10 +122,10 @@ def synchronization_aruco_rotation(
     return cost_dict
 
 def amplitude_Slider_DeltaTime(sync_dict):
-    estim_delta = (sync_dict['M20_RAW'][0]['date'] - sync_dict['DJI_RAW'][0]['date']).seconds +\
-                  np.sign((sync_dict['M20_RAW'][0]['date'] - sync_dict['DJI_RAW'][0]['date']).seconds) *\
-                  max(((sync_dict['M20_RAW'][-1]['date'] - sync_dict['M20_RAW'][0]['date']).seconds),
-                      ((sync_dict['DJI_RAW'][-1]['date'] - sync_dict['DJI_RAW'][0]['date']).seconds))
+    estim_delta = (sync_dict['M20_RAW'][0]['date'] - sync_dict['DJI_RAW'][0]['date']).total_seconds() +\
+                  np.sign((sync_dict['M20_RAW'][0]['date'] - sync_dict['DJI_RAW'][0]['date']).total_seconds()) *\
+                  max(((sync_dict['M20_RAW'][-1]['date'] - sync_dict['M20_RAW'][0]['date']).total_seconds()),
+                      ((sync_dict['DJI_RAW'][-1]['date'] - sync_dict['DJI_RAW'][0]['date']).total_seconds()))
     return estim_delta
 
 def signalplotshift(siglist, init_delta=0.):
@@ -158,7 +158,7 @@ def signalplotshift(siglist, init_delta=0.):
 def buildCostDico(sync_dict, optionSolver, init_Delta=None):
     if init_Delta == None or init_Delta == 0.0:
         # estimate time shift  B to A.
-        estimDelta= (sync_dict['M20_RAW'][0]['date'] - sync_dict['DJI_RAW'][0]['date']).seconds
+        estimDelta= (sync_dict['M20_RAW'][0]['date'] - sync_dict['DJI_RAW'][0]['date']).total_seconds()
     else:
         # use manual estimate time shift  B to A.
         estimDelta = init_Delta
@@ -166,8 +166,8 @@ def buildCostDico(sync_dict, optionSolver, init_Delta=None):
     dataVIS = np.array([[el["date"], el["angle"]] for el in sync_dict['DJI_RAW']])
     dataNIR = np.array([[el["date"], el["angle"]] for el in sync_dict['M20_RAW']])
     # f_A(t_A)    f_B(t_B)
-    t_A = np.float_([(dataVIS[k, 0] - sync_dict['DJI_RAW'][0]['date']).seconds for k in range(len(dataVIS[:, 0]))])
-    t_B = np.float_([(dataNIR[k, 0] - sync_dict['DJI_RAW'][0]['date']).seconds - estimDelta for k in range(len(dataNIR[:, 0]))])
+    t_A = np.float_([(dataVIS[k, 0] - sync_dict['DJI_RAW'][0]['date']).total_seconds() for k in range(len(dataVIS[:, 0]))])
+    t_B = np.float_([(dataNIR[k, 0] - sync_dict['DJI_RAW'][0]['date']).total_seconds() - estimDelta for k in range(len(dataNIR[:, 0]))])
     # continuity for angle
     forced_offset = -dataVIS[0, 1]
     f_A = continuify_angles_vectorized(dataVIS[:, 1], forced_offset=forced_offset)
