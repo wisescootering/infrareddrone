@@ -26,6 +26,8 @@ def continuify_angles_vectorized(angle_list_, forced_offset=0.):
     """Aggregate an array of absolute angles between [-180 , 180]
     into a continuous serie
     """
+    if forced_offset is None:
+        forced_offset = 0
     angle_list = np.mod(angle_list_.copy() + forced_offset + 180., 360.) - 180.
     modulo = 360 * (np.abs(angle_list[1:] - angle_list[:-1]) > 180.) * (-np.sign(angle_list[1:] - angle_list[:-1]))
     angle_list_continuous = angle_list.copy()
@@ -111,8 +113,9 @@ def synchronization_aruco_rotation(
         for indx, (cam, _delta, roll_offset) in enumerate(
                 [(camera_definition[0][1], timedelta(seconds=delta), 0.), (camera_definition[1][1], timedelta(seconds=0.), 0.)]):
             cam_dat = np.array([[el["date"], el["angle"]] for el in sync_dict[cam]])
-            if forced_offset is None:
-                forced_offset = -cam_dat[0, 1]
+            # if forced_offset is None:
+            #     forced_offset = -cam_dat[0, 1]
+            # https://github.com/wisescootering/infrareddrone/issues/19
             continuous_angles = continuify_angles_vectorized(cam_dat[:, 1], forced_offset=forced_offset) + roll_offset
             sig_list.append(imagepipe.Signal(cam_dat[:, 0] + _delta, continuous_angles, label="{}".format(cam),
                                              color=["k--.", "c-o"][indx]))
@@ -169,10 +172,11 @@ def buildCostDico(sync_dict, optionSolver, init_Delta=None):
     t_A = np.float_([(dataVIS[k, 0] - sync_dict['DJI_RAW'][0]['date']).total_seconds() for k in range(len(dataVIS[:, 0]))])
     t_B = np.float_([(dataNIR[k, 0] - sync_dict['DJI_RAW'][0]['date']).total_seconds() - estimDelta for k in range(len(dataNIR[:, 0]))])
     # continuity for angle
-    forced_offset = -dataVIS[0, 1]
+    # forced_offset = -dataVIS[0, 1]
+    # https://github.com/wisescootering/infrareddrone/issues/19
+    forced_offset = 0.
     f_A = continuify_angles_vectorized(dataVIS[:, 1], forced_offset=forced_offset)
     f_B = continuify_angles_vectorized(dataNIR[:, 1], forced_offset=forced_offset)
-
     cost_dict = {'t_A': t_A, 'f_A': f_A, 't_B': t_B, 'f_B': f_B, 'solverOption': optionSolver, 'timeShift': estimDelta}
 
     return cost_dict
@@ -268,9 +272,9 @@ def fitPlot(data, res, camera_definition, extra_title=""):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Synchronize IR and Visible cameras based on Aruco')
-    parser.add_argument('--folder', help='list of images')
-    parser.add_argument('--vis', default="DJI*.JPG",  help='regexp for visible images, works for DNG & JPG')
-    parser.add_argument('--nir', default="20*.JPG",  help='regexp for infrared images, works for RAW & JPG')
+    parser.add_argument('--folder', help='path to Synchro folder')
+    parser.add_argument('--vis', default="*.DNG",  help='regexp for visible images, works for DNG & JPG')
+    parser.add_argument('--nir', default="20*.RAW",  help='regexp for infrared images, works for RAW & JPG')
     parser.add_argument('--manual',  action="store_true",  help='manual delay initialization')
     parser.add_argument('--delay',  default=0, type=float,  help='delay in second \
                                                             3600 means 1hour which can come from winter or summer times')
@@ -319,7 +323,10 @@ if __name__ == "__main__":
         clean_proxy=args.clean_proxy
     )
     gps_start = pr.Image(sync_dict[config.VIS_CAMERA][len(sync_dict[config.VIS_CAMERA])//2]["path"]).gps
-    gps_str = "{} {:.5f} {} {:.5f}".format(gps_start["latitude"][0], gps_start["latitude"][-1], gps_start["longitude"][0], gps_start["longitude"][-1])
+    if gps_start is None:
+        gps_str = ""
+    else:
+        gps_str = "{} {:.5f} {} {:.5f}".format(gps_start["latitude"][0], gps_start["latitude"][-1], gps_start["longitude"][0], gps_start["longitude"][-1])
     while TryAgain and iterations < 5:
         iterations += 1
         try:
