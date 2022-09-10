@@ -27,6 +27,7 @@ def odm_mapping_optim(dirMission, dirNameIRdrone, multispectral_modality="VIR", 
     cmd += " --project-path /datasets {}".format(mapping_folder)
     cmd += " --cameras /datasets/{}/camera/camera_IRdrone.json".format(mapping_folder)
     cmd += " --orthophoto-resolution 1. --ignore-gsd --fast-orthophoto --orthophoto-png"
+    cmd += " --orthophoto-kmz"
     cmd += " --force-gps --use-exif"
 
     with open(path_database / "odm_mapping.bat", "w") as fi:
