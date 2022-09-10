@@ -85,6 +85,9 @@ def get_gimbal_info(pth: Path):
             json.dump(dic, fi)
     return dic
 
+def copy_metadata(pth_src, pth_dst):
+    cmd = [EXIFTOOLPATH, "-TagsFromFile", pth_src, pth_dst, "-overwrite_original", "-fast"]
+    p = subprocess.run(cmd)
 
 class Image:
     """
@@ -156,8 +159,10 @@ class Image:
                 ((2**16-1)*(self._data.clip(0, 1))).astype(np.uint16),
                 cv2.COLOR_RGB2BGR)
             )
+        if self.path is not None:
+            copy_metadata(self.path, path)
         return
-
+    
     def loadMetata(self):
         if self.path is not None:
             prefix = ""
