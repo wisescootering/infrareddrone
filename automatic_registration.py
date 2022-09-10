@@ -65,7 +65,7 @@ class VegetationIndex(ipipe.ProcessBlock):
         return ndvi
 
 
-def ndvi(vis_img, nir_img, out_path=None, exif=None, gps=None):
+def ndvi(vis_img, nir_img, out_path=None, exif=None, gps=None, image_in=None):
     ndvi = VegetationIndex("NDVI", vrange=[(-1., 1., 0)], inputs=[1, 2], outputs=[0,], )
     ipi = ipipe.ImagePipe(
         [vis_img, nir_img],
@@ -82,15 +82,19 @@ def ndvi(vis_img, nir_img, out_path=None, exif=None, gps=None):
             }
         )
         # ipi.gui()
-        try:
+        # try:
             # todo: fix missing exif datas in ndvi file.  La ligne en dessous ne marche pas !!!
-            pr.Image(ipi).save(out_path, exif=exif, gps=gps)
-        except:
-            ipi.save(out_path)
+        out_img = ipi.getbuffer()
+        im = pr.Image(out_img)
+        if image_in is not None:
+            im.path = out_img
+        im.save(out_path, exif=exif, gps=gps)
+        # except:
+        #     ipi.save(out_path)
 
 
 
-def vir(vis_img, nir_img, out_path=None, exif=None, gps=None):
+def vir(vis_img, nir_img, out_path=None, exif=None, gps=None, image_in=None):
     vir = vis_img.copy()
     vir[:, :, 0] = np.mean(nir_img, axis=-1)
     vir[:, :, 0] *= 0.5/np.mean(vir[:, :, 0]) # @TODO: correctly expose the NIR channel
@@ -103,7 +107,9 @@ def vir(vis_img, nir_img, out_path=None, exif=None, gps=None):
             pr.Image(vir).save(out_path, exif=exif, gps=gps)
         else:
             recontrasted_image = (ut.contrast_stretching(vir.clip(0., 1.))[0]*255).astype(np.uint8)
-            pr.Image(recontrasted_image).save(out_path, exif=exif, gps=gps)
+            im = pr.Image(recontrasted_image)
+            im.path = image_in
+            im.save(out_path, exif=exif, gps=gps)
             # pr.Image((vir*255).clip(0, 255).astype(np.uint8)).save(out_path)
 
 
@@ -402,15 +408,18 @@ def process_raw_pairs(
         if motion_model is not None:
             motion_model_file = osp.join(out_dir, osp.basename(vis_pth[:-4])+"_motion_model")
             np.save(motion_model_file, motion_model, allow_pickle=True)
-        pr.Image((ut.contrast_stretching(ref_full)[0]*255).astype(np.uint8)).save(
+        vis_img = pr.Image((ut.contrast_stretching(ref_full)[0]*255).astype(np.uint8))
+        vis_img.path = vis_pth
+        vis_img.save(
             osp.join(out_dir, osp.basename(vis_pth[:-4])+"_VIS.jpg"), gps=gps_vis, exif=exif_dict_minimal)
         for ali, almode in [(aligned_full, "_local_"), (align_full_global, "_global_")]:
             # todo fix missing exif datas in ndvi file.
             ndvi(ref_full, ali, out_path=osp.join(out_dir, "_NDVI_" + almode + osp.basename(vis_pth[:-4])+".jpg"),
-                 gps=gps_vis, exif=exif_dict_minimal)
+                 gps=gps_vis, exif=exif_dict_minimal, image_in=vis_pth)
             vir(ref_full, ali, out_path=osp.join(out_dir, "_VIR_" + almode + osp.basename(vis_pth[:-4])+".jpg"),
-                gps=gps_vis, exif=exif_dict_minimal)
+                gps=gps_vis, exif=exif_dict_minimal, image_in=vis_pth)
             nir_out = pr.Image((ut.contrast_stretching(ali)[0]*255).astype(np.uint8))
+            nir_out.path = vis_pth
             nir_out.save(
                 osp.join(out_dir, osp.basename(vis_pth[:-4])+"_NIR{}.jpg".format(almode)),
                 exif=exif_dict_minimal,
