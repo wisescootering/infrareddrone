@@ -617,10 +617,10 @@ def spatialAttitude(listPts, listImg):
     return listPts, flightAngle, gimbalAngle
 
 
-def spatialCoordinates(listPts, listImg, coordGPSTakeOff, seaLevel):
+def spatialCoordinates(listPts, listImg, coordGPSTakeOff, seaLevel, altitude_api_disabled=False):
     listPts, listPtGPS, listCoordGPS = gpsCoordinate(listPts, listImg, coordGPSTakeOff)
 
-    listPts, altGeo, altiTakeOff = altiIGN(listPts, listImg, listPtGPS, coordGPSTakeOff, seaLevel)
+    listPts, altGeo, altiTakeOff = altiIGN(listPts, listImg, listPtGPS, coordGPSTakeOff, seaLevel, bypass=altitude_api_disabled)
 
     listPts, altDroneSol, altGround, altDroneSealLevel = altiDrone(listPts, listImg, listCoordGPS, altGeo, altiTakeOff)
 
@@ -666,7 +666,7 @@ def altiDrone(listPts, listImg, listCoordGPS, altGeo, altiTakeOff):
     return listPts, altDroneSol, altGround, altDroneSealLevel
 
 
-def altiIGN(listPts, listImg, listPtGPS, coordGPSTakeOff, seaLevel):
+def altiIGN(listPts, listImg, listPtGPS, coordGPSTakeOff, seaLevel, bypass=False):
     """
     For all points of the list, the altitudes of the ground relative to the sea level are determined..
     For France the code uses the API of the IGN (national geographical institute)
@@ -690,7 +690,7 @@ def altiIGN(listPts, listImg, listPtGPS, coordGPSTakeOff, seaLevel):
         #  Splitting the list of points into multiple segments because the number of points in the IGN API is limited.
         for k in range(0, int(round(len(listImg), 0) / pas) + 1):
             listPairPtGps = listPtGPS[k * pas:(k + 1) * pas]
-            altGeo += uGPS.altitude_IGN(listPairPtGps)
+            altGeo += uGPS.altitude_IGN(listPairPtGps, bypass=bypass)
             print(Style.CYAN, '%i / %.0f ' % (k, len(listImg) / pas), Style.RESET)
     else:
         altGeo = [0.0] * len(listPtGPS)
@@ -750,12 +750,13 @@ def nameImageNIRSummary(nameImageComplet):
 
 def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=None,
                   seaLevel=False, dirSaveFig=None, saveGpsTrack=False,
-                  saveExcel=False, savePickle=True, createMappingList=False, mute=True):
+                  saveExcel=False, savePickle=True, createMappingList=False, mute=True, altitude_api_disabled=False):
     """
     :param listImg:      list of image pairs VI/IR matched at the same point
     :param mute:
     :param saveExcel: save data in Excel file if True
     :param savePickle: save data in Binary file if True
+    :param altitude_api_disabled: True if you don't want or can't access IGN API to retrieve altitudes
     :return: summary     listPts
         imgNameVi---------------------- file name of visible RGB color image at point P
         imgNameIRoriginal-------------- file name of original infrared image  at point P
@@ -783,7 +784,7 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
     if planVol['mission']['coord GPS Take Off'] is None:
         logging.warning("Ignoring flight anaytics (altitude of the flight etc...)")
         raise Exception("No GPS take off coordinate in excel - Ignoring flight analytics")
-    coordGPSTakeOff, altiTakeOff = uGPS.TakeOff(planVol['mission']['coord GPS Take Off'])
+    coordGPSTakeOff, altiTakeOff = uGPS.TakeOff(planVol['mission']['coord GPS Take Off'], bypass=altitude_api_disabled)
 
     print(Style.CYAN +
           '------ Calculation of drone attitude, trajectory, flight profile and theoretical Yaw-Pitch-Roll'
@@ -795,7 +796,7 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
     # ---  GPS coordinates, trajectory, take-off, altitude relative to sea level ...  ---------------------
 
     listPts, altGeo, altDroneSol, altGround, altDroneSealLevel = \
-        spatialCoordinates(listPts, listImg, coordGPSTakeOff, seaLevel)
+        spatialCoordinates(listPts, listImg, coordGPSTakeOff, seaLevel, altitude_api_disabled=altitude_api_disabled)
 
     listPts, distP0P1, capP0P1, distFlight = dist(listPts)
 

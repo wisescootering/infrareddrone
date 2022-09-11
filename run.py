@@ -37,6 +37,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Process Flight Path excel')
     parser.add_argument('--config', type=str, help='path to the flight configuration')
     parser.add_argument('--clean-proxy', action="store_true", help='clean proxy tif files to save storage')
+    parser.add_argument('--disable-altitude-api', action="store_true", help='force not using altitude from IGN API')
     args = parser.parse_args()
     clean_proxy = args.clean_proxy
     dirPlanVol = args.config
@@ -130,7 +131,8 @@ if __name__ == "__main__":
                         saveExcel=saveExcel,
                         savePickle=savePickle,
                         createMappingList=createMappingList,
-                        mute=True)
+                        mute=True,
+                        altitude_api_disabled=args.disable_altitude_api)
     except Exception as exc:
         logging.error(Style.RED + "Cannot compute flight analytics - you can still process your images but you won't get altitude profiles and gpx\nError = {}".format(exc)+ Style.RESET)
         mappingList = None

@@ -338,7 +338,7 @@ def altitude_trk(coordGPS, interpolation=0):
     return latLongZGPS
 
 
-def altitude_IGN(coordGPS, mute=True):
+def altitude_IGN(coordGPS, mute=True, bypass=False):
     """
     param:  coord_GPS   liste de tuples contenant dans l'ordre latitude, longitude en degres.
 
@@ -346,7 +346,9 @@ def altitude_IGN(coordGPS, mute=True):
 
     Utilise l'API IGN https://wxs.ign.fr/essentiels/alti/rest/elevation.json?
     """
-
+    if bypass:
+        altitude = sealLevel(coordGPS, 0.)
+        return altitude
     if not isinstance(coordGPS, list):
         raise TypeError('Les données doivent être des listes de tuples'
                         ' (latitude  , longitude ) exprimés en degrés'
@@ -562,7 +564,7 @@ def formatCoordGPSforGpx(listPts):
     return pointTrk, maxLat, minLat, maxLon, minLon
 
 
-def TakeOff(coordGPS_TakeOff):
+def TakeOff(coordGPS_TakeOff, bypass=False):
     """
 
     :param coordGPS_TakeOff:               (N DD.dddddd  E DD.dddddd)
@@ -570,9 +572,8 @@ def TakeOff(coordGPS_TakeOff):
     """
 
     takeOff = []
-
     takeOff.append((coordGPS_TakeOff.split()[1], coordGPS_TakeOff.split()[3]))
-    alti_TakeOff = altitude_IGN(takeOff, mute=True)
+    alti_TakeOff = altitude_IGN(takeOff, mute=True, bypass=bypass)
     coordGPS = (coordGPS_TakeOff.split()[1], coordGPS_TakeOff.split()[3], alti_TakeOff[0])
     print(Style.CYAN, 'Take Off  : %s   %s m' % (coordGPS_TakeOff, alti_TakeOff[0]), Style.RESET)
 
