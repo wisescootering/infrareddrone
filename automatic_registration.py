@@ -84,13 +84,10 @@ def ndvi(vis_img, nir_img, out_path=None, exif=None, gps=None, image_in=None):
         # ipi.gui()
         # try:
             # todo: fix missing exif datas in ndvi file.  La ligne en dessous ne marche pas !!!
-        out_img = ipi.getbuffer()
-        im = pr.Image(out_img)
+        out_img = ipi.save(out_path)
         if image_in is not None:
-            im.path = out_img
-        im.save(out_path, exif=exif, gps=gps)
-        # except:
-        #     ipi.save(out_path)
+            pr.copy_metadata(image_in, out_path)
+
 
 
 
