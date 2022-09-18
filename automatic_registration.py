@@ -215,7 +215,7 @@ def coarse_alignment(ref_full, mov_full, cals, yaw_main, pitch_main, roll_main, 
     return mov_wr_fullres, dict(yaw=yaw_main + yaw_refine, pitch=pitch_main + pitch_refine, roll=roll_main)
 
 
-def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extension=1.4, manual=True, init_angles=[0., 0., 0.]):
+def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extension=1.4, manual=True, init_angles=[0., 0., 0.], motion_model_file = None):
     """
     :param vis_path: Path to visible DJI DNG image
     :param nir_path: Path to NIR SJCAM M20 RAW image
@@ -227,7 +227,6 @@ def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extens
     cals = deepcopy(cals_dict)
     if debug_dir is not None and not osp.isdir(debug_dir):
         os.mkdir(debug_dir)
-    motion_model_file = None
     if debug_dir is not None:
         motion_model_file = osp.join(debug_dir, "motion_model")
     ts_start = time.perf_counter()
@@ -341,6 +340,11 @@ def process_raw_pairs(
         os.mkdir(out_dir)
     motion_model_list = []
     for index_pair, (vis_pth, nir_pth) in enumerate(sync_pairs):
+        motion_model_file = osp.join(out_dir, osp.basename(vis_pth[:-4])+"_motion_model")
+        if not osp.exists(motion_model_file + ".npy"):
+            motion_model_file = None
+        else:
+            logging.warning(f"Using cached motion file {motion_model_file}")
         logging.warning("processing {} {}".format(osp.basename(vis_pth), osp.basename(nir_pth)))
         if debug_folder is not None:
             debug_dir = osp.join(debug_folder, osp.basename(vis_pth)[:-4]+"_align_traces" + ("_manual" if manual else ""))
@@ -392,7 +396,8 @@ def process_raw_pairs(
             debug_dir=debug_dir, debug=debug,
             manual=manual,
             extension=extension,
-            init_angles=[yaw_init, pitch_init, roll_init]
+            init_angles=[yaw_init, pitch_init, roll_init],
+            motion_model_file=motion_model_file
         )
         
         # AGGREGATED RESULTS!
@@ -406,7 +411,8 @@ def process_raw_pairs(
             pr.Image(ref_full).save(osp.join(out_dir, "_RAW_"+ osp.basename(vis_pth[:-4])+"_VIS.tif"), gps=gps_vis, exif=exif_dict_minimal)
         # Systematically write motion model!
         if motion_model is not None:
-            motion_model_file = osp.join(out_dir, osp.basename(vis_pth[:-4])+"_motion_model")
+            if motion_model_file is None:
+                motion_model_file = osp.join(out_dir, osp.basename(vis_pth[:-4])+"_motion_model")
             np.save(motion_model_file, motion_model, allow_pickle=True)
         vis_img = pr.Image((ut.contrast_stretching(ref_full)[0]*255).astype(np.uint8))
         vis_img.path = vis_pth
