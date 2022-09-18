@@ -199,14 +199,19 @@ If you want to change the configuration, you have 2 options
   "visible": "AerialPhotography/*.DNG",
   "nir": "AerialPhotography/*.RAW",
   "visible_timelapse": 2.0,
-  "nir_timelapse": 3.0,
+  "nir_timelapse": 3.0
 }
 ```
 * **`synchro` field  links to the synchronization file obtained when running `synchro.bat` previously**
 * You can change the `output` folder here. 
 * glob regexp use are suggested in `visible` or `nir` keys to search the images. *Please not that this way you can use 2 different folders for NIR and visible images.*
+* OPTIONAL : 
+  * If you roughly know the angles between the drone & the NIR camera, you can mention the `offset_angles` key `[Yaw, Pitch,Roll]`.
+  * Usually at the end of your processing, you'll see if the estimated angles differ from the gimbal estimate (retrieved from EXIF).
+  * Example: "offset_angles": [0.86, 1.43, 0.0]
 
 ### Excel configuration approach
+🚫 EXCEL CONFIG IS NOT SUGGESTED  / DEPRECATED 🚫
 * You can simply put the relative path to `synchro.npy` and you should be good to go
 
 ![configuration excel](./illustrations/configuration_excel.png)

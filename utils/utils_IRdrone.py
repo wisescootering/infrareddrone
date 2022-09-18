@@ -168,6 +168,7 @@ def extractFlightPlan(dirPlanVol, mute=True):
     dirNameIRdrone,coordGPS_TakeOff,altiTakeOff)   )
     """
     timeLapseDrone, deltaTimeDrone, timeLapseIR, deltaTimeIR = 2.0, 0., 3.0, None
+    offsetTheoretical = [0., 0., 0.]
     # typeDrone, typeIR = "FC3170", "M20"
     typeDrone = None
     if osp.basename(dirPlanVol).lower().endswith(".xlsx"):
@@ -243,6 +244,12 @@ def extractFlightPlan(dirPlanVol, mute=True):
                        "interval visible", "interval_visible"]:
             if inpkey in di.keys():
                 timeLapseDrone = di[inpkey]
+        for inpkey in ["offsetTheoretical", "offset_Theoretical", "offset", "offset angles",
+                       "offset_angles"]:
+            if inpkey in di.keys():
+                offsetTheoretical = di[inpkey]
+                assert isinstance(offsetTheoretical, list) and len(offsetTheoretical) ==3
+                logging.info("Found offset angles")
         # Allow manual override
         dateMission_over, deltaTimeIR_over, coord_GPS_take_off_over = extract_synchro_from_dict(di)
         if dateMission_over is not None:
@@ -259,6 +266,7 @@ def extractFlightPlan(dirPlanVol, mute=True):
         planVol['mission']['date'] = dateMission
         planVol['mission']['coord GPS Take Off'] = coord_GPS_take_off
         planVol['drone']['timelapse'] = timeLapseDrone
+        planVol["offset_angles"] = offsetTheoretical
 
     else:
         raise NameError("File not supported")

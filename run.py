@@ -58,7 +58,6 @@ if __name__ == "__main__":
     createMappingList = True  # Create a list of best synchronous images for mapping with ODM
     option_alti = 'sealevel'  # Altitude GPS  for Exif data. Options: ['takeoff', 'sealevel', 'ground', 'geo']
     #  options des courbes pour l'analyse
-    corrige_defaut_axe_visee = True
     coarseProcess = True
     theoreticalAngle = False
     gap = False
@@ -108,6 +107,7 @@ if __name__ == "__main__":
     # [0.86,  1.43, 0.]  OK Peyrelevade-P 2 (hyperlapse libre U=1,5m/s)  très peu de vent (quelques petites rafales)
     # [1.02,  1.30, 0.]  OK Peyrelevade-P 1 (hyperlapse libre U=1,5m/s)  très peu de vent (quelques petites rafales)
     # [0.20,  2.57, 0.]  0K 25 janvier   2022   phase de Synchro  hyperlapse libre| vent nul |
+    # [0.86,  1.43, 0.]  -> default offset Yaw, Pitch, Roll for theoretical angles
     # -------------------------------------------------------------------------------------------------------------
     print(Style.CYAN + '------ Matching images VIS & NIR' + Style.RESET)
     synchro_date = planVol['mission']['date']
@@ -119,12 +119,8 @@ if __name__ == "__main__":
                                   synchro_date, mute=True)
     try:
         # Fixed the alignment defect [yaw,pitch,roll] of the NIR camera aiming axis in °
-        offsetTheoretical = [0., 0., 0.]          # default set
-        if corrige_defaut_axe_visee:
-            offsetTheoretical = [0.86,  1.43, 0.]   # offset Yaw, Pitch, Roll for theoretical angles
-
         mappingList = IRd.summaryFlight(listPts, listImgMatch, planVol, dirPlanVol,
-                        offsetTheoreticalAngle=offsetTheoretical,
+                        offsetTheoreticalAngle=planVol["offset_angles"],
                         seaLevel=seaLevel,
                         dirSaveFig=osp.dirname(dirPlanVol),
                         saveGpsTrack=saveGpsTrack,
