@@ -14,7 +14,7 @@ columnNbr = 5
 colorNames = list(matplotlib.colors.cnames.keys())
 
 
-def odm_mapping_optim(dirMission, dirNameIRdrone, multispectral_modality="VIR", mappingList=None):
+def odm_mapping_optim(dirMission, dirNameIRdrone, multispectral_modality="VIR", mappingList=None, extra_suggested_options=True, forced_camera_calibration=True):
     mapping_folder = "mapping_{}".format(multispectral_modality)
     path_database = Path(dirMission) / mapping_folder
     odm_camera_conf = Path(__file__).parent / ".." / "odm_data" / "dji_fc3170.json"
@@ -29,6 +29,17 @@ def odm_mapping_optim(dirMission, dirNameIRdrone, multispectral_modality="VIR", 
     cmd += " --orthophoto-resolution 1. --ignore-gsd --fast-orthophoto --orthophoto-png"
     cmd += " --orthophoto-kmz"
     cmd += " --force-gps --use-exif"
+    cmd += " --build-overviews"
+    # see https://github.com/wisescootering/infrareddrone/issues/26
+    if extra_suggested_options:
+        cmd += " --smrf-threshold 0.3 --smrf-scalar 1.3 --smrf-slope 0.05 --smrf-window 24"
+        # our goal is orthophoto, using parameters to increase the planarity attempt
+        # illustrations in the odm missing guide -> pages 107/108/109
+        cmd += " --texturing-skip-global-seam-leveling"
+        # enable light adjustment
+    if forced_camera_calibration:
+        cmd += " --use-fixed-camera-params"
+        
 
     with open(path_database / "odm_mapping.bat", "w") as fi:
         fi.write(cmd)
