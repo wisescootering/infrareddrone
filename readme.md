@@ -469,3 +469,11 @@ coverage is very weak. code quality has a lot of discrepancies. sorry about that
 * Issue #1 Use config.json or excel
 * Issue #2 Crop outputs with a few pixels to avoid black/red borders 
 * Issue #3 onfiguration re-uses synchro.npy (pickle) so there are is no need to copy paste values from synchronization phase.
+
+
+## [v1.2](https://github.com/wisescootering/infrareddrone/milestone/1)
+* August 28, 2022
+* Docker support (linux or basically any platform)
+* Issue #10 Output data compatibility with Open Drone Map (document, bat helpers to run ODM)
+* Remove intermediate TIF to save storage using `--clean-proxy` option.
+* Bugs fixed: #19 #20 features #10 #16 #13 #12
