@@ -167,7 +167,14 @@ class Image:
             logging.warning(f"copy metadata from {self.path} to {path}")
             copy_metadata(self.path, path)
         return
-    
+    def save_multispectral(self, path):
+        assert isinstance(path, Path)
+        for ch in range(self._data.shape[2]):
+            file_name =  str(path.stem) + f"_{ch+1}"
+            pth_channel = (path.parent/ file_name).with_suffix(".tif")
+            cv2.imwrite(str(pth_channel), ((2**16-1)*(self._data[:, :, ch].clip(0, 1))).astype(np.uint16))
+            copy_metadata(self.path, pth_channel)
+
     def loadMetata(self):
         if self.path is not None:
             prefix = ""
@@ -344,7 +351,7 @@ class Image:
                 self._data = (contrast_stretching(linear_data.clip(0., 1.))[0]*255).astype(np.uint8)
                 # self._data = ((linear_data**(gamma)).clip(0., 1.)*255).astype(np.uint8)
             else:
-                self._data = cv2.cvtColor(cv2.imread(self.path), cv2.COLOR_BGR2RGB)  #LOAD AS A RGB CLASSIC ARRAY
+                self._data = cv2.cvtColor(cv2.imread(self.path), cv2.COLOR_BGR2RGB)/(2**8-1)  #LOAD AS A RGB CLASSIC ARRAY
                 self._lineardata = self._data  # simply fake linear data...
         else:
             pass
