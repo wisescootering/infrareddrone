@@ -15,6 +15,7 @@ import PIL.ExifTags
 import piexif
 import exifread
 import datetime
+from pathlib import Path
 import logging
 from os import mkdir
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
@@ -97,9 +98,11 @@ class Image:
     """
     def __init__(self, dat, name=None, shading_correction=True):
         self.proxy = None
-        if isinstance(dat, str):
+        if isinstance(dat, str) or isinstance(dat, Path):
             if not osp.isfile(dat):
                 raise NameError("File %s does not exist"%dat)
+            if isinstance(dat, Path):
+                dat = str(dat)
             self.path = dat
             self.name = osp.basename(dat)
             self._data = None
@@ -187,8 +190,12 @@ class Image:
                 print(Style.YELLOW + "CANNOT ACCESS EXIF %s"%self.path + Style.RESET)
                 return
             try:
-                maker = str(exifTag['Image Make'])
-                model = str(exifTag['Image Model'])
+                try:
+                    maker = str(exifTag['Image Make'])
+                    model = str(exifTag['Image Model'])
+                except:
+                    maker = str(exifTag['Make'])
+                    model = str(exifTag['Model'])
                 serial_number = str(exifTag[prefix+'BodySerialNumber'])
                 timelapse = 0
                 deltatime = 0
