@@ -11,7 +11,7 @@ version 1.07 2022-02-17 21:58:00    Class ShootPoint. Save Summary Flight in bin
 import logging
 import utils.angles_analyzis as analys
 import utils.utils_IRdrone as IRd
-from utils.utils_odm import odm_mapping_optim
+from utils.utils_odm import odm_mapping_optim, create_odm_folder
 from irdrone.utils import Style
 import datetime
 import time
@@ -38,6 +38,7 @@ if __name__ == "__main__":
     parser.add_argument('--config', type=str, help='path to the flight configuration')
     parser.add_argument('--clean-proxy', action="store_true", help='clean proxy tif files to save storage')
     parser.add_argument('--disable-altitude-api', action="store_true", help='force not using altitude from IGN API')
+    parser.add_argument('--odm-multispectral', action="store_true", help='ODM multispectral export')
     args = parser.parse_args()
     clean_proxy = args.clean_proxy
     dirPlanVol = args.config
@@ -46,7 +47,7 @@ if __name__ == "__main__":
         dirPlanVol = IRd.loadFileGUI(mute=False)
 
     dirMission = os.path.dirname(dirPlanVol)
-
+    odm_multispectral = args.odm_multispectral
 
     # --------------------------------------------------------------------------
     #                    options       (for rapid tests and analysis)
@@ -138,14 +139,20 @@ if __name__ == "__main__":
     #     Automatic_registration of Vi and IR image pairs.
     #     Build ViR and NDVI images.
     # -------------------------------------------------------------------------------------------------------------
-
+    odm_image_directory = None
+    if odm_multispectral:
+        odm_image_directory = create_odm_folder(dirMission, multispectral_modality="MULTI")
     print(Style.YELLOW + 'The processing of these %i images will take %.2f h.  Do you want to continue?'
           % (len(listPts), 1.36 * len(listPts) / 60.) + Style.RESET)
     autoRegistration = IRd.answerYesNo('Yes (y/1) |  No (n/0):')
     
     if autoRegistration:
         print(Style.CYAN + '------ automatic_registration.process_raw_pairs' + Style.RESET)
-        automatic_registration.process_raw_pairs(listImgMatch[::1], out_dir=dirNameIRdrone, crop=CROP, listPts=listPts, option_alti=option_alti, clean_proxy=clean_proxy)
+        automatic_registration.process_raw_pairs(
+            listImgMatch[::1], out_dir=dirNameIRdrone, crop=CROP, listPts=listPts, 
+            option_alti=option_alti, clean_proxy=clean_proxy, multispectral_folder=odm_image_directory,
+            extra_options=["--skip-band-alignment"]
+        )
     else:
         print(
             Style.YELLOW + 'Warning :  automatic_registration.process_raw_pairs ... Process neutralized.' + Style.RESET)
@@ -154,9 +161,9 @@ if __name__ == "__main__":
     # 4 > Open Drone Map
     #      Prepare ODM folders (with .bat, images and camera calibrations)
     # -------------------------------------------------------------------------------------------------------------
-
-    for ext in ["VIS", "NIR_local", "NDVI__local", "VIR__local"]:
-        odm_image_directory = odm_mapping_optim(dirMission, dirNameIRdrone, multispectral_modality=ext, mappingList=mappingList)
+    if not odm_multispectral:
+        for ext in ["VIS", "NIR_local", "NDVI__local", "VIR__local"]:
+            odm_image_directory = odm_mapping_optim(dirMission, dirNameIRdrone, multispectral_modality=ext, mappingList=mappingList)
 
     # -------------------------------------------------------------------------------------------------------------
     # 5 > Analysis

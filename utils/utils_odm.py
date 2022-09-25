@@ -13,8 +13,7 @@ from matplotlib.patches import Polygon
 columnNbr = 5
 colorNames = list(matplotlib.colors.cnames.keys())
 
-
-def odm_mapping_optim(dirMission, dirNameIRdrone, multispectral_modality="VIR", mappingList=None, extra_suggested_options=True, forced_camera_calibration=True):
+def create_odm_folder(dirMission, multispectral_modality="MS", extra_suggested_options=True, forced_camera_calibration=True, extra_options=[]):
     mapping_folder = "mapping_{}".format(multispectral_modality)
     path_database = Path(dirMission) / mapping_folder
     odm_camera_conf = Path(__file__).parent / ".." / "odm_data" / "dji_fc3170.json"
@@ -39,11 +38,14 @@ def odm_mapping_optim(dirMission, dirNameIRdrone, multispectral_modality="VIR", 
         # enable light adjustment
     if forced_camera_calibration:
         cmd += " --use-fixed-camera-params"
-        
-
+    for extra_option in extra_options:
+        cmd += " " + extra_option
     with open(path_database / "odm_mapping.bat", "w") as fi:
         fi.write(cmd)
-
+    return image_database
+    
+def odm_mapping_optim(dirMission, dirNameIRdrone, multispectral_modality="VIR", mappingList=None, extra_suggested_options=True, forced_camera_calibration=True):
+    image_database = create_odm_folder(dirMission, multispectral_modality=multispectral_modality, extra_suggested_options=extra_suggested_options, forced_camera_calibration=forced_camera_calibration)
     newMappingList = []
     for i in range(len(mappingList)):
         if multispectral_modality == "VIS":
