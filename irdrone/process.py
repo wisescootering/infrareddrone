@@ -90,6 +90,31 @@ def copy_metadata(pth_src, pth_dst):
     cmd = [EXIFTOOLPATH, "-TagsFromFile", pth_src, pth_dst, "-overwrite_original", "-fast"]
     p = subprocess.run(cmd)
 
+def xmp_band_metadata(pth_src, band_index=1):
+    """
+    RGB-NIR
+    """
+    assert band_index in [1, 2, 3, 4]
+    band_name, band_central_wavelength, band_sensitivity =[
+        ("Red", 668, 0.1462),
+        ("Green", 560, 0.285),
+        ("Blue", 475, 0.2613),
+        ("NIR", 840, 0.169)
+    ][band_index-1]
+    xmp_conf = osp.join(osp.dirname(__file__), "..", "exiftool", "xmp.config")
+    assert osp.exists(xmp_conf)
+    cmd = [
+        EXIFTOOLPATH,  "-config",  xmp_conf,
+        f"-XMP-camera:BandName={band_name}",
+        "-XMP-camera:RigCameraIndex=0",
+        f"-XMP-camera:CentralWavelength={band_central_wavelength}",
+        f"-XMP-camera:BandSensitivity={band_sensitivity}",
+        "-m",
+        "-overwrite_original",
+        pth_src
+    ]
+    p = subprocess.run(cmd)
+
 class Image:
     """
     Fast image class
@@ -167,13 +192,20 @@ class Image:
             logging.warning(f"copy metadata from {self.path} to {path}")
             copy_metadata(self.path, path)
         return
-    def save_multispectral(self, path):
+    def save_multispectral(self, path, bands=[1, 2, 3, 4]):
+        """bands:
+        1 : Red
+        2 : Green
+        3 : Blue
+        4 : NIR 
+        """
         assert isinstance(path, Path)
         for ch in range(self._data.shape[2]):
             file_name =  str(path.stem) + f"_{ch+1}"
             pth_channel = (path.parent/ file_name).with_suffix(".tif")
             cv2.imwrite(str(pth_channel), ((2**16-1)*(self._data[:, :, ch].clip(0, 1))).astype(np.uint16))
             copy_metadata(self.path, pth_channel)
+            xmp_band_metadata(pth_channel, band_index=bands[ch])
 
     def loadMetata(self):
         if self.path is not None:
