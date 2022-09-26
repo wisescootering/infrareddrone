@@ -850,8 +850,11 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
 
     # ----------  Save summary in Excel format -----------------------------------------------------------
     if saveExcel:
+        dirSaveSummary = Path(dirSaveFig)/"Flight Analytics"
+        if not osp.isdir(dirSaveSummary):
+            Path(dirSaveSummary).mkdir(parents=True, exist_ok=True)
         summaryExcel = buildSummaryExcel(listPts, listImg)
-        writeSummaryFlightExcel(summaryExcel, dirPlanVol)
+        writeSummaryFlightExcel(summaryExcel, dirSaveSummary)
         if not mute:
             txtSummary = 'List of images of the flight:'
             listSummary = list(summaryExcel)
@@ -863,7 +866,7 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
     summaryPickl = buildMissionAndPtsDicPickl(planVol, listPts)
     if savePickle:
         fileNamePickl = 'MissionSummary.npy'
-        saveMissionAndPtsPickl(summaryPickl, fileNamePickl, dirPlanVol)
+        saveMissionAndPtsPickl(summaryPickl, fileNamePickl, dirSaveSummary)
     # essai de relecture
     # dicMission, listDicPts, listPtPickl = IRd.readMissionAndPtsPickl(fileNamePickl)
 
@@ -939,7 +942,7 @@ def buildMissionAndPtsDicPickl(dicMission, listDicPts):
 
 
 def saveMissionAndPtsPickl(listDic, fileName, pathName):
-    pathName = os.path.join(os.path.join(os.path.dirname(pathName)), fileName)
+    pathName = pathName/fileName
     fh = open(pathName, 'wb')  # In binary format
     pickler = pickle.Pickler(fh, pickle.HIGHEST_PROTOCOL)
     for n in range(len(listDic)):
@@ -984,7 +987,7 @@ def writeSummaryFlightExcel(flightPlanSynthesis, pathName):
     :param pathName:
     :return: .
     """
-    pathName = os.path.join(os.path.join(os.path.dirname(pathName)), 'FlightSummary.xlsx')
+    pathName = pathName/'FlightSummary.xlsx'
     if os.path.isfile(pathName):
         print(Style.CYAN + '------  Write file FlightSummary.xlsx' + Style.RESET)
         pass
