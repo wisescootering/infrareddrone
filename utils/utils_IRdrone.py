@@ -201,7 +201,6 @@ def extractFlightPlan(dirPlanVol, mute=True):
         if planVol['cameraIR']['deltatime'] is not None:
             deltaTimeIR = float(
                 planVol['cameraIR']['deltatime'])  # decalage horloge caméra infrarouge /horloge de référence
-
         regex_nir, regex_drone = "*.%s" % extIR, '*.%s' % extDrone
     elif osp.basename(dirPlanVol).lower().endswith(".json"):
         with open(dirPlanVol, 'r') as openfile:
@@ -306,6 +305,28 @@ def extractFlightPlan(dirPlanVol, mute=True):
     return planVol, imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR, dirNameIRdrone
 
 
+def offsetAnglesCheck(planVol, mute=False):
+    try:
+        offset_angles = planVol['images']['offset_angles'].split(',')
+        assert isinstance(offset_angles, list) and len(offset_angles) == 3
+        offsetTheoretical = []
+        for a in offset_angles:
+            angle = float(a)
+            offsetTheoretical.append(angle)
+        logging.info("Found offset angles")
+    except AssertionError as e:
+        print(
+            Style.YELLOW + '[warning] Offset angles have not been found or are incorrect in xlsx file. Default values [0.86,  1.43, 0.].' + Style.RESET)
+        offsetTheoretical = [0.86, 1.43, 0.]
+    except ValueError as e:
+        print(
+            Style.YELLOW + '[warning] Offset angles have not been found or are incorrect in xlsx file. Default values [0.86,  1.43, 0.].' + Style.RESET)
+        offsetTheoretical = [0.86, 1.43, 0.]
+    if not mute: print(offsetTheoretical)
+
+    return offsetTheoretical
+
+
 def readFlightPlan(pathPlanVolExcel, mute=None):
     """
         Read the Flight Plan  in Excel file.
@@ -359,7 +380,7 @@ def readFlightPlan(pathPlanVolExcel, mute=None):
                     'repertoireIR': sheet.cell(nuimages + 7, 2).value,
                     'extIR': sheet.cell(nuimages + 8, 2).value,
                     'filtreIR': sheet.cell(nuimages + 9, 2).value,
-                    'libre_3': sheet.cell(nuimages + 10, 2).value,  # libre
+                    'offset_angles': sheet.cell(nuimages + 10, 2).value,  #
                     'libre_4': sheet.cell(nuimages + 11, 2).value  # libre
                     },
                'meteo':
@@ -371,6 +392,7 @@ def readFlightPlan(pathPlanVolExcel, mute=None):
                'synchro': sheet.cell(numeteo + 5, 2).value
                }
     workbook.close()
+    planVol['offset_angles'] = offsetAnglesCheck(planVol, mute=True)
 
     if not mute:
         printPlanVol(planVol)
