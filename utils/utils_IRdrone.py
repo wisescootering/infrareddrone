@@ -312,6 +312,8 @@ def offsetAnglesCheck(planVol, mute=False):
         offsetTheoretical = []
         for a in offset_angles:
             angle = float(a)
+            if not(-20 <= angle <= 20):
+                angle = 0.
             offsetTheoretical.append(angle)
         logging.info("Found offset angles")
     except AssertionError as e:
@@ -392,7 +394,7 @@ def readFlightPlan(pathPlanVolExcel, mute=None):
                'synchro': sheet.cell(numeteo + 5, 2).value
                }
     workbook.close()
-    planVol['offset_angles'] = offsetAnglesCheck(planVol, mute=True)
+    planVol['offset_angles'] = offsetAnglesCheck(planVol, mute=mute)
 
     if not mute:
         printPlanVol(planVol)
