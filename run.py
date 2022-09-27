@@ -38,7 +38,8 @@ if __name__ == "__main__":
     parser.add_argument('--config', type=str, help='path to the flight configuration')
     parser.add_argument('--clean-proxy', action="store_true", help='clean proxy tif files to save storage')
     parser.add_argument('--disable-altitude-api', action="store_true", help='force not using altitude from IGN API')
-    parser.add_argument('--odm-multispectral', action="store_true", help='ODM multispectral export')
+    #parser.add_argument('--odm-multispectral', action="store_true", help='ODM multispectral export')
+    parser.add_argument('--odm-multispectral', default=True, help='ODM multispectral export')
     args = parser.parse_args()
     clean_proxy = args.clean_proxy
     dirPlanVol = args.config
@@ -150,9 +151,8 @@ if __name__ == "__main__":
         print(Style.CYAN + '------ automatic_registration.process_raw_pairs' + Style.RESET)
         automatic_registration.process_raw_pairs(
             listImgMatch[::1], out_dir=dirNameIRdrone, crop=CROP, listPts=listPts, 
-            option_alti=option_alti, clean_proxy=clean_proxy, multispectral_folder=odm_image_directory,
-            extra_options=["--skip-band-alignment"]
-        )
+            option_alti=option_alti, clean_proxy=clean_proxy, multispectral_folder=odm_image_directory
+        ) #extra_options=["--skip-band-alignment"]
     else:
         print(
             Style.YELLOW + 'Warning :  automatic_registration.process_raw_pairs ... Process neutralized.' + Style.RESET)
