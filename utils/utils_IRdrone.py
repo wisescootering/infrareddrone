@@ -6,7 +6,7 @@ Created on 2021-10-05 19:17:16
 version 1.05 2021-12-01
 version 1.06 2021-12-31 16:41:05.   theoretical Yaw,Pitch,Roll for NIR images
 version 1.07 2022-02-15 18:50:00.   Class ShootPoint
-
+version 1.3  2022-09-27 19:37:00
 @authors: balthazar/alain
 """
 import logging
@@ -163,7 +163,7 @@ def extractFlightPlan(dirPlanVol, mute=True):
     > Images list of Drone and IR cameras
 
     :param dirPlanVol:  path of Fligth Plan in  a Excel
-               mute : affiche des informatios si True  (utile en phase debug)
+                 mute: affiche des informatios si True  (utile en phase debug)
     :return: (planVol,imgListDrone,deltaTimeDrone,timeLapseDrone,imgListIR,deltaTimeIR,timeLapseIR,
     dirNameIRdrone,coordGPS_TakeOff,altiTakeOff)   )
     """
@@ -201,7 +201,6 @@ def extractFlightPlan(dirPlanVol, mute=True):
         if planVol['cameraIR']['deltatime'] is not None:
             deltaTimeIR = float(
                 planVol['cameraIR']['deltatime'])  # decalage horloge caméra infrarouge /horloge de référence
-
         regex_nir, regex_drone = "*.%s" % extIR, '*.%s' % extDrone
     elif osp.basename(dirPlanVol).lower().endswith(".json"):
         with open(dirPlanVol, 'r') as openfile:
@@ -306,6 +305,30 @@ def extractFlightPlan(dirPlanVol, mute=True):
     return planVol, imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR, dirNameIRdrone
 
 
+def offsetAnglesCheck(planVol, mute=False):
+    try:
+        offset_angles = planVol['images']['offset_angles'].split(',')
+        assert isinstance(offset_angles, list) and len(offset_angles) == 3
+        offsetTheoretical = []
+        for a in offset_angles:
+            angle = float(a)
+            if not(-20 <= angle <= 20):
+                angle = 0.
+            offsetTheoretical.append(angle)
+        logging.info("Found offset angles")
+    except AssertionError as e:
+        print(
+            Style.YELLOW + '[warning] Offset angles have not been found or are incorrect in xlsx file. Default values [0.86,  1.43, 0.].' + Style.RESET)
+        offsetTheoretical = [0.86, 1.43, 0.]
+    except ValueError as e:
+        print(
+            Style.YELLOW + '[warning] Offset angles have not been found or are incorrect in xlsx file. Default values [0.86,  1.43, 0.].' + Style.RESET)
+        offsetTheoretical = [0.86, 1.43, 0.]
+    if not mute: print(offsetTheoretical)
+
+    return offsetTheoretical
+
+
 def readFlightPlan(pathPlanVolExcel, mute=None):
     """
         Read the Flight Plan  in Excel file.
@@ -359,7 +382,7 @@ def readFlightPlan(pathPlanVolExcel, mute=None):
                     'repertoireIR': sheet.cell(nuimages + 7, 2).value,
                     'extIR': sheet.cell(nuimages + 8, 2).value,
                     'filtreIR': sheet.cell(nuimages + 9, 2).value,
-                    'libre_3': sheet.cell(nuimages + 10, 2).value,  # libre
+                    'offset_angles': sheet.cell(nuimages + 10, 2).value,  #
                     'libre_4': sheet.cell(nuimages + 11, 2).value  # libre
                     },
                'meteo':
@@ -371,6 +394,7 @@ def readFlightPlan(pathPlanVolExcel, mute=None):
                'synchro': sheet.cell(numeteo + 5, 2).value
                }
     workbook.close()
+    planVol['offset_angles'] = offsetAnglesCheck(planVol, mute=mute)
 
     if not mute:
         printPlanVol(planVol)
@@ -826,8 +850,11 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
 
     # ----------  Save summary in Excel format -----------------------------------------------------------
     if saveExcel:
+        dirSaveSummary = Path(dirSaveFig)/"Flight Analytics"
+        if not osp.isdir(dirSaveSummary):
+            Path(dirSaveSummary).mkdir(parents=True, exist_ok=True)
         summaryExcel = buildSummaryExcel(listPts, listImg)
-        writeSummaryFlightExcel(summaryExcel, dirPlanVol)
+        writeSummaryFlightExcel(summaryExcel, dirSaveSummary)
         if not mute:
             txtSummary = 'List of images of the flight:'
             listSummary = list(summaryExcel)
@@ -839,7 +866,7 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
     summaryPickl = buildMissionAndPtsDicPickl(planVol, listPts)
     if savePickle:
         fileNamePickl = 'MissionSummary.npy'
-        saveMissionAndPtsPickl(summaryPickl, fileNamePickl, dirPlanVol)
+        saveMissionAndPtsPickl(summaryPickl, fileNamePickl, dirSaveSummary)
     # essai de relecture
     # dicMission, listDicPts, listPtPickl = IRd.readMissionAndPtsPickl(fileNamePickl)
 
@@ -915,7 +942,7 @@ def buildMissionAndPtsDicPickl(dicMission, listDicPts):
 
 
 def saveMissionAndPtsPickl(listDic, fileName, pathName):
-    pathName = os.path.join(os.path.join(os.path.dirname(pathName)), fileName)
+    pathName = pathName/fileName
     fh = open(pathName, 'wb')  # In binary format
     pickler = pickle.Pickler(fh, pickle.HIGHEST_PROTOCOL)
     for n in range(len(listDic)):
@@ -960,7 +987,7 @@ def writeSummaryFlightExcel(flightPlanSynthesis, pathName):
     :param pathName:
     :return: .
     """
-    pathName = os.path.join(os.path.join(os.path.dirname(pathName)), 'FlightSummary.xlsx')
+    pathName = pathName/'FlightSummary.xlsx'
     if os.path.isfile(pathName):
         print(Style.CYAN + '------  Write file FlightSummary.xlsx' + Style.RESET)
         pass
