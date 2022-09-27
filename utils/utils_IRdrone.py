@@ -306,7 +306,9 @@ def extractFlightPlan(dirPlanVol, mute=True):
 
 
 def offsetAnglesCheck(planVol, mute=False):
+    offsetTheoretical = [0., 0., 0.]
     try:
+        assert planVol['images']['offset_angles'] is not None
         offset_angles = planVol['images']['offset_angles'].split(',')
         assert isinstance(offset_angles, list) and len(offset_angles) == 3
         offsetTheoretical = []
@@ -318,12 +320,10 @@ def offsetAnglesCheck(planVol, mute=False):
         logging.info("Found offset angles")
     except AssertionError as e:
         print(
-            Style.YELLOW + '[warning] Offset angles have not been found or are incorrect in xlsx file. Default values [0.86,  1.43, 0.].' + Style.RESET)
-        offsetTheoretical = [0.86, 1.43, 0.]
+            Style.YELLOW + '[warning] Offset angles have not been found or are incorrect in xlsx file. Using [0., 0., 0.]' + Style.RESET)
     except ValueError as e:
         print(
-            Style.YELLOW + '[warning] Offset angles have not been found or are incorrect in xlsx file. Default values [0.86,  1.43, 0.].' + Style.RESET)
-        offsetTheoretical = [0.86, 1.43, 0.]
+            Style.YELLOW + '[warning] Offset angles have not been found or are incorrect in xlsx file. Using [0., 0., 0.]' + Style.RESET)
     if not mute: print(offsetTheoretical)
 
     return offsetTheoretical
