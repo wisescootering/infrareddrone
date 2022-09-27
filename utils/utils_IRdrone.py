@@ -6,7 +6,7 @@ Created on 2021-10-05 19:17:16
 version 1.05 2021-12-01
 version 1.06 2021-12-31 16:41:05.   theoretical Yaw,Pitch,Roll for NIR images
 version 1.07 2022-02-15 18:50:00.   Class ShootPoint
-version 1.3  2022-09-27 19:02:00
+version 1.3  2022-09-27 19:37:00
 @authors: balthazar/alain
 """
 import logging

@@ -2,7 +2,7 @@
 # pylint: disable=C0103, C0301, W0703
 """
 Created on 2021-10-12 19:02:16
-version 1.3 2022-09-27 17:40:00
+version 1.3 2022-09-27 19:37:00
 @authors: balthazar/alain
 """
 
