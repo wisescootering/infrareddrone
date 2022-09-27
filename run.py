@@ -141,7 +141,7 @@ if __name__ == "__main__":
     # -------------------------------------------------------------------------------------------------------------
     odm_image_directory = None
     if odm_multispectral:
-        odm_image_directory = create_odm_folder(dirMission, multispectral_modality="MULTI")
+        odm_image_directory = create_odm_folder(dirMission, multispectral_modality="MULTI", extra_options=["--skip-band-alignment"])
     print(Style.YELLOW + 'The processing of these %i images will take %.2f h.  Do you want to continue?'
           % (len(listPts), 1.36 * len(listPts) / 60.) + Style.RESET)
     autoRegistration = IRd.answerYesNo('Yes (y/1) |  No (n/0):')
@@ -150,8 +150,7 @@ if __name__ == "__main__":
         print(Style.CYAN + '------ automatic_registration.process_raw_pairs' + Style.RESET)
         automatic_registration.process_raw_pairs(
             listImgMatch[::1], out_dir=dirNameIRdrone, crop=CROP, listPts=listPts, 
-            option_alti=option_alti, clean_proxy=clean_proxy, multispectral_folder=odm_image_directory,
-            extra_options=["--skip-band-alignment"]
+            option_alti=option_alti, clean_proxy=clean_proxy, multispectral_folder=odm_image_directory
         )
     else:
         print(
