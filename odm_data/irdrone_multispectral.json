@@ -1,10 +1,10 @@
 {
-    "irdrone multispectral 3892 2892 brown 0.7447": {
+    "irdrone multispectral 3892 2892 brown 0.74473279": {
         "projection_type": "brown",
         "width": 3892,
         "height": 2892,
-        "focal_x": 0.7447,
-        "focal_y": 0.7447,
+        "focal_x": 0.74473279,
+        "focal_y": 0.74473279,
         "c_x": 0.0,
         "c_y": 0.0,
         "k1": 0.0,

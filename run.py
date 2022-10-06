@@ -60,6 +60,8 @@ if __name__ == "__main__":
     createMappingList = True  # Create a list of best synchronous images for mapping with ODM
     option_alti = 'sealevel'  # Altitude GPS  for Exif data. Options: ['takeoff', 'sealevel', 'ground', 'geo']
     analysisAlignment = True   #  Analyse des angles d'alignement "theoretical" et "coarse process"
+    showAnglPlot = True
+    showDisperPlot = True
 
     # Sélection des images pour le process d'alignement des paires VIS NIR en fonction de la valeur de  option-alignment
     #
@@ -165,7 +167,7 @@ if __name__ == "__main__":
 
     if analysisAlignment:
         try:
-            analys.analyzis_motion_camera(dirMission, shootingPts, planVol)
+            analys.analyzis_motion_camera(dirMission, shootingPts, planVol, showAnglPlot=showAnglPlot, showDisperPlot=showDisperPlot)
             IRd.SaveSummaryInExcelFormat(dirMission, saveExcel, shootingPts, listImgMatch, mute=True)
             IRd.SaveSummaryInNpyFormat(dirMission, savePickle, planVol, shootingPts)
         except Exception as exc:

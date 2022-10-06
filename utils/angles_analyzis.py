@@ -18,7 +18,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-def analyzis_motion_camera(dirMission, shootingPts, planVol):
+def analyzis_motion_camera(dirMission, shootingPts, planVol, showAnglPlot=False, showDisperPlot=False):
     timeLine, yawIR2VI, pitchIR2VI, rollIR2VI = [], [], [], []
     timeLinePostProcess, yawCoarse, pitchCoarse, rollCoarse = [], [], [], []
 
@@ -51,9 +51,9 @@ def analyzis_motion_camera(dirMission, shootingPts, planVol):
 
     # -----------------------------------------------------------------------------------
     plotAnglesAlignment(timeLine, yawIR2VI, pitchIR2VI, rollIR2VI,
-                        timeLinePostProcess, yawCoarse, pitchCoarse, rollCoarse, dirMission=dirMission, showPlot=True)
+                        timeLinePostProcess, yawCoarse, pitchCoarse, rollCoarse, dirMission=dirMission, showPlot=showAnglPlot)
     plotDisperPitchYaw(yawIR2VI, pitchIR2VI, rollIR2VI,
-                       yawCoarse, pitchCoarse, rollCoarse, planVol, dirMission=dirMission, showPlot=False)
+                       yawCoarse, pitchCoarse, rollCoarse, planVol, dirMission=dirMission, showPlot=showDisperPlot)
     return
 
 
