@@ -15,24 +15,6 @@ columnNbr = 5
 colorNames = list(matplotlib.colors.cnames.keys())
 
 
-def lectureCameraIrdrone():
-    odm_camera_conf = Path(__file__).parent / ".." / "odm_data" / "irdrone_multispectral.json"
-    print('le fichier de calibration de la caméra du dji est dans : ', odm_camera_conf)
-    file = open(odm_camera_conf, 'r')
-    dicCameraIRdrone = json.load(file)
-    for inpkey in dicCameraIRdrone.keys():
-        list = inpkey.split()
-        camera_make = list[0]
-        camera_type = list[1]
-        width_capteur = list[2]
-        height_capteur = list[3]
-        projection = list[4]
-        focal_factor =list[5]
-        print('  camera_make: %s\n  camera_type: %s\n  width_capteur: %s\n  height_capteur: %s\n  projection: %s\n  focal_factor: %s\n'%(camera_make,camera_type,width_capteur,height_capteur,projection,focal_factor))
-
-    return
-
-
 def create_odm_folder(dirMission, multispectral_modality="MS", extra_suggested_options=True, forced_camera_calibration=True, extra_options=[]):
     mapping_folder = "mapping_{}".format(multispectral_modality)
     path_database = Path(dirMission) / mapping_folder
@@ -64,7 +46,8 @@ def create_odm_folder(dirMission, multispectral_modality="MS", extra_suggested_o
     with open(path_database / "odm_mapping.bat", "w") as fi:
         fi.write(cmd)
     return image_database
-    
+
+
 def odm_mapping_optim(dirMission, dirNameIRdrone, multispectral_modality="VIR", mappingList=None, extra_suggested_options=True, forced_camera_calibration=True):
     image_database = create_odm_folder(dirMission, multispectral_modality=multispectral_modality, extra_suggested_options=extra_suggested_options, forced_camera_calibration=forced_camera_calibration)
     newMappingList = []
@@ -84,52 +67,51 @@ def odm_mapping_optim(dirMission, dirNameIRdrone, multispectral_modality="VIR", 
     return image_database
 
 
-def buildMappingList(listPtsOptim, listPts, dirSaveFig=None, mute=True):
-    print(Style.CYAN + '------ Creating the list of images for mapping  ' + Style.GREEN)
+def buildMappingList(listPtsOptim, listPts, overlap_x=0.30, overlap_y=0.75, dirSaveFig=None, mute=True):
+    """
+    focalPix            focal length camera VIS                pixels , m
+    overlap_x = 0.30    percentage of overlap between two images  axe e_1
+    overlap_y = 0.75    percentage of overlap between two images  axe e_2   [50% , 75%]
+    lCapt_x             image size VIS  axe e_1                pixels
+    lCapt_y             image size VIS  axe e_2  (axe drone)   pixels
+    lPix                pixel size for camera VIS              m
+    """
+    print(Style.CYAN + '------ Creating the list of images for mapping  ' + Style.RESET)
     mappingList = []
-
-    # TODO  recuperer les dimensions du capteur et la focale du fichier camera
-    # TODO  paramètres overlap, lCapt_y ...   à lire dans un fichier de configuration json
     # TODO  prendre en compte la trajectoire exacte et pas seulement le mouvement  suivant e_2
-    #dt_synchro_optim = 0.25
-    lPix = 1.6 * 10 ** -6  # pixel size for camera VIS              m
-    lCapt_x = 3892         # image size VIS  axe e_1                pixels
-    lCapt_y = 2892         # image size VIS  axe e_2                pixels
-    f = 2898.5             # focal length camera VIS                pixels
-    f_m = f * lPix         # focal length camera VIS                m
-    overlap_x = 0.30       # percentage of overlap between two images  axe e_1
-    overlap_y = 0.75       # percentage of overlap between two images  axe e_2   [50% , 75%]
 
+    camera_make, camera_type, lCapt_x, lCapt_y, focal_factor, focalPix = IRd.lectureCameraIrdrone()
+    lPix = 1.6 * 10 ** -6
     # ------------------------------------------------------------------------------------------
-    d = 0     # raz odometre
+    d = 0     # reset odometre
     firstImg = False
     for pointImage in listPts:
-        d_y = pointImage.altGround * (1 - overlap_y) * lCapt_y / f
+        d_y = pointImage.altGround * (1 - overlap_y) * lCapt_y / focalPix
         if pointImage.bestSynchro ==1:
-            if d == 0 and firstImg is False:  # premier point de la série
+            if d == 0 and firstImg is False:   # The first point for mapping has been found.
                 mappingList.append(pointImage)
                 listPts[pointImage.num - 1].bestMapping = 1
                 firstImg = True
                 if not mute:
                     print("%s     sync %.2f s    alt. %.2f m  Yaw %.1f °  ech. 1/%i "
                       % (pointImage.Vis, pointImage.timeDeviation, pointImage.altGround, pointImage.yawDrone,
-                         pointImage.altGround // f_m))
-            elif d >= d_y:  # on a trouvé le point suivant de la série du mapping
+                         pointImage.altGround // (focalPix * lPix)))
+            elif d >= d_y:  # The next point for mapping has been found.
                 listPts[pointImage.num - 1].bestMapping = 1
                 mappingList.append(pointImage)
-                d = 0       # raz odometre
+                d = 0       # reset odometre
                 if not mute:
                     print("%s     sync %.2f s    alt. %.2f m  Yaw %.1f °  ech. 1/%i "
                       % (pointImage.Vis, pointImage.timeDeviation, pointImage.altGround , pointImage.yawDrone,
-                         pointImage.altGround // f_m))
+                         pointImage.altGround // (focalPix * lPix)))
 
-        if firstImg:              # incrémentation de l'odomètre
+        if firstImg:              # Increment of the odometer.
             d = d + (pointImage.x_1 ** 2 + pointImage.x_2 ** 2) ** 0.5
     if 0 < len(mappingList) < 5:
         print(Style.YELLOW + '[warning]  The number of images selected for mapping is insufficient. It must be greater than 5.' + Style.RESET)
     elif len(mappingList) == 0:
         print(Style.RED + '[error]  No images selected for mapping.' + Style.RESET)
-    visu_mapping(mappingList, listPts, focal_DJI=f, lCapt_x=lCapt_x, lCapt_y=lCapt_y, dirSaveFig=dirSaveFig)
+    visu_mapping(mappingList, listPts, focal_DJI=focalPix, lCapt_x=lCapt_x, lCapt_y=lCapt_y, dirSaveFig=dirSaveFig)
 
     return mappingList
 
@@ -255,6 +237,7 @@ def coordRef2coordGeo(A, coord_Img):
         verts = [(listPtX[k], listPtY[k]) for k in range(len(listPtX))]
         return verts
 
-if __name__ == "__main__":
-    lecture()
+
+
+
 

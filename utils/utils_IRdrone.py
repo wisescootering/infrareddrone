@@ -40,6 +40,7 @@ import pickle
 import json
 from copy import copy, deepcopy
 from pathlib import Path
+import utils.angles_analyzis as analys
 
 
 # -----   Convertisseurs de dates   Exif<->Python  Excel->Python    ------
@@ -777,7 +778,7 @@ def nameImageNIRSummary(nameImageComplet):
 def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=None,
                   seaLevel=False, dirSavePlanVol=None, saveGpsTrack=False,
                   saveExcel=False, savePickle=True, createMappingList=False, mute=True, altitude_api_disabled=False,
-                  optionBestSynchro=False, ratioSynchro=0.25):
+                  optionAlignment=None, ratioSynchro=0.25):
     """
     :param listImg:      list of image pairs VI/IR matched at the same point
     :param mute:
@@ -847,26 +848,43 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
     dirSaveFig = osp.join(dirSavePlanVol, "Flight Analytics", "Topo")
     if not osp.isdir(dirSaveFig):
         Path(dirSaveFig).mkdir(parents=True, exist_ok=True)
-    IRdplt.flightProfil_plot(distFlight, altDroneSealLevel, altGround, dirSaveFig=dirSaveFig, mute=False)
+    analys.flightProfil_plot(distFlight, altDroneSealLevel, altGround, dirSaveFig=dirSaveFig, mute=False)
 
     # ---------  Save GPS Track in Garmin format (.gpx) -----------------------------------------------------
     if saveGpsTrack:
         uGPS.writeGPX(listPts, dirSaveFig, planVol['mission']['date'], mute=True)
 
-    # ----------  optimisation. Selecting the best synchronized image pairs
+    # ---- Selecting the image pairs for the alignment among the available images according to the alignment option value :
+    #  optionAlignment == 'all-images' or None   Selecting all available image pairs in the AerialPhotography folder.
+    #  optionAlignment == 'best-synchro'         Selecting the best synchronized image pairs for alignment.
+    #  optionAlignment == 'best-mapping'         Selection of image pairs for mapping among aligned images.
+    ImgMatchForAlignment, PtsForAlignment = [], []
+    if optionAlignment == None or optionAlignment == 'all-images':
+        ImgMatchForAlignment, PtsForAlignment = selectAllImages(listImg, listPts, planVol, ratioSynchro=ratioSynchro)
+    elif optionAlignment == 'best-synchro':
+        ImgMatchForAlignment, PtsForAlignment = selectBestSynchro(listImg, listPts, planVol, ratioSynchro=ratioSynchro)
+    elif optionAlignment == 'best-mapping':
+        ImgMatchForAlignment, PtsForAlignment = selectBestMapping(listImg, listPts, planVol, overlap_x=0.30, overlap_y=0.75, ratioSynchro=ratioSynchro)
+    else:
+        print(Style.RED + '[error] ')
+        pass
+    # --------- Selection of image pairs for mapping among aligned images. ------------------------------------------
 
-    listImgMatchOptim, listPtsOptim = selectBestSynchro(listImg, listPts, planVol, optBestSync=optionBestSynchro, ratioSynchro=ratioSynchro)
-
-
-    # --------- Select best synchronous images for mapping with ODM ------------------------------------------
     if createMappingList:
-        mappingList = odm.buildMappingList(listPtsOptim, listPts, dirSaveFig=dirSaveFig)
+        mappingList = odm.buildMappingList(ImgMatchForAlignment, listPts, overlap_x=0.30, overlap_y=0.75, dirSaveFig=dirSaveFig)
     else:
         mappingList = None
 
-    #
     # ----------  Save summary in Excel format -----------------------------------------------------------
-    dirAnalytics = Path(dirSavePlanVol) / "Flight Analytics"
+    SaveSummaryInExcelFormat(dirSavePlanVol, saveExcel, listPts, listImg, mute=True)
+    # ----------  Save summary in Pickle format -----------------------------------------------------------
+    SaveSummaryInNpyFormat(dirSavePlanVol, savePickle, planVol, listPts)
+
+    return mappingList, ImgMatchForAlignment, PtsForAlignment
+
+
+def SaveSummaryInExcelFormat(dirMission, saveExcel, listPts, listImg, mute=True):
+    dirAnalytics = Path(dirMission) / "Flight Analytics"
     if saveExcel:
         if not osp.isdir(dirAnalytics):
             Path(dirAnalytics).mkdir(parents=True, exist_ok=True)
@@ -878,18 +896,18 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
             for i in range(len(listImg)):
                 txtSummary = txtSummary + '\n' + listSummary[i].__str__()
             print(Style.GREEN + txtSummary + Style.RESET)
+    return
 
-    # ----------  Save summary in Pickle format -----------------------------------------------------------
+
+def SaveSummaryInNpyFormat(dirMission, savePickle, planVol, listPts):
     summaryPickl = buildMissionAndPtsDicPickl(planVol, listPts)
+    dirAnalytics = Path(dirMission) / "Flight Analytics"
     if savePickle:
         if not osp.isdir(dirAnalytics):
             Path(dirAnalytics).mkdir(parents=True, exist_ok=True)
         fileNamePickl = 'MissionSummary.npy'
         saveMissionAndPtsPickl(summaryPickl, fileNamePickl, dirAnalytics)
-    # essai de relecture
-    # dicMission, listDicPts, listPtPickl = IRd.readMissionAndPtsPickl(fileNamePickl) -----------------------
-
-    return mappingList, listImgMatchOptim, listPtsOptim
+    return
 
 
 def avAltitude(listPts):
@@ -929,11 +947,15 @@ def buildSummaryExcel(listPts, listImg):
              round(listPts[i].x_1, 3),  # 25 motion in principal axis drone
              round(listPts[i].x_2, 3),  # 26 motion in orthogonal axis drone
              round(listPts[i].x_3, 3),  # 27 motion in Z axis
-             round(listPts[i].yawIR2VI, 5),  # 28 coarse yaw for superimpose imgNIR on imgVIS
-             round(listPts[i].pitchIR2VI, 5),  # 29 coarse pitch for superimpose imgNIR on imgVIS
-             round(listPts[i].rollIR2VI, 5),  # 30 coarse roll for superimpose imgNIR on imgVIS
-             listPts[i].bestSynchro,  # 31 best synchro
-             listPts[i].bestMapping   # 32 best mapping
+             round(listPts[i].yawIR2VI, 5),  # 28 theoretical yaw for superimpose imgNIR on imgVIS
+             round(listPts[i].pitchIR2VI, 5),  # 29 theoretical pitch for superimpose imgNIR on imgVIS
+             round(listPts[i].rollIR2VI, 5),  # 30 theoretical roll for superimpose imgNIR on imgVIS
+             listPts[i].bestSynchro,   # 31 value = 1 if best synchro
+             listPts[i].bestMapping,   # 32 value = 1 if image pairs selected for mapping among aligned images.
+             listPts[i].alignment,     # 33 value = 1 if image pairs selected for process alignment
+             round(listPts[i].yawCoarseAlign, 5),  # 34 coarse yaw for superimpose imgNIR on imgVIS
+             round(listPts[i].pitchCoarseAlign, 5),  # 35 coarse pitch for superimpose imgNIR on imgVIS
+             round(listPts[i].rollCoarseAlign, 5)  # 35 coarse roll for superimpose imgNIR on imgVIS
              )
         )
 
@@ -1085,11 +1107,16 @@ def readFlightSummary(dir_mission, mute=None, no_pandas=False):
         rollIr2Vi = float(sheet.cell(nulg, 31).value)  # theoretical roll coarse process
         bestSynchro = int(sheet.cell(nulg, 32).value)  # 1 if dt-synchro < timelapseDJI/4 (25%)
         bestMapping = int(sheet.cell(nulg, 33).value)  # 1 if image selected for mapping
+        bestAlignment = int(sheet.cell(nulg, 34).value)  # 1 if image selected for alignment
+        yawCoarseAlign = float(sheet.cell(nulg, 35).value)  # theoretical yaw coarse process
+        pitchCoarseAlign = float(sheet.cell(nulg, 36).value)  # theoretical pitch coarse process
+        rollCoarseAlign = float(sheet.cell(nulg, 37).value)  # theoretical roll coarse process
 
         data = num_pt, imgVisName, imgNirName, timeDeviation, dateVisString, dateNirString, timeLine, date_string, \
                gpsLat, gpsLong, altiDrone2Sol, altGeo, altiDrone2TakeOff, distNextPt, capNextPt, dist2StartPoint, \
                xUTM, yUTM, zoneUTM, yawDrone, pitchDrone, rollDrone, yawGimbal, pitchGimbal, rollGimbal, \
-               x_1, x_2, x_3, yawIr2Vi, pitchIr2Vi, rollIr2Vi, bestSynchro, bestMapping
+               x_1, x_2, x_3, yawIr2Vi, pitchIr2Vi, rollIr2Vi, bestSynchro, bestMapping, bestAlignment, \
+               yawCoarseAlign, pitchCoarseAlign, rollCoarseAlign
 
         listSummaryFlight.append(data)
         nulg = nulg + 1
@@ -1129,11 +1156,15 @@ def headColumnSummaryFlight():
                    'x_1                                  [m]',
                    'x_2                                  [m]',
                    'x_3                                  [m]',
-                   'Yaw                 IR to VI                     [°]',
-                   'Pitch               IR to VI                     [°]',
-                   'Roll                IR to VI                     [°]',
+                   'Yaw Theoretical alignment        IR to VI                     [°]',
+                   'Pitch Theoretical alignment      IR to VI                     [°]',
+                   'Roll Theoretical alignment       IR to VI                     [°]',
                    'Best synchro',
-                   'Mapping ODM'
+                   'Mapping ODM',
+                   'Alignment',
+                   'Yaw Coarse alignment             IR to VI                     [°]',
+                   'Pitch Coarse alignment           IR to VI                     [°]',
+                   'Roll Coarse alignment            IR to VI                     [°]'
                    ]
     return listHeadCol
 
@@ -1444,31 +1475,108 @@ def average_Timelapse(tStart, tEnd, nbImageMission, mute=True):
     return av_Timelapse, av_Timelapse_timedelta
 
 
-def selectBestSynchro(listImgMatch, listPts, planVol, optBestSync=False, ratioSynchro=0.25):
+def selectAllImages(listImgMatch, listPts, planVol, ratioSynchro=0.25):
+    """
+        Selects all pairs of images for alignment process.
+        Tag alignment and best synchro (if ok) in summary-flight file
+    """
+    print(Style.CYAN + '------ Selecting all available image pairs in the AerialPhotography folder.' + Style.GREEN)
+    ImgMatch, Pts = [], []
+    DTmin = planVol['drone']['timelapse'] * ratioSynchro
+    for pointImage in listPts:
+        listPts[pointImage.num - 1].alignment = 1
+        Pts.append(listPts[pointImage.num - 1])
+        ImgMatch.append(listImgMatch[pointImage.num - 1])
+        if -DTmin <= pointImage.timeDeviation <= DTmin:
+            listPts[pointImage.num - 1].bestSynchro = 1
+    return ImgMatch, Pts
+
+
+def selectBestSynchro(listImgMatch, listPts, planVol, ratioSynchro=0.25):
     """
     Selects pairs of images with a timing difference of less than :
         DTmin = drone timelapse * ratioSynchro.
     'ratioSynchro' is a percentage of drone timelapse.  DTmin in [0.25 , 1.0]
     """
-    listImgMatchOptim, listPtsOptim = [], []
+    print(Style.CYAN + '------ Selecting the best synchronized image pairs for alignment.  ' + Style.GREEN)
+    ImgMatchSync, PtsSync = [], []
     DTmin = planVol['drone']['timelapse'] * ratioSynchro
     for pointImage in listPts:
-        if optBestSync:
-            if -DTmin <= pointImage.timeDeviation <= DTmin:
-                listPts[pointImage.num-1].bestSynchro = 1
-                listImgMatchOptim.append(listImgMatch[pointImage.num-1])
-                listPtsOptim.append(pointImage)
-            else:
-                listPts[pointImage.num - 1].bestSynchro = 0
+        if -DTmin <= pointImage.timeDeviation <= DTmin:
+            listPts[pointImage.num-1].bestSynchro = 1
+            listPts[pointImage.num - 1].alignment = 1
+            pointImage.alignment = 1
+            ImgMatchSync.append(listImgMatch[pointImage.num-1])
+            PtsSync.append(pointImage)
         else:
-            if -DTmin <= pointImage.timeDeviation <= DTmin:
-                listPts[pointImage.num - 1].bestSynchro = 1
-            else:
-                listPts[pointImage.num - 1].bestSynchro = 0
-            listImgMatchOptim.append(listImgMatch[pointImage.num - 1])
-            listPtsOptim.append(pointImage)
+            listPts[pointImage.num - 1].bestSynchro = 0
+            listPts[pointImage.num - 1].alignment = 0
 
-    return listImgMatchOptim, listPtsOptim
+    return ImgMatchSync, PtsSync
+
+
+def selectBestMapping(listImgMatch, listPts, planVol,  overlap_x=0.30, overlap_y=0.75, ratioSynchro=0.25):
+    """
+    overlap_x = 0.30  # percentage of overlap between two images  axe e_1
+    overlap_y = 0.75  # percentage of overlap between two images  axe e_2   [50% , 75%]
+    lCapt_x = width_capteur     image size VIS  axe e_1                pixels
+    lCapt_y = height_capteur    image size VIS  axe e_2                pixels
+    f = focalPix                focal length camera VIS                pixels
+    """
+    print(Style.CYAN + '------ Selection of mapping image pairs for the alignment process.  ' + Style.GREEN)
+    ImgMatch, Pts = [], []
+    camera_make, camera_type, width_capteur, height_capteur, focal_factor, focalPix = lectureCameraIrdrone()
+    # TODO  prendre en compte la trajectoire exacte et pas seulement le mouvement  suivant e_2
+    lCapt_x = width_capteur
+    lCapt_y = height_capteur
+    f = focalPix
+    DTmin = planVol['drone']['timelapse'] * ratioSynchro
+    # ------------------------------------------------------------------------------------------
+    d = 0  # raz odometre
+    firstImg = False
+    for pointImage in listPts:
+        d_y = pointImage.altGround * (1 - overlap_y) * lCapt_y / f
+        if -DTmin <= pointImage.timeDeviation <= DTmin:
+            pointImage.bestSynchro = 1
+            listPts[pointImage.num - 1].bestSynchro = 1
+            if d == 0 and firstImg is False:  # The first point for mapping has been found.
+                listPts[pointImage.num - 1].alignment = 1
+                listPts[pointImage.num - 1].bestMapping = 1
+                Pts.append(listPts[pointImage.num - 1])
+                ImgMatch.append(listImgMatch[pointImage.num - 1])
+                firstImg = True
+            elif d >= d_y:  # The next point for mapping has been found.
+                listPts[pointImage.num - 1].alignment = 1
+                listPts[pointImage.num - 1].bestMapping = 1
+                Pts.append(listPts[pointImage.num - 1])
+                ImgMatch.append(listImgMatch[pointImage.num - 1])
+                d = 0  # Reset the odometer.
+        if firstImg:  # Increment of the odometer.
+            d = d + (pointImage.x_1 ** 2 + pointImage.x_2 ** 2) ** 0.5
+
+    return ImgMatch, Pts
+
+
+def lectureCameraIrdrone():
+    odm_camera_conf = Path(__file__).parent / ".." / "odm_data" / "irdrone_multispectral.json"
+    # print('le fichier de calibration de la caméra du dji est dans : ', odm_camera_conf)
+    file = open(odm_camera_conf, 'r')
+    dicCameraIRdrone = json.load(file)
+    for inpkey in dicCameraIRdrone.keys():
+        list = inpkey.split()
+        camera_make = list[0]
+        camera_type = list[1]
+        width_capteur = int(list[2])
+        height_capteur = int(list[3])
+        projection = list[4]
+        focal_factor =float(list[5])
+    odm_camera_calibration = Path(__file__).parent / ".." / "calibration" / "DJI_RAW" / "calibration.json"
+    file = open(odm_camera_calibration, 'r')
+    dicCameraIRdroneCalibration = json.load(file)
+    focalPix = round((dicCameraIRdroneCalibration['mtx'][0][0]+ dicCameraIRdroneCalibration['mtx'][1][1])/2 ,1)
+    focal2436 = float(focal_factor) * 36.
+
+    return camera_make, camera_type, width_capteur, height_capteur, focal_factor, focalPix
 
 
 def logoIRDrone():

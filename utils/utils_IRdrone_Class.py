@@ -30,6 +30,7 @@ class ShootPoint:
         self.timeDeviation = timeDeviation
         self.bestSynchro = 0
         self.bestMapping = 0
+        self.alignment = 0
         self.altGround = 324.
         self.altGeo = 357.
         self.altTakeOff = 324.
@@ -55,6 +56,9 @@ class ShootPoint:
         self.yawIR2VI = 0
         self.pitchIR2VI = 0
         self.rollIR2VI = 0
+        self.yawCoarseAlign = 0
+        self.pitchCoarseAlign = 0
+        self.rollCoarseAlign = 0
         self.distStarPt = 0
         self.capLastPt = 0
         self.distLastPt = 0
@@ -68,7 +72,8 @@ class ShootPoint:
                "Near Infrared image :   {2}    |  Date of shooting: {4}                                            \n" \
                "Time line: {5} s                                                                                   \n" \
                "Time deviation Nir to Vis: {6} s                                                                   \n" \
-               "Selected for the process. (best synchro): {34}                                                     \n" \
+               "Selected for alignment process : {36}                                                              \n" \
+               "Best synchro : {34}                                                                                \n" \
                "Selected for mapping               : {35}                                                          \n" \
                "________________________Coordinate_________________________________________________________________\n" \
                "Geo: {7} {8}°  {9} {10}°                                                                           \n" \
@@ -80,7 +85,8 @@ class ShootPoint:
                "________________________Attitude___________________________________________________________________\n" \
                " Drone    | yaw: {17}°  | pitch: {18}° | roll: {19}° |                                             \n" \
                " Gimbal   | yaw: {20}°  | pitch: {21}° | roll: {22}° |                                             \n" \
-               " Ir to Vi | yaw: {23}°  | pitch: {24}° | roll: {25}° |                                             \n" \
+               " Ir to Vi | yaw: {23}°  | pitch: {24}° | roll: {25}° | Theoretical alignment                       \n" \
+               " Ir to Vi | yaw: {37}°  | pitch: {38}° | roll: {39}° | Coarse alignment                            \n" \
             .format(self.num, self.Vis, self.Nir, self.dateVis, self.dateNir,
                     round(self.timeLine, 4), round(self.timeDeviation, 3),
                     self.gpsSN, round(self.gpsLat, 6), self.gpsWE, round(self.gpsLon, 6),
@@ -92,7 +98,8 @@ class ShootPoint:
                     round(self.x_1, 3), round(self.x_2, 3), round(self.x_3, 3),
                     round(self.gpsDist, 3), round(self.gpsCap, 3), round(self.gpsDistTot,3),
                     round((self.x_1**2 + self.x_2**2)**0.5 / 2., 3),
-                    round(self.x_3 / 2., 3), round(self.bestSynchro, 0), round(self.bestMapping, 0)
+                    round(self.x_3 / 2., 3), round(self.bestSynchro, 0), round(self.bestMapping, 0), round(self.alignment, 0),
+                    round(self.yawCoarseAlign, 5), round(self.pitchCoarseAlign, 5), round(self.rollCoarseAlign, 5)
                     )
 
 
@@ -108,7 +115,8 @@ class ShootPoint:
                     "timeLine": self.timeLine,
                     "timeDeviation": self.timeDeviation,
                     "bestSynchro": self.bestSynchro,
-                    "bestMapping": self.bestMapping
+                    "bestMapping": self.bestMapping,
+                    "alignment": self.alignment
                 },
                 'Attitude': {
                     'drone': {
@@ -125,6 +133,11 @@ class ShootPoint:
                         "yaw": self.yawIR2VI,
                         "pitch": self.pitchIR2VI,
                         "roll": self.rollIR2VI
+                    },
+                    'Coarse': {
+                        "yaw": self.yawCoarseAlign,
+                        "pitch": self.pitchCoarseAlign,
+                        "roll": self.rollCoarseAlign
                     },
                     'displacement': {
                         "x_1": self.x_1,
@@ -164,6 +177,7 @@ class ShootPoint:
         self.timeDeviation = dic['Img']["timeDeviation"]
         self.bestSynchro = dic['Img']['bestSynchro']
         self.bestMapping = dic['Img']['bestMapping']
+        self.alignment = dic['Img']['alignment']
 
         self.yawDrone = dic['Attitude']['drone']["yaw"]
         self.pitchDrone = dic['Attitude']['drone']["pitch"]
@@ -177,6 +191,9 @@ class ShootPoint:
         self.yawIR2VI = dic['Attitude']['IR2VI']["yaw"]
         self.pitchIR2VI = dic['Attitude']['IR2VI']["pitch"]
         self.rollIR2VI = dic['Attitude']['IR2VI']["roll"]
+        self.yawIR2VI = dic['Attitude']['Coarse']["yaw"]
+        self.pitchIR2VI = dic['Attitude']['Coarse']["pitch"]
+        self.rollIR2VI = dic['Attitude']['Coarse']["roll"]
 
 
         self.gpsSN = dic['GPS']["SN"]
@@ -309,7 +326,8 @@ def newPpoint(numero):
                  "timeLine": numero * (1 + 0.01987),
                  "timeDeviation": 0.54,
                  "bestSynchro": 0,
-                 "bestMapping": 0
+                 "bestMapping": 0,
+                 "alignment": 0
                  },
             'Attitude':
                 {
@@ -328,6 +346,11 @@ def newPpoint(numero):
                         "x_2": 2.922 + numero / 4,
                         "x_3": 0.0 + numero / 4
                     },
+                    'Coarse': {
+                        "yaw": 1.2 + numero / 2,
+                        "pitch": 1.5 + numero / 2,
+                        "roll": 23.9 + numero / 2
+                    },
                     'IR2VI': {
                         "yaw": 1.12099 + numero / 2,
                         "pitch": 1.40684 + numero / 2,
@@ -339,6 +362,9 @@ def newPpoint(numero):
                 "Latitude": 45.010203 + numero,
                 "WE": 'E',
                 "Longitude": 3.012345 + numero,
+                "Dist Last Pt": 3.33,
+                "Cap Last Pt": 55.5,
+                "Dist Tot": 111.1,
                 "UTM": {
                     "X": 531429.0 + numero,
                     "Y": 5000000 + numero,

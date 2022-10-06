@@ -5,7 +5,7 @@ Created on 2021-10-12 19:02:16
 version 1.05 2021-12-01
 version 1.06 2021-12-31 16:41:05.   Theoritical Yaw,Pitch,Roll for NIR images
 version 1.07 2022-02-17 21:58:00    Class ShootPoint. Save Summary Flight in binary file  (pickle)
-version 1.3  2022-09-27             Mapping ODM, 4 band images Tif ...
+version 1.3  2022-09-27             Mapping ODM, 4 band images Tif,  ...
 @authors: balthazar/alain
 """
 
@@ -53,25 +53,25 @@ if __name__ == "__main__":
     # --------------------------------------------------------------------------
     #                    options       (for rapid tests and analysis)
     # --------------------------------------------------------------------------
-    seaLevel = True        # Calculer l'altitude du sol  ... API internet (peut échouer si serveur indisponible)
+    seaLevel = True        # Calculer l'altitude du sol  ... API internet (si serveur indisponible trois tentatives)
     saveGpsTrack = True    # Sauvegarder la trajectoire du drone dans un fichier gps au format Garmin@
     saveExcel = True       # Sauvegarder la liste des paires, les coordonnées GPS, les angles ... dans un fichier Excel
-    savePickle = True      # Sauvegarder les données de la mission (plan vol, listPts) dans un fichier binaire.
+    savePickle = True      # Sauvegarder les données de la mission (plan vol, shootingPts) dans un fichier binaire.
     createMappingList = True  # Create a list of best synchronous images for mapping with ODM
     option_alti = 'sealevel'  # Altitude GPS  for Exif data. Options: ['takeoff', 'sealevel', 'ground', 'geo']
-    optionBestSynchro = True  # sélectionne uniquement les images dont l'écart de synchronisation est inférieur à TimeLapseDJI*0,25
-    #  options des courbes pour l'analyse
-    coarseProcess = True
-    theoreticalAngle = False
-    gap = False
-    spectralAnalysis = False
-    dispersion = False
-    refined = False  # Attention extraction des homographies pour construire le cache ... long
+    analysisAlignment = True   #  Analyse des angles d'alignement "theoretical" et "coarse process"
+
+    # Sélection des images pour le process d'alignement des paires VIS NIR en fonction de la valeur de  option-alignment
+    #
+    # > 'all-images'  or None  select. toutes les paires d'images disponibles dans AerialPhotography
+    # > 'best-synchro'   select. uniquement les images dont l'écart de synchronisation est inférieur à TimeLapseDJI*0,25
+    # > 'best-mapping'   sélect. parmi les images bien synchronisées celles qui ont un recouvrement adapté au mapping
+    optionAlignment = 'best-synchro' #'best-mapping'
 
     # --------------------------------------------------------------------------------------------------------------
-    # 1 > Extraction des données du vol
-    #     Date, heure, dossier d'images, synchro des horloges, type du drone et de la caméra IR ...
-    #     Construction de la liste des images prises lors du vol (Drone et IR)
+    # 1 > Extraction of flight data
+    #       Date, time, image file, clock sync, drone and IR camera type ...
+    #       Construction of the list of images taken during the flight (Drone and IR)
     # --------------------------------------------------------------------------------------------------------------
     print(Style.CYAN + '------ Read flight plan' + Style.RESET)
     planVol, \
@@ -83,50 +83,36 @@ if __name__ == "__main__":
     
     # --------------------------------------------------------------------------------------------------------------
     # 2 > Appariement des images des deux caméras
-    #     On cherche les paires d'images Vi et IR prises au "même instant".
-    #     On peut éventuellement visualiser les paires d'images  IR et Vi.
-    #     Ces images sont  sauvegardées dans le dossier  dirNameIRdrone
-    #     qui a été spécifié dans le plan de vol  (FlightPlan_*.xlxs)
+    #     Matching images from both cameras
+    #     We are looking for the pairs of Vi and IR images taken at the "same moment".
+    #     It is possible to view pairs of IR and Vi images.
+    #     These images are saved in the dirNameIRdrone folder
+    #     that was specified in the flight plan  (FlightPlan_*.xlxs)
     #
-    # Note:   > les images de type A sont celles qui ont le plus petit timelapse ou  ...
-    #         pas de time Lapse du tout (timelapse_A < 0  valeur fixée  dans le fichier Excel FlightPlan.xlsx)
-    #         > les images de type B sont celles qui ont le plus grand timelapse  (timelapse_B > timelapse_A ).
-    #   Pour qu'une image A_j soient considérées comme synchronisées avec une image B_k on utilise le critère
-    #   au plus proche (nearest):
-    #   Choisi parmi les images {B_k} celle qui à la différence de date (deltaTime) minimum avec l'image A_j
+    # Note:   > Type A images are those with the smallest timelapse or  ...
+    #           no time lapse at all (timelapse_A < 0 value set in Excel file FlightPlan.xlsx)
+    #         > Type B images have the largest timelapse  (timelapse_B > timelapse_A ).
+    #   In order for an A_j image to be considered synchronized with a B_k image, the closest (nearest) time criterion is used:
+    #   Selected from the {B_k} images that have the minimum date difference (deltaTime) with the A_j image
     #
-    #   - Construction de la trace GPS entre les paires d'images. (file format .gpx)
-    #   - Ecriture des données dans des fichiers Excel et Binaires.
-    #   - Tracé du profil de vol du drone  (file format .png)
+    #   - Construction of the GPS trace between the image pairs. (file format .gpx)
+    #   - Write data in Excel and Binary files.
+    #   - Plot of the drone flight profile and the image mapping diagram (file format .png)
     #
-    # Offset theoritical angles
-    # [Yaw, Pitch,Roll]  -------------------------------- Mission ------------------------------------------------
-    # [0.83,  2.03, 0.]  06 septembre 2021   U = 0,5 m/s  hyperlapse auto | vent faible (très légères rafales)
-    # [0.90,  1.33, 0.]  06 septembre 2021   U = 1,0 m/s  hyperlapse auto | vent faible
-    # [0.90,  0.50, 0.]  08 septembre 2021   U = 1,0 m/s  hyperlapse auto | beaucoup de rafales de vent !
-    # [0.90,  1.30, 0.]  OK 09 novembre  2021   U = 1,0 m/s  hyperlapse auto | vent très faible | longue séquence :-)
-    # [0.25,  1.63, 0.]  OK 18 janvier   2022   U = 1,5 m/s  hyperlapse libre| vent nul | test synchro
-    # [0.33,  2.09, 0.]  OK 25 janvier   2022   U = 1,5 m/s  hyperlapse libre| vent nul | Support cas TEST pour GitHub
-    # [0.86,  1.43, 0.]  OK Peyrelevade-P 2 (hyperlapse libre U=1,5m/s)  très peu de vent (quelques petites rafales)
-    # [1.02,  1.30, 0.]  OK Peyrelevade-P 1 (hyperlapse libre U=1,5m/s)  très peu de vent (quelques petites rafales)
-    # [0.20,  2.57, 0.]  0K 25 janvier   2022   phase de Synchro  hyperlapse libre| vent nul |
-    # [0.86,  1.43, 0.]  -> default offset Yaw, Pitch, Roll for theoretical angles
-    # -------------------------------------------------------------------------------------------------------------
-
-
+    # --------------------------------------------------------------------------------------------------------------
 
     print(Style.CYAN + '------ Matching images VIS & NIR' + Style.RESET)
     synchro_date = planVol['mission']['date']
     if synchro_date is None:
         raise NameError(Style.RED + "Synchro start date needs to be provided!" + Style.RESET)
-    listPts = None # process_raw_pairs shall work with None listPts
-    listImgMatch, DtImgMatch, listdateMatch, listPts = \
+    shootingPts = None # process_raw_pairs shall work with None shootingPts
+    listImgMatch, DtImgMatch, listdateMatch, shootingPts = \
         IRd.matchImagesFlightPath(imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR,
                                   synchro_date, mute=True)
     try:
         # Fixed the alignment defect [yaw,pitch,roll] of the NIR camera aiming axis in °
-        mappingList, listImgMatchOptim, listPtsOptim = IRd.summaryFlight(listPts, listImgMatch, planVol, dirPlanVol,
-                        optionBestSynchro=optionBestSynchro,
+        mappingList, ImgMatchProcess, ptsProcess = IRd.summaryFlight(shootingPts, listImgMatch, planVol, dirPlanVol,
+                        optionAlignment=optionAlignment,
                         offsetTheoreticalAngle=planVol["offset_angles"],
                         seaLevel=seaLevel,
                         dirSavePlanVol=osp.dirname(dirPlanVol),
@@ -149,14 +135,14 @@ if __name__ == "__main__":
     if odm_multispectral:
         odm_image_directory = create_odm_folder(dirMission, multispectral_modality="MULTI")
 
-    nbImgProcess = len(listPtsOptim)
+    nbImgProcess = len(ptsProcess )
     print(Style.YELLOW + 'The processing of these %i images will take %.2f h.  Do you want to continue?'
           % (nbImgProcess, 1.36 * nbImgProcess / 60.) + Style.RESET)
     autoRegistration = IRd.answerYesNo('Yes (y/1) |  No (n/0):')
     if autoRegistration:
         print(Style.CYAN + '------ automatic_registration.process_raw_pairs' + Style.RESET)
         automatic_registration.process_raw_pairs(
-                listImgMatchOptim[::1], out_dir=dirNameIRdrone, crop=CROP, listPts=listPtsOptim,
+                ImgMatchProcess[::1], out_dir=dirNameIRdrone, crop=CROP, listPts=shootingPts ,
                 option_alti=option_alti, clean_proxy=clean_proxy, multispectral_folder=odm_image_directory
             )  #extra_options=[" --skip-band-alignment"]
     else:
@@ -177,27 +163,15 @@ if __name__ == "__main__":
     #     for the drone, the gimbal and the NIR image (coarse process and theoretical)
     # -------------------------------------------------------------------------------------------------------------
 
-    if autoRegistration:
-        print(Style.CYAN + 'Construction of drone attitude data.' + Style.RESET)
-        utilise_cache = False
-    else:
-        print(Style.YELLOW + 'Do you want to use cached data?' + Style.RESET)
-        utilise_cache = IRd.answerYesNo('Yes (y/1) |  No (n/0):')
-
-
-
-    if not optionBestSynchro:
-        analys.plotYawPitchRollDroneAndCameraDJI(dirMission,
-                                      utilise_cache=utilise_cache,
-                                      offsetYaw=0.,
-                                      offsetPitch=0.,
-                                      showAngleCoarseProcess=coarseProcess,
-                                      showTheoreticalAngle=theoreticalAngle,
-                                      showGap=gap,
-                                      showSpectralAnalysis=spectralAnalysis,
-                                      showDispersion=dispersion,
-                                      showRefined=refined
-                                      )
+    if analysisAlignment:
+        try:
+            analys.analyzis_motion_camera(dirMission, shootingPts, planVol)
+            IRd.SaveSummaryInExcelFormat(dirMission, saveExcel, shootingPts, listImgMatch, mute=True)
+            IRd.SaveSummaryInNpyFormat(dirMission, savePickle, planVol, shootingPts)
+        except Exception as exc:
+            logging.error(
+                Style.YELLOW + "Flight analytics cannot plot.\nError = {}".format(
+                    exc) + Style.RESET)
 
     # -------------------------------------------------------------------------------------------------------------
     #        End of calculation time measurement.
@@ -205,6 +179,7 @@ if __name__ == "__main__":
     timeFin = datetime.datetime.now()
     stopTime = time.process_time()
     tempsExe = stopTime - startTime
+    IRd.logoIRDrone()
     print(
         Style.CYAN + '\n End IRdrone-v%s  at %s   CPU : %3.f s' % (versionIRdrone, timeFin.time(), tempsExe) + Style.RESET)
-    IRd.logoIRDrone()
+

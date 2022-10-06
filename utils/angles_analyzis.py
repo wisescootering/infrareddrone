@@ -8,266 +8,151 @@ version 1.3 2022-09-27 19:37:00
 
 import sys
 import os.path as osp
-
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
 import utils.utils_IRdrone as IRd
-import utils.utils_IRdrone_Plot as IRdplt
-from version import __version__ as versionIRdrone
-import numpy as np
-from datetime import timedelta
 from irdrone.utils import Style
 import os
-import os.path as osp
-import cv2
-import irdrone.utils as ut
 import argparse
 from pathlib import Path
+import numpy as np
+import matplotlib.pyplot as plt
 
 
-def plotYawPitchRollDroneAndCameraDJI(dir_mission,
-                                      utilise_cache=False,
-                                      offsetYaw=0,
-                                      offsetPitch=0,
-                                      showAngleCoarseProcess=False,
-                                      showTheoreticalAngle=False,
-                                      showGap=False,
-                                      showSpectralAnalysis=False,
-                                      showDispersion=False,
-                                      showRefined=False):
-    # Estimation du défaut d'alignement de l'axe de visée caméra SJCam M20  après le 7 septembre 2021
-    result_dir = osp.join(dir_mission, "ImgIRdrone")
-    dirSaveFig = osp.join(dir_mission, "Flight Analytics")
-    desync = timedelta(seconds=-0)
-    txt = str('Delay  ' + str(desync) + "s")
-    print(Style.YELLOW + txt + Style.RESET)
-    missionTitle = dir_mission.split("/")[-1]
-    motion_cache = osp.join(result_dir, "motion_summary_vs_drone_dates.npy")
+def analyzis_motion_camera(dirMission, shootingPts, planVol):
+    timeLine, yawIR2VI, pitchIR2VI, rollIR2VI = [], [], [], []
+    timeLinePostProcess, yawCoarse, pitchCoarse, rollCoarse = [], [], [], []
 
-    # Chargement des paramètres intrinsèques de la caméra NIR. On récupère en particulier la matrice K
-    cal = ut.cameracalibration("DJI_Raw")
-
-    if osp.exists(motion_cache) and utilise_cache:
-        # utilisation des mouvements du drone et des angles de correction déjà sauvegardés
-        print(Style.YELLOW + "Warning : utilisation du cache" + Style.RESET)
-        m_cache = np.load(motion_cache, allow_pickle=True).item()
-        motion_list, motion_list_fin_a, translat_fin_a, normal_fin_a, motion_list_fin_b, translat_fin_b, normal_fin_b, \
-        motion_list_drone, motion_list_cameraDJI, summaryFlight, yaw_Theorique, pitch_Theorique = \
-            withMotionCache(m_cache)
-    else:
-        motion_list, motion_list_fin_a, translat_fin_a, normal_fin_a, motion_list_fin_b, translat_fin_b, normal_fin_b, \
-        motion_list_drone, motion_list_cameraDJI, summaryFlight, yaw_Theorique, pitch_Theorique = \
-            noMotionCache(dir_mission, cal, showRefined)
-
-    # infoMotion(motion_list_drone, motion_list_cameraDJI)
-
-    # -------------------- Tracé des courbes   Yaw Pitch Roll ---------------------------------------------
-
-    print(Style.YELLOW + 'Look at the yaw and pitch angles graph of NIR images  >>>>' + Style.RESET)
-    plotAngles(motion_list, pitch_Theorique, yaw_Theorique, offsetYaw, offsetPitch,
-               motion_list_drone, motion_list_cameraDJI, motion_list_fin_a, motion_list_fin_b, missionTitle,
-               showAngleCoarseProcess, showTheoreticalAngle, showGap, showSpectralAnalysis, showDispersion, showRefined,
-               dirSaveFig=dirSaveFig)
-
-
-def plotAngles(motion_list, pitch_Theorique, yaw_Theorique, offsetYaw, offsetPitch,
-               motion_list_drone, motion_list_cameraDJI, motion_list_fin_a, motion_list_fin_b, missionTitle,
-               showAngleCoarseProcess, showTheoreticalAngle, showGap, showSpectralAnalysis, showDispersion, showRefined,
-               dirSaveFig=None):
-    motion_nul = []
-    if showAngleCoarseProcess:
-        IRdplt.YawPitchTeoriticalAndCoarse_plot(motion_list, pitch_Theorique, yaw_Theorique, offsetYaw, offsetPitch,
-                                                missionTitle, dirSaveFig=dirSaveFig)
-
-    if showTheoreticalAngle:
-        IRdplt.Pitch_plot(motion_list, pitch_Theorique, offsetPitch, missionTitle, motion_list_fin_a, motion_list_fin_b,
-                          traceFin_a=False, traceFin_b=False)
-        IRdplt.Yaw_plot(motion_list, yaw_Theorique, offsetYaw, missionTitle, motion_list_fin_a, motion_list_fin_b,
-                        traceFin_a=False, traceFin_b=False)
-
-    if showGap:
-        IRdplt.DeltaAngle_plot(motion_list, pitch_Theorique, offsetPitch, missionTitle, idx=2, nameAngle='Pitch')
-        IRdplt.DeltaAngle_plot(motion_list, yaw_Theorique, offsetYaw, missionTitle, idx=1, nameAngle='Yaw unsynchro')
-        IRdplt.DeltaYawSynchro_Unsynchro_plot(motion_list, motion_list_drone, motion_list_cameraDJI, yaw_Theorique,
-                                              offsetYaw, missionTitle, nameAngle='Yaw synchro / unsynchro')
-
-    if showSpectralAnalysis:
-        IRdplt.Fourier_plot_2([motion_list[:, 2], pitch_Theorique[:, 1] + offsetPitch],
-                              missionTitle,
-                              titleSignal=['Pitch  Coarse process', 'Pitch  Theoretical'],
-                              color=['black', 'magenta', 'orange'])
-        IRdplt.Fourier_plot_2([motion_list[:, 1], yaw_Theorique[:, 1] - offsetYaw],
-                              missionTitle,
-                              titleSignal=['Yaw  Coarse process', 'Yaw  Theoretical'],
-                              color=['black', 'magenta', 'orange'])
-
-    # Etude de la dispersion  Pitch et Yaw des caméras (donc des images)
-    if showDispersion:
-        for i in range(len(motion_list)):
-            motion_nul.append([0, 0, 0, 0])
-
-        IRdplt.comparaisonPitchYaw_plot(motion_list,
-                                        motion_list_drone,
-                                        motion_list_cameraDJI,
-                                        missionTitle,
-                                        pitch_Theorique,
-                                        offsetPitch,
-                                        offsetYaw,
-                                        process='Coarse ',
-                                        motion_refined=np.array(motion_nul))
-    if showDispersion and showRefined:
-        IRdplt.comparaisonPitchYaw_plot(motion_list,
-                                        motion_list_drone,
-                                        motion_list_cameraDJI,
-                                        missionTitle,
-                                        pitch_Theorique,
-                                        offsetPitch,
-                                        offsetYaw,
-                                        process='Refined ',
-                                        motion_refined=motion_list_fin_b)
-
-
-def noMotionCache(dirMission, cal, calculDecompositionHomographie):
-    motion_list, motion_list_drone, motion_list_cameraDJI = [], [], []
-    motion_list_fin_a, translat_fin_a, normal_fin_a = [], [], []
-    motion_list_fin_b, translat_fin_b, normal_fin_b = [], [], []
-    yaw_Theorique, pitch_Theorique, roll_Theorique = [], [], []
-
-    pathMission = Path(dirMission)
-    result_dir = pathMission/"ImgIRdrone"
-    # List of original images in the AerialPhotography folder (visible spectrum) .  Ext .DNG
-    summaryFlight = IRd.readFlightSummary(pathMission/'Flight Analytics', mute=True)
     # List of motion models of IRdrone images.  Ext .py
+    result_dir = Path(dirMission) / "ImgIRdrone"
     ImgPostProcess = sorted(result_dir.glob("*.npy"))
-    motion_cache = result_dir/"motion_summary_vs_drone_dates"
-    count1 = 0
-    count2 = 0
 
-    for k in range(len(summaryFlight)):
-        count1 += 1
-        nameImgPostProcess = ImgPostProcess[k].name[: -17]
-        nameImgPreProcess = summaryFlight[k][1][: -4]
-        try:
-            assert ImgPostProcess[k].is_file() and nameImgPostProcess == nameImgPreProcess
-            date = summaryFlight[count1 - 1][6]  # date on time line
-            # date , roll, pitch & yaw   drone      (NIR camera)
-            mouvement_drone = [date, summaryFlight[count1 - 1][21], summaryFlight[count1 - 1][20], summaryFlight[count1 - 1][19]]
-            motion_list_drone.append(mouvement_drone)
-            # date , roll, pitch & yaw   gimbal     (VIS camera)
-            mouvement_cameraDJI = [date, summaryFlight[count1 - 1][24], summaryFlight[count1 - 1][23], summaryFlight[count1 - 1][12]]
-            motion_list_cameraDJI.append(mouvement_cameraDJI)
-            #  yaw,  pitch & roll.  Theoretical registration angle of near infrared images.
-            yaw_Theorique.append((date, summaryFlight[count1 - 1][28]))
-            pitch_Theorique.append((date, summaryFlight[count1 - 1][29]))
-            roll_Theorique.append((date, summaryFlight[count1 - 1][30]))
-            #  yaw & pitch .  Coarse  registration angle of near infrared images.
-            mouvement = np.load(ImgPostProcess[k], allow_pickle=True).item()
-            motion_list.append([date, mouvement["yaw"], mouvement["pitch"],  mouvement["roll"]])
+    # -------------------------------------------------------
+    k = 0
+    for shootPt in shootingPts:
+        timeLine.append(shootPt.timeLine)
+        yawIR2VI.append(shootPt.yawIR2VI)
+        pitchIR2VI.append(shootPt.pitchIR2VI)
+        rollIR2VI.append(shootPt.rollIR2VI)
+        if shootPt.alignment == 1:
+            timeLinePostProcess.append(shootPt.timeLine)
+            try:
+                assert ImgPostProcess[k].is_file()
+                #  yaw & pitch .  Coarse  registration angle of near infrared images.
+                mouvement = np.load(ImgPostProcess[k], allow_pickle=True).item()
+                yawCoarse.append(mouvement["yaw"])
+                pitchCoarse.append(mouvement["pitch"])
+                rollCoarse.append(mouvement["roll"])
+                shootingPts[shootPt.num - 1].yawCoarseAlign = mouvement["yaw"]
+                shootingPts[shootPt.num - 1].pitchCoarseAlign = mouvement["pitch"]
+                shootingPts[shootPt.num - 1].rollCoarseAlign = mouvement["roll"]
+                k += 1
+            except Exception as exc:
+                print(Style.RED + "erreur lors de la lectures des angles process \nError = {}"%exc + Style.RESET)
 
-            if calculDecompositionHomographie:
-                motion_list_fin_a, translat_fin_a, normal_fin_a, motion_list_fin_b, translat_fin_b, normal_fin_b \
-                    = decompositionHomography(mouvement, date, cal,
-                                              motion_list_fin_a, translat_fin_a, normal_fin_a,
-                                              motion_list_fin_b, translat_fin_b, normal_fin_b)
-        except AssertionError:
-            print(Style.RED + '[error in noMotionCache ] %s  != %s'%(nameImgPostProcess, nameImgPreProcess) + Style.RESET)
-
-    motion_list = np.array(motion_list)
-    motion_list_fin_a = np.array(motion_list_fin_a)
-    translat_fin_a = np.array(translat_fin_a)
-    normal_fin_a = np.array(normal_fin_a)
-    motion_list_fin_b = np.array(motion_list_fin_b)
-    translat_fin_b = np.array(translat_fin_b)
-    normal_fin_b = np.array(normal_fin_b)
-    motion_list_drone = np.array(motion_list_drone)
-    motion_list_cameraDJI = np.array(motion_list_cameraDJI)
-    summaryFlight = np.array(summaryFlight)
-    yaw_Theorique = np.array(yaw_Theorique)
-    pitch_Theorique = np.array(pitch_Theorique)
-
-    # sauvegarde des mouvements du drone et des angles de correction
-    np.save(motion_cache, {"motion_list": motion_list,
-                                "motion_list_drone": motion_list_drone,
-                                "motion_list_cameraDJI": motion_list_cameraDJI,
-                                "summaryFlight": summaryFlight,
-                                "pitch_Theorique": pitch_Theorique,
-                                "yaw_Theorique": yaw_Theorique,
-                                "motion_list_fin_a": motion_list_fin_a,
-                                "translat_fin_a": translat_fin_a,
-                                "normal_fin_a": normal_fin_a,
-                                "motion_list_fin_b": motion_list_fin_b,
-                                "translat_fin_b": translat_fin_b,
-                                "normal_fin_b": normal_fin_b
-                                })
-    txt = 'The angles of ' + str(count1 - count2) + ' pairs of Visible-Infrared images were analyzed. \n' + \
-          str(count2) + "   pairs have been eliminated :  "
-    print(Style.GREEN + txt + Style.RESET)
-
-    return motion_list, motion_list_fin_a, translat_fin_a, normal_fin_a, motion_list_fin_b, translat_fin_b, \
-           normal_fin_b, motion_list_drone, motion_list_cameraDJI, summaryFlight, yaw_Theorique, pitch_Theorique
+    # -----------------------------------------------------------------------------------
+    plotAnglesAlignment(timeLine, yawIR2VI, pitchIR2VI, rollIR2VI,
+                        timeLinePostProcess, yawCoarse, pitchCoarse, rollCoarse, dirMission=dirMission, showPlot=True)
+    plotDisperPitchYaw(yawIR2VI, pitchIR2VI, rollIR2VI,
+                       yawCoarse, pitchCoarse, rollCoarse, planVol, dirMission=dirMission, showPlot=False)
+    return
 
 
-def withMotionCache(m_cache):
-    motion_list = m_cache["motion_list"]
-    motion_list_drone = m_cache["motion_list_drone"]
-    motion_list_cameraDJI = m_cache["motion_list_cameraDJI"]
-    summaryFlight = m_cache["summaryFlight"]
-    pitch_Theorique = m_cache["pitch_Theorique"]
-    yaw_Theorique = m_cache["yaw_Theorique"]
-    motion_list_fin_a = m_cache["motion_list_fin_a"]
-    translat_fin_a = m_cache["translat_fin_a"]
-    normal_fin_a = m_cache["normal_fin_a"]
-    motion_list_fin_b = m_cache["motion_list_fin_b"]
-    translat_fin_b = m_cache["translat_fin_b"]
-    normal_fin_b = m_cache["normal_fin_b"]
-    return motion_list, motion_list_fin_a, translat_fin_a, normal_fin_a, motion_list_fin_b, translat_fin_b, \
-           normal_fin_b, motion_list_drone, motion_list_cameraDJI, summaryFlight, yaw_Theorique, pitch_Theorique
+def plotDisperPitchYaw(yawIR2VI, pitchIR2VI, rollIR2VI, yawCoarse, pitchCoarse, rollCoarse, planVol, dirMission=None, showPlot=False):
+    # --------   Courbe de dispersion des angles   pitch(yaw)
+    _, (ax1, ax2) = plt.subplots(nrows=1, ncols=2)
+    myTitleX = '. Offset = ' + str(np.round(planVol["offset_angles"][0], 2)) + '°'
+    myTitleY = '. Offset =' + str(np.round(planVol["offset_angles"][1], 2)) + '°'
+    missionTitle = dirMission.split("/")[-1]
+    min, max = disperLimit(yawIR2VI, pitchIR2VI, yawCoarse, pitchCoarse)
+    disperPitchYaw_plot(ax1, pitchIR2VI, yawIR2VI, min, max, missionTitle, myTitleX, myTitleY, 'Theoretical alignment', color='darkorange')
+    disperPitchYaw_plot(ax2, pitchCoarse, yawCoarse, min, max, missionTitle, "", "", 'Coarse alignment', color='darkgoldenrod')
+    # ---------- save plot in dirMission/Flight Analytics/Angles analysis ----------------
+    savePlot(dirMission, 'Angles analysis dispersion')
+    if showPlot:
+        plt.show()
+    else:
+        print(Style.YELLOW + 'Look at the Dispersion Angles alignment analysis  >>>>' + Style.RESET)
+    plt.close()
+    return
+
+def disperLimit(yawIR2VI, pitchIR2VI, yawCoarse, pitchCoarse):
+    minTheori = np.min([np.min(np.array(yawIR2VI)), np.min(np.array(yawCoarse))])
+    maxTheori = np.min([np.max(np.array(yawIR2VI)), np.max(np.array(yawCoarse))])
+    minCoarse = np.min([np.min(np.array(pitchIR2VI)), np.min(np.array(pitchCoarse))])
+    maxCoarse = np.min([np.max(np.array(pitchIR2VI)), np.max(np.array(pitchCoarse))])
+    min = np.min([minTheori, minCoarse])
+    max = np.max([maxTheori, maxCoarse])
+    return min, max
 
 
-def infoMotion(motion_list_drone, motion_list_cameraDJI):
-    print('average  flight_Roll %.2f°  Gimbal_Roll %.2f°' %
-          (np.average(motion_list_drone[:, 1]), np.average(motion_list_cameraDJI[:, 1])))
-    print('average  flight_Yaw %.2f°  Gimbal_Yaw %.2f°' %
-          (np.average(motion_list_drone[:, 3]), np.average(motion_list_cameraDJI[:, 3])))
-    print('average  flight_Pitch %.2f°  Gimbal_Pitch %.2f°' %
-          (np.average(motion_list_drone[:, 2]), np.average(motion_list_cameraDJI[:, 2])))
-    print(' average delta Roll Drone/Gimbal  | |=%.2f' %
-          np.average(abs(-motion_list_drone[:, 1] + motion_list_cameraDJI[:, 1])))
-    print(' average delta Yaw Drone/Gimbal | |= %.2f' %
-          np.average(abs(-motion_list_drone[:, 3] + motion_list_cameraDJI[:, 3])))
+def savePlot(dirMission, fileName):
+    pathFolder = Path(dirMission) / 'Flight Analytics'
+    filepath = pathFolder / fileName
+    if pathFolder is None:
+        pass
+    else:
+        plt.savefig(filepath, dpi=600, facecolor='w', edgecolor='w', orientation='portrait',
+                    format=None, transparent=False,
+                    bbox_inches='tight', pad_inches=0.1, metadata=None)
+        print(Style.CYAN + '----- Save Angles analysis in %s' % filepath + Style.RESET)
+    return
 
 
-def decompositionHomography(mouvement, date, cal,
-                            motion_list_fin_a, translat_fin_a, normal_fin_a,
-                            motion_list_fin_b, translat_fin_b, normal_fin_b):
-    solution = cv2.decomposeHomographyMat(mouvement["homography"], cal["mtx"])
-    for idx in range(4):
-        extra_pitch, extra_yaw, extra_roll = np.rad2deg(cv2.Rodrigues(solution[1][idx])[0].flatten())
-        extra_tx, extra_ty, extra_tz = (solution[2][idx])
-        extra_nx, extra_ny, extra_nz = (solution[3][idx])
-        print('Solution N°', idx + 1, '\n',
-              'pitch = %.4f°  yaw = %.4f°  roll = %.4f°  ' % (extra_pitch, extra_yaw, extra_roll))
-        # print('  R', idx, '= ', solution[1][idx],'\n')
-        print('  tx = %.4f  ty = %.4f  tz = %.4f  ' % (extra_tx, extra_ty, extra_tz))
-        print('  nx = %.4f  ny = %.4f  nz = %.4f   ||n|| =%.4f'
-              % (extra_nx, extra_ny, extra_nz, (extra_nx ** 2 + extra_ny ** 2 + extra_nz ** 2) ** 0.5))
+def disperPitchYaw_plot(ax, fx, fy, mini, maxi, missionTitle, myTitleX, myTitleY, spectralType, color='yellow'):
+    avg = (np.average(fx, axis=0), np.average(fy, axis=0))
+    std = (np.std(fx, axis=0), np.std(fy, axis=0))
+    ax.plot(fx, fy, marker="o", markersize=6, alpha=0.4, mec=color, mfc=color, linestyle='')
+    ax.set_xlim(mini - 2., maxi + 2.)
+    ax.set_ylim(mini - 2., maxi + 2.)
+    ax.plot(0., 0., "k+")
+    ax.plot(avg[0], avg[1], "r+")
+    myTitle = str(
+        missionTitle + "\n" + spectralType + "\n Average yaw {:.2f}° +/- {:.2f}°    | pitch {:.2f}°  +/-{:.2f}°"
+        .format(avg[0], std[0], avg[1], std[1]))
+    ax.set_title(myTitle, fontsize=8)
+    ax.set_xlabel("YAW   %s" % myTitleX, fontsize=8)
+    ax.set_ylabel("PITCH  %s" % myTitleY, fontsize=8)
+    ax.grid(color='gray', linestyle='-', linewidth=0.5)
+    return
 
-        # break
-    # WARNING! Choosing the first solution here, not sure it's the right one!!!
-    extra_pitch, extra_yaw, extra_roll = np.rad2deg(cv2.Rodrigues(solution[1][0])[0].flatten())
-    extra_tx, extra_ty, extra_tz = (solution[2][0])
-    extra_nx, extra_ny, extra_nz = (solution[3][0])
-    motion_list_fin_a.append([date, extra_yaw, extra_pitch, extra_roll])
-    translat_fin_a.append([date, extra_tx, extra_ty, extra_tz])
-    normal_fin_a.append([date, extra_nx, extra_ny, extra_nz])
 
-    extra_pitch, extra_yaw, extra_roll = np.rad2deg(cv2.Rodrigues(solution[1][2])[0].flatten())
-    extra_tx, extra_ty, extra_tz = (solution[2][2])
-    extra_nx, extra_ny, extra_nz = (solution[3][2])
-    motion_list_fin_b.append([date, extra_yaw, extra_pitch, extra_roll])
-    translat_fin_b.append([date, extra_tx, extra_ty, extra_tz])
-    normal_fin_b.append([date, extra_nx, extra_ny, extra_nz])
-
-    return motion_list_fin_a, translat_fin_a, normal_fin_a, motion_list_fin_b, translat_fin_b, normal_fin_b
+def plotAnglesAlignment(timeLine, yawIR2VI, pitchIR2VI, rollIR2VI,
+                        timeLinePostProcess, yawCoarse, pitchCoarse, rollCoarse,
+                        dirMission=None, showPlot=False):
+    if dirMission is None:
+        return
+    missionTitle = dirMission.split("/")[-1]
+    fig, ax = plt.subplots()
+    plt.plot(timeLine, yawIR2VI,
+             color='green', linestyle='-', linewidth=1, marker='o', markersize=1, alpha=1,
+             label="Yaw theoretical.        average = {:.2f}°"
+             .format(np.average(yawIR2VI, axis=0)))
+    plt.plot(timeLinePostProcess, yawCoarse,
+             color='yellowgreen', linestyle='--', linewidth=1, marker='o', markersize=5, alpha=0.5,
+             label="Yaw Coarse alignment.   average = {:.2f}°"
+             .format(np.average(yawCoarse, axis=0)))
+    plt.plot(timeLine, pitchIR2VI,
+             color='purple', linestyle='-', linewidth=1, marker='o', markersize=1, alpha=1,
+             label="Pitch theoretical.       average = {:.2f}°"
+             .format(np.average(pitchIR2VI, axis=0)))
+    plt.plot(timeLinePostProcess, pitchCoarse,
+             color='blueviolet', linestyle='--', linewidth=1, marker='o', markersize=5, alpha=0.5,
+             label="Pitch Coarse alignment.  average = {:.2f}°"
+             .format(np.average(pitchCoarse, axis=0)))
+    plt.grid()
+    plt.xlim(0, np.max(timeLine))
+    ax.set_title(missionTitle, fontsize=8)
+    ax.set_xlabel('Time line  [s]', fontsize=8)
+    ax.set_ylabel('Angle [°]', fontsize=8)
+    plt.legend()
+    # ---------- save plot in dirMission/Flight Analytics/Angles analysis ----------------
+    savePlot(dirMission, 'Angles analysis')
+    if showPlot:
+        plt.show()
+    else:
+        print(Style.YELLOW + 'Look at the Angles alignment analysis  >>>>' + Style.RESET)
+    plt.close()
+    return
 
 
 def interactifChoice():
@@ -291,51 +176,31 @@ def interactifChoice():
     return dirMission, utilise_cache
 
 
-if __name__ == "__main__":
-    # ---------------------------- Options ---------------------------------------------------------------------------
-    coarseProcess = True
-    theoreticalAngle = False
-    gap = False
-    spectralAnalysis = False
-    dispersion = True
-    refined = False  # Attention extraction des homographies pour construire le cache ... long
-    # Offset theoritical angles
-    # [Yaw, Pitch,Roll]  -------------------------------- Mission ------------------------------------------------
-    # [0.83,  2.03, 0.]  06 septembre 2021   U = 0,5 m/s  hyperlapse auto | vent faible (très légères rafales)
-    # [0.90,  1.33, 0.]  06 septembre 2021   U = 1,0 m/s  hyperlapse auto | vent faible
-    # [0.90,  0.50, 0.]  08 septembre 2021   U = 1,0 m/s  hyperlapse auto | beaucoup de rafales de vent !
-    # [0.90,  1.30, 0.]  OK 09 novembre  2021   U = 1,0 m/s  hyperlapse auto | vent très faible | longue séquence :-)
-    # [0.25,  1.63, 0.]  OK 18 janvier   2022   U = 1,5 m/s  hyperlapse libre| vent nul | test synchro
-    # [0.33,  1.81, 0.]  OK 25 janvier   2022   U = 1,5 m/s  hyperlapse libre| vent nul | Support cas TEST pour GitHub
-    # [0.33,  1.81, 0.]  OK 25 janvier   2022   U = 1,5 m/s  hyperlapse libre| vent nul | cas TEST GitHub COMPLET
-    # [0.86,  1.43, 0.]  OK Peyrelevade-P 2 (hyperlapse libre U=1,5m/s)  très peu de vent (quelques petites rafales)
-    # [1.02,  1.30, 0.]  OK Peyrelevade-P 1 (hyperlapse libre U=1,5m/s)  très peu de vent (quelques petites rafales)
-    # [0.20,  2.57, 0.]  0K 25 janvier   2022   phase de Synchro  hyperlapse libre| vent nul |
-    # [0.86,  1.43, 0.]  -> default offset Yaw, Pitch, Roll for theoretical angles
-    # -------------------------------------------------------------------------------------------------------------
-    # Attebtion les angles sont déjà corrigés de l'offset lors du process image. Ne pas les ajouter ici
-    #             [Yaw, Pitch, Roll]
-    offsetAngle = [0,  0, 0.]
+def flightProfil_plot(d_list, elev_Drone, elev_Ground, dirSaveFig=None, mute=True):
+    # BASIC STAT INFORMATION
+    min_elev = min(elev_Ground)
 
-    # ----------------------------------------------------------------------------------------------------------------
-    # 0 > Choix interactif de la mission
-    #
-
-    dirMission, utilise_cache = interactifChoice()
-
-    # ---------------------------------------------------------------------------------------------------------------
-    # 1 > Trace les angles Roll, Pitch et Yaw  (roulis, tangage & lacet)
-    #     pour le drone, le gimbal et l'image NIR (coarse process et théorique)
-    #
-
-    plotYawPitchRollDroneAndCameraDJI(dirMission,
-                                      utilise_cache=utilise_cache,
-                                      offsetYaw=offsetAngle[0],
-                                      offsetPitch=offsetAngle[1],
-                                      showAngleCoarseProcess=coarseProcess,
-                                      showTheoreticalAngle=theoreticalAngle,
-                                      showGap=gap,
-                                      showSpectralAnalysis=spectralAnalysis,
-                                      showDispersion=dispersion,
-                                      showRefined=refined
-                                      )
+    # PLOT ELEVATION PROFILE
+    base_reg = min_elev - 10
+    plt.figure(figsize=(10, 4))
+    plt.plot(d_list, elev_Drone, '.r', label='Drone: ', linewidth=1, linestyle='dashed', markersize=0)
+    plt.plot(d_list, elev_Ground, 'tab:brown', label='Ground ')
+    plt.fill_between(d_list, elev_Ground, base_reg, color='tab:brown', alpha=0.1)
+    plt.text(d_list[0], elev_Drone[0], "Start Pt")
+    plt.text(d_list[-1], elev_Drone[-1], "End Pt")
+    plt.xlabel("Distance (m)")
+    plt.ylabel("Altitude (m)")
+    plt.grid()
+    plt.legend(fontsize='small')
+    filepath = osp.join(dirSaveFig, 'Flight profil IRdrone')
+    if dirSaveFig is None:
+        pass
+    else:
+        plt.savefig(filepath, dpi=150, facecolor='w', edgecolor='w', orientation='portrait',
+                    format=None, transparent=False,
+                    bbox_inches='tight', pad_inches=0.1, metadata=None)
+        print(Style.CYAN + '----- Save flight profil in %s' % filepath + Style.RESET)
+    if not mute:
+        print(Style.YELLOW + 'Look your Drone Flight profil >>>>' + Style.RESET)
+        plt.show()
+    plt.close()
