@@ -7,15 +7,16 @@ version 1.3 2022-09-27 19:37:00
 """
 
 import sys
-import os.path as osp
-sys.path.append(osp.join(osp.dirname(__file__), ".."))
-import utils.utils_IRdrone as IRd
-from irdrone.utils import Style
 import os
+import os.path as osp
 import argparse
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
+sys.path.append(osp.join(osp.dirname(__file__), ".."))
+import utils.utils_IRdrone as IRd
+from irdrone.utils import Style
+
 
 
 def analyzis_motion_camera(dirMission, shootingPts, planVol, showAnglPlot=False, showDisperPlot=False):
@@ -75,6 +76,7 @@ def plotDisperPitchYaw(yawIR2VI, pitchIR2VI, rollIR2VI, yawCoarse, pitchCoarse, 
     plt.close()
     return
 
+
 def disperLimit(yawIR2VI, pitchIR2VI, yawCoarse, pitchCoarse):
     minTheori = np.min([np.min(np.array(yawIR2VI)), np.min(np.array(yawCoarse))])
     maxTheori = np.min([np.max(np.array(yawIR2VI)), np.max(np.array(yawCoarse))])
@@ -94,7 +96,7 @@ def savePlot(dirMission, fileName):
         plt.savefig(filepath, dpi=600, facecolor='w', edgecolor='w', orientation='portrait',
                     format=None, transparent=False,
                     bbox_inches='tight', pad_inches=0.1, metadata=None)
-        print(Style.CYAN + '----- Save Angles analysis in %s' % filepath + Style.RESET)
+        print(Style.CYAN + '------ Save Angles analysis in %s' % filepath + Style.RESET)
     return
 
 
@@ -121,30 +123,16 @@ def plotAnglesAlignment(timeLine, yawIR2VI, pitchIR2VI, rollIR2VI,
                         dirMission=None, showPlot=False):
     if dirMission is None:
         return
+
     missionTitle = dirMission.split("/")[-1]
-    fig, ax = plt.subplots()
-    plt.plot(timeLine, yawIR2VI,
-             color='green', linestyle='-', linewidth=1, marker='o', markersize=1, alpha=1,
-             label="Yaw theoretical.        average = {:.2f}°"
-             .format(np.average(yawIR2VI, axis=0)))
-    plt.plot(timeLinePostProcess, yawCoarse,
-             color='yellowgreen', linestyle='--', linewidth=1, marker='o', markersize=5, alpha=0.5,
-             label="Yaw Coarse alignment.   average = {:.2f}°"
-             .format(np.average(yawCoarse, axis=0)))
-    plt.plot(timeLine, pitchIR2VI,
-             color='purple', linestyle='-', linewidth=1, marker='o', markersize=1, alpha=1,
-             label="Pitch theoretical.       average = {:.2f}°"
-             .format(np.average(pitchIR2VI, axis=0)))
-    plt.plot(timeLinePostProcess, pitchCoarse,
-             color='blueviolet', linestyle='--', linewidth=1, marker='o', markersize=5, alpha=0.5,
-             label="Pitch Coarse alignment.  average = {:.2f}°"
-             .format(np.average(pitchCoarse, axis=0)))
-    plt.grid()
-    plt.xlim(0, np.max(timeLine))
-    ax.set_title(missionTitle, fontsize=8)
-    ax.set_xlabel('Time line  [s]', fontsize=8)
-    ax.set_ylabel('Angle [°]', fontsize=8)
-    plt.legend()
+    _, (ax1, ax2) = plt.subplots(nrows=2, ncols=1)
+    plotAnglesAlignment_2curves(ax1, timeLine, yawIR2VI, timeLinePostProcess, yawCoarse,
+                                label1="Yaw theoretical.              average = {:.2f}°".format(np.average(yawIR2VI, axis=0)), color1='green',marksize1=1,
+                                label2="Yaw coarse alignment.   average = {:.2f}°".format(np.average(yawCoarse, axis=0)), color2='yellowgreen', marksize2=8, Title=missionTitle)
+    plotAnglesAlignment_2curves(ax2, timeLine, pitchIR2VI, timeLinePostProcess, pitchCoarse,
+                                label1="Yaw theoretical.              average = {:.2f}°".format(np.average(yawIR2VI, axis=0)), color1='purple', marksize1=1,
+                                label2="Yaw coarse alignment.   average = {:.2f}°".format(np.average(yawCoarse, axis=0)), color2='blueviolet', marksize2=8)
+
     # ---------- save plot in dirMission/Flight Analytics/Angles analysis ----------------
     savePlot(dirMission, 'Angles analysis')
     if showPlot:
@@ -153,6 +141,18 @@ def plotAnglesAlignment(timeLine, yawIR2VI, pitchIR2VI, rollIR2VI,
         print(Style.YELLOW + 'Look at the Angles alignment analysis  >>>>' + Style.RESET)
     plt.close()
     return
+
+def plotAnglesAlignment_2curves(ax, x1, y1, x2, y2, label1="theoretical. ", label2="coarse alignment", color1='green', color2='yellowgreen',marksize1=1, marksize2=8, Title=" "):
+    ax.plot(x1, y1, color=color1, linestyle='-', linewidth=1, marker='o', markersize=marksize1, alpha=1, label=label1)
+    ax.plot(x2, y2, color=color2, linestyle='--', linewidth=1, marker='o', markersize=marksize2, alpha=0.5, label=label2)
+    ax.set_title(Title, fontsize=8)
+    ax.set_xlabel('Time line  [s]', fontsize=8)
+    ax.set_ylabel('Angle [°]', fontsize=8)
+    ax.grid()
+    ax.legend()
+    ax.set_xlim(0, np.max(x1))
+    return
+
 
 
 def interactifChoice():
@@ -176,30 +176,30 @@ def interactifChoice():
     return dirMission, utilise_cache
 
 
-def flightProfil_plot(d_list, elev_Drone, elev_Ground, dirSaveFig=None, mute=True):
-    # BASIC STAT INFORMATION
-    min_elev = min(elev_Ground)
-
+def flightProfil_plot(d_list, elev_Drone, elev_Ground, title="IRdrone", dirSaveFig=None, mute=True):
     # PLOT ELEVATION PROFILE
-    base_reg = min_elev - 10
+    base_fill = min(elev_Ground) - 10
+    up_fill = max(elev_Drone) + 10
     plt.figure(figsize=(10, 4))
     plt.plot(d_list, elev_Drone, '.r', label='Drone: ', linewidth=1, linestyle='dashed', markersize=0)
-    plt.plot(d_list, elev_Ground, 'tab:brown', label='Ground ')
-    plt.fill_between(d_list, elev_Ground, base_reg, color='tab:brown', alpha=0.1)
-    plt.text(d_list[0], elev_Drone[0], "Start Pt")
-    plt.text(d_list[-1], elev_Drone[-1], "End Pt")
+    plt.plot(d_list, elev_Ground, color='saddlebrown', label='Ground ')
+    plt.fill_between(d_list, elev_Ground, base_fill, color='darkgoldenrod', alpha=0.1)
+    plt.fill_between(d_list,  up_fill, elev_Ground, color='lightcyan', alpha=0.3)
+    plt.text(d_list[0], elev_Drone[0], "Start")
+    plt.text(d_list[-1], elev_Drone[-1], "End")
     plt.xlabel("Distance (m)")
     plt.ylabel("Altitude (m)")
     plt.grid()
     plt.legend(fontsize='small')
+    plt.title(title, fontsize=8)
     filepath = osp.join(dirSaveFig, 'Flight profil IRdrone')
     if dirSaveFig is None:
         pass
     else:
-        plt.savefig(filepath, dpi=150, facecolor='w', edgecolor='w', orientation='portrait',
+        plt.savefig(filepath, dpi=600, facecolor='w', edgecolor='w', orientation='portrait',
                     format=None, transparent=False,
                     bbox_inches='tight', pad_inches=0.1, metadata=None)
-        print(Style.CYAN + '----- Save flight profil in %s' % filepath + Style.RESET)
+        print(Style.CYAN + '------ Save flight profil in %s' % filepath + Style.RESET)
     if not mute:
         print(Style.YELLOW + 'Look your Drone Flight profil >>>>' + Style.RESET)
         plt.show()

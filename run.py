@@ -61,14 +61,15 @@ if __name__ == "__main__":
     option_alti = 'sealevel'  # Altitude GPS  for Exif data. Options: ['takeoff', 'sealevel', 'ground', 'geo']
     analysisAlignment = True   #  Analyse des angles d'alignement "theoretical" et "coarse process"
     showAnglPlot = True
-    showDisperPlot = True
+    showDisperPlot = False
 
     # Sélection des images pour le process d'alignement des paires VIS NIR en fonction de la valeur de  option-alignment
     #
     # > 'all-images'  or None  select. toutes les paires d'images disponibles dans AerialPhotography
     # > 'best-synchro'   select. uniquement les images dont l'écart de synchronisation est inférieur à TimeLapseDJI*0,25
     # > 'best-mapping'   sélect. parmi les images bien synchronisées celles qui ont un recouvrement adapté au mapping
-    optionAlignment = 'best-synchro' #'best-mapping'
+    optionAlignment = 'best-mapping' #'best-mapping'
+    print(Style.GREEN + 'Option for images alignment is %s '%optionAlignment + Style.RESET)
 
     # --------------------------------------------------------------------------------------------------------------
     # 1 > Extraction of flight data
@@ -142,7 +143,7 @@ if __name__ == "__main__":
           % (nbImgProcess, 1.36 * nbImgProcess / 60.) + Style.RESET)
     autoRegistration = IRd.answerYesNo('Yes (y/1) |  No (n/0):')
     if autoRegistration:
-        print(Style.CYAN + '------ automatic_registration.process_raw_pairs' + Style.RESET)
+        print(Style.CYAN + '------ Automatic_registration.process_raw_pairs' + Style.RESET)
         automatic_registration.process_raw_pairs(
                 ImgMatchProcess[::1], out_dir=dirNameIRdrone, crop=CROP, listPts=shootingPts ,
                 option_alti=option_alti, clean_proxy=clean_proxy, multispectral_folder=odm_image_directory
@@ -181,7 +182,7 @@ if __name__ == "__main__":
     timeFin = datetime.datetime.now()
     stopTime = time.process_time()
     tempsExe = stopTime - startTime
-    IRd.logoIRDrone()
+    IRd.logoIRDrone2()
     print(
         Style.CYAN + '\n End IRdrone-v%s  at %s   CPU : %3.f s' % (versionIRdrone, timeFin.time(), tempsExe) + Style.RESET)
 

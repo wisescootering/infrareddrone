@@ -13,7 +13,6 @@ import re
 import json
 import requests
 from irdrone.utils import Style
-import irdrone.process as pr
 import os
 
 

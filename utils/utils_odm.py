@@ -5,12 +5,14 @@ import shutil
 import os.path as osp
 import matplotlib
 import numpy as np
-import utils.utils_IRdrone as IRd
-from irdrone.utils import Style
 matplotlib.use('TkAgg')
 from matplotlib import pyplot as plt
 from matplotlib.patches import Polygon
-import json
+import sys
+sys.path.append(osp.join(osp.dirname(__file__), ".."))
+import utils.utils_IRdrone as IRd
+from irdrone.utils import Style
+
 columnNbr = 5
 colorNames = list(matplotlib.colors.cnames.keys())
 
@@ -123,13 +125,16 @@ def visu_mapping(mappingList, listPts, focal_DJI=2900, lCapt_x=3892, lCapt_y=289
     order = len(mappingList)
     # --------------  Plot trajectory of the drone in the geographical referential X: W->E   Y: S->N
     #  Use UTM coordinates
-    listDrone_X, listDrone_Y , listMapping_X, listMapping_Y = [], [], [], []
+    listDrone_X, listDrone_Y , listMapping_X, listMapping_Y, listSynchro_X, listSynchro_Y = [], [], [], [], [], []
     offsetMappingArea = (lCapt_x/1.5) * IRd.avAltitude(listPts) / focal_DJI   # in meter
 
-    for pt in mappingList:
-        listMapping_X.append(pt.gpsUTM_X)
-        listMapping_Y.append(pt.gpsUTM_Y)
     for pt in listPts:
+        if pt.bestMapping ==1:
+            listMapping_X.append(pt.gpsUTM_X)
+            listMapping_Y.append(pt.gpsUTM_Y)
+        if pt.bestSynchro ==1:
+            listSynchro_X.append(pt.gpsUTM_X)
+            listSynchro_Y.append(pt.gpsUTM_Y)
         listDrone_X.append(pt.gpsUTM_X)
         listDrone_Y.append(pt.gpsUTM_Y)
     # -------------   limits
@@ -147,9 +152,19 @@ def visu_mapping(mappingList, listPts, focal_DJI=2900, lCapt_x=3892, lCapt_y=289
 
     ax.plot(listDrone_X, listDrone_Y, color='blue', linestyle='solid', linewidth=0.2, zorder=order,
             label='Drone trajectory.')
+    # shoot point
     ax.plot(listDrone_X, listDrone_Y, linestyle='None',
             marker='o', markerfacecolor='white', markeredgecolor='black', markeredgewidth=0.3,  markersize=2, zorder=order,
             label='Shooting point.')
+    # best synchro images
+    for i in range(len(listSynchro_X)):
+        ax.plot(listSynchro_X[i], listSynchro_Y[i], linestyle='None',
+            marker='o', markerfacecolor='orangered', markeredgecolor='darkred', markeredgewidth=0.5,markersize=2, zorder=order)
+    ax.plot(listSynchro_X[0], listSynchro_Y[0], linestyle='None',
+            marker='o', markerfacecolor='orangered', markeredgecolor='darkred', markeredgewidth=0.5, markersize=2,
+            zorder=order,
+            label='Shooting ~synchro.')
+    # images for mapping
     for i in range(len(listMapping_X)):
         ax.plot(listMapping_X[i], listMapping_Y[i], linestyle='None',
             marker='o', markerfacecolor=colorNames[20 + i], markeredgecolor='black', markeredgewidth=0.5,markersize=6, zorder=order)
@@ -178,7 +193,7 @@ def visu_mapping(mappingList, listPts, focal_DJI=2900, lCapt_x=3892, lCapt_y=289
     ax.add_patch(arrow)
     plt.text(xmiddle - 0.9 * dl / 2 - 4, ymiddle - 0.9 * dl / 2 + 16, "N")
     # -----------------------------------------------------------------------------------------------------------------
-    ax.set_facecolor('mediumseagreen')
+    ax.set_facecolor('silver')
     plt.legend(loc='best', fontsize=6)
     plt.gcf().subplots_adjust(left=0., bottom=0., right=1., top=1., wspace=0., hspace=0.)
 
@@ -190,7 +205,7 @@ def visu_mapping(mappingList, listPts, focal_DJI=2900, lCapt_x=3892, lCapt_y=289
         plt.savefig(filepath, dpi=300, facecolor='w', edgecolor='w', orientation='portrait',
                     format=None, transparent=False,
                     bbox_inches='tight', pad_inches=0.1, metadata=None)
-        print(Style.CYAN + '----- Save Mapping scheme in %s' % filepath + Style.RESET)
+        print(Style.CYAN + '------ Save Mapping scheme in %s' % filepath + Style.RESET)
 
     print(Style.YELLOW + 'Look at the mapping scheme  >>>>' + Style.RESET)
     plt.show()
