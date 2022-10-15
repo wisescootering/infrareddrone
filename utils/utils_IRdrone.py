@@ -18,6 +18,7 @@ import pickle
 import json
 from copy import copy, deepcopy
 from pathlib import Path
+import subprocess
 
 try:
     from tkinter import Tk
@@ -451,18 +452,22 @@ def creatListImgVIS(dirName, dateMission, rege, timelapse, deltatime, cameraMode
         img = pr.Image(imlist[i])
         img.camera["timelapse"] = float(timelapse)
         img.camera["deltatime"] = float(deltatime)
+
         try:
             # Extract Exif data from the image. If no Exif data, image is ignored.
             debug = True
+            cameraMakerImg = img.camera['maker']
             cameraModelImg = img.camera['model']
+            serial_number = img.camera['serial number']
 
-            if cameraModel is None or cameraModelImg == cameraModel:  # Image was taken by another camera. This image is ignored.
+            if cameraModel is None or cameraModelImg == cameraModel or ( cameraMakerImg == 'irdrone' and cameraModelImg == 'multispectral'):
                 dateImg = img.date
                 if (dateImg.year, dateImg.month, dateImg.day) == (dateMission.year, dateMission.month, dateMission.day):
                     j += 1
                     nameImg = imlist[i].split('\\')[len(imlist[i].split('\\')) - 1]
                     imgList.append((nameImg, imlist[i], dateImg))  # Add to image list.
                 else:
+                    # Image was taken by another camera. This image is ignored.
                     if debug: print(Style.YELLOW,
                                     '%s was taken on  %i %i %i. This date is different from the mission date %i %i %i'
                                     % (imlist[i], dateImg.day, dateImg.month, dateImg.year, dateMission.day,
@@ -870,16 +875,17 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
         print(Style.RED + '[error] ')
         pass
     # --------- Selection of image pairs for mapping among aligned images. ------------------------------------------
-
     if createMappingList:
         mappingList = odm.buildMappingList(ImgMatchForAlignment, listPts, overlap_x=0.30, overlap_y=0.75, dirSaveFig=dirSaveFig)
     else:
         mappingList = None
-
     # ----------  Save summary in Excel format -----------------------------------------------------------
     SaveSummaryInExcelFormat(dirSavePlanVol, saveExcel, listPts, listImg, mute=True)
     # ----------  Save summary in Pickle format -----------------------------------------------------------
     SaveSummaryInNpyFormat(dirSavePlanVol, savePickle, planVol, listPts)
+    # --------- Modification of exif tags of drone camera images. ----------------------------------------
+    camera_make, camera_type, width_capteur, height_capteur, focal_factor, focalPix = lectureCameraIrdrone()
+    #writeExifTags(listPts)
 
     return mappingList, ImgMatchForAlignment, PtsForAlignment
 
@@ -1579,6 +1585,80 @@ def lectureCameraIrdrone():
     focal_factor = focalPix / width_capteur
 
     return camera_make, camera_type, width_capteur, height_capteur, focal_factor, focalPix
+
+
+
+def writeExifTags(listPts):
+    print(Style.CYAN + '------ Write Tags' + Style.RESET)
+    EXIFTOOLPATH = Path(__file__).parent/ ".." / "exiftool" / "exiftool.exe"
+    i_max=0
+    for pt in listPts:
+        if pt.alignment == 1: i_max += 1
+    ind = 0
+    # 1- Lecture des données Exif d'une image fileName.tif  (commande  '-r')
+    # 2- Modification des Tags(ou ajout par exempel Copyright)
+    #  Ici passage par un fichier temporaire  fileName_exiftool_temp
+    # 3- Ecriture (commande  "-overwrite_original", "-fast") dans le même fichier fileName.tif
+    for pt in listPts:
+        if pt.alignment == 1 :
+            workProgress = 100 * ind / i_max
+            #print(workProgress)
+            pathImg = Path(pt.Vis)
+            #print(pathImg, pathImg.is_file())
+            if workProgress % (5 * 100 / i_max) == 0:
+                print(Style.CYAN + '%i/%i' % (ind, i_max) + Style.RESET)
+            ind += 1
+            cmd = [EXIFTOOLPATH, pathImg,
+                   '-r',
+                   '-Make=irdrone',
+                   '-Model=multispectral',
+                   '-UniqueCameraModel=IRDrone/DJIMavicAir2/SJCamM20',
+                   '-SerialNumber=v1.30/2022',
+                   '-CameraSerialNumber=v1.30/2022',
+                   '-FocalLength=4.6',
+                   '-FocalLengthIN35mmFormat=27',
+                   '-ScaleFactorTo35mmEquivalent=5.9',
+                   '-FieldOfView=67.8',
+                   '-LensInfo=27mm f/2.8',
+                   '-Copyright=Wise Scootering - Balthazar Neveu',
+                   "-overwrite_original", "-fast"]
+            p = subprocess.run(cmd, capture_output=True, text=True)
+
+        # recopie les données Exif de l'image dans un fichier .json
+
+    """ 
+    
+    cmd = [EXIFTOOLPATH, Path(pth), '-r', '-w!', 'json']
+    subprocess.run(cmd)
+    """
+    """   
+    cmd = [EXIFTOOLPATH, "-TagsFromFile", pth_src, pth_dst, "-overwrite_original", "-fast"]
+    p = subprocess.run(cmd)
+    """
+
+    if False:
+        cmd = [EXIFTOOLPATH, Path(pth)]
+        p = subprocess.run(cmd, capture_output=True, text=True)
+        output_text = p.stdout
+        lines = output_text.split("\n")
+        # selection = [li for li in lines if "Degree" in li]
+        selection = [li for li in lines]
+        dic = dict()
+        for li in selection:
+            print(li)
+            try:
+                a = li.split(":")
+                key = a[0].replace(" ", "")
+                val = a[1].replace(" ", "")
+                dic[key] = val
+            except:
+                pass
+                # with open(exif_file, "w") as fi:
+                #    json.dump(dic, fi)
+                pass
+        print(dic)
+
+    return
 
 
 def logoIRDrone():

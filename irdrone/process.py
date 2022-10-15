@@ -90,6 +90,41 @@ def copy_metadata(pth_src, pth_dst):
     cmd = [EXIFTOOLPATH, "-TagsFromFile", pth_src, pth_dst, "-overwrite_original", "-fast"]
     p = subprocess.run(cmd)
 
+    # ================================================================================
+    # 1- Lecture des données Exif d'une image fileName.tif  (commande  '-r')
+    # 2- Modification des Tags(ou ajout par exempel Copyright)
+    #  Ici passage par un fichier temporaire  fileName_exiftool_temp
+    # 3- Ecriture (commande  "-overwrite_original", "-fast") dans le même fichier fileName.tif
+
+
+    #strCheminImage_tmp = 'H:\Air-Mission\FLY-20220524-Thaumiers-Vol2\mapping_MULTI\images\essai-tmp.tif'
+    #pth_tmp = Path(strCheminImage_tmp)
+
+    #cmd = [EXIFTOOLPATH, "-TagsFromFile", pth_dst, pth_tmp, "-overwrite_original", "-fast"]
+    #p = subprocess.run(cmd)
+
+    cmd = [EXIFTOOLPATH, pth_dst,
+           '-Make=irdrone',
+           '-Model=multispectral',
+           '-UniqueCameraModel=DJI-FC3170-Mavic_Air_2|SJCAM-M20-SJCam_M20|Kolarivision-720-nm',
+           '-SerialNumber=2022-V1.30',
+           '-CameraSerialNumber=2022-V1.30',
+           '-FocalLength=4.6',
+           '-FocalLengthIN35mmFormat=27',
+           '-FieldOfView=67.8',
+           '-LensInfo=27mm f/2.8',
+           '-LensModel=720',
+           '-Copyright=Wise Scootering - Balthazar Neveu',
+           '-Artist=Flo',
+           "-overwrite_original", pth_dst, "-fast"]
+    p = subprocess.run(cmd)
+
+    # =============================================================================
+
+    return
+
+
+
 def xmp_band_metadata(pth_src, band_index=1):
     """
     RGB-NIR
