@@ -35,11 +35,18 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------------------------------------------------
     # 0 > Interactive choice of mission
     # ------------------------------------------------------------------------------------------------------------
-    parser = argparse.ArgumentParser(description='Process Flight Path excel')
+    parser = argparse.ArgumentParser(description='Process pre-synchronized multispectral aerial data')
     parser.add_argument('--config', type=str, help='path to the flight configuration')
     parser.add_argument('--clean-proxy', action="store_true", help='clean proxy tif files to save storage')
     parser.add_argument('--disable-altitude-api', action="store_true", help='force not using altitude from IGN API')
     parser.add_argument('--odm-multispectral', default=True, action="store_true", help='ODM multispectral export')
+    parser.add_argument('--traces', default=None, choices=automatic_registration.TRACES, nargs="+", 
+        help= 'export specific spectral traces. when not provided: VIR by default if --odm-multispectral, otherwise all traces'
+    )
+    parser.add_argument('--selection', type=str, default="all", choices=["all", "best-synchro", "best-mapping"],
+        help= 'best-synchro: only pick pairs of images with gap < 1/4th of the TimeLapseDJI interval ~ 0.5 seconds'
+        + 'best-mapping: select best synchronized images + granting a decent overlap'
+    )
     args = parser.parse_args()
     clean_proxy = args.clean_proxy
     dirPlanVol = args.config
@@ -49,6 +56,7 @@ if __name__ == "__main__":
 
     dirMission = os.path.dirname(dirPlanVol)
     odm_multispectral = args.odm_multispectral
+    traces = args.traces
 
     # --------------------------------------------------------------------------
     #                    options       (for rapid tests and analysis)
@@ -65,11 +73,11 @@ if __name__ == "__main__":
 
     # Sélection des images pour le process d'alignement des paires VIS NIR en fonction de la valeur de  option-alignment
     #
-    # > 'all-images'  or None  select. toutes les paires d'images disponibles dans AerialPhotography
+    # > 'all'  or None  select. toutes les paires d'images disponibles dans AerialPhotography
     # > 'best-synchro'   select. uniquement les images dont l'écart de synchronisation est inférieur à TimeLapseDJI*0,25
     # > 'best-mapping'   sélect. parmi les images bien synchronisées celles qui ont un recouvrement adapté au mapping
-    optionAlignment = 'best-mapping' #'best-mapping'
-    print(Style.GREEN + 'Option for images alignment is %s '%optionAlignment + Style.RESET)
+    selection_option = args.selection
+    print(Style.GREEN + 'Option for images alignment is %s '%selection_option + Style.RESET)
 
     # --------------------------------------------------------------------------------------------------------------
     # 1 > Extraction of flight data
@@ -85,8 +93,8 @@ if __name__ == "__main__":
     print("deltaTimeIR    ", deltaTimeIR, "  First image shooting at  ", planVol["mission"]["date"])
     
     # --------------------------------------------------------------------------------------------------------------
-    # 2 > Appariement des images des deux caméras
-    #     Matching images from both cameras
+    # 2 > Find matching pairs of images from both cameras
+    #     Pair images from both cameras
     #     We are looking for the pairs of Vi and IR images taken at the "same moment".
     #     It is possible to view pairs of IR and Vi images.
     #     These images are saved in the dirNameIRdrone folder
@@ -104,7 +112,7 @@ if __name__ == "__main__":
     #
     # --------------------------------------------------------------------------------------------------------------
 
-    print(Style.CYAN + '------ Matching images VIS & NIR' + Style.RESET)
+    print(Style.CYAN + '------ Pair images VIS & NIR' + Style.RESET)
     synchro_date = planVol['mission']['date']
     if synchro_date is None:
         raise NameError(Style.RED + "Synchro start date needs to be provided!" + Style.RESET)
@@ -115,7 +123,7 @@ if __name__ == "__main__":
     try:
         # Fixed the alignment defect [yaw,pitch,roll] of the NIR camera aiming axis in °
         mappingList, ImgMatchProcess, ptsProcess = IRd.summaryFlight(shootingPts, listImgMatch, planVol, dirPlanVol,
-                        optionAlignment=optionAlignment,
+                        optionAlignment=selection_option,
                         offsetTheoreticalAngle=planVol["offset_angles"],
                         seaLevel=seaLevel,
                         dirSavePlanVol=osp.dirname(dirPlanVol),
@@ -136,9 +144,13 @@ if __name__ == "__main__":
     # -------------------------------------------------------------------------------------------------------------
     odm_image_directory = None
     if odm_multispectral:
+        if traces is None:
+            traces = [automatic_registration.VIR]
         odm_image_directory = create_odm_folder(dirMission, multispectral_modality="MULTI", extra_options=["--skip-band-alignment"])
-
-    nbImgProcess = len(ptsProcess )
+    else:
+        if traces is None:
+            traces = automatic_registration.TRACES
+    nbImgProcess = len(ptsProcess)
     print(Style.YELLOW + 'The processing of these %i images will take %.2f h.  Do you want to continue?'
           % (nbImgProcess, 1.36 * nbImgProcess / 60.) + Style.RESET)
     autoRegistration = IRd.answerYesNo('Yes (y/1) |  No (n/0):')
@@ -146,7 +158,8 @@ if __name__ == "__main__":
         print(Style.CYAN + '------ Automatic_registration.process_raw_pairs' + Style.RESET)
         automatic_registration.process_raw_pairs(
                 ImgMatchProcess[::1], out_dir=dirNameIRdrone, crop=CROP, listPts=shootingPts ,
-                option_alti=option_alti, clean_proxy=clean_proxy, multispectral_folder=odm_image_directory
+                option_alti=option_alti, clean_proxy=clean_proxy, multispectral_folder=odm_image_directory,
+                traces=traces
             )
     else:
         print(
