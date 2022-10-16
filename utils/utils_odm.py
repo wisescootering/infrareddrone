@@ -12,7 +12,7 @@ import sys
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
 import utils.utils_IRdrone as IRd
 from irdrone.utils import Style
-import Code_Python.irdrone.config as cf
+import config as cf
 
 columnNbr = 5
 colorNames = list(matplotlib.colors.cnames.keys())

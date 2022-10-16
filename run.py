@@ -136,7 +136,7 @@ if __name__ == "__main__":
     # -------------------------------------------------------------------------------------------------------------
     odm_image_directory = None
     if odm_multispectral:
-        odm_image_directory = create_odm_folder(dirMission, multispectral_modality="MULTI")
+        odm_image_directory = create_odm_folder(dirMission, multispectral_modality="MULTI", extra_options=["--skip-band-alignment"])
 
     nbImgProcess = len(ptsProcess )
     print(Style.YELLOW + 'The processing of these %i images will take %.2f h.  Do you want to continue?'
@@ -147,7 +147,7 @@ if __name__ == "__main__":
         automatic_registration.process_raw_pairs(
                 ImgMatchProcess[::1], out_dir=dirNameIRdrone, crop=CROP, listPts=shootingPts ,
                 option_alti=option_alti, clean_proxy=clean_proxy, multispectral_folder=odm_image_directory
-            )  #extra_options=[" --skip-band-alignment"]
+            )
     else:
         print(
             Style.YELLOW + 'Warning :  automatic_registration.process_raw_pairs ... Process neutralized.' + Style.RESET)
