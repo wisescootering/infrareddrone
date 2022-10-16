@@ -22,6 +22,8 @@ from copy import deepcopy
 from config import CROP
 
 exif_dict_minimal = np.load(osp.join(osp.dirname(__file__), "utils", "minimum_exif_dji.npy"), allow_pickle=True).item()
+TRACES = ["vis", "nir", "vir", "ndvi"]
+VIS, NIR, VIR, NDVI = TRACES
 
 def colorMapNDVI():
     #  définition de la palette des couleurs pour l'indice NDVI à partir de couleurs prédéfinies
@@ -340,7 +342,6 @@ def write_manual_bat_redo(vis_pth, nir_pth_list, debug_bat_pth, out_dir=None, de
             )
         fi.write("call deactivate\n")
 
-
 def process_raw_pairs(
         sync_pairs,
         cals=dict(refcalib=ut.cameracalibration(camera="DJI_RAW"), movingcalib=ut.cameracalibration(camera="M20_RAW")),
@@ -348,7 +349,8 @@ def process_raw_pairs(
         debug_folder=None, out_dir=None, manual=False, debug=False,
         crop=None, listPts=None, option_alti='takeoff',
         clean_proxy=False,
-        multispectral_folder=None
+        multispectral_folder=None,
+        traces=[VIS, NIR, VIR, NDVI]
     ):
     # if debug_folder is None:
     #     debug_folder = osp.dirname(sync_pairs[0][0])
@@ -442,18 +444,20 @@ def process_raw_pairs(
             img._data = ms_img
             out_name = f"{(index_pair+1):04d}"
             img.save_multispectral(Path(multispectral_folder)/out_name)
-        else:
+        if VIS in traces:
             vis_img = pr.Image((ut.contrast_stretching(ref_full)[0]*255).astype(np.uint8))
             vis_img.path = vis_pth
             vis_img.save(
                 osp.join(out_dir, osp.basename(vis_pth[:-4])+"_VIS.jpg"), gps=gps_vis, exif=exif_dict_minimal)
-            
-            for ali, almode in [(aligned_full, "_local_"), (align_full_global, "_global_")]:
-                # todo fix missing exif datas in ndvi file.
+        
+        for ali, almode in [(aligned_full, "_local_"), (align_full_global, "_global_")]:
+            if NDVI in traces:
                 ndvi(ref_full, ali, out_path=osp.join(out_dir, "_NDVI_" + almode + osp.basename(vis_pth[:-4])+".jpg"),
                     gps=gps_vis, exif=exif_dict_minimal, image_in=vis_pth)
+            if VIR in traces:
                 vir(ref_full, ali, out_path=osp.join(out_dir, "_VIR_" + almode + osp.basename(vis_pth[:-4])+".jpg"),
                     gps=gps_vis, exif=exif_dict_minimal, image_in=vis_pth)
+            if NIR in traces:
                 nir_out = pr.Image((ut.contrast_stretching(ali)[0]*255).astype(np.uint8))
                 nir_out.path = vis_pth
                 nir_out.save(
@@ -461,10 +465,10 @@ def process_raw_pairs(
                     exif=exif_dict_minimal,
                     gps=gps_vis
                 )
-            if debug:  # SCIENTIFIC LINEAR OUTPUTS
-                pr.Image(aligned_full).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR.tif"), gps=gps_vis, exif=exif_dict_minimal)
-                pr.Image(align_full_global).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR.tif"), gps=gps_vis, exif=exif_dict_minimal)
-                pr.Image(ref_full).save(osp.join(out_dir, "_RAW_"+ osp.basename(vis_pth[:-4])+"_VIS.tif"), gps=gps_vis, exif=exif_dict_minimal)
+        if debug:  # SCIENTIFIC LINEAR OUTPUTS
+            pr.Image(aligned_full).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR.tif"), gps=gps_vis, exif=exif_dict_minimal)
+            pr.Image(align_full_global).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR.tif"), gps=gps_vis, exif=exif_dict_minimal)
+            pr.Image(ref_full).save(osp.join(out_dir, "_RAW_"+ osp.basename(vis_pth[:-4])+"_VIS.tif"), gps=gps_vis, exif=exif_dict_minimal)
             
         motion_model_list.append(motion_model)
         if clean_proxy:
