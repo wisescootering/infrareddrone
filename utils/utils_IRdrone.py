@@ -1579,6 +1579,7 @@ def lectureCameraIrdrone():
     return camera_make, camera_type, width_capteur, height_capteur, focal_factor, focalPix
 
 
+
 def logoIRDrone(num=None):
     try:
         if num == None: pass
