@@ -878,9 +878,6 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
     SaveSummaryInExcelFormat(dirSavePlanVol, saveExcel, listPts, listImg, mute=True)
     # ----------  Save summary in Pickle format -----------------------------------------------------------
     SaveSummaryInNpyFormat(dirSavePlanVol, savePickle, planVol, listPts)
-    # --------- Modification of exif tags of drone camera images. ----------------------------------------
-    camera_make, camera_type, width_capteur, height_capteur, focal_factor, focalPix = lectureCameraIrdrone()
-    #writeExifTags(listPts)
 
     return mappingList, ImgMatchForAlignment, PtsForAlignment
 
@@ -1581,79 +1578,6 @@ def lectureCameraIrdrone():
 
     return camera_make, camera_type, width_capteur, height_capteur, focal_factor, focalPix
 
-
-
-def writeExifTags(listPts):
-    print(Style.CYAN + '------ Write Tags' + Style.RESET)
-    EXIFTOOLPATH = Path(__file__).parent/ ".." / "exiftool" / "exiftool.exe"
-    i_max=0
-    for pt in listPts:
-        if pt.alignment == 1: i_max += 1
-    ind = 0
-    # 1- Lecture des données Exif d'une image fileName.tif  (commande  '-r')
-    # 2- Modification des Tags(ou ajout par exempel Copyright)
-    #  Ici passage par un fichier temporaire  fileName_exiftool_temp
-    # 3- Ecriture (commande  "-overwrite_original", "-fast") dans le même fichier fileName.tif
-    for pt in listPts:
-        if pt.alignment == 1 :
-            workProgress = 100 * ind / i_max
-            #print(workProgress)
-            pathImg = Path(pt.Vis)
-            #print(pathImg, pathImg.is_file())
-            if workProgress % (5 * 100 / i_max) == 0:
-                print(Style.CYAN + '%i/%i' % (ind, i_max) + Style.RESET)
-            ind += 1
-            cmd = [EXIFTOOLPATH, pathImg,
-                   '-r',
-                   '-Make=irdrone',
-                   '-Model=multispectral',
-                   '-UniqueCameraModel=IRDrone/DJIMavicAir2/SJCamM20',
-                   '-SerialNumber=v1.30/2022',
-                   '-CameraSerialNumber=v1.30/2022',
-                   '-FocalLength=4.6',
-                   '-FocalLengthIN35mmFormat=27',
-                   '-ScaleFactorTo35mmEquivalent=5.9',
-                   '-FieldOfView=67.8',
-                   '-LensInfo=27mm f/2.8',
-                   '-Copyright=Wise Scootering - Balthazar Neveu',
-                   "-overwrite_original", "-fast"]
-            p = subprocess.run(cmd, capture_output=True, text=True)
-
-        # recopie les données Exif de l'image dans un fichier .json
-
-    """ 
-    
-    cmd = [EXIFTOOLPATH, Path(pth), '-r', '-w!', 'json']
-    subprocess.run(cmd)
-    """
-    """   
-    cmd = [EXIFTOOLPATH, "-TagsFromFile", pth_src, pth_dst, "-overwrite_original", "-fast"]
-    p = subprocess.run(cmd)
-    """
-
-    if False:
-        cmd = [EXIFTOOLPATH, Path(pth)]
-        p = subprocess.run(cmd, capture_output=True, text=True)
-        output_text = p.stdout
-        lines = output_text.split("\n")
-        # selection = [li for li in lines if "Degree" in li]
-        selection = [li for li in lines]
-        dic = dict()
-        for li in selection:
-            print(li)
-            try:
-                a = li.split(":")
-                key = a[0].replace(" ", "")
-                val = a[1].replace(" ", "")
-                dic[key] = val
-            except:
-                pass
-                # with open(exif_file, "w") as fi:
-                #    json.dump(dic, fi)
-                pass
-        print(dic)
-
-    return
 
 
 def logoIRDrone(num=None):

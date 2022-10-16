@@ -18,11 +18,11 @@ IRD_CAMERA_SERIAL_NUMBER = "2022-V001"
 IRD_FOV = 67.8
 IRD_LENS_INFO ="27mm f/2.8"
 IRD_LENS_MODEL = 720             # longueur d'onde de coupure ( en nanomètres nm) du filtre de la caméra NIR
-COPYRIGHT = "Wise Scootering - Balthazar Neveu"
-ARTIST = "Flo"
+COPYRIGHT = "Copyright"
+ARTIST = "Artist"
 
-IRD_PIX_X = 3892
-IRD_PIX_Y = 2892
+IRD_PIX_X = VIS_CAMERA_PIX_X - 2*CROP - 2*PRE_CROP
+IRD_PIX_Y = VIS_CAMERA_PIX_Y - 2*CROP - 2*PRE_CROP
 IRD_LPIX = 1.6 * 10 ** -6
 IRD_FOCAL_FACTOR = 0.74473279
 IRD_FOCAL_LENGTH = 4.6

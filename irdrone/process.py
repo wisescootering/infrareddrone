@@ -96,24 +96,6 @@ def copy_metadata(pth_src, pth_dst):
     cmd = [EXIFTOOLPATH, "-TagsFromFile", pth_src, pth_dst, "-overwrite_original", "-fast"]
     p = subprocess.run(cmd)
 
-    """
-    cmd = [EXIFTOOLPATH, pth_dst,
-           '-Make=irdrone',
-           '-Model=multispectral',
-           '-UniqueCameraModel=DJI-FC3170-Mavic_Air_2|SJCAM-M20-SJCam_M20|Kolarivision-720-nm',
-           '-SerialNumber=2022-V1.30',
-           '-CameraSerialNumber=2022-V1.30',
-           '-FocalLength=4.6',
-           '-FocalLengthIN35mmFormat=27',
-           '-FieldOfView=67.8',
-           '-LensInfo=27mm f/2.8',
-           '-LensModel=720',
-           '-Copyright=Wise Scootering - Balthazar Neveu',
-           '-Artist=Flo',
-           "-overwrite_original", pth_dst, "-fast"]
-    """
-
-
     cmd = [EXIFTOOLPATH, pth_dst,
            f"-Make={cf.IRD_CAMERA_MAKER}",
            f'-Model={cf.IRD_CAMERA_MODEL}',
