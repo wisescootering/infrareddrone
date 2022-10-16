@@ -851,11 +851,11 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
         uGPS.writeGPX(listPts, dirSaveFig, planVol['mission']['date'], mute=True)
 
     # ---- Selecting the image pairs for the alignment among the available images according to the alignment option value :
-    #  optionAlignment == 'all-images' or None   Selecting all available image pairs in the AerialPhotography folder.
+    #  optionAlignment == 'all' or None   Selecting all available image pairs in the AerialPhotography folder.
     #  optionAlignment == 'best-synchro'         Selecting the best synchronized image pairs for alignment.
     #  optionAlignment == 'best-mapping'         Selection of image pairs for mapping among aligned images.
     ImgMatchForAlignment, PtsForAlignment = [], []
-    if optionAlignment == None or optionAlignment == 'all-images':
+    if optionAlignment == None or optionAlignment == 'all':
         ImgMatchForAlignment, PtsForAlignment = selectAllImages(listImg, listPts, planVol, ratioSynchro=ratioSynchro)
     elif optionAlignment == 'best-synchro':
         ImgMatchForAlignment, PtsForAlignment = selectBestSynchro(listImg, listPts, planVol, ratioSynchro=ratioSynchro)

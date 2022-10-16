@@ -35,13 +35,17 @@ if __name__ == "__main__":
     # ------------------------------------------------------------------------------------------------------------
     # 0 > Interactive choice of mission
     # ------------------------------------------------------------------------------------------------------------
-    parser = argparse.ArgumentParser(description='Process Flight Path excel')
+    parser = argparse.ArgumentParser(description='Process pre-synchronized multispectral aerial data')
     parser.add_argument('--config', type=str, help='path to the flight configuration')
     parser.add_argument('--clean-proxy', action="store_true", help='clean proxy tif files to save storage')
     parser.add_argument('--disable-altitude-api', action="store_true", help='force not using altitude from IGN API')
     parser.add_argument('--odm-multispectral', default=True, action="store_true", help='ODM multispectral export')
     parser.add_argument('--traces', default=None, choices=automatic_registration.TRACES, nargs="+", 
         help= 'export specific spectral traces. when not provided: VIR by default if --odm-multispectral, otherwise all traces'
+    )
+    parser.add_argument('--selection', type=str, default="all", choices=["all", "best-synchro", "best-mapping"],
+        help= 'best-synchro: only pick pairs of images with gap < 1/4th of the TimeLapseDJI interval ~ 0.5 seconds'
+        + 'best-mapping: select best synchronized images + granting a decent overlap'
     )
     args = parser.parse_args()
     clean_proxy = args.clean_proxy
@@ -69,11 +73,11 @@ if __name__ == "__main__":
 
     # Sélection des images pour le process d'alignement des paires VIS NIR en fonction de la valeur de  option-alignment
     #
-    # > 'all-images'  or None  select. toutes les paires d'images disponibles dans AerialPhotography
+    # > 'all'  or None  select. toutes les paires d'images disponibles dans AerialPhotography
     # > 'best-synchro'   select. uniquement les images dont l'écart de synchronisation est inférieur à TimeLapseDJI*0,25
     # > 'best-mapping'   sélect. parmi les images bien synchronisées celles qui ont un recouvrement adapté au mapping
-    optionAlignment = 'best-mapping' #'best-mapping'
-    print(Style.GREEN + 'Option for images alignment is %s '%optionAlignment + Style.RESET)
+    selection_option = args.selection
+    print(Style.GREEN + 'Option for images alignment is %s '%selection_option + Style.RESET)
 
     # --------------------------------------------------------------------------------------------------------------
     # 1 > Extraction of flight data
@@ -119,7 +123,7 @@ if __name__ == "__main__":
     try:
         # Fixed the alignment defect [yaw,pitch,roll] of the NIR camera aiming axis in °
         mappingList, ImgMatchProcess, ptsProcess = IRd.summaryFlight(shootingPts, listImgMatch, planVol, dirPlanVol,
-                        optionAlignment=optionAlignment,
+                        optionAlignment=selection_option,
                         offsetTheoreticalAngle=planVol["offset_angles"],
                         seaLevel=seaLevel,
                         dirSavePlanVol=osp.dirname(dirPlanVol),
@@ -146,7 +150,7 @@ if __name__ == "__main__":
     else:
         if traces is None:
             traces = automatic_registration.TRACES
-    nbImgProcess = len(ptsProcess )
+    nbImgProcess = len(ptsProcess)
     print(Style.YELLOW + 'The processing of these %i images will take %.2f h.  Do you want to continue?'
           % (nbImgProcess, 1.36 * nbImgProcess / 60.) + Style.RESET)
     autoRegistration = IRd.answerYesNo('Yes (y/1) |  No (n/0):')
