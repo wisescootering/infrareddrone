@@ -10,19 +10,14 @@ version 1.3  2022-09-27 19:37:00
 @authors: balthazar/alain
 """
 import logging
-import sys
-import os.path as osp
-
-sys.path.append(osp.join(osp.dirname(__file__), ".."))
-import irdrone.process as pr
-import irdrone.utils as ut
-from irdrone.utils import Style
-import utils.utils_GPS as uGPS
-import utils.utils_IRdrone_Plot as IRdplt
-import  utils.utils_odm as odm
 import os
+import os.path as osp
 import pandas as pd
 import sys
+import pickle
+import json
+from copy import copy, deepcopy
+from pathlib import Path
 
 try:
     from tkinter import Tk
@@ -35,12 +30,16 @@ import openpyxl
 from openpyxl import Workbook
 import numpy as np
 from datetime import timedelta
-import utils.utils_IRdrone_Class as IRcl
-import pickle
-import json
-from copy import copy, deepcopy
-from pathlib import Path
+
+sys.path.append(osp.join(osp.dirname(__file__), ".."))
+import irdrone.process as pr
+import irdrone.utils as ut
+from irdrone.utils import Style
+import utils.utils_GPS as uGPS
+import utils.utils_odm as odm
 import utils.angles_analyzis as analys
+import utils.utils_IRdrone_Class as IRcl
+
 
 
 # -----   Convertisseurs de dates   Exif<->Python  Excel->Python    ------
@@ -843,7 +842,9 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
     dirSaveFig = osp.join(dirSavePlanVol, "Flight Analytics", "Topo")
     if not osp.isdir(dirSaveFig):
         Path(dirSaveFig).mkdir(parents=True, exist_ok=True)
-    analys.flightProfil_plot(distFlight, altDroneSealLevel, altGround, dirSaveFig=dirSaveFig, mute=False)
+
+    title = os.path.dirname(dirPlanVol).split("/")[-1]
+    analys.flightProfil_plot(distFlight, altDroneSealLevel, altGround, title=title, dirSaveFig=dirSaveFig, mute=False)
 
     # ---------  Save GPS Track in Garmin format (.gpx) -----------------------------------------------------
     if saveGpsTrack:
@@ -971,7 +972,7 @@ def saveMissionAndPtsPickl(listDic, fileName, pathName):
     for n in range(len(listDic)):
         pickler.dump(listDic[n])
     fh.close()
-    txt = "-----  Write Mission and List of mission points. Saved successfully in " + fileName
+    txt = "------ Write Mission and List of mission points. Saved successfully in " + fileName
     print(Style.CYAN + txt + Style.RESET)
 
 
@@ -994,7 +995,7 @@ def readMissionAndPtsPickl(fileName):
         except:
             endFile = True
     fh.close()
-    txt = '-----  Read flight plan and listPts.   Read successfully from ' + fileName
+    txt = '------ Read flight plan and listPts.   Read successfully from ' + fileName
     print(Style.CYAN + txt + Style.RESET)
     printPlanVol(dicplanVol)
 
@@ -1013,10 +1014,10 @@ def writeSummaryFlightExcel(flightPlanSynthesis, pathName):
     pathName = pathName/'FlightSummary.xlsx'
 
     if pathName.is_file():
-        print(Style.CYAN + '------  Write file FlightSummary.xlsx' + Style.RESET)
+        print(Style.CYAN + '------ Write file FlightSummary.xlsx' + Style.RESET)
         pass
     else:
-        print(Style.YELLOW + '------  Create file FlightSummary.xlsx' + Style.RESET)
+        print(Style.YELLOW + '------ Create file FlightSummary.xlsx' + Style.RESET)
         wb = Workbook()
         ws = wb.active
         ws.title = "Summary"
@@ -1619,17 +1620,17 @@ def logoIRDroneMonochrome():
 
 def logoIRDrone2():
     print(Style.CYAN + '\n ')
-    print(' _____  ____________    ___________   ')
-    print('  |I|   |R|       \R\   |D|      \D\  ' )
-    print('  |I|   |R|        |R|  |D|       \D\ ' )
-    print('  |I|   |R|       /R/   |D|        |D|   --- _----_    _------_      _------_       _-------_    ')
-    print('  |I|   |R|______/R/    |D|        |D|   |R|/      \  /O/     \O\   |N|     \ \    /E/     \E\   ')
-    print('  |I|   |R|    \R\      |D|        |D|   |R|         |0|       |O|  |N|      |N|  |E|       |E|  ')
-    print('  |I|   |R|     \R\     |D|        |D|   |R|         |0|       |O|  |N|      |N|  |E|______/E/   ')
-    print('  |I|   |R|      \R\    |D|       /D/    |R|         |O|       |O|  |N|      |N|  |E|            ')
-    print(' _|I|_  |R|      _\R\_  |D|______/D/    _|R|_         \O\_____/O/   |N|     _|N|_  \E\______/E/  ')
+    print(' _______   __________      ___________    ')
+    print('   |I|     |R|      \R\     |D|      \D\  ' )
+    print('   |I|     |R|       |R|    |D|       \D\ ' )
+    print('   |I|     |R|      /R/     |D|        |D|   --- _----_    _------_      _------_       _-------_    ')
+    print('   |I|     |R|_____/R/      |D|        |D|   |R|/      \  /O/     \O\   |N|     \I\    /E/     \E\   ')
+    print('   |I|     |R|    \R\       |D|        |D|   |R|         |0|       |O|  |N|      |N|  |E|       |E|  ')
+    print('   |I|     |R|     \R\      |D|        |D|   |R|         |0|       |O|  |N|      |N|  |E|______/E/   ')
+    print('   |I|     |R|      \R\     |D|       /D/    |R|         |O|       |O|  |N|      |N|  |E|            ')
+    print(' __|I|__  _|R|_     _\R\_  _|D|______/D/    _|R|_         \O\_____/O/  _|N|_     |N|_  \E\______/E/  ')
     print('')
-    print('================================================================================================')
+    print('=====================================================================================================')
     return
 
 if __name__ == "__main__":
