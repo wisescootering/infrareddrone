@@ -1570,6 +1570,7 @@ def lectureCameraIrdrone():
     dicCameraIRdroneCalibration = json.load(file)
     focalPix = round((dicCameraIRdroneCalibration['mtx'][0][0]+ dicCameraIRdroneCalibration['mtx'][1][1])/2 ,1)
     focal2436 = float(focal_factor) * 36.
+    focal_factor = focalPix / width_capteur
 
     return camera_make, camera_type, width_capteur, height_capteur, focal_factor, focalPix
 
@@ -1615,7 +1616,24 @@ def logoIRDroneMonochrome():
     print('  ')
     return
 
+
+def logoIRDrone2():
+    print(Style.CYAN + '\n ')
+    print(' _____  ____________    ___________   ')
+    print('  |I|   |R|       \R\   |D|      \D\  ' )
+    print('  |I|   |R|        |R|  |D|       \D\ ' )
+    print('  |I|   |R|       /R/   |D|        |D|   --- _----_    _------_      _------_       _-------_    ')
+    print('  |I|   |R|______/R/    |D|        |D|   |R|/      \  /O/     \O\   |N|     \ \    /E/     \E\   ')
+    print('  |I|   |R|    \R\      |D|        |D|   |R|         |0|       |O|  |N|      |N|  |E|       |E|  ')
+    print('  |I|   |R|     \R\     |D|        |D|   |R|         |0|       |O|  |N|      |N|  |E|______/E/   ')
+    print('  |I|   |R|      \R\    |D|       /D/    |R|         |O|       |O|  |N|      |N|  |E|            ')
+    print(' _|I|_  |R|      _\R\_  |D|______/D/    _|R|_         \O\_____/O/   |N|     _|N|_  \E\______/E/  ')
+    print('')
+    print('================================================================================================')
+    return
+
 if __name__ == "__main__":
     logoIRDroneMonochrome()
     logoIRDrone()
     logoIRDroneOldSchool()
+    logoIRDrone2()
