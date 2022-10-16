@@ -182,7 +182,7 @@ if __name__ == "__main__":
     timeFin = datetime.datetime.now()
     stopTime = time.process_time()
     tempsExe = stopTime - startTime
-    IRd.logoIRDrone2()
+    IRd.logoIRDrone(num=4)
     print(
         Style.CYAN + '\n End IRdrone-v%s  at %s   CPU : %3.f s' % (versionIRdrone, timeFin.time(), tempsExe) + Style.RESET)
 
