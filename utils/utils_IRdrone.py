@@ -18,6 +18,7 @@ import pickle
 import json
 from copy import copy, deepcopy
 from pathlib import Path
+import subprocess
 
 try:
     from tkinter import Tk
@@ -39,7 +40,7 @@ import utils.utils_GPS as uGPS
 import utils.utils_odm as odm
 import utils.angles_analyzis as analys
 import utils.utils_IRdrone_Class as IRcl
-
+import config as cf
 
 
 # -----   Convertisseurs de dates   Exif<->Python  Excel->Python    ------
@@ -446,18 +447,22 @@ def creatListImgVIS(dirName, dateMission, rege, timelapse, deltatime, cameraMode
         img = pr.Image(imlist[i])
         img.camera["timelapse"] = float(timelapse)
         img.camera["deltatime"] = float(deltatime)
+
         try:
             # Extract Exif data from the image. If no Exif data, image is ignored.
             debug = True
+            cameraMakerImg = img.camera['maker']
             cameraModelImg = img.camera['model']
+            serial_number = img.camera['serial number']
 
-            if cameraModel is None or cameraModelImg == cameraModel:  # Image was taken by another camera. This image is ignored.
+            if cameraModel is None or cameraModelImg == cameraModel or ( cameraMakerImg == 'irdrone' and cameraModelImg == 'multispectral'):
                 dateImg = img.date
                 if (dateImg.year, dateImg.month, dateImg.day) == (dateMission.year, dateMission.month, dateMission.day):
                     j += 1
                     nameImg = imlist[i].split('\\')[len(imlist[i].split('\\')) - 1]
                     imgList.append((nameImg, imlist[i], dateImg))  # Add to image list.
                 else:
+                    # Image was taken by another camera. This image is ignored.
                     if debug: print(Style.YELLOW,
                                     '%s was taken on  %i %i %i. This date is different from the mission date %i %i %i'
                                     % (imlist[i], dateImg.day, dateImg.month, dateImg.year, dateMission.day,
@@ -865,12 +870,10 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
         print(Style.RED + '[error] ')
         pass
     # --------- Selection of image pairs for mapping among aligned images. ------------------------------------------
-
     if createMappingList:
-        mappingList = odm.buildMappingList(ImgMatchForAlignment, listPts, overlap_x=0.30, overlap_y=0.75, dirSaveFig=dirSaveFig)
+        mappingList = odm.buildMappingList(ImgMatchForAlignment, listPts, overlap_x=cf.OVERLAP_X, overlap_y=cf.OVERLAP_Y, dirSaveFig=dirSaveFig)
     else:
         mappingList = None
-
     # ----------  Save summary in Excel format -----------------------------------------------------------
     SaveSummaryInExcelFormat(dirSavePlanVol, saveExcel, listPts, listImg, mute=True)
     # ----------  Save summary in Pickle format -----------------------------------------------------------
@@ -1576,7 +1579,20 @@ def lectureCameraIrdrone():
     return camera_make, camera_type, width_capteur, height_capteur, focal_factor, focalPix
 
 
-def logoIRDrone():
+def logoIRDrone(num=None):
+    try:
+        if num == None: pass
+        elif num == 1: logoIRDrone_1()
+        elif num == 2: logoIRDrone_2()
+        elif num == 3: logoIRDrone_3()
+        elif num == 4: logoIRDrone_4()
+        else: pass
+    except:
+        pass
+    return
+
+
+def logoIRDrone_1():
     print('\n ')
     print(Style.CYAN +    '  III    IIIIIIIIII      IIIIIIIIIII')
     print(Style.BLUE +    '  III    III      III    III      IIII')
@@ -1590,7 +1606,7 @@ def logoIRDrone():
     return
 
 
-def logoIRDroneOldSchool():
+def logoIRDrone_2():
     print('\n ')
     print(Style.CYAN +    '  III    RRRRRRRRRR      DDDDDDDDDD ')
     print(Style.BLUE +    '  III    RRR      RRR    DDD      DDDD')
@@ -1604,7 +1620,7 @@ def logoIRDroneOldSchool():
     return
 
 
-def logoIRDroneMonochrome():
+def logoIRDrone_3():
     print(Style.CYAN + '\n ')
     print('  III    IIIIIIIIII      IIIIIIIIIII')
     print('  III    III      III    III      IIII')
@@ -1618,7 +1634,7 @@ def logoIRDroneMonochrome():
     return
 
 
-def logoIRDrone2():
+def logoIRDrone_4():
     print(Style.CYAN + '\n ')
     print(' _______   __________      ___________    ')
     print('   |I|     |R|      \R\     |D|      \D\  ' )
@@ -1634,7 +1650,13 @@ def logoIRDrone2():
     return
 
 if __name__ == "__main__":
-    logoIRDroneMonochrome()
-    logoIRDrone()
-    logoIRDroneOldSchool()
-    logoIRDrone2()
+    logoIRDrone(num=1)
+    logoIRDrone(num=2)
+    logoIRDrone(num=3)
+    logoIRDrone(num=4)
+    logoIRDrone(num=5)
+    logoIRDrone(num=-1)
+    logoIRDrone('color')
+    logoIRDrone(0)
+    logoIRDrone(num=0)
+
