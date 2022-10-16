@@ -10,13 +10,33 @@ from irdrone.utils import Style
 matplotlib.use('TkAgg')
 from matplotlib import pyplot as plt
 from matplotlib.patches import Polygon
+import json
 columnNbr = 5
 colorNames = list(matplotlib.colors.cnames.keys())
+
+
+def lectureCameraIrdrone():
+    odm_camera_conf = Path(__file__).parent / ".." / "odm_data" / "irdrone_multispectral.json"
+    print('le fichier de calibration de la caméra du dji est dans : ', odm_camera_conf)
+    file = open(odm_camera_conf, 'r')
+    dicCameraIRdrone = json.load(file)
+    for inpkey in dicCameraIRdrone.keys():
+        list = inpkey.split()
+        camera_make = list[0]
+        camera_type = list[1]
+        width_capteur = list[2]
+        height_capteur = list[3]
+        projection = list[4]
+        focal_factor =list[5]
+        print('  camera_make: %s\n  camera_type: %s\n  width_capteur: %s\n  height_capteur: %s\n  projection: %s\n  focal_factor: %s\n'%(camera_make,camera_type,width_capteur,height_capteur,projection,focal_factor))
+
+    return
+
 
 def create_odm_folder(dirMission, multispectral_modality="MS", extra_suggested_options=True, forced_camera_calibration=True, extra_options=[]):
     mapping_folder = "mapping_{}".format(multispectral_modality)
     path_database = Path(dirMission) / mapping_folder
-    odm_camera_conf = Path(__file__).parent / ".." / "odm_data" / "dji_fc3170.json"
+    odm_camera_conf = Path(__file__).parent / ".." / "odm_data" / "irdrone_multispectral.json"
     camera_conf_dir = path_database / "camera"
     camera_conf_dir.mkdir(exist_ok=True, parents=True)
     shutil.copyfile(odm_camera_conf, camera_conf_dir / "camera_IRdrone.json")
@@ -29,6 +49,7 @@ def create_odm_folder(dirMission, multispectral_modality="MS", extra_suggested_o
     cmd += " --orthophoto-kmz"
     cmd += " --force-gps --use-exif"
     cmd += " --build-overviews"
+    cmd += " --skip-band-alignment"
     # see https://github.com/wisescootering/infrareddrone/issues/26
     if extra_suggested_options:
         cmd += " --smrf-threshold 0.3 --smrf-scalar 1.3 --smrf-slope 0.05 --smrf-window 24"
@@ -63,33 +84,38 @@ def odm_mapping_optim(dirMission, dirNameIRdrone, multispectral_modality="VIR", 
     return image_database
 
 
-def buildMappingList(listPts, planVol, dirSaveFig=None, mute=True):
+def buildMappingList(listPtsOptim, listPts, dirSaveFig=None, mute=True):
     print(Style.CYAN + '------ Creating the list of images for mapping  ' + Style.GREEN)
     mappingList = []
-    DTmin = planVol['drone']['timelapse'] / 4
+
     # TODO  recuperer les dimensions du capteur et la focale du fichier camera
-    lPix = 1.6 * 10 ** -6  # pixel size for camera VIS           en m
-    lCapt_x = 4000         # image size VIS  axe e_1             en pixels
-    lCapt_y = 3000         # image size VIS  axe e_2             en pixels
-    f = 2898.5             # focal length camera VIS             en pixels
-    f_m = f * lPix         # focal length camera VIS             en m
+    # TODO  paramètres overlap, lCapt_y ...   à lire dans un fichier de configuration json
+    # TODO  prendre en compte la trajectoire exacte et pas seulement le mouvement  suivant e_2
+    #dt_synchro_optim = 0.25
+    lPix = 1.6 * 10 ** -6  # pixel size for camera VIS              m
+    lCapt_x = 3892         # image size VIS  axe e_1                pixels
+    lCapt_y = 2892         # image size VIS  axe e_2                pixels
+    f = 2898.5             # focal length camera VIS                pixels
+    f_m = f * lPix         # focal length camera VIS                m
     overlap_x = 0.30       # percentage of overlap between two images  axe e_1
-    overlap_y = 0.68       # percentage of overlap between two images  axe e_2   50% à 75%
+    overlap_y = 0.75       # percentage of overlap between two images  axe e_2   [50% , 75%]
 
     # ------------------------------------------------------------------------------------------
-    d = 0
+    d = 0     # raz odometre
     firstImg = False
     for pointImage in listPts:
         d_y = pointImage.altGround * (1 - overlap_y) * lCapt_y / f
-        if -DTmin <= pointImage.timeDeviation <= DTmin:
+        if pointImage.bestSynchro ==1:
             if d == 0 and firstImg is False:  # premier point de la série
                 mappingList.append(pointImage)
+                listPts[pointImage.num - 1].bestMapping = 1
                 firstImg = True
                 if not mute:
                     print("%s     sync %.2f s    alt. %.2f m  Yaw %.1f °  ech. 1/%i "
                       % (pointImage.Vis, pointImage.timeDeviation, pointImage.altGround, pointImage.yawDrone,
                          pointImage.altGround // f_m))
-            elif d >= d_y:  # trouvé le point suivant de la série du mapping
+            elif d >= d_y:  # on a trouvé le point suivant de la série du mapping
+                listPts[pointImage.num - 1].bestMapping = 1
                 mappingList.append(pointImage)
                 d = 0       # raz odometre
                 if not mute:
@@ -99,22 +125,24 @@ def buildMappingList(listPts, planVol, dirSaveFig=None, mute=True):
 
         if firstImg:              # incrémentation de l'odomètre
             d = d + (pointImage.x_1 ** 2 + pointImage.x_2 ** 2) ** 0.5
-
-    visu_mapping(mappingList, listPts, dirSaveFig=dirSaveFig)
+    if 0 < len(mappingList) < 5:
+        print(Style.YELLOW + '[warning]  The number of images selected for mapping is insufficient. It must be greater than 5.' + Style.RESET)
+    elif len(mappingList) == 0:
+        print(Style.RED + '[error]  No images selected for mapping.' + Style.RESET)
+    visu_mapping(mappingList, listPts, focal_DJI=f, lCapt_x=lCapt_x, lCapt_y=lCapt_y, dirSaveFig=dirSaveFig)
 
     return mappingList
 
 
-def visu_mapping(mappingList, listPts, dirSaveFig=None):
+def visu_mapping(mappingList, listPts, focal_DJI=2900, lCapt_x=3892, lCapt_y=2892, dirSaveFig=None):
 
-    focal_DJI = 2830  # in pixels
     figure = plt.figure(figsize=(6, 6))
     ax = figure.add_subplot(111)
     order = len(mappingList)
     # --------------  Plot trajectory of the drone in the geographical referential X: W->E   Y: S->N
     #  Use UTM coordinates
     listDrone_X, listDrone_Y , listMapping_X, listMapping_Y = [], [], [], []
-    offsetMappingArea = (3892/1.5) * IRd.avAltitude(listPts) / focal_DJI   # in meter
+    offsetMappingArea = (lCapt_x/1.5) * IRd.avAltitude(listPts) / focal_DJI   # in meter
 
     for pt in mappingList:
         listMapping_X.append(pt.gpsUTM_X)
@@ -147,8 +175,8 @@ def visu_mapping(mappingList, listPts, dirSaveFig=None):
             marker='o', markerfacecolor=colorNames[20], markeredgecolor='black', markeredgewidth=0.5, markersize=6, zorder=order, label='Image for mapping.')
 
     # -------------- Plot area scanned by images for mapping ----------------------------------------------------------
-    pix_X = 3892
-    pix_Y = 2892
+    pix_X = lCapt_x
+    pix_Y = lCapt_y
 
     for i in range(len(listMapping_X)):
         Yaw = np.deg2rad(360 + mappingList[i].yawDrone)
@@ -226,4 +254,7 @@ def coordRef2coordGeo(A, coord_Img):
             listPtY.append(Coord_geo[1])
         verts = [(listPtX[k], listPtY[k]) for k in range(len(listPtX))]
         return verts
+
+if __name__ == "__main__":
+    lecture()
 

@@ -5,6 +5,7 @@ Created on 2021-10-12 19:02:16
 version 1.05 2021-12-01
 version 1.06 2021-12-31 16:41:05.   Theoritical Yaw,Pitch,Roll for NIR images
 version 1.07 2022-02-17 21:58:00    Class ShootPoint. Save Summary Flight in binary file  (pickle)
+version 1.3  2022-09-27             Mapping ODM, 4 band images Tif ...
 @authors: balthazar/alain
 """
 
@@ -38,7 +39,7 @@ if __name__ == "__main__":
     parser.add_argument('--config', type=str, help='path to the flight configuration')
     parser.add_argument('--clean-proxy', action="store_true", help='clean proxy tif files to save storage')
     parser.add_argument('--disable-altitude-api', action="store_true", help='force not using altitude from IGN API')
-    parser.add_argument('--odm-multispectral', action="store_true", help='ODM multispectral export')
+    parser.add_argument('--odm-multispectral', default=True, action="store_true", help='ODM multispectral export')
     args = parser.parse_args()
     clean_proxy = args.clean_proxy
     dirPlanVol = args.config
@@ -58,6 +59,7 @@ if __name__ == "__main__":
     savePickle = True      # Sauvegarder les données de la mission (plan vol, listPts) dans un fichier binaire.
     createMappingList = True  # Create a list of best synchronous images for mapping with ODM
     option_alti = 'sealevel'  # Altitude GPS  for Exif data. Options: ['takeoff', 'sealevel', 'ground', 'geo']
+    optionBestSynchro = True  # sélectionne uniquement les images dont l'écart de synchronisation est inférieur à TimeLapseDJI*0,25
     #  options des courbes pour l'analyse
     coarseProcess = True
     theoreticalAngle = False
@@ -104,12 +106,15 @@ if __name__ == "__main__":
     # [0.90,  0.50, 0.]  08 septembre 2021   U = 1,0 m/s  hyperlapse auto | beaucoup de rafales de vent !
     # [0.90,  1.30, 0.]  OK 09 novembre  2021   U = 1,0 m/s  hyperlapse auto | vent très faible | longue séquence :-)
     # [0.25,  1.63, 0.]  OK 18 janvier   2022   U = 1,5 m/s  hyperlapse libre| vent nul | test synchro
-    # [0.33,  1.81, 0.]  OK 25 janvier   2022   U = 1,5 m/s  hyperlapse libre| vent nul | Support cas TEST pour GitHub
+    # [0.33,  2.09, 0.]  OK 25 janvier   2022   U = 1,5 m/s  hyperlapse libre| vent nul | Support cas TEST pour GitHub
     # [0.86,  1.43, 0.]  OK Peyrelevade-P 2 (hyperlapse libre U=1,5m/s)  très peu de vent (quelques petites rafales)
     # [1.02,  1.30, 0.]  OK Peyrelevade-P 1 (hyperlapse libre U=1,5m/s)  très peu de vent (quelques petites rafales)
     # [0.20,  2.57, 0.]  0K 25 janvier   2022   phase de Synchro  hyperlapse libre| vent nul |
     # [0.86,  1.43, 0.]  -> default offset Yaw, Pitch, Roll for theoretical angles
     # -------------------------------------------------------------------------------------------------------------
+
+
+
     print(Style.CYAN + '------ Matching images VIS & NIR' + Style.RESET)
     synchro_date = planVol['mission']['date']
     if synchro_date is None:
@@ -120,10 +125,11 @@ if __name__ == "__main__":
                                   synchro_date, mute=True)
     try:
         # Fixed the alignment defect [yaw,pitch,roll] of the NIR camera aiming axis in °
-        mappingList = IRd.summaryFlight(listPts, listImgMatch, planVol, dirPlanVol,
+        mappingList, listImgMatchOptim, listPtsOptim = IRd.summaryFlight(listPts, listImgMatch, planVol, dirPlanVol,
+                        optionBestSynchro=optionBestSynchro,
                         offsetTheoreticalAngle=planVol["offset_angles"],
                         seaLevel=seaLevel,
-                        dirSaveFig=osp.dirname(dirPlanVol),
+                        dirSavePlanVol=osp.dirname(dirPlanVol),
                         saveGpsTrack=saveGpsTrack,
                         saveExcel=saveExcel,
                         savePickle=savePickle,
@@ -142,16 +148,17 @@ if __name__ == "__main__":
     odm_image_directory = None
     if odm_multispectral:
         odm_image_directory = create_odm_folder(dirMission, multispectral_modality="MULTI", extra_options=["--skip-band-alignment"])
+
+    nbImgProcess = len(listPtsOptim)
     print(Style.YELLOW + 'The processing of these %i images will take %.2f h.  Do you want to continue?'
-          % (len(listPts), 1.36 * len(listPts) / 60.) + Style.RESET)
+          % (nbImgProcess, 1.36 * nbImgProcess / 60.) + Style.RESET)
     autoRegistration = IRd.answerYesNo('Yes (y/1) |  No (n/0):')
-    
     if autoRegistration:
         print(Style.CYAN + '------ automatic_registration.process_raw_pairs' + Style.RESET)
         automatic_registration.process_raw_pairs(
-            listImgMatch[::1], out_dir=dirNameIRdrone, crop=CROP, listPts=listPts, 
-            option_alti=option_alti, clean_proxy=clean_proxy, multispectral_folder=odm_image_directory
-        )
+                listImgMatchOptim[::1], out_dir=dirNameIRdrone, crop=CROP, listPts=listPtsOptim,
+                option_alti=option_alti, clean_proxy=clean_proxy, multispectral_folder=odm_image_directory
+            )
     else:
         print(
             Style.YELLOW + 'Warning :  automatic_registration.process_raw_pairs ... Process neutralized.' + Style.RESET)
@@ -177,8 +184,13 @@ if __name__ == "__main__":
         print(Style.YELLOW + 'Do you want to use cached data?' + Style.RESET)
         utilise_cache = IRd.answerYesNo('Yes (y/1) |  No (n/0):')
 
-    analys.plotYawPitchRollDroneAndCameraDJI(dirMission,
+
+
+    if not optionBestSynchro:
+        analys.plotYawPitchRollDroneAndCameraDJI(dirMission,
                                       utilise_cache=utilise_cache,
+                                      offsetYaw=0.,
+                                      offsetPitch=0.,
                                       showAngleCoarseProcess=coarseProcess,
                                       showTheoreticalAngle=theoreticalAngle,
                                       showGap=gap,
@@ -194,4 +206,5 @@ if __name__ == "__main__":
     stopTime = time.process_time()
     tempsExe = stopTime - startTime
     print(
-        Style.CYAN + 'End IRdrone-v%s  at %s   CPU : %3.f s' % (versionIRdrone, timeFin.time(), tempsExe) + Style.RESET)
+        Style.CYAN + '\n End IRdrone-v%s  at %s   CPU : %3.f s' % (versionIRdrone, timeFin.time(), tempsExe) + Style.RESET)
+    IRd.logoIRDrone()

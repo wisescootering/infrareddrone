@@ -607,17 +607,6 @@ def matchImagesAorB(timeLapseDrone, imgListDrone, deltaTimeDrone, timeLapseIR, i
         deltaTimeA = deltaTimeDrone
         timeDeviationMax = timeLapseIR
 
-        # $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
-        #
-        #  Modif temporaire pour tests de l'influence des altitudes Exif sur le résultat du mapping
-        #  On conserve uniquement les paires dont le "deltaTime" entre image VIS et NIR est inférieur à 0,5s.
-        #  Cela a pour conséquence d'éliminer environ 2 images sur 3.
-        #
-        bestSynchro = False
-        if bestSynchro:
-            timeDeviationMax = 0.499999999
-        # $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
-
     else:
         # unwise !
         repA = 'drone'
@@ -781,8 +770,9 @@ def nameImageNIRSummary(nameImageComplet):
 
 
 def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=None,
-                  seaLevel=False, dirSaveFig=None, saveGpsTrack=False,
-                  saveExcel=False, savePickle=True, createMappingList=False, mute=True, altitude_api_disabled=False):
+                  seaLevel=False, dirSavePlanVol=None, saveGpsTrack=False,
+                  saveExcel=False, savePickle=True, createMappingList=False, mute=True, altitude_api_disabled=False,
+                  optionBestSynchro=False, ratioSynchro=0.25):
     """
     :param listImg:      list of image pairs VI/IR matched at the same point
     :param mute:
@@ -848,13 +838,35 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
     listPts, theoreticalPitch, theoreticalYaw, theoreticalRoll = \
         theoreticalIrToVi(listPts, av_timelapse_Vis, offset=offsetTheoreticalAngle)
 
+    # ---------  Plot the flight profile --------------------------------------------------------------------
+    dirSaveFig = osp.join(dirSavePlanVol, "Flight Analytics", "Topo")
+    if not osp.isdir(dirSaveFig):
+        Path(dirSaveFig).mkdir(parents=True, exist_ok=True)
+    IRdplt.flightProfil_plot(distFlight, altDroneSealLevel, altGround, dirSaveFig=dirSaveFig, mute=False)
+
+    # ---------  Save GPS Track in Garmin format (.gpx) -----------------------------------------------------
+    if saveGpsTrack:
+        uGPS.writeGPX(listPts, dirSaveFig, planVol['mission']['date'], mute=True)
+
+    # ----------  optimisation. Selecting the best synchronized image pairs
+
+    listImgMatchOptim, listPtsOptim = selectBestSynchro(listImg, listPts, planVol, optBestSync=optionBestSynchro, ratioSynchro=ratioSynchro)
+
+
+    # --------- Select best synchronous images for mapping with ODM ------------------------------------------
+    if createMappingList:
+        mappingList = odm.buildMappingList(listPtsOptim, listPts, dirSaveFig=dirSaveFig)
+    else:
+        mappingList = None
+
+    #
     # ----------  Save summary in Excel format -----------------------------------------------------------
+    dirAnalytics = Path(dirSavePlanVol) / "Flight Analytics"
     if saveExcel:
-        dirSaveSummary = Path(dirSaveFig)/"Flight Analytics"
-        if not osp.isdir(dirSaveSummary):
-            Path(dirSaveSummary).mkdir(parents=True, exist_ok=True)
+        if not osp.isdir(dirAnalytics):
+            Path(dirAnalytics).mkdir(parents=True, exist_ok=True)
         summaryExcel = buildSummaryExcel(listPts, listImg)
-        writeSummaryFlightExcel(summaryExcel, dirSaveSummary)
+        writeSummaryFlightExcel(summaryExcel, dirAnalytics)
         if not mute:
             txtSummary = 'List of images of the flight:'
             listSummary = list(summaryExcel)
@@ -865,27 +877,14 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
     # ----------  Save summary in Pickle format -----------------------------------------------------------
     summaryPickl = buildMissionAndPtsDicPickl(planVol, listPts)
     if savePickle:
+        if not osp.isdir(dirAnalytics):
+            Path(dirAnalytics).mkdir(parents=True, exist_ok=True)
         fileNamePickl = 'MissionSummary.npy'
-        saveMissionAndPtsPickl(summaryPickl, fileNamePickl, dirSaveSummary)
+        saveMissionAndPtsPickl(summaryPickl, fileNamePickl, dirAnalytics)
     # essai de relecture
-    # dicMission, listDicPts, listPtPickl = IRd.readMissionAndPtsPickl(fileNamePickl)
+    # dicMission, listDicPts, listPtPickl = IRd.readMissionAndPtsPickl(fileNamePickl) -----------------------
 
-    # ---------  Plot the flight profile --------------------------------------------------------------------
-    dirSaveFig = osp.join(dirSaveFig, "Flight Analytics", "Topo")
-    if not osp.isdir(dirSaveFig):
-        Path(dirSaveFig).mkdir(parents=True, exist_ok=True)
-    IRdplt.flightProfil_plot(distFlight, altDroneSealLevel, altGround, dirSaveFig=dirSaveFig, mute=False)
-
-    # ---------  Save GPS Track in Garmin format (.gpx) -----------------------------------------------------
-    if saveGpsTrack:
-        uGPS.writeGPX(listPts, dirSaveFig, planVol['mission']['date'], mute=True)
-    # --------- Select best synchronous images for mapping with ODM ------------------------------------------
-    if createMappingList:
-        mappingList = odm.buildMappingList(listPts, planVol, dirSaveFig=dirSaveFig)
-    else:
-        mappingList = None
-
-    return mappingList
+    return mappingList, listImgMatchOptim, listPtsOptim
 
 
 def avAltitude(listPts):
@@ -927,7 +926,9 @@ def buildSummaryExcel(listPts, listImg):
              round(listPts[i].x_3, 3),  # 27 motion in Z axis
              round(listPts[i].yawIR2VI, 5),  # 28 coarse yaw for superimpose imgNIR on imgVIS
              round(listPts[i].pitchIR2VI, 5),  # 29 coarse pitch for superimpose imgNIR on imgVIS
-             round(listPts[i].rollIR2VI, 5)  # 30 coarse roll for superimpose imgNIR on imgVIS
+             round(listPts[i].rollIR2VI, 5),  # 30 coarse roll for superimpose imgNIR on imgVIS
+             listPts[i].bestSynchro,  # 31 best synchro
+             listPts[i].bestMapping   # 32 best mapping
              )
         )
 
@@ -988,7 +989,8 @@ def writeSummaryFlightExcel(flightPlanSynthesis, pathName):
     :return: .
     """
     pathName = pathName/'FlightSummary.xlsx'
-    if os.path.isfile(pathName):
+
+    if pathName.is_file():
         print(Style.CYAN + '------  Write file FlightSummary.xlsx' + Style.RESET)
         pass
     else:
@@ -1076,11 +1078,13 @@ def readFlightSummary(dir_mission, mute=None, no_pandas=False):
         yawIr2Vi = float(sheet.cell(nulg, 29).value)  # theoretical yaw coarse process
         pitchIr2Vi = float(sheet.cell(nulg, 30).value)  # theoretical pitch coarse process
         rollIr2Vi = float(sheet.cell(nulg, 31).value)  # theoretical roll coarse process
+        bestSynchro = int(sheet.cell(nulg, 32).value)  # 1 if dt-synchro < timelapseDJI/4 (25%)
+        bestMapping = int(sheet.cell(nulg, 33).value)  # 1 if image selected for mapping
 
         data = num_pt, imgVisName, imgNirName, timeDeviation, dateVisString, dateNirString, timeLine, date_string, \
                gpsLat, gpsLong, altiDrone2Sol, altGeo, altiDrone2TakeOff, distNextPt, capNextPt, dist2StartPoint, \
                xUTM, yUTM, zoneUTM, yawDrone, pitchDrone, rollDrone, yawGimbal, pitchGimbal, rollGimbal, \
-               x_1, x_2, x_3, yawIr2Vi, pitchIr2Vi, rollIr2Vi
+               x_1, x_2, x_3, yawIr2Vi, pitchIr2Vi, rollIr2Vi, bestSynchro, bestMapping
 
         listSummaryFlight.append(data)
         nulg = nulg + 1
@@ -1122,7 +1126,9 @@ def headColumnSummaryFlight():
                    'x_3                                  [m]',
                    'Yaw                 IR to VI                     [°]',
                    'Pitch               IR to VI                     [°]',
-                   'Roll                IR to VI                     [°]'
+                   'Roll                IR to VI                     [°]',
+                   'Best synchro',
+                   'Mapping ODM'
                    ]
     return listHeadCol
 
@@ -1431,3 +1437,77 @@ def average_Timelapse(tStart, tEnd, nbImageMission, mute=True):
         txt = '...  Visible image acquisition interval : ' + str(np.round(av_Timelapse, 6)) + ' s'
         print(Style.GREEN + txt + Style.RESET)
     return av_Timelapse, av_Timelapse_timedelta
+
+
+def selectBestSynchro(listImgMatch, listPts, planVol, optBestSync=False, ratioSynchro=0.25):
+    """
+    Selects pairs of images with a timing difference of less than :
+        DTmin = drone timelapse * ratioSynchro.
+    'ratioSynchro' is a percentage of drone timelapse.  DTmin in [0.25 , 1.0]
+    """
+    listImgMatchOptim, listPtsOptim = [], []
+    DTmin = planVol['drone']['timelapse'] * ratioSynchro
+    for pointImage in listPts:
+        if optBestSync:
+            if -DTmin <= pointImage.timeDeviation <= DTmin:
+                listPts[pointImage.num-1].bestSynchro = 1
+                listImgMatchOptim.append(listImgMatch[pointImage.num-1])
+                listPtsOptim.append(pointImage)
+            else:
+                listPts[pointImage.num - 1].bestSynchro = 0
+        else:
+            if -DTmin <= pointImage.timeDeviation <= DTmin:
+                listPts[pointImage.num - 1].bestSynchro = 1
+            else:
+                listPts[pointImage.num - 1].bestSynchro = 0
+            listImgMatchOptim.append(listImgMatch[pointImage.num - 1])
+            listPtsOptim.append(pointImage)
+
+    return listImgMatchOptim, listPtsOptim
+
+
+def logoIRDrone():
+    print('\n ')
+    print(Style.CYAN +    '  III    IIIIIIIIII      IIIIIIIIIII')
+    print(Style.BLUE +    '  III    III      III    III      IIII')
+    print(Style.MAGENTA + '  III    III        II   III        III')
+    print(Style.RED +     '  III    II        II    III         III   II IIIII      IIIIII    IIIIIII     IIIIII')
+    print(Style.YELLOW +  '  III    IIIIIIIIIII     III         III   III     II   II    II   II     II  II     II')
+    print(Style.GREEN +   '  III    III    III      III         III   III         II      II  II     II  IIIIIII')
+    print(Style.WHITE +   '  III    III     III     III        III    III          II    II   II     II  II        ')
+    print(Style.RESET +   '  III    III      III    IIIIIIIIIIII      III           IIIIII    II     II   IIIIIII ')
+    print('  ')
+    return
+
+
+def logoIRDroneOldSchool():
+    print('\n ')
+    print(Style.CYAN +    '  III    RRRRRRRRRR      DDDDDDDDDD ')
+    print(Style.BLUE +    '  III    RRR      RRR    DDD      DDDD')
+    print(Style.MAGENTA + '  III    RRR        RR   DDD        DDD')
+    print(Style.RED +     '  III    RRR      RR     DDD          DD   RR RRRRR      OOOOOO     NNNNNNN     EEEEEE')
+    print(Style.YELLOW +  '  III    RRRRRRRRRR      DDD          DD   RRR     RR   OO    OO   NN     NN  EE      E')
+    print(Style.GREEN +   '  III    RRR    RRR      DDD         DDD   RRR         OO      OO  NN     NN  EEEEEEEE')
+    print(Style.WHITE +   '  III    RRR     RRR     DDD       DDDD    RRR          OO    OO   NN     NN  EE        ')
+    print(Style.RESET +   '  III    RRR      RRR    DDDDDDDDDDD       RRR           OOOOOO    NN     NN   EEEEEEE ')
+    print('  ')
+    return
+
+
+def logoIRDroneMonochrome():
+    print(Style.CYAN + '\n ')
+    print('  III    IIIIIIIIII      IIIIIIIIIII')
+    print('  III    III      III    III      IIII')
+    print('  III    III        II   III        III')
+    print('  III    III       II    III         III   II IIIII      IIIIII    IIIIIII     IIIIII')
+    print('  III    IIIIIIIIIII     III         III   III     II   II    II   II     II  II     II')
+    print('  III    III    III      III         III   III         II      II  II     II  IIIIIII')
+    print('  III    III     III     III        III    III          II    II   II     II  II        ')
+    print('  III    III      III    IIIIIIIIIIII      III           IIIIII    II     II   IIIIIII ')
+    print('  ')
+    return
+
+if __name__ == "__main__":
+    logoIRDroneMonochrome()
+    logoIRDrone()
+    logoIRDroneOldSchool()

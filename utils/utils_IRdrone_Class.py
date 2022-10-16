@@ -28,6 +28,8 @@ class ShootPoint:
         self.dateNir = datetime.fromisoformat(nirDate)
         self.timeLine = timeLine
         self.timeDeviation = timeDeviation
+        self.bestSynchro = 0
+        self.bestMapping = 0
         self.altGround = 324.
         self.altGeo = 357.
         self.altTakeOff = 324.
@@ -66,6 +68,8 @@ class ShootPoint:
                "Near Infrared image :   {2}    |  Date of shooting: {4}                                            \n" \
                "Time line: {5} s                                                                                   \n" \
                "Time deviation Nir to Vis: {6} s                                                                   \n" \
+               "Selected for the process. (best synchro): {34}                                                     \n" \
+               "Selected for mapping               : {35}                                                          \n" \
                "________________________Coordinate_________________________________________________________________\n" \
                "Geo: {7} {8}°  {9} {10}°                                                                           \n" \
                "UTM: x {11} m    y {12} m   zone {13}                                                              \n" \
@@ -88,7 +92,7 @@ class ShootPoint:
                     round(self.x_1, 3), round(self.x_2, 3), round(self.x_3, 3),
                     round(self.gpsDist, 3), round(self.gpsCap, 3), round(self.gpsDistTot,3),
                     round((self.x_1**2 + self.x_2**2)**0.5 / 2., 3),
-                    round(self.x_3 / 2., 3)
+                    round(self.x_3 / 2., 3), round(self.bestSynchro, 0), round(self.bestMapping, 0)
                     )
 
 
@@ -102,7 +106,9 @@ class ShootPoint:
                     "dateVis": self.dateVis,
                     "dateNir": self.dateNir,
                     "timeLine": self.timeLine,
-                    "timeDeviation": self.timeDeviation
+                    "timeDeviation": self.timeDeviation,
+                    "bestSynchro": self.bestSynchro,
+                    "bestMapping": self.bestMapping
                 },
                 'Attitude': {
                     'drone': {
@@ -156,6 +162,8 @@ class ShootPoint:
         self.dateNir = dic['Img']["dateNir"]
         self.timeLine = dic['Img']["timeLine"]
         self.timeDeviation = dic['Img']["timeDeviation"]
+        self.bestSynchro = dic['Img']['bestSynchro']
+        self.bestMapping = dic['Img']['bestMapping']
 
         self.yawDrone = dic['Attitude']['drone']["yaw"]
         self.pitchDrone = dic['Attitude']['drone']["pitch"]
@@ -169,6 +177,7 @@ class ShootPoint:
         self.yawIR2VI = dic['Attitude']['IR2VI']["yaw"]
         self.pitchIR2VI = dic['Attitude']['IR2VI']["pitch"]
         self.rollIR2VI = dic['Attitude']['IR2VI']["roll"]
+
 
         self.gpsSN = dic['GPS']["SN"]
         self.gpsLat = dic['GPS']["Latitude"]
@@ -298,7 +307,9 @@ def newPpoint(numero):
                  "dateVis": datetime.fromisoformat('2022-01-25 11:45:17'),
                  "dateNir": datetime.fromisoformat('2022-01-25 12:35:07'),
                  "timeLine": numero * (1 + 0.01987),
-                 "timeDeviation": 0.54
+                 "timeDeviation": 0.54,
+                 "bestSynchro": 0,
+                 "bestMapping": 0
                  },
             'Attitude':
                 {
