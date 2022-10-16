@@ -20,6 +20,7 @@ import logging
 from os import mkdir
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
 from irdrone.utils import Style, conversionGPSdms2dd, get_polar_shading_map, contrast_stretching
+import Code_Python.irdrone.config as cf
 import subprocess
 from pathlib import Path
 import json
@@ -87,22 +88,15 @@ def get_gimbal_info(pth: Path):
     return dic
 
 def copy_metadata(pth_src, pth_dst):
+    #
+    # 1- Copying Exif data from a pth_src image  (HYPRLAPSE_XXXX.DNG) in pth_dst (img_XXXX_Y.tif)
+    # 2- Modification or addition of Tags in the pth_dst image (img_XXXX_Y.tif)
+    #    and write (cmd  "-overwrite_original", "-fast")
+    #
     cmd = [EXIFTOOLPATH, "-TagsFromFile", pth_src, pth_dst, "-overwrite_original", "-fast"]
     p = subprocess.run(cmd)
 
-    # ================================================================================
-    # 1- Lecture des données Exif d'une image fileName.tif  (commande  '-r')
-    # 2- Modification des Tags(ou ajout par exempel Copyright)
-    #  Ici passage par un fichier temporaire  fileName_exiftool_temp
-    # 3- Ecriture (commande  "-overwrite_original", "-fast") dans le même fichier fileName.tif
-
-
-    #strCheminImage_tmp = 'H:\Air-Mission\FLY-20220524-Thaumiers-Vol2\mapping_MULTI\images\essai-tmp.tif'
-    #pth_tmp = Path(strCheminImage_tmp)
-
-    #cmd = [EXIFTOOLPATH, "-TagsFromFile", pth_dst, pth_tmp, "-overwrite_original", "-fast"]
-    #p = subprocess.run(cmd)
-
+    """
     cmd = [EXIFTOOLPATH, pth_dst,
            '-Make=irdrone',
            '-Model=multispectral',
@@ -117,7 +111,26 @@ def copy_metadata(pth_src, pth_dst):
            '-Copyright=Wise Scootering - Balthazar Neveu',
            '-Artist=Flo',
            "-overwrite_original", pth_dst, "-fast"]
+    """
+
+
+    cmd = [EXIFTOOLPATH, pth_dst,
+           f"-Make={cf.IRD_CAMERA_MAKER}",
+           f'-Model={cf.IRD_CAMERA_MODEL}',
+           f'-UniqueCameraModel={cf.IRD_CAMERA_DESCRIPTION}',
+           f'-SerialNumber={cf.IRD_CAMERA_DESCRIPTION}',
+           f'-CameraSerialNumber={cf.IRD_CAMERA_SERIAL_NUMBER}',
+           f'-FocalLength={cf.IRD_FOCAL_LENGTH}',
+           f'-FocalLengthIN35mmFormat={cf.IRD_FOCAL_LENGTH_35MM}',
+           f'-FieldOfView={cf.IRD_FOV}',
+           f'-LensInfo={cf.IRD_LENS_INFO}',
+           f'-LensModel={cf.IRD_LENS_MODEL}',
+           f'-Copyright={cf.COPYRIGHT}',
+           f'-Artist={cf.ARTIST}',
+           "-overwrite_original", pth_dst, "-fast"]
+
     p = subprocess.run(cmd)
+
 
     # =============================================================================
 

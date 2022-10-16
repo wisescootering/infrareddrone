@@ -12,6 +12,7 @@ import sys
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
 import utils.utils_IRdrone as IRd
 from irdrone.utils import Style
+import Code_Python.irdrone.config as cf
 
 columnNbr = 5
 colorNames = list(matplotlib.colors.cnames.keys())
@@ -69,11 +70,11 @@ def odm_mapping_optim(dirMission, dirNameIRdrone, multispectral_modality="VIR", 
     return image_database
 
 
-def buildMappingList(listPtsOptim, listPts, overlap_x=0.30, overlap_y=0.75, dirSaveFig=None, mute=True):
+def buildMappingList(listPtsOptim, listPts, overlap_x=0.33, overlap_y=0.80, dirSaveFig=None, mute=True):
     """
     focalPix            focal length camera VIS                pixels , m
     overlap_x = 0.30    percentage of overlap between two images  axe e_1
-    overlap_y = 0.75    percentage of overlap between two images  axe e_2   [50% , 75%]
+    overlap_y = 0.75    percentage of overlap between two images  axe e_2   [50% , 90%]
     lCapt_x             image size VIS  axe e_1                pixels
     lCapt_y             image size VIS  axe e_2  (axe drone)   pixels
     lPix                pixel size for camera VIS              m
@@ -83,7 +84,7 @@ def buildMappingList(listPtsOptim, listPts, overlap_x=0.30, overlap_y=0.75, dirS
     # TODO  prendre en compte la trajectoire exacte et pas seulement le mouvement  suivant e_2
 
     camera_make, camera_type, lCapt_x, lCapt_y, focal_factor, focalPix = IRd.lectureCameraIrdrone()
-    lPix = 1.6 * 10 ** -6
+    lPix = cf.IRD_LPIX
     # ------------------------------------------------------------------------------------------
     d = 0     # reset odometre
     firstImg = False
@@ -118,7 +119,7 @@ def buildMappingList(listPtsOptim, listPts, overlap_x=0.30, overlap_y=0.75, dirS
     return mappingList
 
 
-def visu_mapping(mappingList, listPts, focal_DJI=2900, lCapt_x=3892, lCapt_y=2892, dirSaveFig=None):
+def visu_mapping(mappingList, listPts, focal_DJI=cf.IRD_FOCAL_LENGTH_PIX, lCapt_x=cf.IRD_PIX_X, lCapt_y=cf.IRD_PIX_Y, dirSaveFig=None):
 
     figure = plt.figure(figsize=(6, 6))
     ax = figure.add_subplot(111)
@@ -172,14 +173,12 @@ def visu_mapping(mappingList, listPts, focal_DJI=2900, lCapt_x=3892, lCapt_y=289
             marker='o', markerfacecolor=colorNames[20], markeredgecolor='black', markeredgewidth=0.5, markersize=6, zorder=order, label='Image for mapping.')
 
     # -------------- Plot area scanned by images for mapping ----------------------------------------------------------
-    pix_X = lCapt_x
-    pix_Y = lCapt_y
 
     for i in range(len(listMapping_X)):
         Yaw = np.deg2rad(360 + mappingList[i].yawDrone)
         zoomX = mappingList[i].altGround / focal_DJI
         zoomY = mappingList[i].altGround / focal_DJI
-        coord_Img = rectImg(pix_X,pix_Y)
+        coord_Img = rectImg(lCapt_x,lCapt_y)
         A = transAffine(Yaw, zoomX, zoomY, listMapping_X[i], listMapping_Y[i])
         ptGeo = coordRef2coordGeo(A, coord_Img)
         poly = Polygon(ptGeo, facecolor='whitesmoke', lw=0, hatch='', fill=True, zorder=order-1-i)
