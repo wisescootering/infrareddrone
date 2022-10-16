@@ -5,7 +5,7 @@
 
 
 # General information
-* 🚀 Current version: 1.2
+* 🚀 Current version: 1.3
 * ⌨️ Authors : Balthazar Neveu , Alain Neveu
 * 🕹️ Testers: [Pépin Hugonnot](https://www.pepin-hugonnot.fr/vincent-hugonnot-florine-pepin-auvergne_fr.html) : Florine Pépin 
 
@@ -40,12 +40,11 @@
 * Download our sample folder [FLY_TEST](https://drive.google.com/drive/folders/1khi0WdWyZ6H7Z7Lc5Q_i-Mm0Xq2sgpd1?usp=sharing)
 * Run the docker image. `docker run -v C:\Users\xxxx\Documents\FLY_test:/home/samples/FLY_test -it irdrone`
   * `python3 synchronization/synchro_by_aruco.py --folder /home/samples/FLY_test/Synchro/ --vis "*.DNG" --nir "*.RAW"`
-  * `python3 run.py --config /home/samples/FLY_test/config.json`
+  * `python3 run.py --config /home/samples/FLY_test/config.json --clean-proxy --odm-multispectral --selection best-mapping`
 
 
 Note:
  * *press CTRL+D to escape*
- * *Once you are inside the docker session  make sure you have access to exiftool & rawtherapee-cli...*
  * *There are no visual checks through graphs*
 
 
@@ -151,18 +150,25 @@ Original metadata from the DJI drone are copied into the output file therefore t
 We'll prepare tiles to be stitched in [opendronemap](https://opendronemap.org) and later allow you to visualize under [QGIS](https://www.qgis.org) with access to maps.
 
 
+
 #### 🗺️Open Drone Map
 You'll need to have 🐋 Docker running to be able to stitch maps using open drone maps.  
-* Next to `ImgIRdrone` folder, you can find several folders `mapping_XXX` for each spectral modality (visible, nir, ndvi, vir)
+* Next to `ImgIRdrone` folder, you can find a folder named `mapping_MULTI` . 
 * inside this folder, we have prepared everything you need to run the ODM stitching:
   * images with correct overlap and correct exif
   * camera calibration
   * `odm_mapping.bat` allows you to run the right docker with the right options.
 * Once the process has finished, you'll find a png with the stitched maps. `mapping_XXX/odm_orthophoto/odm_orthophoto.png`
 
+*Note: In case you didn't use `--odm-multispectral` option in run.py you'll get a folder for each spectral modality (visible, nir, ndvi, vir)*
+
 
 ![Stitching NIR images in QGIS](./illustrations/qgis_map.jpg)
 
+#### 🗺️QGIS
+Once stitched with ODM, you can visualize the map in QGIS and start annotating your map.
+
+Please refer to the following tutorial (in french) on how to create [vegetation visualization under QGIS](https://github.com/wisescootering/infrareddrone/files/9795223/QGIS_multispectral_maps_creation.pdf).
 
 #### 💲 Pix4DFields
 
@@ -177,6 +183,23 @@ You'll need to have 🐋 Docker running to be able to stitch maps using open dro
 ------------
 # 🆘 Details
 ------------
+
+---------------------------------------
+## ⚙️ [`run.py`](./run.py) command line interface
+
+---------------------------------------
+`run.py [--config CONFIG] [--clean-proxy] [--odm-multispectral] [--traces {vis,nir,vir,ndvi}] [--selection {all,best-synchro,best-mapping}]`
+
+
+- `--config` *path to the flight configuration*
+- `--clean-proxy`   *clean proxy tif files to save storage*
+- `--disable-altitude-api` *force not using altitude from IGN API*
+- `--odm-multispectral`   *ODM multispectral .tif exports* 
+- `--traces {vis,nir,vir,ndvi}` *export specific spectral traces. when not provided: VIR by default if `--odm-multispectral`, otherwise all traces are saved*
+- `--selection` {all,best-synchro,best-mapping} 
+  - `all`: take all images, do not make a specific image selection
+  - `best-synchro`: only pick pairs of images with gap < 1/4th of the TimeLapseDJI interval ~ 0.5 seconds
+  - `best-mapping`: select best synchronized images + granting a decent overlap
 
 ---------------------------------------
 ## ⚙️ Configuration files
