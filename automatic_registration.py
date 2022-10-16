@@ -323,7 +323,7 @@ def process_raw_folder(folder, delta=timedelta(seconds=166.5), manual=False, deb
     process_raw_pairs(sync_pairs, cals, debug_folder=None, out_dir=out_dir, manual=manual,
                       debug=debug, extension=extension)
 
-def write_manual_bat_redo(vis_pth, nir_pth_list, debug_bat_pth, out_dir=None, debug=False, async_suffix=None):
+def write_manual_bat_redo(vis_pth, nir_pth_list, debug_bat_pth, out_dir=None, debug=False, async_suffix=None, multispectral_folder=None):
     if out_dir is None:
         out_dir = osp.abspath(debug_bat_pth.replace(".bat", ""))
     with open(debug_bat_pth, "w") as fi:
@@ -332,14 +332,17 @@ def write_manual_bat_redo(vis_pth, nir_pth_list, debug_bat_pth, out_dir=None, de
             out_dir_current = out_dir
             if async_suffix is not None:
                 out_dir_current = out_dir_current + "_async_{}".format(async_suffix[id_sync])
-            fi.write(
-                ("REM " if id_sync>0 else "")+
-                "python {} --images {} {} --manual --outdir {} {}\n".format(
+            cmd = "REM " if id_sync>0 else ""
+            cmd+= "python {} --images {} {} --manual --outdir {} {}".format(
                 "\""+osp.abspath(__file__)+"\"",
                 "\""+vis_pth+"\"", "\""+nir_pth+"\"",
                 "\""+out_dir_current+"\"",
-                "--debug" if debug else "")
+                "--debug" if debug else ""
             )
+            if multispectral_folder is not None:
+                cmd+= "--multispectral-folder "+ "\""+osp.abspath(multispectral_folder)+"\""
+            cmd+="\n"
+            fi.write(cmd)
         fi.write("call deactivate\n")
 
 def process_raw_pairs(
@@ -382,9 +385,10 @@ def process_raw_pairs(
             write_manual_bat_redo(vis_pth, nir_pth_async,
                               osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO_ASYNC.bat"),
                               async_suffix=offset_async,
-                              debug=False)
-            write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO.bat"), debug=False)
-            write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_DEBUG.bat"), debug=True)
+                              debug=False,
+                              multispectral_folder=multispectral_folder)
+            write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO.bat"), debug=False, multispectral_folder=multispectral_folder)
+            write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_DEBUG.bat"), debug=True, multispectral_folder=multispectral_folder)
 
 
         gps_vis = pr.Image(vis_pth).gps
@@ -442,7 +446,8 @@ def process_raw_pairs(
             ms_img[:, :, :3] = ref_full
             ms_img[:, :, 3] = np.average(aligned_full, axis=-1)
             img._data = ms_img
-            out_name = f"{(index_pair+1):04d}"
+            # out_name = f"{(index_pair+1):04d}"
+            out_name = osp.basename(vis_pth[:-4])
             img.save_multispectral(Path(multispectral_folder)/out_name)
         if VIS in traces:
             vis_img = pr.Image((ut.contrast_stretching(ref_full)[0]*255).astype(np.uint8))
@@ -467,7 +472,7 @@ def process_raw_pairs(
                 )
         if debug:  # SCIENTIFIC LINEAR OUTPUTS
             pr.Image(aligned_full).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR.tif"), gps=gps_vis, exif=exif_dict_minimal)
-            pr.Image(align_full_global).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR.tif"), gps=gps_vis, exif=exif_dict_minimal)
+            pr.Image(align_full_global).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR_global.tif"), gps=gps_vis, exif=exif_dict_minimal)
             pr.Image(ref_full).save(osp.join(out_dir, "_RAW_"+ osp.basename(vis_pth[:-4])+"_VIS.tif"), gps=gps_vis, exif=exif_dict_minimal)
             
         motion_model_list.append(motion_model)
@@ -485,7 +490,7 @@ if __name__ == "__main__":
     parser.add_argument('--debug', action="store_true", help='full debug traces')
     parser.add_argument('--folder', help='folder containing images for visible and NIR')
     parser.add_argument('--delay', help='synchronization (in seconds)', default=0.)
-
+    parser.add_argument('--multispectral-folder', help='multispectral TIF folder for ODM', default=None)
     args = parser.parse_args()
     extension = 1.6
     if args.images is None:
@@ -515,6 +520,7 @@ if __name__ == "__main__":
             manual=args.manual,
             debug=args.debug,
             extension=extension,
-            crop=CROP
+            crop=CROP,
+            multispectral_folder=args.multispectral_folder
         )
 
