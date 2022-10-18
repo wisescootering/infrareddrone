@@ -55,7 +55,7 @@ Note:
 ------------
 *For practical reasons*, only **windows is supported** as of now... For anything else please use the docker version!
 * install [Anaconda](https://www.anaconda.com/products/individual) with all default options. [Anaconda for windows, python 3.9](https://repo.anaconda.com/archive/Anaconda3-2021.11-Windows-x86_64.exe)
-* [install.bat](install.bat) will set up the right python environment for you. 
+* [install.bat](/bat_helpers/install.bat) will set up the right python environment for you. 
 * you have to install [raw therapee](https://www.rawtherapee.com) software at the default windows location.
 * Download our sample folder [FLY_TEST](https://drive.google.com/drive/folders/1khi0WdWyZ6H7Z7Lc5Q_i-Mm0Xq2sgpd1?usp=sharing)
 * To use ODM ([open drone map](https://opendronemap.org/)), install docker and make sure you have it running correctly
@@ -118,14 +118,14 @@ Note:
     * 📁`Synchro` folder where you put all picture from the synchronization phase
     * 📝 `config.json`
 * 2/ ❓ Configuration file can be changed (modify json or excel). *folder names can be changed for instance, if you're interested looking at the "Configuration" section*.
-* 3/ ⏰ Double click on `synchro.bat` and select the 📁 `Synchro` folder. 
+* 3/ ⏰ Double click on [`bat_helpers/synchro.bat`](/bat_helpers/synchro.bat) and select the 📁 `Synchro` folder. 
   * This will open a graph, please make sure that the black and orange curves overlap correctly. Then you can close the graph.
   * *This will generate a `syncho.npy` binary file  in the `Synchro` folder ... which you will re-use as a configuration parameter. Don't worry, if you re-use the sample example configuration and folder naming, you won't have to change anything.*
 
 ![synchronization validation](./illustrations/synchro.png)
 
 
-* 4/ ⏯️ Now you're ready to process your images. Double click on `run.bat` and select the configuration `config.json` file. 
+* 4/ ⏯️ Now you're ready to process your images. Double click on [`bat_helpers/run.bat`](/bat_helpers/run.bat) and select the configuration `config.json` file. 
 *Note .json or .xlsx will do the same.*
 * 5/ 📈 Check the altitude profile displayed (internet connection is needed here).
 
@@ -225,7 +225,7 @@ If you want to change the configuration, you have 2 options
   "nir_timelapse": 3.0
 }
 ```
-* **`synchro` field  links to the synchronization file obtained when running `synchro.bat` previously**
+* **`synchro` field  links to the synchronization file obtained when running `bat_helpers/synchro.bat` previously**
 * You can change the `output` folder here. 
 * glob regexp use are suggested in `visible` or `nir` keys to search the images. *Please not that this way you can use 2 different folders for NIR and visible images.*
 * OPTIONAL : 
@@ -241,7 +241,7 @@ If you want to change the configuration, you have 2 options
 
 
 ### Link with synchro.bat is made automatically 
-* Double click on [synchro.bat](synchro.bat). *(Advanced users can use CLI obviously in case of other images format)* 
+* Double click on [`bat_helpers/synchro.bat](/bat_helpers/synchro.bat). *(Advanced users can use CLI obviously in case of other images format)* 
 * Unless you want to do manual manipulations, do not paste the delay result to your configuration excel in  `cameraIR` / `deltatime` . You can simply close the window, the program saved a synchro.npy file in the Synchro folder!
 
 
@@ -271,11 +271,11 @@ for instance, you have to copy/paste into the excel
   * Rotating the drone above the static chart: *more complicated to manipulate, not recommended* [description](https://drive.google.com/drive/folders/1Uk-eWBwteD2reOCdT0kngCWgcddz4C5s?usp=sharing) is available here.
 * Sample synchro data can be downloaded from [here](https://drive.google.com/drive/folders/10SCdV_wb57L6ODKlqpWORkE1B0559aUL?usp=sharing) 
 * Copy the selected synchronization images into a "Synchro" folder -> visible & NIR images (expected .RAW and .DNG files by default).
-* Double click on [synchro.bat](synchro.bat). *(Advanced users can use CLI obviously in case of other images format)
+* Double click on [bat_helpers/synchro.bat](/bat_helpers/synchro.bat). *(Advanced users can use CLI obviously in case of other images format)
 
 
 ## Alignment and Fusion
-* Data can be processed by double cliking on `run.bat`. This will use [run.py](`run.py`) to select a given config.json or excel file.
+* Data can be processed by double cliking on [`bat_helpers/run.bat`](/bat_helpers/run.bat). This will use [run.py](`run.py`) to select a given config.json or excel file.
 * Advanced users can also use CLI (command line interface) to process the batch of images. Use `--config` option to 
 * CLI users can register pairs of images [automatic_registration.py](automatic_registration.py) 
 
@@ -494,14 +494,25 @@ coverage is very weak. code quality has a lot of discrepancies. sorry about that
 
 ## [v1.1](https://github.com/wisescootering/infrareddrone/milestone/1)
 * March 18, 2022
-* Issue #1 Use config.json or excel
-* Issue #2 Crop outputs with a few pixels to avoid black/red borders 
-* Issue #3 onfiguration re-uses synchro.npy (pickle) so there are is no need to copy paste values from synchronization phase.
+* Use config.json or excel ([#1](https://github.com/wisescootering/infrareddrone/issues/1))
+* Crop outputs with a few pixels to avoid black/red borders ([#2](https://github.com/wisescootering/infrareddrone/issues/2))
+* configuration re-uses synchro.npy (pickle) so there are is no need to copy paste values from synchronization phase. ([#3](https://github.com/wisescootering/infrareddrone/issues/3))
 
 
 ## [v1.2](https://github.com/wisescootering/infrareddrone/milestone/1)
 * August 28, 2022
 * Docker support (linux or basically any platform)
-* Issue #10 Output data compatibility with Open Drone Map (document, bat helpers to run ODM)
+* Feature #10 Output data compatibility with Open Drone Map (document, bat helpers to run ODM)
 * Remove intermediate TIF to save storage using `--clean-proxy` option.
 * Bugs fixed: #19 #20 features #10 #16 #13 #12
+
+
+## [v1.3](https://github.com/wisescootering/infrareddrone/milestone/3)
+* October 21, 2022
+* Multispectral TIF support for ODM ([#25](https://github.com/wisescootering/infrareddrone/issues/25)) 
+* Possibility to visualize VIR jpg (or other by using the `--trace` argument) still allowing the redo.bat manual to reprocess & generate the multispectral tif ([#30](https://github.com/wisescootering/infrareddrone/issues/30))
+* Reduce computation by selecting less frames for processing: `--selection` option in `run.py` supports `best-synchro` & `best-mapping` & `all` ([#29](https://github.com/wisescootering/infrareddrone/issues/29))
+* Possibility to run alignment on pairs using file dialog ([#21](https://github.com/wisescootering/infrareddrone/issues/21))
+* Issues closed: [#14](https://github.com/wisescootering/infrareddrone/issues/14) [#18](https://github.com/wisescootering/infrareddrone/issues/18) [#22](https://github.com/wisescootering/infrareddrone/issues/22) [#26](https://github.com/wisescootering/infrareddrone/issues/26)
+
+
