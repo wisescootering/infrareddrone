@@ -1216,16 +1216,16 @@ def reformatDirectory(di, rootdir=None, makeOutdir=False):
     raise NameError("Cannot find directory %s" % di)
 
 
-def loadFileGUI(mute=True):
+def loadFileGUI(mute=True, **options):
     Tk().withdraw()  # we don't want a full GUI, so keep the root window from appearing
-    filename = askopenfilename()  # show an "Open" dialog box and return the path to the selected file
+    filename = askopenfilename(**options)  # show an "Open" dialog box and return the path to the selected file
     if not mute: print(filename)
     return filename
 
 
-def loadFolderGUI(mute=True):
+def loadFolderGUI(mute=True, **options):
     Tk().withdraw()  # we don't want a full GUI, so keep the root window from appearing
-    filename = askdirectory()
+    filename = askdirectory(**options)
     if not mute: print(filename)
     return filename
 
