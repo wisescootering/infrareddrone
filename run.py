@@ -61,23 +61,16 @@ if __name__ == "__main__":
     # --------------------------------------------------------------------------
     #                    options       (for rapid tests and analysis)
     # --------------------------------------------------------------------------
-    seaLevel = True        # Calculer l'altitude du sol  ... API internet (si serveur indisponible trois tentatives)
-    saveGpsTrack = True    # Sauvegarder la trajectoire du drone dans un fichier gps au format Garmin@
-    saveExcel = True       # Sauvegarder la liste des paires, les coordonnées GPS, les angles ... dans un fichier Excel
-    savePickle = True      # Sauvegarder les données de la mission (plan vol, shootingPts) dans un fichier binaire.
+    seaLevel = True        # Calculate the altitude of the ground via the IGN API. If the server is unavailable makes three attempts.
+    saveGpsTrack = True    # Save the drone’s trajectory in a GPS file in Garmin format (.gpx)
+    saveExcel = True       # Save the list of pairs, GPS coordinates, angles ... in an Excel file
+    savePickle = True      # Save mission data (flight plan, shootingPts) in a binary file.
     createMappingList = True  # Create a list of best synchronous images for mapping with ODM
     option_alti = 'sealevel'  # Altitude GPS  for Exif data. Options: ['takeoff', 'sealevel', 'ground', 'geo']
-    analysisAlignment = True   #  Analyse des angles d'alignement "theoretical" et "coarse process"
-    showAnglPlot = True
+    analysisAlignment = True   #  Analysis of "theoretical" and "coarse" alignment angles
+    showAnglPlot = True     #Display of the chart at the end of the process. The chart is automatically saved in the "Flight Analytics" folder.
     showDisperPlot = False
 
-    # Sélection des images pour le process d'alignement des paires VIS NIR en fonction de la valeur de  option-alignment
-    #
-    # > 'all'  or None  select. toutes les paires d'images disponibles dans AerialPhotography
-    # > 'best-synchro'   select. uniquement les images dont l'écart de synchronisation est inférieur à TimeLapseDJI*0,25
-    # > 'best-mapping'   sélect. parmi les images bien synchronisées celles qui ont un recouvrement adapté au mapping
-    selection_option = args.selection
-    print(Style.GREEN + 'Option for images alignment is %s '%selection_option + Style.RESET)
 
     # --------------------------------------------------------------------------------------------------------------
     # 1 > Extraction of flight data
@@ -90,7 +83,7 @@ if __name__ == "__main__":
     imgListIR, deltaTimeIR, timeLapseIR, dirNameIRdrone = \
         IRd.extractFlightPlan(dirPlanVol, mute=True)
 
-    print("deltaTimeIR    ", deltaTimeIR, "  First image shooting at  ", planVol["mission"]["date"])
+    print(Style.GREEN + "Time shift between original VIS and NIR images :  %s s   First image shooting at  %s" %(round(deltaTimeIR,2), planVol["mission"]["date"]) + Style.RESET)
     
     # --------------------------------------------------------------------------------------------------------------
     # 2 > Find matching pairs of images from both cameras
@@ -120,6 +113,22 @@ if __name__ == "__main__":
     listImgMatch, DtImgMatch, listdateMatch, shootingPts = \
         IRd.matchImagesFlightPath(imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR,
                                   synchro_date, mute=True)
+
+    # Image selection for VIS NIR pair alignment process based on option-alignment value
+    # > 'all'  or None   Selects all available pairs of images in AerialPhotography
+    # > 'best-synchro'   Selects only images with timing deviation less than TimeLapseDJI*0.25
+    # > 'best-mapping'   Selects in well-synchronized images those with appropriate mapping overlap.
+    # Note: If the shooting mode is not HYPERLAPSE the registration option is forced to "all".
+    selection_option = args.selection
+    if timeLapseDrone > 0:
+        print(Style.GREEN + 'Option for images alignment is %s ' % selection_option + Style.RESET)
+    else:
+        selection_option = 'all'
+        traces = ["vis", "nir", "vir"]
+        createMappingList = False
+        print(
+            Style.YELLOW + 'The shots of this mission were not taken in hyperlapse mode.\n All pairs will be aligned.\n No mapping.\n Option for images alignment is %s ' % selection_option + Style.RESET)
+
     try:
         # Fixed the alignment defect [yaw,pitch,roll] of the NIR camera aiming axis in °
         mappingList, ImgMatchProcess, ptsProcess = IRd.summaryFlight(shootingPts, listImgMatch, planVol, dirPlanVol,
@@ -152,7 +161,7 @@ if __name__ == "__main__":
             traces = automatic_registration.TRACES
     nbImgProcess = len(ptsProcess)
     print(Style.YELLOW + 'The processing of these %i images will take %.2f h.  Do you want to continue?'
-          % (nbImgProcess, 1.36 * nbImgProcess / 60.) + Style.RESET)
+          % (nbImgProcess, 2.05 * nbImgProcess / 60.) + Style.RESET)
     autoRegistration = IRd.answerYesNo('Yes (y/1) |  No (n/0):')
     if autoRegistration:
         print(Style.CYAN + '------ Automatic_registration.process_raw_pairs' + Style.RESET)
@@ -169,7 +178,7 @@ if __name__ == "__main__":
     # 4 > Open Drone Map
     #      Prepare ODM folders (with .bat, images and camera calibrations)
     # -------------------------------------------------------------------------------------------------------------
-    if not odm_multispectral:
+    if not odm_multispectral and timeLapseDrone > 0:
         for ext in ["VIS", "NIR_local", "NDVI__local", "VIR__local"]:
             odm_image_directory = odm_mapping_optim(dirMission, dirNameIRdrone, multispectral_modality=ext, mappingList=mappingList)
 
