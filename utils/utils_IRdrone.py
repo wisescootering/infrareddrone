@@ -598,7 +598,7 @@ def matchImagesFlightPath(imgListDrone,
 
 def matchImagesAorB(timeLapseDrone, imgListDrone, deltaTimeDrone, timeLapseIR, imgListIR, deltaTimeIR):
     if timeLapseDrone <= 0 or timeLapseDrone <= timeLapseIR:
-        # If timeLapseDrone = 0 or -1 the photos are taken in manual mode.
+        # If timeLapseDrone <= 0 the photos are taken in manual mode.
         # If timeLapseDrone > 0 and  =< timeLapseIR    the photos are taken in time lapse mode.
         # This is the best configuration  (2s DJI | 3s SJCam M20]
         # Warning in some cases (skipping a NIR image) we can have :
@@ -807,6 +807,7 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
         This data will be saved in the Excel file of the flight directory  (sheet "Summary")
         and in binary file
     """
+    timeLapseDrone = float(planVol['drone']['timelapse'])  # > 0 if hyperlapse mode  =< O if single shoot mode
     # ---  GPS coordinates, trajectory, take-off, altitude relative to sea level ...
     if planVol['mission']['coord GPS Take Off'] is None:
         logging.warning("Ignoring flight anaytics (altitude of the flight etc...)")
@@ -831,13 +832,13 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
         listPts[i].gpsUTM_X, listPts[i].gpsUTM_Y, listPts[i].gpsZone = \
             uGPS.geo2UTM(listPts[i].gpsLat, listPts[i].gpsLon)
 
-    if float(planVol['drone']['timelapse']) > 0:
+    if timeLapseDrone > 0:
         av_timelapse_Vis, _ = average_Timelapse(planVol['mission']['date'], listPts[-1].dateVis,
                                                 int(nameImageVisSummary(listPts[-1].Vis).split('_')[-1].split('.')[0]),
                                                 mute=True)
-        motion_in_DroneAxis(listPts, planVol['drone']['timelapse'], mute=True)
+        motion_in_DroneAxis(listPts, mute=True)
     else:
-        av_timelapse_Vis = planVol['drone']['timelapse']
+        av_timelapse_Vis = timeLapseDrone
 
     # -- Theoretical angles (yaw, Pitch, Roll) to overlay the infrared image on the visible image.(coarse process)
     listPts, theoreticalPitch, theoreticalYaw, theoreticalRoll = \
@@ -860,17 +861,17 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
     #  optionAlignment == 'best-synchro'         Selecting the best synchronized image pairs for alignment.
     #  optionAlignment == 'best-mapping'         Selection of image pairs for mapping among aligned images.
     ImgMatchForAlignment, PtsForAlignment = [], []
-    if optionAlignment == None or optionAlignment == 'all':
+    if optionAlignment == None or optionAlignment == 'all' or timeLapseDrone <= 0:
         ImgMatchForAlignment, PtsForAlignment = selectAllImages(listImg, listPts, planVol, ratioSynchro=ratioSynchro)
     elif optionAlignment == 'best-synchro':
         ImgMatchForAlignment, PtsForAlignment = selectBestSynchro(listImg, listPts, planVol, ratioSynchro=ratioSynchro)
     elif optionAlignment == 'best-mapping':
-        ImgMatchForAlignment, PtsForAlignment = selectBestMapping(listImg, listPts, planVol, overlap_x=0.30, overlap_y=0.75, ratioSynchro=ratioSynchro)
+        ImgMatchForAlignment, PtsForAlignment = selectBestMapping(listImg, listPts, planVol, overlap_x=cf.OVERLAP_X, overlap_y=cf.OVERLAP_Y, ratioSynchro=ratioSynchro)
     else:
         print(Style.RED + '[error] ')
         pass
     # --------- Selection of image pairs for mapping among aligned images. ------------------------------------------
-    if createMappingList:
+    if createMappingList and timeLapseDrone > 0:
         mappingList = odm.buildMappingList(ImgMatchForAlignment, listPts, overlap_x=cf.OVERLAP_X, overlap_y=cf.OVERLAP_Y, dirSaveFig=dirSaveFig)
     else:
         mappingList = None
@@ -954,7 +955,7 @@ def buildSummaryExcel(listPts, listImg):
              listPts[i].alignment,     # 33 value = 1 if image pairs selected for process alignment
              round(listPts[i].yawCoarseAlign, 5),  # 34 coarse yaw for superimpose imgNIR on imgVIS
              round(listPts[i].pitchCoarseAlign, 5),  # 35 coarse pitch for superimpose imgNIR on imgVIS
-             round(listPts[i].rollCoarseAlign, 5)  # 35 coarse roll for superimpose imgNIR on imgVIS
+             round(listPts[i].rollCoarseAlign, 5)  # 36 coarse roll for superimpose imgNIR on imgVIS
              )
         )
 
@@ -1020,7 +1021,7 @@ def writeSummaryFlightExcel(flightPlanSynthesis, pathName):
         print(Style.CYAN + '------ Write file FlightSummary.xlsx' + Style.RESET)
         pass
     else:
-        print(Style.YELLOW + '------ Create file FlightSummary.xlsx' + Style.RESET)
+        print(Style.CYAN + '------ Create file FlightSummary.xlsx' + Style.RESET)
         wb = Workbook()
         ws = wb.active
         ws.title = "Summary"
@@ -1265,7 +1266,7 @@ def check_numeric(x):
 
 # ----------------------   A priori calculation of the pitch, yaw & roll "coarse".  -----------------------------------
 
-def motion_in_DroneAxis(listPts, timelapseDrone, mute=True):
+def motion_in_DroneAxis(listPts, mute=True):
     """
     Geographical axes:
         e_EW vector  West > East          |e_EW|=1
@@ -1567,14 +1568,15 @@ def lectureCameraIrdrone():
         camera_type = list[1]
         width_capteur = int(list[2])
         height_capteur = int(list[3])
-        projection = list[4]
-        focal_factor =float(list[5])
+        #projection = list[4]
+        #focal_factor =float(list[5])
     odm_camera_calibration = Path(__file__).parent / ".." / "calibration" / "DJI_RAW" / "calibration.json"
     file = open(odm_camera_calibration, 'r')
     dicCameraIRdroneCalibration = json.load(file)
     focalPix = round((dicCameraIRdroneCalibration['mtx'][0][0]+ dicCameraIRdroneCalibration['mtx'][1][1])/2 ,1)
-    focal2436 = float(focal_factor) * 36.
     focal_factor = focalPix / width_capteur
+    #focal2436 = float(focal_factor) * 36.
+
 
     return camera_make, camera_type, width_capteur, height_capteur, focal_factor, focalPix
 

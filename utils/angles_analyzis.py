@@ -130,8 +130,8 @@ def plotAnglesAlignment(timeLine, yawIR2VI, pitchIR2VI, rollIR2VI,
                                 label1="Yaw theoretical.              average = {:.2f}°".format(np.average(yawIR2VI, axis=0)), color1='green',marksize1=1,
                                 label2="Yaw coarse alignment.   average = {:.2f}°".format(np.average(yawCoarse, axis=0)), color2='yellowgreen', marksize2=8, Title=missionTitle)
     plotAnglesAlignment_2curves(ax2, timeLine, pitchIR2VI, timeLinePostProcess, pitchCoarse,
-                                label1="Yaw theoretical.              average = {:.2f}°".format(np.average(yawIR2VI, axis=0)), color1='purple', marksize1=1,
-                                label2="Yaw coarse alignment.   average = {:.2f}°".format(np.average(yawCoarse, axis=0)), color2='blueviolet', marksize2=8)
+                                label1="Picth theoretical.              average = {:.2f}°".format(np.average(pitchIR2VI, axis=0)), color1='purple', marksize1=1,
+                                label2="Pitch coarse alignment.   average = {:.2f}°".format(np.average(pitchCoarse, axis=0)), color2='blueviolet', marksize2=8)
 
     # ---------- save plot in dirMission/Flight Analytics/Angles analysis ----------------
     savePlot(dirMission, 'Angles analysis')

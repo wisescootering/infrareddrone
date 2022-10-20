@@ -18,12 +18,14 @@ import datetime
 from pathlib import Path
 import logging
 from os import mkdir
+import Code_Python.irdrone.utils.utils_IRdrone as IRd
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
 from irdrone.utils import Style, conversionGPSdms2dd, get_polar_shading_map, contrast_stretching
 import config as cf
 import subprocess
 from pathlib import Path
 import json
+
 
 if os.name == 'nt':
     RAWTHERAPEEPATH = r"C:\Program Files\RawTherapee\5.8\rawtherapee-cli.exe"
@@ -87,34 +89,57 @@ def get_gimbal_info(pth: Path):
             json.dump(dic, fi)
     return dic
 
-def copy_metadata(pth_src, pth_dst):
-    #
-    # 1- Copying Exif data from a pth_src image  (HYPRLAPSE_XXXX.DNG) in pth_dst (img_XXXX_Y.tif)
-    # 2- Modification or addition of Tags in the pth_dst image (img_XXXX_Y.tif)
-    #    and write (cmd  "-overwrite_original", "-fast")
-    #
-    cmd = [EXIFTOOLPATH, "-TagsFromFile", pth_src, pth_dst, "-overwrite_original", "-fast"]
-    p = subprocess.run(cmd)
+def infoCameraIRdrone():
+    try:
+        odm_camera_conf = Path(__file__).parent / ".." / "odm_data" / "irdrone_multispectral.json"
+        file = open(odm_camera_conf, 'r')
+        dicCameraIRdrone = json.load(file)
+        for inpkey in dicCameraIRdrone.keys():
+            list = inpkey.split()
+            cameraMaker = list[0]
+            cameraModel = list[1]
+            widthCapteur = int(list[2])
+    except:
+        cameraMaker = cf.IRD_CAMERA_MAKER
+        cameraModel = cf.IRD_CAMERA_MODEL
+        widthCapteur = cf.IRD_PIX_X
+    try:
+        odm_camera_calibration = Path(__file__).parent / ".." / "calibration" / "DJI_RAW" / "calibration.json"
+        file = open(odm_camera_calibration, 'r')
+        dicCameraIRdroneCalibration = json.load(file)
+        focalPix = round((dicCameraIRdroneCalibration['mtx'][0][0] + dicCameraIRdroneCalibration['mtx'][1][1]) / 2, 1)
+        focalLength = 1000 * focalPix * cf.IRD_LPIX   # focal in mm
+        focalLengthIN35mmFormat = float(focalPix / widthCapteur) * 36.
+        lensInfo = '%s mm f/%s' % (str(round(focalLengthIN35mmFormat, 0)),  str(round(cf.VIS_CAMERA_F_MAX,1)))
+    except:
+        focalLength = cf.IRD_FOCAL_LENGTH
+        focalLengthIN35mmFormat = cf.IRD_FOCAL_LENGTH_35MM
+        lensInfo = cf.IRD_LENS_INFO
+    return cameraMaker, cameraModel, focalLength, focalLengthIN35mmFormat, lensInfo
 
-    cmd = [EXIFTOOLPATH, pth_dst,
-           f"-Make={cf.IRD_CAMERA_MAKER}",
-           f'-Model={cf.IRD_CAMERA_MODEL}',
+
+
+def copy_metadata(pth_src, pth_dst):
+    cameraMaker, cameraModel, focalLength, focalLengthIN35mmFormat, lensInfo = infoCameraIRdrone()
+    #
+    #  Copying Exif data from a pth_src image  (HYPRLAPSE_XXXX.DNG) in pth_dst (img_XXXX_Y.tif or .jpg)
+    #  + modification or addition of Tags in the pth_dst image and write (cmd  "-overwrite_original", "-fast")
+
+    cmd = [EXIFTOOLPATH, "-TagsFromFile", pth_src,
+           f"-Make={cameraMaker}",
+           f'-Model={cameraModel}',
            f'-UniqueCameraModel={cf.IRD_CAMERA_DESCRIPTION}',
-           f'-SerialNumber={cf.IRD_CAMERA_DESCRIPTION}',
+           f'-SerialNumber={cf.IRD_CAMERA_SERIAL_NUMBER}',
            f'-CameraSerialNumber={cf.IRD_CAMERA_SERIAL_NUMBER}',
-           f'-FocalLength={cf.IRD_FOCAL_LENGTH}',
-           f'-FocalLengthIN35mmFormat={cf.IRD_FOCAL_LENGTH_35MM}',
-           f'-FieldOfView={cf.IRD_FOV}',
-           f'-LensInfo={cf.IRD_LENS_INFO}',
-           f'-LensModel={cf.IRD_LENS_MODEL}',
+           f'-FocalLength={focalLength}',
+           f'-FocalLengthIN35mmFormat={focalLengthIN35mmFormat}',
+           f'-LensInfo={lensInfo}',
+           f'-LensModel={cf.NIR_FILTER_MODEL}',
            f'-Copyright={cf.COPYRIGHT}',
            f'-Artist={cf.ARTIST}',
-           "-overwrite_original", pth_dst, "-fast"]
+           pth_dst, "-overwrite_original",  "-fast"]
 
     p = subprocess.run(cmd)
-
-
-    # =============================================================================
 
     return
 
