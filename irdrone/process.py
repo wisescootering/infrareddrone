@@ -59,7 +59,7 @@ def load_dng(path, template="DJI_neutral.pp3"):
     cmd = [
         RAWTHERAPEEPATH,
         "-t", "-o", out_file,
-        "-p", osp.join(osp.dirname(__file__), template),
+        "-p", osp.join(osp.dirname(__file__), "..", "thirdparty", "rawtherapee", template),
         "-c", path
     ]
     if not osp.isfile(out_file):
