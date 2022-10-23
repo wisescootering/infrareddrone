@@ -1,3 +1,4 @@
+cd ..
 call conda env create --file environment.yml python=3.9
 pause
 @ECHO OFF
