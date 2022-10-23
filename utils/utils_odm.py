@@ -5,7 +5,10 @@ import shutil
 import os.path as osp
 import matplotlib
 import numpy as np
-matplotlib.use('TkAgg')
+try:
+    matplotlib.use('TkAgg')
+except:
+    pass
 from matplotlib import pyplot as plt
 from matplotlib.patches import Polygon
 import sys

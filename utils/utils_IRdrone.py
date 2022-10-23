@@ -19,7 +19,7 @@ import json
 from copy import copy, deepcopy
 from pathlib import Path
 import subprocess
-
+sep = '\\' if os.name == "nt" else "/"
 try:
     from tkinter import Tk
     from tkinter.filedialog import askopenfilename, askdirectory
@@ -415,7 +415,6 @@ def creatListImgNIR(dirName, rege):
     imlist = sorted(ut.imagepath(imgname=rege, dirname=dirName))
     imgList = []
     for i in range(len(imlist)):
-        sep = '\\' if os.name == "nt" else "/"
         nameImg = imlist[i].split(sep)[len(imlist[i].split(sep)) - 1]
         dateImg = extractDateNir(nameImg)
         imgList.append((nameImg, imlist[i], dateImg))  # added to image list
@@ -459,7 +458,7 @@ def creatListImgVIS(dirName, dateMission, rege, timelapse, deltatime, cameraMode
                 dateImg = img.date
                 if (dateImg.year, dateImg.month, dateImg.day) == (dateMission.year, dateMission.month, dateMission.day):
                     j += 1
-                    nameImg = imlist[i].split('\\')[len(imlist[i].split('\\')) - 1]
+                    nameImg = imlist[i].split(sep)[len(imlist[i].split(sep)) - 1]
                     imgList.append((nameImg, imlist[i], dateImg))  # Add to image list.
                 else:
                     # Image was taken by another camera. This image is ignored.
@@ -758,7 +757,7 @@ def dist(listPts):
 
 
 def nameImageVisSummary(nameImageComplet):
-    imgNameOriginal = nameImageComplet.split('\\')[len(nameImageComplet.split('\\')) - 1]
+    imgNameOriginal = nameImageComplet.split(sep)[len(nameImageComplet.split(sep)) - 1]
     str = imgNameOriginal.split('_')[1]
     numeroRef = str.split('.')[0]
     imgExt = str.split('.')[1]
@@ -769,7 +768,7 @@ def nameImageVisSummary(nameImageComplet):
 
 
 def nameImageNIRSummary(nameImageComplet):
-    imgName = nameImageComplet.split('\\')[len(nameImageComplet.split('\\')) - 1]
+    imgName = nameImageComplet.split(sep)[len(nameImageComplet.split(sep)) - 1]
 
     return imgName
 
