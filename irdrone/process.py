@@ -30,7 +30,7 @@ import json
 if os.name == 'nt':
     RAWTHERAPEEPATH = r"C:\Program Files\RawTherapee\5.8\rawtherapee-cli.exe"
     assert osp.exists(RAWTHERAPEEPATH), "Please install raw therapee first http://www.rawtherapee.com/downloads/5.8/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
-    EXIFTOOLPATH = osp.join(osp.dirname(__file__), "..", "exiftool", "exiftool.exe")
+    EXIFTOOLPATH = osp.join(osp.dirname(__file__), "..", "thirdparty", "exiftool", "exiftool.exe")
     assert osp.exists(EXIFTOOLPATH), "Requires exif tool at {} from https://exiftool.org/".format(EXIFTOOLPATH)
 
 else:
@@ -402,14 +402,14 @@ class Image:
 # -------------------------------------------------------------------------------------------------------- SJCAM M20 RAW
             elif str.lower(osp.basename(self.path)).endswith("raw"):
                 if os.name == "nt":
-                    sjcam_converter = osp.join(osp.dirname(osp.abspath(__file__)), "..", "sjcam_raw2dng", "sjcam_raw2dng.exe")
+                    sjcam_converter = osp.join(osp.dirname(osp.abspath(__file__)), "..", "thirdparty", "sjcam_raw2dng", "sjcam_raw2dng.exe")
                     sjconverter_link = "https://github.com/yanburman/sjcam_raw2dng/releases/tag/v1.2.0"
                     assert osp.isfile(sjcam_converter), "{} does not exist - please download from {}".format(
                         sjcam_converter,
                         sjconverter_link
                     )
                 else:
-                    sjcam_converter = osp.join(osp.dirname(osp.abspath(__file__)), "..", "sjcam_raw2dng_linux", "sjcam_raw2dng")
+                    sjcam_converter = osp.join(osp.dirname(osp.abspath(__file__)), "..", "thirdparty", "sjcam_raw2dng_linux", "sjcam_raw2dng")
                 conv_dir = self.conv_dir
                 if not osp.isdir(conv_dir):
                     mkdir(conv_dir)
