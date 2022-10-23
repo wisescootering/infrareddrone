@@ -61,7 +61,7 @@ def minimum_cost_max_hessian(cost, debug=False):
                      amax_index[0]-refinement_neighborhood:amax_index[0]+refinement_neighborhood+1,
                      amax_index[1]-refinement_neighborhood:amax_index[1]+refinement_neighborhood+1]
     displacement, hessi, gradi = minimum_cost(cost_selection)
-    # from registration.utlities import plot_search, quadratic_approximation_plot
+    # from registration.utilities import plot_search, quadratic_approximation_plot
     # plot_search(cost_selection, [displacement[0]], [displacement[1]])
     # quadratic_approximation_plot(cost_selection, gradi, hessi)
     if debug:

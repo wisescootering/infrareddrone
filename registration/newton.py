@@ -290,10 +290,10 @@ def search_minimum_full_patch_discrete(cost, init_val=None, iter=20, alpha=0.5, 
         # FOLLOWING CODE IS FOR DEBUGGING THE CASES OF QUADRATIC FORM NOT BEING CORRECT APPROXIMATIONS OF THE SURFACE
         # WORKAROUND IS TO SWITCH TO PLANAR FITTING, SET HESSIAN TO ZERO AND STICK TO A STEP OF GRADIENT DESCENT
         # if (hess_mat[:, 0 , 0] == 0.).any() or (hess_mat[:, 1, 1] == 0.).any():
-        #     from registration.utlities import quadratic_approximation_plot
+        #     from registration.utilities import quadratic_approximation_plot
         #     quadratic_approximation_plot(**dbg_dict, previous_position=previous_val, next_position=new_val)
         # if np.fabs(new_val[0])>cost.shape[0]//2-2 or  np.fabs(new_val[1])>cost.shape[1]//2-2: #GETTING OUT OF BOUNDS!
-        #     from registration.utlities import quadratic_approximation_plot
+        #     from registration.utilities import quadratic_approximation_plot
         #     quadratic_approximation_plot(**dbg_dict, previous_position=previous_val, next_position=new_val)
         if step_norm < 0.1:
             logging.info("Finished converging! {}".format(step_norm))
