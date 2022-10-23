@@ -24,7 +24,7 @@ colorNames = list(matplotlib.colors.cnames.keys())
 def create_odm_folder(dirMission, multispectral_modality="MS", extra_suggested_options=True, forced_camera_calibration=True, extra_options=[]):
     mapping_folder = "mapping_{}".format(multispectral_modality)
     path_database = Path(dirMission) / mapping_folder
-    odm_camera_conf = Path(__file__).parent / ".." / "odm_data" / "irdrone_multispectral.json"
+    odm_camera_conf = Path(__file__).parent / ".." / "thirdparty" / "odm_data" / "irdrone_multispectral.json"
     camera_conf_dir = path_database / "camera"
     camera_conf_dir.mkdir(exist_ok=True, parents=True)
     shutil.copyfile(odm_camera_conf, camera_conf_dir / "camera_IRdrone.json")

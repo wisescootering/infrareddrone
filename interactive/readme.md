@@ -11,8 +11,8 @@ Run [interactive/demo.py](/interactive/demo.py) to test the image processing fea
   * compare images in a side by side or grid fashion
   
 ```
-import irdrone.process as pr
-import irdrone.utils   as ut
+import interactive.process as pr
+import interactive.utils   as ut
 pr.show(
     [
         [(ut.testimage(xsize=200, ysize=200, sat=sat ), "color rectangle %.1f"%sat) for sat in [0.1, 0.5]],

@@ -1557,7 +1557,7 @@ def selectBestMapping(listImgMatch, listPts, planVol,  overlap_x=0.30, overlap_y
 
 
 def lectureCameraIrdrone():
-    odm_camera_conf = Path(__file__).parent / ".." / "odm_data" / "irdrone_multispectral.json"
+    odm_camera_conf = Path(__file__).parent / ".." / "thirdparty" / "odm_data" / "irdrone_multispectral.json"
     # print('le fichier de calibration de la caméra du dji est dans : ', odm_camera_conf)
     file = open(odm_camera_conf, 'r')
     dicCameraIRdrone = json.load(file)

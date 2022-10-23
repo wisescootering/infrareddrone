@@ -175,7 +175,7 @@ Please refer to the following tutorial (in french) on how to create [vegetation 
 *For instance, creating a map is possible in Pix4DField in case you own a license (I used the Trial version which is available for 15days)*
 
 * When launching Pix4DFields, the DJI camera won't be supported by default. You need to import a [custom camera file](https://support.pix4d.com/hc/en-us/articles/360035481811-What-to-do-when-a-camera-is-not-supported-in-Pix4Dfields).
-* Luckily, we created one for the DJI Mavic Air 2, see [Pix4DFields_custom_camera](Pix4DFields_custom_camera)
+* Luckily, we created one for the DJI Mavic Air 2, see [Pix4DFields_custom_camera](/thirdparty/Pix4DFields_custom_camera)
 
 
 ![Stitching NIR images in Pix 4D fields](./illustrations/pix_4dfields.png)

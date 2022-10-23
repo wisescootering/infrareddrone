@@ -91,7 +91,7 @@ def get_gimbal_info(pth: Path):
 
 def infoCameraIRdrone():
     try:
-        odm_camera_conf = Path(__file__).parent / ".." / "odm_data" / "irdrone_multispectral.json"
+        odm_camera_conf = Path(__file__).parent / ".." / "thirdparty" / "odm_data" / "irdrone_multispectral.json"
         file = open(odm_camera_conf, 'r')
         dicCameraIRdrone = json.load(file)
         for inpkey in dicCameraIRdrone.keys():
