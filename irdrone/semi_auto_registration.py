@@ -10,7 +10,7 @@ from skimage import exposure
 import irdrone.utils as ut
 import irdrone.process as pr
 from registration.warp_flow import warp
-import irdrone.imagepipe as ipipe
+import interactive.imagepipe as ipipe
 from irdrone.register import register_by_blocks, estimateFeaturePoints
 import numpy as np
 import cv2

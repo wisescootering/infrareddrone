@@ -12,7 +12,7 @@ osp = os.path
 import time
 from datetime import datetime, timedelta
 from matplotlib.colors import LinearSegmentedColormap
-import irdrone.imagepipe as ipipe
+import interactive.imagepipe as ipipe
 import shutil
 import cv2
 import argparse

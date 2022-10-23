@@ -486,7 +486,11 @@ class ImagePipe:
 
 
 if __name__ == "__main__":
-    import utils
+    import os
+    import sys
+    sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+    import irdrone.utils as utils
+    import irdrone.process as process
     # DEMO OF A BLENDING BETWEEN 2 IMAGES
     imgl = [utils.testimage(xsize=720, ysize=720, sat=sat).astype(np.float32) for sat in [1., 0.]]
     TRANSLATION2 = Translation("TIMAGE2", slidersName=["TX 2", "TY 2"], inputs=[2,], outputs=[2,], vrange=(-50.,50.,0.))
@@ -494,7 +498,6 @@ if __name__ == "__main__":
     ip.gui()
 
     # FUSION OF 2 DIFFERENT SPRECTRUMS
-    import process
     GLIN2 = GammaFixed("LINEARIZATION_IMG2", slidersName=[], inputs=[2,], outputs=[2,]);GLIN2.setGamma(1./2.2)
     ip = ImagePipe(
         [

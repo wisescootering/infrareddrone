@@ -11,7 +11,7 @@ import irdrone.process as pr
 from aruco_helper import aruco_detection
 import os
 from datetime import timedelta
-from irdrone import imagepipe
+from interactive import imagepipe
 import copy
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
