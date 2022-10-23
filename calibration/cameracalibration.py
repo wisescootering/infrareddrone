@@ -1,15 +1,18 @@
+import sys
+import os.path as osp
+opj = osp.join
+sys.path.append(osp.join(osp.dirname(__file__), ".."))
 import config
-import process as pr
-import utils as ut
+import irdrone.process as pr
+import irdrone.utils as ut
 from joblib import Memory
 import cv2
 import itertools
 import numpy as np
 from tqdm import tqdm
-import os.path as osp
 from os import mkdir
 import logging
-opj = osp.join
+
 
 
 def getcorners(img_in, checkerboardsize =(10,7), resize=None, show=False):
@@ -218,6 +221,7 @@ if __name__ == "__main__":
     # img_list = img_list[137:137+30] + img_list[-30:] + img_list[:30] # for DJI 200+ images calibration !!
 
     img_list = ut.imagepath(imgname=suffix,  dirname=calibration_folder)
+    assert len(img_list)>0, f"no images found in {calibration_folder}"
     logging.info("{} available calibration images".format(len(img_list)))
     if nbImage is not None:
         img_list = img_list[:nbImage]
