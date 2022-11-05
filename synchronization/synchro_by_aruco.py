@@ -19,6 +19,7 @@ from scipy.optimize import minimize
 from irdrone.utils import Style
 import argparse
 import traceback
+import logging
 osp = os.path
 
 
@@ -109,10 +110,18 @@ def synchronization_aruco_rotation(
 ):
     delay = None
     forced_offset = None
+    roll_offset_init = roll_offset
+    cost_dict = buildCostDico(sync_dict, optionSolver, init_Delta=delay, roll_offset=roll_offset_init)
+    estimated_roll_diff = np.mean(cost_dict["f_B"]) - np.mean(cost_dict["f_A"])
+    roll_offset_est = 0.
+    if np.abs(estimated_roll_diff) > 270.:
+        # https://github.com/wisescootering/infrareddrone/issues/19
+        logging.warning(f"big roll offset estimated {estimated_roll_diff}°, please consider using --manual in case you're not sure")
+        roll_offset_est = np.round(estimated_roll_diff/360) * 360
     if manual:
         sig_list = []
         for indx, (cam, _delta, _roll_offset) in enumerate(
-                [(camera_definition[0][1], timedelta(seconds=delta), roll_offset), (camera_definition[1][1], timedelta(seconds=0.), 0.)]):
+                [(camera_definition[0][1], timedelta(seconds=delta), roll_offset_est+roll_offset_init), (camera_definition[1][1], timedelta(seconds=0.), 0.)]):
             cam_dat = np.array([[el["date"], el["angle"]] for el in sync_dict[cam]])
             # if forced_offset is None:
             #     forced_offset = -cam_dat[0, 1]
@@ -121,8 +130,10 @@ def synchronization_aruco_rotation(
             sig_list.append(imagepipe.Signal(cam_dat[:, 0] + _delta, continuous_angles, label="{}".format(cam),
                                              color=["k--.", "c-o"][indx]))
         delta_init = amplitude_Slider_DeltaTime(sync_dict)
-        delay, roll_offset = signalplotshift(sig_list, init_delta=delta_init)
-    cost_dict = buildCostDico(sync_dict, optionSolver, init_Delta=delay, roll_offset=roll_offset)
+        delay, roll_offset_manual = signalplotshift(sig_list, init_delta=delta_init)
+    else:
+        roll_offset_manual = 0
+    cost_dict = buildCostDico(sync_dict, optionSolver, init_Delta=delay, roll_offset=roll_offset_init+roll_offset_est+roll_offset_manual)
     return cost_dict
 
 def amplitude_Slider_DeltaTime(sync_dict):
