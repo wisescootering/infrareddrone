@@ -56,6 +56,7 @@ def cached_tif(path):
 
 def load_dng(path, template="DJI_neutral.pp3"):
     out_file = cached_tif(path)
+    # assert osp.isfile(RAWTHERAPEEPATH), "RAWTHERAPEE NOT FOUND"
     cmd = [
         RAWTHERAPEEPATH,
         "-t", "-o", out_file,
@@ -66,6 +67,7 @@ def load_dng(path, template="DJI_neutral.pp3"):
         subprocess.call(cmd)
     else:
         logging.info("DNG already processed by RAW THERAPEE {}".format(path))
+    assert osp.isfile(out_file), f"DNG file not converted! {out_file}"
     return load_tif(out_file), out_file
 
 
@@ -415,7 +417,10 @@ class Image:
                     mkdir(conv_dir)
                 dng_file = osp.join(conv_dir, osp.basename(self.path).replace(".RAW", ".dng"))
                 if not osp.isfile(dng_file):
-                    subprocess.call([sjcam_converter, "-o", conv_dir, self.path])
+                    # assert osp.isfile(sjcam_converter), f"No SJCam converter {sjcam_converter}"
+                    assert osp.isfile(self.path), f"No input raw file {self.path}"
+                    subprocess.call([sjcam_converter, "-o", conv_dir, osp.abspath(self.path)])
+                assert osp.isfile(dng_file), "RAW file not converted into DNG!"
                 rawimg, proxypth = load_dng(dng_file, template="SJCAM.pp3")
                 self.proxy = [dng_file, proxypth]
                 bp_sjcam = 0.255

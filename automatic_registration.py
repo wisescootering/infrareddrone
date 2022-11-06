@@ -480,8 +480,8 @@ if __name__ == "__main__":
     if args.images is None:
         import utils.utils_IRdrone as IRd
         im_pair = []
-        im_pair.append(IRd.loadFileGUI(mute=False, title="Open NIR file (.raw)"))
-        im_pair.append(IRd.loadFileGUI(mute=False, title="Open VISIBLE file (.dng)"))
+        im_pair.append(IRd.loadFileGUI(mute=False, title="Open DRONE VISIBLE file (.dng)"))
+        im_pair.append(IRd.loadFileGUI(mute=False, title="Open INFRARED NIR file (.raw)"))
         if args.outdir is None:
             args.outdir = IRd.loadFolderGUI(mute=False, title="Where do you want to save the images?")
     else:
