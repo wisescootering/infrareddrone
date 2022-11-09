@@ -55,7 +55,7 @@ Note:
 ------------
 *For practical reasons*, only **windows is supported** as of now... For anything else please use the docker version!
 * install [Anaconda](https://www.anaconda.com/products/individual) with all default options. [Anaconda for windows, python 3.9](https://repo.anaconda.com/archive/Anaconda3-2021.11-Windows-x86_64.exe)
-* [install.bat](install.bat) will set up the right python environment for you. 
+* [install.bat](/bat_helpers/install.bat) will set up the right python environment for you. 
 * you have to install [raw therapee](https://www.rawtherapee.com) software at the default windows location.
 * Download our sample folder [FLY_TEST](https://drive.google.com/drive/folders/1khi0WdWyZ6H7Z7Lc5Q_i-Mm0Xq2sgpd1?usp=sharing)
 * To use ODM ([open drone map](https://opendronemap.org/)), install docker and make sure you have it running correctly
@@ -118,14 +118,14 @@ Note:
     * 📁`Synchro` folder where you put all picture from the synchronization phase
     * 📝 `config.json`
 * 2/ ❓ Configuration file can be changed (modify json or excel). *folder names can be changed for instance, if you're interested looking at the "Configuration" section*.
-* 3/ ⏰ Double click on `synchro.bat` and select the 📁 `Synchro` folder. 
+* 3/ ⏰ Double click on [`bat_helpers/synchro.bat`](/bat_helpers/synchro.bat) and select the 📁 `Synchro` folder. 
   * This will open a graph, please make sure that the black and orange curves overlap correctly. Then you can close the graph.
   * *This will generate a `syncho.npy` binary file  in the `Synchro` folder ... which you will re-use as a configuration parameter. Don't worry, if you re-use the sample example configuration and folder naming, you won't have to change anything.*
 
 ![synchronization validation](./illustrations/synchro.png)
 
 
-* 4/ ⏯️ Now you're ready to process your images. Double click on `run.bat` and select the configuration `config.json` file. 
+* 4/ ⏯️ Now you're ready to process your images. Double click on [`bat_helpers/run.bat`](/bat_helpers/run.bat) and select the configuration `config.json` file. 
 *Note .json or .xlsx will do the same.*
 * 5/ 📈 Check the altitude profile displayed (internet connection is needed here).
 
@@ -175,7 +175,7 @@ Please refer to the following tutorial (in french) on how to create [vegetation 
 *For instance, creating a map is possible in Pix4DField in case you own a license (I used the Trial version which is available for 15days)*
 
 * When launching Pix4DFields, the DJI camera won't be supported by default. You need to import a [custom camera file](https://support.pix4d.com/hc/en-us/articles/360035481811-What-to-do-when-a-camera-is-not-supported-in-Pix4Dfields).
-* Luckily, we created one for the DJI Mavic Air 2, see [Pix4DFields_custom_camera](Pix4DFields_custom_camera)
+* Luckily, we created one for the DJI Mavic Air 2, see [Pix4DFields_custom_camera](/thirdparty/Pix4DFields_custom_camera)
 
 
 ![Stitching NIR images in Pix 4D fields](./illustrations/pix_4dfields.png)
@@ -225,7 +225,7 @@ If you want to change the configuration, you have 2 options
   "nir_timelapse": 3.0
 }
 ```
-* **`synchro` field  links to the synchronization file obtained when running `synchro.bat` previously**
+* **`synchro` field  links to the synchronization file obtained when running `bat_helpers/synchro.bat` previously**
 * You can change the `output` folder here. 
 * glob regexp use are suggested in `visible` or `nir` keys to search the images. *Please not that this way you can use 2 different folders for NIR and visible images.*
 * OPTIONAL : 
@@ -241,7 +241,7 @@ If you want to change the configuration, you have 2 options
 
 
 ### Link with synchro.bat is made automatically 
-* Double click on [synchro.bat](synchro.bat). *(Advanced users can use CLI obviously in case of other images format)* 
+* Double click on [`bat_helpers/synchro.bat](/bat_helpers/synchro.bat). *(Advanced users can use CLI obviously in case of other images format)* 
 * Unless you want to do manual manipulations, do not paste the delay result to your configuration excel in  `cameraIR` / `deltatime` . You can simply close the window, the program saved a synchro.npy file in the Synchro folder!
 
 
@@ -271,11 +271,11 @@ for instance, you have to copy/paste into the excel
   * Rotating the drone above the static chart: *more complicated to manipulate, not recommended* [description](https://drive.google.com/drive/folders/1Uk-eWBwteD2reOCdT0kngCWgcddz4C5s?usp=sharing) is available here.
 * Sample synchro data can be downloaded from [here](https://drive.google.com/drive/folders/10SCdV_wb57L6ODKlqpWORkE1B0559aUL?usp=sharing) 
 * Copy the selected synchronization images into a "Synchro" folder -> visible & NIR images (expected .RAW and .DNG files by default).
-* Double click on [synchro.bat](synchro.bat). *(Advanced users can use CLI obviously in case of other images format)
+* Double click on [bat_helpers/synchro.bat](/bat_helpers/synchro.bat). *(Advanced users can use CLI obviously in case of other images format)
 
 
 ## Alignment and Fusion
-* Data can be processed by double cliking on `run.bat`. This will use [run.py](`run.py`) to select a given config.json or excel file.
+* Data can be processed by double cliking on [`bat_helpers/run.bat`](/bat_helpers/run.bat). This will use [run.py](`run.py`) to select a given config.json or excel file.
 * Advanced users can also use CLI (command line interface) to process the batch of images. Use `--config` option to 
 * CLI users can register pairs of images [automatic_registration.py](automatic_registration.py) 
 
@@ -360,70 +360,10 @@ There's still a way to save your images.
 -------------------------
 With this project comes a few useful tool, especially the interactive image processing GUI which makes complex pipelines easily tunable.
 
-## Demo content
-Run [demo/demo.py](demo/demo.py) to test the image processing features.
-
-### I/O management
-* [irdrone.process](irdrone/process.py) contains helpers
-  * load images from disk
-  * compare images in a side by side or grid fashion
-  
-```
-import irdrone.process as pr
-import irdrone.utils   as ut
-pr.show(
-    [
-        [(ut.testimage(xsize=200, ysize=200, sat=sat ), "color rectangle %.1f"%sat) for sat in [0.1, 0.5]],
-        [(ut.testimage(xsize=300, ysize=200, sat=sat), "wide %.1f"%sat) for sat in [0.3, 0.5, 1.]]
-    ],
-    suptitle="Comparison grid"
-)
-```
-
 
 ## 🧱 Image processing pipeline
 
-[irdrone.imagepipe.Imagepipe](irdrone/imagepipe.py) class is designed to build a simple image processing pipeline
-* multiple inputs support
-* configured through parameters which can be tuned with GUI sliders
-* use the `.gui()` method to launch interactive tuning
-* when the GUI is launched, you can use 
-    * `S` to save the current image at full resolution
-    * `I` to print the current tuning parameters values
-    * `Q` to close the window
-    * `R` to reset the parameters
-
-Simple language is used to describe the sequence of processings.
-### Example
-```
-imgl = [utils.testimage(xsize=720, ysize=720),]
-ipBasicLinPipe = imagepipe.ImagePipe(
-    imgl,
-    sliders=[imagepipe.BRIGHTNESS, imagepipe.WB, imagepipe.GAMMA],
-).gui()
-```
-
-Will create an image processing pipeline where first, 
-* all channels can first be amplified through the brightness slider.
-* then white balance can be applied (separate multiplications on blue and red channels)
-* and finally a gamma tone curve is applied
-
-
-![Single image interactive pipe with sliders](./illustrations/interactive_pipe.png)
-
-
-### Multi-image processing
-```
-TRANSLATION2 = Translation("T_IMAGE2", slidersName=["TX im2", "TY im2"], inputs=[2,], outputs=[2,], vrange=(-50.,50.,0.))
-imgl = [utils.testimage(xsize=720, ysize=720, sat=sat) for sat in [1., 0.]]
-ip = ImagePipe(imgl, sliders=[WB, TRANSLATION2, ALPHA, GAMMA]).gui()
-```
-* `imagelist[0]` is used for recursive processing.
-* Take a careful look at the instanciation of `TRANSLATION2` , `inputs=[2,], outputs=[2,]` are given in order to select 
-  which images to apply the processingBlock to and where to redirect the output.
-  
-
-![Multi image interactive pipe with sliders](./illustrations/interactive_pipe_multiimages.png)
+[interactive.imagepipe.Imagepipe](interactive/imagepipe.py) class is designed to build a simple image processing pipeline with interactive sliders. If you're interested, refer to the [documentation](/interactive/readme.md)
 
 
 ----------------------------------
@@ -432,56 +372,9 @@ ip = ImagePipe(imgl, sliders=[WB, TRANSLATION2, ALPHA, GAMMA]).gui()
   * DJI RAW
   * SJcam M20 RAW
 
+Refer to the calibration documents 
+[Details on calibration procedure](/calibration/readme.md) & extra [ documents](https://drive.google.com/drive/folders/1wm4mNICmo9koOwB6QRJn871etPJu7mk0?usp=sharing)
 
-## Content
-2 cameras are used:
-* drone visible camera
-* IR camera
-
-`Camera type`: type is located in th exif, open file details and search camera model
-`Timelapse`: provides the interval between each photo in seconds
-`deltatime`: provides an offset between the two cameras timestamps.
-In the sample folder, you'll find image examples, deltatime is ~ 15 seconds.
-
-
-
-------
-* **Refer to the [calibration documents](https://drive.google.com/drive/folders/1wm4mNICmo9koOwB6QRJn871etPJu7mk0?usp=sharing)**
-
-
-## 📽️ Supporting other cameras
-Here are a few words on how to re-calibrate new cameras.  Beware that the code won't run easily for new formats as there may be a bunch of things to modify to support new cameras/drones. Feel free to reach out to balthazarneveu@gmail.com in case you're interested in using this project.
-
-### 📐 Geometric calibrations
-* when using a new camera:
-  * to get a planar checkerboard, either print or display on your computer screen  [Generator "8x11"](https://calib.io/pages/camera-calibration-pattern-generator)
-  * shoot about 30 images of the checkerboard in various camera orientations (refer to [openCV Zhang's camera calibration](https://docs.opencv.org/master/dc/dbb/tutorial_py_calibration.html)
-  * put all images in `calibration/mynewcamera`
-  * `calibnewcam = irdrone.utils.cameracalibration(camera="mynewcamera", checkerboardsize=(10,7))` will take care of camera calibration
-* camera calibration is located  [irdrone.calibration](irdrone/cameracalibration.py)  for more details to calibrate your new camera
-
-
-### 🌑 Shading calibration
-The [shading calibration script](irdrone/cameravignetting.py) is not publicly supported.
-A white chart shall be shot to calibrate lens shading (luminance and color).
-
-![Adjust the knobs manually to fit the profile](./illustrations/shading_profiles_fit.png).
-
-To calibrate the radial shading of a fisheye, we use polar projections (on the left) and extract radial profiles.  ![](./illustrations/shading_profiles.png)
-
-DJI Mavic Air 2 has some color shading (seen as a pink spot in the middle) which can't be fully compensated for. We compensate the slight luminance lens shading though (**on the left, corners aren't darker**).
-![lens shading on DJI](./illustrations/shading_correction.png)
-
-![lens shading correction on SJcam](./illustrations/shading_correction_sjcam.png)
-
-
--------------------------
-## 🧪 Testing
-
--------------------------
-```pytest test.py```
-
-coverage is very weak. code quality has a lot of discrepancies. sorry about that, if you're interested in contributing, making a linux version or whatever you'd like, feel free to reach out in the issues section.
 
 -------------------------
 # 📜 Release note
@@ -494,14 +387,25 @@ coverage is very weak. code quality has a lot of discrepancies. sorry about that
 
 ## [v1.1](https://github.com/wisescootering/infrareddrone/milestone/1)
 * March 18, 2022
-* Issue #1 Use config.json or excel
-* Issue #2 Crop outputs with a few pixels to avoid black/red borders 
-* Issue #3 onfiguration re-uses synchro.npy (pickle) so there are is no need to copy paste values from synchronization phase.
+* Use config.json or excel ([#1](https://github.com/wisescootering/infrareddrone/issues/1))
+* Crop outputs with a few pixels to avoid black/red borders ([#2](https://github.com/wisescootering/infrareddrone/issues/2))
+* configuration re-uses synchro.npy (pickle) so there are is no need to copy paste values from synchronization phase. ([#3](https://github.com/wisescootering/infrareddrone/issues/3))
 
 
 ## [v1.2](https://github.com/wisescootering/infrareddrone/milestone/1)
 * August 28, 2022
 * Docker support (linux or basically any platform)
-* Issue #10 Output data compatibility with Open Drone Map (document, bat helpers to run ODM)
+* Feature #10 Output data compatibility with Open Drone Map (document, bat helpers to run ODM)
 * Remove intermediate TIF to save storage using `--clean-proxy` option.
 * Bugs fixed: #19 #20 features #10 #16 #13 #12
+
+
+## [v1.3](https://github.com/wisescootering/infrareddrone/milestone/3)
+* October 21, 2022
+* Multispectral TIF support for ODM ([#25](https://github.com/wisescootering/infrareddrone/issues/25)) 
+* Possibility to visualize VIR jpg (or other by using the `--trace` argument) still allowing the redo.bat manual to reprocess & generate the multispectral tif ([#30](https://github.com/wisescootering/infrareddrone/issues/30))
+* Reduce computation by selecting less frames for processing: `--selection` option in `run.py` supports `best-synchro` & `best-mapping` & `all` ([#29](https://github.com/wisescootering/infrareddrone/issues/29))
+* Possibility to run alignment on pairs using file dialog ([#21](https://github.com/wisescootering/infrareddrone/issues/21))
+* Issues closed: [#14](https://github.com/wisescootering/infrareddrone/issues/14) [#18](https://github.com/wisescootering/infrareddrone/issues/18) [#22](https://github.com/wisescootering/infrareddrone/issues/22) [#26](https://github.com/wisescootering/infrareddrone/issues/26)
+
+

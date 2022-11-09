@@ -9,11 +9,10 @@ from irdrone.semi_auto_registration import manual_warp, ManualAlignment, Transpa
 from skimage import transform
 import os
 osp = os.path
-from synchronization.synchronization import synchronize_data
 import time
 from datetime import datetime, timedelta
 from matplotlib.colors import LinearSegmentedColormap
-import irdrone.imagepipe as ipipe
+import interactive.imagepipe as ipipe
 import shutil
 import cv2
 import argparse
@@ -308,20 +307,6 @@ def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extens
     # return ref_full, mov_w_final_yowo_full
 
 
-def process_raw_folder(folder, delta=timedelta(seconds=166.5), manual=False, debug=False,
-                       extension_vis="*.DNG", extension_nir="*.RAW", extension=1.4,
-                       ):
-    """NIR/VIS image alignment and fusion
-    - using a simple synchronization mechanism based on exif and camera deltas
-    - camera time delta
-    """
-    sync_pairs = synchronize_data(folder, replace_dji=None, delta=delta,
-                                  extension_vis=extension_vis, extension_nir=extension_nir, debug=debug)
-    # replace_dji=(".DNG", "_PL4_DIST.tif")
-    cals = dict(refcalib=ut.cameracalibration(camera="DJI_RAW"), movingcalib=ut.cameracalibration(camera="M20_RAW"))
-    out_dir = osp.join(folder, "_RESULTS_delta={:.1f}s".format(delta.total_seconds()))
-    process_raw_pairs(sync_pairs, cals, debug_folder=None, out_dir=out_dir, manual=manual,
-                      debug=debug, extension=extension)
 
 def write_manual_bat_redo(vis_pth, nir_pth_list, debug_bat_pth, out_dir=None, debug=False, async_suffix=None, multispectral_folder=None):
     if out_dir is None:
@@ -488,39 +473,35 @@ if __name__ == "__main__":
     parser.add_argument('--manual', action="store_true", help='manual alignement')
     parser.add_argument('--outdir', help='output directory')
     parser.add_argument('--debug', action="store_true", help='full debug traces')
-    parser.add_argument('--folder', help='folder containing images for visible and NIR')
     parser.add_argument('--delay', help='synchronization (in seconds)', default=0.)
     parser.add_argument('--multispectral-folder', help='multispectral TIF folder for ODM', default=None)
     args = parser.parse_args()
     extension = 1.6
     if args.images is None:
-        if args.folder is None:
-            logging.error("Please provide image pair through --images  or a full folder to process through --folder")
-        if args.delay == 0.:
-            logging.warning("WARNING: assuming synchronized data, " +
-                            "please make sure you have no delay between image pairs")
-            delta = None
-        else:
-            delta=timedelta(seconds=float(args.delay))
-        process_raw_folder(folder=args.folder, manual=args.manual, debug=args.debug, delta=delta, extension=extension)
+        import utils.utils_IRdrone as IRd
+        im_pair = []
+        im_pair.append(IRd.loadFileGUI(mute=False, title="Open DRONE VISIBLE file (.dng)"))
+        im_pair.append(IRd.loadFileGUI(mute=False, title="Open INFRARED NIR file (.raw)"))
+        if args.outdir is None:
+            args.outdir = IRd.loadFolderGUI(mute=False, title="Where do you want to save the images?")
     else:
         im_pair = args.images
-        if im_pair[0].lower().endswith(".raw"):
-            im_pair = im_pair[::-1]
-        assert im_pair[0].lower().endswith(".tif") or im_pair[0].lower().endswith(".dng"), "Drone image first, SJcam image second"
-        im_pairs = [im_pair]
-        if args.outdir is not None:
-            out_dir = args.outdir
-        else:
-            out_dir = osp.dirname(im_pairs[0][0])
-        process_raw_pairs(
-            im_pairs,
-            debug_folder=out_dir,
-            out_dir=out_dir,
-            manual=args.manual,
-            debug=args.debug,
-            extension=extension,
-            crop=CROP,
-            multispectral_folder=args.multispectral_folder
-        )
+    if im_pair[0].lower().endswith(".raw"):
+        im_pair = im_pair[::-1]
+    assert im_pair[0].lower().endswith(".tif") or im_pair[0].lower().endswith(".dng"), "Drone image first, SJcam image second"
+    im_pairs = [im_pair]
+    if args.outdir is not None:
+        out_dir = args.outdir
+    else:
+        out_dir = osp.dirname(im_pairs[0][0])
+    process_raw_pairs(
+        im_pairs,
+        debug_folder=out_dir,
+        out_dir=out_dir,
+        manual=args.manual,
+        debug=args.debug,
+        extension=extension,
+        crop=CROP,
+        multispectral_folder=args.multispectral_folder
+    )
 

@@ -11,14 +11,15 @@ import irdrone.process as pr
 from aruco_helper import aruco_detection
 import os
 from datetime import timedelta
-from irdrone import imagepipe
+from interactive import imagepipe
 import copy
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 from scipy.optimize import minimize
 from irdrone.utils import Style
 import argparse
-
+import traceback
+import logging
 osp = os.path
 
 
@@ -105,23 +106,34 @@ def synchronization_aruco_rotation(
     optionSolver='linear',
     manual=False,
     camera_definition=[("*.RAW", config.NIR_CAMERA), ("*.DNG", config.VIS_CAMERA)],
+    roll_offset=0.
 ):
     delay = None
     forced_offset = None
+    roll_offset_init = roll_offset
+    cost_dict = buildCostDico(sync_dict, optionSolver, init_Delta=delay, roll_offset=roll_offset_init)
+    estimated_roll_diff = np.mean(cost_dict["f_B"]) - np.mean(cost_dict["f_A"])
+    roll_offset_est = 0.
+    if np.abs(estimated_roll_diff) > 270.:
+        # https://github.com/wisescootering/infrareddrone/issues/19
+        logging.warning(f"big roll offset estimated {estimated_roll_diff}°, please consider using --manual in case you're not sure")
+        roll_offset_est = np.round(estimated_roll_diff/360) * 360
     if manual:
         sig_list = []
-        for indx, (cam, _delta, roll_offset) in enumerate(
-                [(camera_definition[0][1], timedelta(seconds=delta), 0.), (camera_definition[1][1], timedelta(seconds=0.), 0.)]):
+        for indx, (cam, _delta, _roll_offset) in enumerate(
+                [(camera_definition[0][1], timedelta(seconds=delta), roll_offset_est+roll_offset_init), (camera_definition[1][1], timedelta(seconds=0.), 0.)]):
             cam_dat = np.array([[el["date"], el["angle"]] for el in sync_dict[cam]])
             # if forced_offset is None:
             #     forced_offset = -cam_dat[0, 1]
             # https://github.com/wisescootering/infrareddrone/issues/19
-            continuous_angles = continuify_angles_vectorized(cam_dat[:, 1], forced_offset=forced_offset) + roll_offset
+            continuous_angles = continuify_angles_vectorized(cam_dat[:, 1], forced_offset=forced_offset) + _roll_offset
             sig_list.append(imagepipe.Signal(cam_dat[:, 0] + _delta, continuous_angles, label="{}".format(cam),
                                              color=["k--.", "c-o"][indx]))
         delta_init = amplitude_Slider_DeltaTime(sync_dict)
-        delay = signalplotshift(sig_list, init_delta=delta_init)
-    cost_dict = buildCostDico(sync_dict, optionSolver, init_Delta=delay)
+        delay, roll_offset_manual = signalplotshift(sig_list, init_delta=delta_init)
+    else:
+        roll_offset_manual = 0
+    cost_dict = buildCostDico(sync_dict, optionSolver, init_Delta=delay, roll_offset=roll_offset_init+roll_offset_est+roll_offset_manual)
     return cost_dict
 
 def amplitude_Slider_DeltaTime(sync_dict):
@@ -133,17 +145,20 @@ def amplitude_Slider_DeltaTime(sync_dict):
 
 def signalplotshift(siglist, init_delta=0.):
     class Shift(imagepipe.ProcessBlock):
-        def apply(self, sig, shift, **kwargs):
+        def apply(self, sig, shift, offset, **kwargs):
             out = copy.deepcopy(sig)
             out.x = sig.x + timedelta(seconds=int(shift))
+            out.y += offset
             out.color = "orange"
             out.label = sig.label + " delay: {:.1f}s".format(shift)
             return out
 
     delay_block = Shift(
-        "Delay",
+        "Synchronization",
+        slidersName=["Delay", "Roll offset"],
         vrange=[
             (min(0, init_delta), max(0, init_delta), 0.),
+            (-360, 360, 0.)
         ],
         mode=[imagepipe.ProcessBlock.SIGNAL, imagepipe.ProcessBlock.SIGNAL]
     )
@@ -154,11 +169,12 @@ def signalplotshift(siglist, init_delta=0.):
     ip.gui()
 
     delay = ip.sliders[0].values[0]
+    roll_offset = ip.sliders[0].values[1]
 
-    return delay
+    return delay, roll_offset
 
 
-def buildCostDico(sync_dict, optionSolver, init_Delta=None):
+def buildCostDico(sync_dict, optionSolver, init_Delta=None, roll_offset=0):
     if init_Delta == None or init_Delta == 0.0:
         # estimate time shift  B to A.
         estimDelta= (sync_dict['M20_RAW'][0]['date'] - sync_dict['DJI_RAW'][0]['date']).total_seconds()
@@ -177,7 +193,7 @@ def buildCostDico(sync_dict, optionSolver, init_Delta=None):
     forced_offset = 0.
     f_A = continuify_angles_vectorized(dataVIS[:, 1], forced_offset=forced_offset)
     f_B = continuify_angles_vectorized(dataNIR[:, 1], forced_offset=forced_offset)
-    cost_dict = {'t_A': t_A, 'f_A': f_A, 't_B': t_B, 'f_B': f_B, 'solverOption': optionSolver, 'timeShift': estimDelta}
+    cost_dict = {'t_A': t_A, 'f_A': f_A+roll_offset, 't_B': t_B, 'f_B': f_B, 'solverOption': optionSolver, 'timeShift': estimDelta}
 
     return cost_dict
 
@@ -226,21 +242,6 @@ def cost_function(shift_x, cost_dic):
     # print('Time shift = ', shift_x, '  cost   = ', cost)
     return cost
 
-
-def cost_function_1(shift_x, cost_dic):
-    # construct interpolator of f_A and f_B
-    f_A = interpol_func(cost_dic['t_A'], cost_dic['f_A'], option=cost_dic['solverOption'])
-    f_B = interpol_func(cost_dic['t_B'], cost_dic['f_B'], option=cost_dic['solverOption'])
-    cost = 0.
-    for i in range(len(cost_dic['t_A'])):
-        if cost_dic['x_B'][0] <= cost_dic['t_A'][i] + shift_x <= cost_dic['x_B'][-1]:
-            cost = cost + (f_A(cost_dic['t_A'][i]) - f_B(cost_dic['t_A'][i] + shift_x)) ** 2
-        elif cost_dic['x_B'][0] > cost_dic['t_A'][i] + shift_x:
-            cost = cost + (f_A(cost_dic['t_A'][i]) - f_B(cost_dic['t_B'][0])) ** 2
-        else:
-            cost = cost + (f_A(cost_dic['t_A'][i]) - f_B(cost_dic['t_B'][-1])) ** 2
-    cost = np.sqrt(cost) / len(cost_dic['t_A'])
-    return cost
 
 
 def fitPlot(data, res, camera_definition, extra_title=""):
@@ -379,6 +380,7 @@ if __name__ == "__main__":
             TryAgain = ReDo
         except Exception as exc:
             print(exc)
+            traceback.print_exc()
             print(Style.RED + 'Please be more precise !'+Style.RESET)
             TryAgain = True
             

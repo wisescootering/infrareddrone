@@ -18,7 +18,7 @@ import datetime
 from pathlib import Path
 import logging
 from os import mkdir
-import Code_Python.irdrone.utils.utils_IRdrone as IRd
+import utils.utils_IRdrone as IRd
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
 from irdrone.utils import Style, conversionGPSdms2dd, get_polar_shading_map, contrast_stretching
 import config as cf
@@ -30,7 +30,7 @@ import json
 if os.name == 'nt':
     RAWTHERAPEEPATH = r"C:\Program Files\RawTherapee\5.8\rawtherapee-cli.exe"
     assert osp.exists(RAWTHERAPEEPATH), "Please install raw therapee first http://www.rawtherapee.com/downloads/5.8/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
-    EXIFTOOLPATH = osp.join(osp.dirname(__file__), "..", "exiftool", "exiftool.exe")
+    EXIFTOOLPATH = osp.join(osp.dirname(__file__), "..", "thirdparty", "exiftool", "exiftool.exe")
     assert osp.exists(EXIFTOOLPATH), "Requires exif tool at {} from https://exiftool.org/".format(EXIFTOOLPATH)
 
 else:
@@ -56,16 +56,18 @@ def cached_tif(path):
 
 def load_dng(path, template="DJI_neutral.pp3"):
     out_file = cached_tif(path)
+    # assert osp.isfile(RAWTHERAPEEPATH), "RAWTHERAPEE NOT FOUND"
     cmd = [
         RAWTHERAPEEPATH,
         "-t", "-o", out_file,
-        "-p", osp.join(osp.dirname(__file__), template),
+        "-p", osp.join(osp.dirname(__file__), "..", "thirdparty", "rawtherapee", template),
         "-c", path
     ]
     if not osp.isfile(out_file):
         subprocess.call(cmd)
     else:
         logging.info("DNG already processed by RAW THERAPEE {}".format(path))
+    assert osp.isfile(out_file), f"DNG file not converted! {out_file}"
     return load_tif(out_file), out_file
 
 
@@ -91,7 +93,7 @@ def get_gimbal_info(pth: Path):
 
 def infoCameraIRdrone():
     try:
-        odm_camera_conf = Path(__file__).parent / ".." / "odm_data" / "irdrone_multispectral.json"
+        odm_camera_conf = Path(__file__).parent / ".." / "thirdparty" / "odm_data" / "irdrone_multispectral.json"
         file = open(odm_camera_conf, 'r')
         dicCameraIRdrone = json.load(file)
         for inpkey in dicCameraIRdrone.keys():
@@ -402,20 +404,23 @@ class Image:
 # -------------------------------------------------------------------------------------------------------- SJCAM M20 RAW
             elif str.lower(osp.basename(self.path)).endswith("raw"):
                 if os.name == "nt":
-                    sjcam_converter = osp.join(osp.dirname(osp.abspath(__file__)), "..", "sjcam_raw2dng", "sjcam_raw2dng.exe")
+                    sjcam_converter = osp.join(osp.dirname(osp.abspath(__file__)), "..", "thirdparty", "sjcam_raw2dng", "sjcam_raw2dng.exe")
                     sjconverter_link = "https://github.com/yanburman/sjcam_raw2dng/releases/tag/v1.2.0"
                     assert osp.isfile(sjcam_converter), "{} does not exist - please download from {}".format(
                         sjcam_converter,
                         sjconverter_link
                     )
                 else:
-                    sjcam_converter = osp.join(osp.dirname(osp.abspath(__file__)), "..", "sjcam_raw2dng_linux", "sjcam_raw2dng")
+                    sjcam_converter = osp.join(osp.dirname(osp.abspath(__file__)), "..", "thirdparty", "sjcam_raw2dng_linux", "sjcam_raw2dng")
                 conv_dir = self.conv_dir
                 if not osp.isdir(conv_dir):
                     mkdir(conv_dir)
                 dng_file = osp.join(conv_dir, osp.basename(self.path).replace(".RAW", ".dng"))
                 if not osp.isfile(dng_file):
-                    subprocess.call([sjcam_converter, "-o", conv_dir, self.path])
+                    # assert osp.isfile(sjcam_converter), f"No SJCam converter {sjcam_converter}"
+                    assert osp.isfile(self.path), f"No input raw file {self.path}"
+                    subprocess.call([sjcam_converter, "-o", conv_dir, osp.abspath(self.path)])
+                assert osp.isfile(dng_file), "RAW file not converted into DNG!"
                 rawimg, proxypth = load_dng(dng_file, template="SJCAM.pp3")
                 self.proxy = [dng_file, proxypth]
                 bp_sjcam = 0.255

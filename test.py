@@ -4,7 +4,7 @@ import irdrone.utils as utils
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-import irdrone.imagepipe as imagepipe
+import interactive.imagepipe as imagepipe
 DISPLAY = False
 
 
