@@ -1339,7 +1339,8 @@ def theoreticalIrToVi(listPts, timelapse_Vis, offset=None):
     x = [listPts[n].x_2 for n in range(len(listPts))]
     theoreticalPitch = theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, axe=2)
     #   theoretical  Roll
-    theoreticalRoll = rollDeviation(listPts, timelapse_Vis)
+    # theoreticalRoll = rollDeviation(listPts, timelapse_Vis)
+    theoreticalRoll = [0. for _ in range(len(listPts))] # Gimbal to IR camera prediction is totally wrong... force 0
 
     for i in range(len(listPts)):
         try:
