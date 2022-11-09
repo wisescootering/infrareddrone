@@ -158,7 +158,7 @@ def xmp_band_metadata(pth_src, band_index=1):
         ("Blue", 475, 0.2613),
         ("NIR", 840, 0.169)
     ][band_index-1]
-    xmp_conf = osp.join(osp.dirname(__file__), "..", "exiftool", "xmp.config")
+    xmp_conf = osp.join(osp.dirname(__file__), "..", "thirdparty", "exiftool", "xmp.config")
     assert osp.exists(xmp_conf)
     cmd = [
         EXIFTOOLPATH,  "-config",  xmp_conf,
