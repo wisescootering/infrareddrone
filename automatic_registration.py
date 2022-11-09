@@ -405,7 +405,8 @@ def process_raw_pairs(
         if listPts is not None:
             yaw_init = listPts[index_pair].yawIR2VI
             pitch_init = listPts[index_pair].pitchIR2VI
-            logging.info(f"INIT ANGLES FROM EXIF: yaw {yaw_init}, pitch {pitch_init}")
+            roll_init = listPts[index_pair].rollIR2VI
+            logging.warning(f"INIT ANGLES FROM EXIF: yaw {yaw_init}, pitch {pitch_init}, roll {roll_init}")
         ref_full, aligned_full, align_full_global, motion_model = align_raw(
             vis_pth, nir_pth, cals,
             debug_dir=debug_dir, debug=debug,
