@@ -1372,7 +1372,6 @@ def theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, axe=0):
     calculation of the pitch.
     """
     theoreticalAngle = []
-    CNIRCVIS_0 = 0.046
     for i in range(len(listPts)):
         alpha, dt = interpolationAngle(listPts, angle, i, timelapse_Vis)
         Cvi_t_Cvi_tk = interpolationCameraCenterVis(x, i, dt, timelapse_Vis)  # Algebraic !!!
