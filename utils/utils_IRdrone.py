@@ -42,7 +42,6 @@ import utils.angles_analyzis as analys
 import utils.utils_IRdrone_Class as IRcl
 import config as cf
 
-
 # -----   Convertisseurs de dates   Exif<->Python  Excel->Python    ------
 def dateExcelString2Py(dateTimeOriginal):
     """
@@ -1381,7 +1380,7 @@ def theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, axe=0):
             baseline = Cvi_t_Cvi_tk
         else:
             thetaVis = listPts[i].pitchGimbal + 90.  # Pitch Gimbal <=> Pitch Camera VIS
-            baseline = Cvi_t_Cvi_tk + CNIRCVIS_0
+            baseline = Cvi_t_Cvi_tk + cf.CNIRCVIS_0
 
         anglePhi = np.rad2deg(np.arctan(baseline / H + np.tan(np.deg2rad(thetaVis))))
         anglePsi = anglePhi - alpha
