@@ -11,6 +11,14 @@ from copy import deepcopy
 
 CONTROLWINDOW = "Press S to save / I to display tuning parameters / Q to quit"
 
+class FakeSlider():
+    def __init__(self, val):
+        self.init_val = val
+        self.val = val
+    def reset(self):
+        self.val = 0 #self.init_val
+    def on_changed(self, update_fn):
+        pass
 
 class ProcessBlock:
     """
@@ -220,11 +228,17 @@ class ImagePipe:
     Matplolib backend by default has nice tuning slider values
     It is possible to use the ImagePipe in a headless mode to process images without GUI ... use the save method.
     """
-    def __init__(self, imlist, rescale=None, sliders=[ProcessBlock("identity", slidersName=[])], winname=CONTROLWINDOW, backendcv=False, floatpipe=False, **params):
+    def __init__(self, imlist, rescale=None, sliders=[ProcessBlock("identity", slidersName=[])], winname=CONTROLWINDOW, backendcv=False, floatpipe=False, jupyter=None, **params):
         """
         :param imlist: list of RGB (not cv2 fashioned) arrays
         """
         self.backendcv = backendcv
+        if jupyter is None:
+            try:
+                __IPYTHON__
+                self.jupyter = True
+            except:
+                self.jupyter = False
         self.winname = winname
         self.imlist = imlist
         self.sliders = sliders
@@ -326,6 +340,10 @@ class ImagePipe:
                     if self.backendcv:
                         defaultval = int((dfval - pa.vrange[idx][0]) / (pa.vrange[idx][1] - pa.vrange[idx][0]) * sliderslength)
                         cv2.createTrackbar(paName, self.winname, defaultval, int(sliderslength), nothing)
+                    elif self.jupyter:
+                        defaultval = dfval
+                        self.slidersplot.append(FakeSlider(defaultval))
+                        u += 1
                     else:
                         defaultval = dfval
                         axcolor = 'lightgoldenrodyellow'
@@ -363,11 +381,13 @@ class ImagePipe:
 
     def update(self, val):
         u = 0
+        
         for pa in self.sliders:
             if pa is None:
                 continue
             for idx, paName in enumerate(pa.slidersName):
-                pa.values[idx] =self.slidersplot[u].val
+                if not self.jupyter:
+                    pa.values[idx] = self.slidersplot[u].val
                 u+=1
         result = self.engine(self.imglistThumbs, geometricscale=self.geometricscale)
         if self.signalOut:
@@ -397,7 +417,7 @@ class ImagePipe:
             print(self.__repr__())
 
 
-    def gui(self, sliderslength=100.,):
+    def __gui(self, sliderslength=100.):
         """
         Create a cv2 or pyplot GUI
         to interactively visualize the imagePipe when changing tuning sliders for each processBlock
@@ -405,8 +425,9 @@ class ImagePipe:
         if self.backendcv:
             cv2.namedWindow(self.winname)
         else:
-            self.fig, ax = plt.subplots()
-            plt.gcf().canvas.manager.set_window_title(self.winname)
+            self.fig, ax = plt.subplots(figsize=(15, 15))
+            if not self.jupyter:
+                plt.gcf().canvas.manager.set_window_title(self.winname)
             totalSliders = int(np.array([len(pa.slidersName) for pa in self.sliders if pa is not None]).sum())
             # RESIZE ONLY TO ADD SLIDERS IF NECESSARY : USEFUL FOR INPUT PLOTS WITHOUT INTERACTIVE SLIDERS
             if totalSliders > 0: plt.subplots_adjust(left=0. if not self.signalOut else 0.1, bottom=0.4)
@@ -473,9 +494,37 @@ class ImagePipe:
         else:
             for slid in self.slidersplot:
                 slid.on_changed(self.update)
-            self.fig.canvas.mpl_connect('key_press_event', self.press)
+            if not self.jupyter:
+                self.fig.canvas.mpl_connect('key_press_event', self.press)
+                plt.show()
 
-            plt.show()
+    def gui(self):
+        self.__gui()
+        if self.jupyter:
+            from ipywidgets import interact
+            interact(self.__interact_fn, **self.__get_interact_sliders())
+    
+    def __get_interact_sliders(self):
+        from ipywidgets import FloatSlider
+        sliders = {}
+        for idx, pa in enumerate(self.sliders):
+            for idy, paName in enumerate(pa.slidersName):
+                print(paName, pa.vrange)
+                sliders[paName] = FloatSlider(
+                    min=pa.vrange[idy][0], max=pa.vrange[idy][1], step=0.01, value=pa.defaultvalue[idy]
+                )
+        return sliders
+
+    def __interact_fn(self, **kwargs):
+
+        from IPython.display import display
+        for idx, pa in enumerate(self.sliders):
+            for idy, paName in enumerate(pa.slidersName):
+                self.sliders[idx].values[idy] = kwargs[paName]
+                # print(f"UPDATE {paName} SLIDERS {idx} {idy}!, {self.sliders[idx].values}")
+        self.update(1)
+        self.fig.canvas.draw()
+        display(self.fig)
 
     def __repr__(self):
         ret = "\n{\n"
