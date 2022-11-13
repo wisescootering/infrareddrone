@@ -1,8 +1,11 @@
 from skimage import filters, transform
 import numpy as np
+import os.path as osp
+import sys
+sys.path.append(osp.join(osp.dirname(__file__), ".."))
 from irdrone.utils import c2g, g2c
 from numba import jit
-import os.path as osp
+
 import logging
 import irdrone.process as pr
 from registration.constants import LAPLACIAN_ENERGIES, GRAY_SCALE, COLORED, SSD, NTG
@@ -332,6 +335,7 @@ if __name__ == '__main__':
     debug_dir = "_debug_cost_factorize"
     if not osp.isdir(debug_dir):
         mkdir(debug_dir)
+    debug_dir = None
     align_conf = AlignmentConfig(
         mode=[LAPLACIAN_ENERGIES, GRAY_SCALE, COLORED][0],
         dist_mode=[SSD, NTG][1],
