@@ -4,5 +4,6 @@
     "visible": "AerialPhotography/*.DNG",
     "visible_timelapse": 2.0,
     "nir": "AerialPhotography/*.RAW",
-    "nir_timelapse": 3.0
+    "nir_timelapse": 3.0,
+    "offset_angles": [0.0, 1.50, -2.40]
 }

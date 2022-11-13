@@ -166,7 +166,7 @@ if __name__ == "__main__":
     if autoRegistration:
         print(Style.CYAN + '------ Automatic_registration.process_raw_pairs' + Style.RESET)
         automatic_registration.process_raw_pairs(
-                ImgMatchProcess[::1], out_dir=dirNameIRdrone, crop=CROP, listPts=shootingPts ,
+                ImgMatchProcess[::1], out_dir=dirNameIRdrone, crop=CROP, listPts=ptsProcess,
                 option_alti=option_alti, clean_proxy=clean_proxy, multispectral_folder=odm_image_directory,
                 traces=traces
             )
