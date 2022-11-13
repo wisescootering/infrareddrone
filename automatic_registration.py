@@ -112,7 +112,7 @@ def vir(vis_img, nir_img, out_path=None, exif=None, gps=None, image_in=None):
             # pr.Image((vir*255).clip(0, 255).astype(np.uint8)).save(out_path)
 
 
-def user_assisted_manual_alignment(ref, mov, cals):
+def user_assisted_manual_alignment(ref, mov, cals, yaw=0, pitch=0, roll=0):
     ROTATE = "Rotate"
     rotate3d = ManualAlignment(
         ROTATE,
@@ -120,7 +120,7 @@ def user_assisted_manual_alignment(ref, mov, cals):
         inputs=[1, 2],
         outputs=[0],
         vrange=[
-            (-30., 30, 0.), (-30., 30, 0.), (-5., 5, 0.)
+            (-30., 30, yaw), (-30., 30, pitch), (-5., 5, roll)
         ]
     )
     rotate3d.set_movingcalib(cals["movingcalib"])
@@ -244,7 +244,7 @@ def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extens
     logging.warning("{:.2f}s elapsed in loading full resolution RAW".format(ts_end_load - ts_start))
     if motion_model_file is None or not osp.isfile(motion_model_file+".npy"):
         if manual:
-            alignment_params = user_assisted_manual_alignment(ref_full, mov_full, cals)
+            alignment_params = user_assisted_manual_alignment(ref_full, mov_full, cals, init_angles[0], init_angles[1], init_angles[2])
             yaw_main, pitch_main, roll_main = alignment_params["yaw"], alignment_params["pitch"], alignment_params["roll"]
         else:
             yaw_main, pitch_main, roll_main = init_angles
@@ -303,12 +303,14 @@ def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extens
     ts_end = time.perf_counter()
     logging.warning("{:.2f}s elapsed in global and local unique warp".format(ts_end - ts_start_yowo))
     logging.warning("{:.2f}s elapsed in total alignment".format(ts_end - ts_start))
+    full_motion_model["initialization_angles"] = init_angles
+    full_motion_model["initialization"] = {"yaw": init_angles[0], "pitch": init_angles[1], "roll": init_angles[2]}
     return vis_undist_lin, mov_w_linear_local, mov_w_linear_global, full_motion_model
     # return ref_full, mov_w_final_yowo_full
 
 
 
-def write_manual_bat_redo(vis_pth, nir_pth_list, debug_bat_pth, out_dir=None, debug=False, async_suffix=None, multispectral_folder=None):
+def write_manual_bat_redo(vis_pth, nir_pth_list, debug_bat_pth, out_dir=None, debug=False, async_suffix=None, multispectral_folder=None, angles=None):
     if out_dir is None:
         out_dir = osp.abspath(debug_bat_pth.replace(".bat", ""))
     with open(debug_bat_pth, "w") as fi:
@@ -326,6 +328,8 @@ def write_manual_bat_redo(vis_pth, nir_pth_list, debug_bat_pth, out_dir=None, de
             )
             if multispectral_folder is not None:
                 cmd+= "--multispectral-folder "+ "\""+osp.abspath(multispectral_folder)+"\""
+            if angles is not None:
+                cmd += f" --angles {angles[0]:.3f} {angles[1]:.3f} {angles[2]:.3f}"
             cmd+="\n"
             fi.write(cmd)
         fi.write("call deactivate\n")
@@ -338,7 +342,8 @@ def process_raw_pairs(
         crop=None, listPts=None, option_alti='takeoff',
         clean_proxy=False,
         multispectral_folder=None,
-        traces=[VIS, NIR, VIR, NDVI]
+        traces=[VIS, NIR, VIR, NDVI],
+        angles=None
     ):
     # if debug_folder is None:
     #     debug_folder = osp.dirname(sync_pairs[0][0])
@@ -348,6 +353,17 @@ def process_raw_pairs(
         os.mkdir(out_dir)
     motion_model_list = []
     for index_pair, (vis_pth, nir_pth) in enumerate(sync_pairs):
+        if angles is None:
+            yaw_init, pitch_init, roll_init = 0., 0., 0.
+        else:
+            assert len(angles) == 3
+            yaw_init, pitch_init, roll_init = angles
+        if listPts is not None:
+            yaw_init = listPts[index_pair].yawIR2VI
+            pitch_init = listPts[index_pair].pitchIR2VI
+            roll_init = listPts[index_pair].rollIR2VI
+            logging.info(f"INIT ANGLES FROM EXIF: yaw {yaw_init}, pitch {pitch_init}, roll {roll_init}")
+        angles = [yaw_init, pitch_init, roll_init]
         # RELOAD PREVIOUSLY COMPUTED MOTION FILE
         motion_model_file = osp.join(out_dir, osp.basename(vis_pth[:-4])+"_motion_model")
         if not osp.exists(motion_model_file + ".npy"):
@@ -371,9 +387,10 @@ def process_raw_pairs(
                               osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO_ASYNC.bat"),
                               async_suffix=offset_async,
                               debug=False,
-                              multispectral_folder=multispectral_folder)
-            write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO.bat"), debug=False, multispectral_folder=multispectral_folder)
-            write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_DEBUG.bat"), debug=True, multispectral_folder=multispectral_folder)
+                              multispectral_folder=multispectral_folder,
+                              angles=angles)
+            write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO.bat"), debug=False, multispectral_folder=multispectral_folder, angles=angles)
+            write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_DEBUG.bat"), debug=True, multispectral_folder=multispectral_folder, angles=angles)
 
 
         gps_vis = pr.Image(vis_pth).gps
@@ -400,13 +417,6 @@ def process_raw_pairs(
         except Exception as exc:
             logging.warning(f"{exc} use altitude drone to takeoff instead: {gps_vis['altitude']} m")
 
-
-        yaw_init, pitch_init, roll_init = 0., 0., 0.
-        if listPts is not None:
-            yaw_init = listPts[index_pair].yawIR2VI
-            pitch_init = listPts[index_pair].pitchIR2VI
-            roll_init = listPts[index_pair].rollIR2VI
-            logging.warning(f"INIT ANGLES FROM EXIF: yaw {yaw_init}, pitch {pitch_init}, roll {roll_init}")
         ref_full, aligned_full, align_full_global, motion_model = align_raw(
             vis_pth, nir_pth, cals,
             debug_dir=debug_dir, debug=debug,
@@ -476,6 +486,7 @@ if __name__ == "__main__":
     parser.add_argument('--debug', action="store_true", help='full debug traces')
     parser.add_argument('--delay', help='synchronization (in seconds)', default=0.)
     parser.add_argument('--multispectral-folder', help='multispectral TIF folder for ODM', default=None)
+    parser.add_argument("--angles", nargs='+', type=float, help="yaw,pitch,roll")
     args = parser.parse_args()
     extension = 1.6
     if args.images is None:
@@ -503,6 +514,7 @@ if __name__ == "__main__":
         debug=args.debug,
         extension=extension,
         crop=CROP,
-        multispectral_folder=args.multispectral_folder
+        multispectral_folder=args.multispectral_folder,
+        angles=args.angles
     )
 
