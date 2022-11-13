@@ -42,7 +42,6 @@ import utils.angles_analyzis as analys
 import utils.utils_IRdrone_Class as IRcl
 import config as cf
 
-
 # -----   Convertisseurs de dates   Exif<->Python  Excel->Python    ------
 def dateExcelString2Py(dateTimeOriginal):
     """
@@ -1339,14 +1338,15 @@ def theoreticalIrToVi(listPts, timelapse_Vis, offset=None):
     x = [listPts[n].x_2 for n in range(len(listPts))]
     theoreticalPitch = theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, axe=2)
     #   theoretical  Roll
-    # theoreticalRoll = rollDeviation(listPts, timelapse_Vis)
-    theoreticalRoll = [0. for _ in range(len(listPts))] # Gimbal to IR camera prediction is totally wrong... force 0
+    theoreticalRoll = rollDeviation(listPts, timelapse_Vis)
+    #theoreticalRoll = [0. for _ in range(len(listPts))] # Gimbal to IR camera prediction is totally wrong... force 0
 
     for i in range(len(listPts)):
         try:
             theoreticalYaw[i] = theoreticalYaw[i] + offset[0]
             theoreticalPitch[i] = theoreticalPitch[i] + offset[1]
             theoreticalRoll[i] = theoreticalRoll[i] + offset[2]
+            #print(Style.MAGENTA + Style.UNDERLINE + 'Test-an  Image %i [Yaw, Pitch, Roll] = [ %s , %s, %s ]'%(i+1,round(theoreticalYaw[i],3), round(theoreticalPitch[i],3),round(theoreticalRoll[i],3)) + Style.RESET)
         except:
             pass
         listPts[i].yawIR2VI = theoreticalYaw[i]
@@ -1364,14 +1364,13 @@ def theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, axe=0):
     e_2  vecteur de l'axe du drone (vers l'avant)    |e_2|=1
     e_1  vecteur normal à l'axe du drone    |e_1|=1  ;  e_1 . e_2 =0 ; repère direct
 
-    The distance between the lenses of two cameras (DJI Mavic Air 2 and SJCam M20) is CnirCvis_0 = 46 mm.
+    The distance between the lenses of two cameras (DJI Mavic Air 2 and SJCam M20) is CNIRCVIS_0 = 46 mm.
     This distance is not negligible if the drone is at very low altitude.
     For example during the synchronization step the drone is 2 m above the ground.
     This distance must be added to the projection of the base line on the axis of the drone (Axis 2) for the
     calculation of the pitch.
     """
     theoreticalAngle = []
-    CnirCvis_0 = 0.046
     for i in range(len(listPts)):
         alpha, dt = interpolationAngle(listPts, angle, i, timelapse_Vis)
         Cvi_t_Cvi_tk = interpolationCameraCenterVis(x, i, dt, timelapse_Vis)  # Algebraic !!!
@@ -1381,7 +1380,7 @@ def theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, axe=0):
             baseline = Cvi_t_Cvi_tk
         else:
             thetaVis = listPts[i].pitchGimbal + 90.  # Pitch Gimbal <=> Pitch Camera VIS
-            baseline = Cvi_t_Cvi_tk + CnirCvis_0
+            baseline = Cvi_t_Cvi_tk + cf.CNIRCVIS_0
 
         anglePhi = np.rad2deg(np.arctan(baseline / H + np.tan(np.deg2rad(thetaVis))))
         anglePsi = anglePhi - alpha
@@ -1393,22 +1392,29 @@ def theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, axe=0):
 def rollDeviation(listPts, timelapse_Vis):
     """
     yaw drone  <=> roll NIR camera
-    yaw gimbal <=> roll VIS camera
+    yaw gimbal <=> roll VIS camera     is totally wrong!!!
+
+    In "Gimbal lock" mode the information provided by the DJI drone about the gimbal’s yaw angle is not reliable.
+    We make the hypothesis (reasonable) that the gimbal is aligned on the axis of the drone.
+    The roll angle of the near infrared image (NIR) is obtained by linear interpolation of the yaw angle of the drone.
+    The "roll image" between the visible (VIS) and near infrared (NIR) images is obtained by difference between
+    the yaw angle of the drone (at the moment of the VIS shooting) and the roll angle of the NIR image.
+    Added to this is the roll offset caused by the misalignment of the infrared camera in relation to the drone’s longitudinal axis.
+
     """
-    flightYaw = [listPts[n].yawDrone for n in range(len(listPts))]
-    gimbalYaw = [listPts[n].yawGimbal for n in range(len(listPts))]
+    yaw_tVis = [listPts[n].yawDrone for n in range(len(listPts))]
     theoreticalRoll = []
     for i in range(len(listPts)):
-        rollInterpol_NIR, dt = interpolationAngle(listPts, flightYaw, i, timelapse_Vis)
-        rollInterpol_VIS, dt = interpolationAngle(listPts, gimbalYaw, i, timelapse_Vis)
-        theoreticalRoll.append(rollInterpol_NIR - gimbalYaw[i])  # -  rollInterpol_VIS)
+        yaw_tNir, dt = interpolationAngle(listPts, yaw_tVis, i, timelapse_Vis)
+        rollNir2Vis = yaw_tVis[i] - yaw_tNir
+        theoreticalRoll.append(rollNir2Vis)
     return theoreticalRoll
 
 
 def interpolationAngle(listPts, angle, i, timelapse_Vis):
     """
     Linear interpolation of the drone angle at the moment the NIR image was taken.
-    dt = tk-t où tk date camera VIS and  t date camera NIR.
+    dt = tk-t with tk : date camera VIS and  t : date camera NIR.
     "Forward" interpolation if dt<0.
     """
     dt = listPts[i].timeDeviation
@@ -1419,6 +1425,7 @@ def interpolationAngle(listPts, angle, i, timelapse_Vis):
     else:
         alpha = (angle[i - 1] * dt / timelapse_Vis - angle[i] * (dt / timelapse_Vis - 1))
     return alpha, dt
+
 
 
 def interpolationCameraCenterVis(x, k, dt, timelapse_Vis):

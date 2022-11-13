@@ -23,6 +23,7 @@ IRD_FOCAL_LENGTH_PIX = 2898     # Default value
 IRD_LENS_INFO = '%s mm f/%s' % (str(round(IRD_FOCAL_LENGTH_35MM, 0)), str(round(VIS_CAMERA_F_MAX,1)))
 OVERLAP_X = 0.30    #
 OVERLAP_Y = 0.75    # Image Overlay for mapping   [0.50 ; 0.90]
+CNIRCVIS_0 = 0.046  # Ddistance between the lenses of two cameras (DJI Mavic Air 2 and SJCam M20) = 46 mm.
 
 
 # User Settings --------------------------------------------------------------------------------------
