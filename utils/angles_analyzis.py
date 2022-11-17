@@ -53,6 +53,7 @@ def analyzis_motion_camera(dirMission, shootingPts, planVol, showAnglPlot=False,
     # -----------------------------------------------------------------------------------
     plotAnglesAlignment(timeLine, yawIR2VI, pitchIR2VI, rollIR2VI,
                         timeLinePostProcess, yawCoarse, pitchCoarse, rollCoarse, dirMission=dirMission, showPlot=showAnglPlot)
+    plotRollAlignment(timeLine, rollIR2VI, timeLinePostProcess, rollCoarse, dirMission=dirMission, showPlot=showAnglPlot)
     plotDisperPitchYaw(yawIR2VI, pitchIR2VI, rollIR2VI,
                        yawCoarse, pitchCoarse, rollCoarse, planVol, dirMission=dirMission, showPlot=showDisperPlot)
     return
@@ -71,8 +72,9 @@ def plotDisperPitchYaw(yawIR2VI, pitchIR2VI, rollIR2VI, yawCoarse, pitchCoarse, 
     savePlot(dirMission, 'Angles analysis dispersion')
     if showPlot:
         plt.show()
+        print(Style.YELLOW + 'WARNING : Look at the Dispersion Angles alignment analysis  >>>>' + Style.RESET)
     else:
-        print(Style.YELLOW + 'Look at the Dispersion Angles alignment analysis  >>>>' + Style.RESET)
+        pass
     plt.close()
     return
 
@@ -118,6 +120,28 @@ def disperPitchYaw_plot(ax, fx, fy, mini, maxi, missionTitle, myTitleX, myTitleY
     return
 
 
+def plotRollAlignment(timeLine, rollIR2VI, timeLinePostProcess, rollCoarse, dirMission=None, showPlot=True):
+    if dirMission is None:
+        return
+
+    missionTitle = dirMission.split("/")[-1]
+    _, (ax1) = plt.subplots(nrows=1, ncols=1)
+    plotAnglesAlignment_2curves(ax1, timeLine, rollIR2VI, timeLinePostProcess, rollCoarse,
+                                label1="Roll theoretical.              average = {:.2f}°".format(
+                                    np.average(rollIR2VI, axis=0)), color1='green', marksize1=1,
+                                label2="Roll coarse alignment.   average = {:.2f}°".format(
+                                    np.average(rollCoarse, axis=0)), color2='yellowgreen', marksize2=8,
+                                Title=missionTitle)
+    # ---------- save plot in dirMission/Flight Analytics/Angles analysis ----------------
+    savePlot(dirMission, 'Roll analysis')
+    if showPlot:
+        plt.show()
+    else:
+        print(Style.YELLOW + 'Look at the Angles alignment analysis  >>>>' + Style.RESET)
+    plt.close()
+    return
+
+
 def plotAnglesAlignment(timeLine, yawIR2VI, pitchIR2VI, rollIR2VI,
                         timeLinePostProcess, yawCoarse, pitchCoarse, rollCoarse,
                         dirMission=None, showPlot=False):
@@ -142,6 +166,7 @@ def plotAnglesAlignment(timeLine, yawIR2VI, pitchIR2VI, rollIR2VI,
     plt.close()
     return
 
+
 def plotAnglesAlignment_2curves(ax, x1, y1, x2, y2, label1="theoretical. ", label2="coarse alignment", color1='green', color2='yellowgreen',marksize1=1, marksize2=8, Title=" "):
     ax.plot(x1, y1, color=color1, linestyle='-', linewidth=1, marker='o', markersize=marksize1, alpha=1, label=label1)
     ax.plot(x2, y2, color=color2, linestyle='--', linewidth=1, marker='o', markersize=marksize2, alpha=0.5, label=label2)
@@ -152,7 +177,6 @@ def plotAnglesAlignment_2curves(ax, x1, y1, x2, y2, label1="theoretical. ", labe
     ax.legend()
     ax.set_xlim(0, np.max(x1))
     return
-
 
 
 def interactifChoice():
@@ -199,8 +223,8 @@ def flightProfil_plot(d_list, elev_Drone, elev_Ground, title="IRdrone", dirSaveF
         plt.savefig(filepath, dpi=600, facecolor='w', edgecolor='w', orientation='portrait',
                     format=None, transparent=False,
                     bbox_inches='tight', pad_inches=0.1, metadata=None)
-        print(Style.CYAN + '------ Save flight profil in %s' % filepath + Style.RESET)
+        print(Style.CYAN + 'INFO : ------ Save flight profil in %s' % filepath + Style.RESET)
     if not mute:
-        print(Style.YELLOW + 'Look your Drone Flight profil >>>>' + Style.RESET)
+        print(Style.YELLOW + 'WARNING : Look your Drone Flight profil >>>>' + Style.RESET)
         plt.show()
     plt.close()

@@ -30,7 +30,7 @@ if __name__ == "__main__":
     # --------------------------------------------------------------------------------------------------------------
     timeDebut = datetime.datetime.now()
     startTime = time.process_time()
-    print(Style.CYAN + 'Start IRdrone-v%s  at  %s ' % (versionIRdrone, timeDebut.time()) + Style.RESET)
+    print(Style.CYAN + 'INFO : ------ Start IRdrone-v%s  at  %s ' % (versionIRdrone, timeDebut.time()) + Style.RESET)
 
     # ------------------------------------------------------------------------------------------------------------
     # 0 > Interactive choice of mission
@@ -51,7 +51,7 @@ if __name__ == "__main__":
     clean_proxy = args.clean_proxy
     dirPlanVol = args.config
     if dirPlanVol is None or not os.path.isfile(dirPlanVol):
-        print(Style.CYAN + "File browser")
+        print(Style.GREEN + "File browser")
         dirPlanVol = IRd.loadFileGUI(mute=False)
 
     dirMission = os.path.dirname(dirPlanVol)
@@ -77,7 +77,7 @@ if __name__ == "__main__":
     #       Date, time, image file, clock sync, drone and IR camera type ...
     #       Construction of the list of images taken during the flight (Drone and IR)
     # --------------------------------------------------------------------------------------------------------------
-    print(Style.CYAN + '------ Read flight plan' + Style.RESET)
+    print(Style.CYAN + 'INFO : ------ Read flight plan' + Style.RESET)
     planVol, \
     imgListDrone, deltaTimeDrone, timeLapseDrone, \
     imgListIR, deltaTimeIR, timeLapseIR, dirNameIRdrone = \
@@ -105,7 +105,7 @@ if __name__ == "__main__":
     #
     # --------------------------------------------------------------------------------------------------------------
 
-    print(Style.CYAN + '------ Pair images VIS & NIR' + Style.RESET)
+    print(Style.CYAN + 'INFO : ------ Pair images VIS & NIR' + Style.RESET)
     synchro_date = planVol['mission']['date']
     if synchro_date is None:
         raise NameError(Style.RED + "Synchro start date needs to be provided!" + Style.RESET)
@@ -131,6 +131,7 @@ if __name__ == "__main__":
 
     try:
         # Fixed the alignment defect [yaw,pitch,roll] of the NIR camera aiming axis in °
+        print(Style.GREEN + 'NIR camera offset angles : [Yaw, Pitch, Roll]= [ %.2f° | %.2f° | %.2f° ].   '%(planVol["offset_angles"][0], planVol["offset_angles"][1], planVol["offset_angles"][2]) + Style.RESET)
         mappingList, ImgMatchProcess, ptsProcess = IRd.summaryFlight(shootingPts, listImgMatch, planVol, dirPlanVol,
                         optionAlignment=selection_option,
                         offsetTheoreticalAngle=planVol["offset_angles"],
@@ -160,11 +161,11 @@ if __name__ == "__main__":
         if traces is None:
             traces = automatic_registration.TRACES
     nbImgProcess = len(ptsProcess)
-    print(Style.YELLOW + 'The processing of these %i images will take %.2f h.  Do you want to continue?'
-          % (nbImgProcess, 2.05 * nbImgProcess / 60.) + Style.RESET)
+    print(Style.YELLOW + 'WARNING : The processing of these %i images will take %.2f h.  Do you want to continue?'
+          % (nbImgProcess, 1.5 * nbImgProcess / 60.) + Style.RESET)
     autoRegistration = IRd.answerYesNo('Yes (y/1) |  No (n/0):')
     if autoRegistration:
-        print(Style.CYAN + '------ Automatic_registration.process_raw_pairs' + Style.RESET)
+        print(Style.CYAN + 'INFO : ------ Automatic_registration.process_raw_pairs \n' + Style.RESET)
         automatic_registration.process_raw_pairs(
                 ImgMatchProcess[::1], out_dir=dirNameIRdrone, crop=CROP, listPts=ptsProcess,
                 option_alti=option_alti, clean_proxy=clean_proxy, multispectral_folder=odm_image_directory,
@@ -172,7 +173,7 @@ if __name__ == "__main__":
             )
     else:
         print(
-            Style.YELLOW + 'Warning :  automatic_registration.process_raw_pairs ... Process neutralized.' + Style.RESET)
+            Style.YELLOW + 'WARNING :  automatic_registration.process_raw_pairs ... Process neutralized.' + Style.RESET)
 
     # -------------------------------------------------------------------------------------------------------------
     # 4 > Open Drone Map
@@ -195,7 +196,7 @@ if __name__ == "__main__":
             IRd.SaveSummaryInNpyFormat(dirMission, savePickle, planVol, shootingPts)
         except Exception as exc:
             logging.error(
-                Style.YELLOW + "Flight analytics cannot plot.\nError = {}".format(
+                Style.YELLOW + "WARNIG : Flight analytics cannot plot.\nError = {}".format(
                     exc) + Style.RESET)
 
     # -------------------------------------------------------------------------------------------------------------
@@ -206,5 +207,5 @@ if __name__ == "__main__":
     tempsExe = stopTime - startTime
     IRd.logoIRDrone(num=4)
     print(
-        Style.CYAN + '\n End IRdrone-v%s  at %s   CPU : %3.f s' % (versionIRdrone, timeFin.time(), tempsExe) + Style.RESET)
+        Style.CYAN + '\n INFO : End IRdrone-v%s  at %s   CPU : %3.f s' % (versionIRdrone, timeFin.time(), tempsExe) + Style.RESET)
 
