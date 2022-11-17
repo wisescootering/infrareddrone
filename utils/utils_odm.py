@@ -82,7 +82,7 @@ def buildMappingList(listPtsOptim, listPts, overlap_x=0.33, overlap_y=0.80, dirS
     lCapt_y             image size VIS  axe e_2  (axe drone)   pixels
     lPix                pixel size for camera VIS              m
     """
-    print(Style.CYAN + '------ Creating the list of images for mapping  ' + Style.RESET)
+    print(Style.CYAN + 'INFO : ------ Creating the list of images for mapping  ' + Style.RESET)
     mappingList = []
     # TODO  prendre en compte la trajectoire exacte et pas seulement le mouvement  suivant e_2
 
@@ -207,9 +207,9 @@ def visu_mapping(mappingList, listPts, focal_DJI=cf.IRD_FOCAL_LENGTH_PIX, lCapt_
         plt.savefig(filepath, dpi=300, facecolor='w', edgecolor='w', orientation='portrait',
                     format=None, transparent=False,
                     bbox_inches='tight', pad_inches=0.1, metadata=None)
-        print(Style.CYAN + '------ Save Mapping scheme in %s' % filepath + Style.RESET)
+        print(Style.CYAN + 'INFO : ------ Save Mapping scheme in %s' % filepath + Style.RESET)
 
-    print(Style.YELLOW + 'Look at the mapping scheme  >>>>' + Style.RESET)
+    print(Style.YELLOW + 'WARNING : Look at the mapping scheme  >>>>' + Style.RESET)
     plt.show()
     plt.close()
 

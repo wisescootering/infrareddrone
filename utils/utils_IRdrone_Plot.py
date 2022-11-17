@@ -32,7 +32,7 @@ def flightProfil_plot(d_list, elev_Drone, elev_Ground, dirSaveFig=None, mute=Tru
                     bbox_inches='tight', pad_inches=0.1, metadata=None)
         print(Style.CYAN + '----- Save flight profil in %s' % filepath + Style.RESET)
     if not mute:
-        print(Style.YELLOW + 'Look your Drone Flight profil >>>>' + Style.RESET)
+        print(Style.YELLOW + 'WARNING : Look your Drone Flight profil >>>>' + Style.RESET)
         plt.show()
     plt.close()
 

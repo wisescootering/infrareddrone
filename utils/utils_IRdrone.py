@@ -410,7 +410,7 @@ def creatListImgNIR(dirName, rege):
     For an SJcam M20 we extract the date of the file name, because the Exif data in
     the SJCam RAW file is unreadable by exifread or PIL software. ExifTags
     """
-    print(Style.CYAN + '------ Creating the list of near-infrared spectrum images' + Style.RESET)
+    print(Style.CYAN + 'INFO : ------ Creating the list of near-infrared spectrum images' + Style.RESET)
     imlist = sorted(ut.imagepath(imgname=rege, dirname=dirName))
     imgList = []
     for i in range(len(imlist)):
@@ -434,7 +434,7 @@ def creatListImgVIS(dirName, dateMission, rege, timelapse, deltatime, cameraMode
     # If camera ='DJI'  the list only includes images taken by the drone.
     # It is not possible to filter the SJcam images with the file name (you have to look at the Exif data of the image).
 
-    print(Style.CYAN + '------ Creating the list of visible spectrum images' + Style.RESET)
+    print(Style.CYAN + 'INFO : ------ Creating the list of visible spectrum images' + Style.RESET)
     imlist = sorted(ut.imagepath(imgname=rege, dirname=dirName))
 
     imgList = []
@@ -587,9 +587,9 @@ def matchImagesFlightPath(imgListDrone,
         print(Style.RED, 'No pair of Visible-Infrared images were detected for this flight.', Style.RESET)
         sys.exit(2)
     else:
-        print(Style.GREEN + '%i pairs of Visible-Infrared images were detected for the flight on  %s' % (
+        print(Style.GREEN + ' %i pairs of Visible-Infrared images were detected for the flight on  %s' % (
             len(listImgMatch), dateMission), '\n',
-              '%i  images Vi (%s) have been eliminated :' % (nRejet, repA) + Style.RESET)
+              '%i  images Vi (%s) have been eliminated  ' % (nRejet, repA) + Style.RESET)
 
     return listImgMatch, DtImgMatch, listdateMatch, listPts
 
@@ -700,7 +700,7 @@ def altiIGN(listPts, listImg, listPtGPS, coordGPSTakeOff, seaLevel, bypass=False
     For each request the IGN API accepts in theory 5000 pts. In practice 189 works but 199 fails!
 
     """
-    print(Style.CYAN + 'Request to  https://wxs.ign.fr/essentiels/alti/rest/elevation' + Style.RESET)
+    print(Style.GREEN + 'Request to  https://wxs.ign.fr/essentiels/alti/rest/elevation' + Style.RESET)
     altGeo = []
 
     pas = 99
@@ -715,7 +715,7 @@ def altiIGN(listPts, listImg, listPtGPS, coordGPSTakeOff, seaLevel, bypass=False
         for k in range(0, int(round(len(listImg), 0) / pas) + 1):
             listPairPtGps = listPtGPS[k * pas:(k + 1) * pas]
             altGeo += uGPS.altitude_IGN(listPairPtGps, bypass=bypass)
-            print(Style.CYAN, '%i / %.0f ' % (k, len(listImg) / pas), Style.RESET)
+            print(Style.GREEN, '%i / %.0f ' % (k, len(listImg) / pas), Style.RESET)
     else:
         altGeo = [0.0] * len(listPtGPS)
         altiTakeOff = 0.
@@ -813,7 +813,7 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
     coordGPSTakeOff, altiTakeOff = uGPS.TakeOff(planVol['mission']['coord GPS Take Off'], bypass=altitude_api_disabled)
 
     print(Style.CYAN +
-          '------ Calculation of drone attitude, trajectory, flight profile and theoretical Yaw-Pitch-Roll'
+          'INFO : ------ Calculation of drone attitude, trajectory, flight profile and theoretical Yaw-Pitch-Roll'
           + Style.RESET)
 
     # ----------- Drone attitude in space. (angles drone and gimbal)
@@ -974,8 +974,7 @@ def saveMissionAndPtsPickl(listDic, fileName, pathName):
     for n in range(len(listDic)):
         pickler.dump(listDic[n])
     fh.close()
-    txt = "------ Write Mission and List of mission points. Saved successfully in " + fileName
-    print(Style.CYAN + txt + Style.RESET)
+    print(Style.CYAN + "INFO : ------ Write Mission and List of mission points. Saved successfully in %s"%fileName + Style.RESET)
 
 
 def readMissionAndPtsPickl(fileName):
@@ -1016,10 +1015,10 @@ def writeSummaryFlightExcel(flightPlanSynthesis, pathName):
     pathName = pathName/'FlightSummary.xlsx'
 
     if pathName.is_file():
-        print(Style.CYAN + '------ Write file FlightSummary.xlsx' + Style.RESET)
+        print(Style.CYAN + 'INFO : ------ Write file FlightSummary.xlsx' + Style.RESET)
         pass
     else:
-        print(Style.CYAN + '------ Create file FlightSummary.xlsx' + Style.RESET)
+        print(Style.CYAN + 'INFO : ------ Create file FlightSummary.xlsx' + Style.RESET)
         wb = Workbook()
         ws = wb.active
         ws.title = "Summary"
@@ -1028,7 +1027,7 @@ def writeSummaryFlightExcel(flightPlanSynthesis, pathName):
     workbook = openpyxl.load_workbook(pathName)
     listSheets = workbook.sheetnames
     if listSheets[0] != 'Summary':
-        print(Style.YELLOW + ' Create sheet Summary' + Style.RESET)
+        print(Style.YELLOW + 'INFO :  Create sheet Summary' + Style.RESET)
         ws_sum = workbook.create_sheet("Summary", 0)
         ws_sum.title = "Summary"
         ws_sum.protection.sheet = False
@@ -1048,7 +1047,7 @@ def writeSummaryFlightExcel(flightPlanSynthesis, pathName):
     sheet.protection.sheet = False
     workbook.save(pathName)
     workbook.close()
-    print(Style.CYAN + ' %s  successfully saved.' % pathName + Style.RESET)
+    print(Style.GREEN + ' %s  successfully saved.' % pathName + Style.RESET)
 
 
 def readFlightSummary(dir_mission, mute=None, no_pandas=False):
@@ -1337,16 +1336,17 @@ def theoreticalIrToVi(listPts, timelapse_Vis, offset=None):
     angle = [listPts[n].pitchDrone for n in range(len(listPts))]
     x = [listPts[n].x_2 for n in range(len(listPts))]
     theoreticalPitch = theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, axe=2)
-    #   theoretical  Roll
+    #   theoretical  Roll   It is assumed that the "gimbal-lock" mode is used.  In other words gimbal_Yaw=drone_Yaw
+    # The prediction of the roll image with the gimbal yaw is totally false when the "gimbal-lock" mode is used ... force 0
+    #theoreticalRoll = [0. for _ in range(len(listPts))]
     theoreticalRoll = rollDeviation(listPts, timelapse_Vis)
-    #theoreticalRoll = [0. for _ in range(len(listPts))] # Gimbal to IR camera prediction is totally wrong... force 0
+
 
     for i in range(len(listPts)):
         try:
             theoreticalYaw[i] = theoreticalYaw[i] + offset[0]
             theoreticalPitch[i] = theoreticalPitch[i] + offset[1]
             theoreticalRoll[i] = theoreticalRoll[i] + offset[2]
-            #print(Style.MAGENTA + Style.UNDERLINE + 'Test-an  Image %i [Yaw, Pitch, Roll] = [ %s , %s, %s ]'%(i+1,round(theoreticalYaw[i],3), round(theoreticalPitch[i],3),round(theoreticalRoll[i],3)) + Style.RESET)
         except:
             pass
         listPts[i].yawIR2VI = theoreticalYaw[i]
@@ -1372,7 +1372,7 @@ def theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, axe=0):
     """
     theoreticalAngle = []
     for i in range(len(listPts)):
-        alpha, dt = interpolationAngle(listPts, angle, i, timelapse_Vis)
+        alpha, dt = interpolParabolicAngle(listPts, angle, i, timelapse_Vis)
         Cvi_t_Cvi_tk = interpolationCameraCenterVis(x, i, dt, timelapse_Vis)  # Algebraic !!!
         H = listPts[i].altGround
         if axe == 1:
@@ -1392,11 +1392,11 @@ def theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, axe=0):
 def rollDeviation(listPts, timelapse_Vis):
     """
     yaw drone  <=> roll NIR camera
-    yaw gimbal <=> roll VIS camera     is totally wrong!!!
+    yaw gimbal <=> roll VIS camera     is totally wrong if DJI "gimbal-lock" mode is used!
 
     In "Gimbal lock" mode the information provided by the DJI drone about the gimbal’s yaw angle is not reliable.
     We make the hypothesis (reasonable) that the gimbal is aligned on the axis of the drone.
-    The roll angle of the near infrared image (NIR) is obtained by linear interpolation of the yaw angle of the drone.
+    The roll angle of the near infrared image (NIR) is obtained by interpolation of the yaw angle of the drone.
     The "roll image" between the visible (VIS) and near infrared (NIR) images is obtained by difference between
     the yaw angle of the drone (at the moment of the VIS shooting) and the roll angle of the NIR image.
     Added to this is the roll offset caused by the misalignment of the infrared camera in relation to the drone’s longitudinal axis.
@@ -1405,13 +1405,58 @@ def rollDeviation(listPts, timelapse_Vis):
     yaw_tVis = [listPts[n].yawDrone for n in range(len(listPts))]
     theoreticalRoll = []
     for i in range(len(listPts)):
-        yaw_tNir, dt = interpolationAngle(listPts, yaw_tVis, i, timelapse_Vis)
+        yaw_tNir, dt = interpolParabolicAngle(listPts, yaw_tVis, i, timelapse_Vis)
         rollNir2Vis = yaw_tVis[i] - yaw_tNir
         theoreticalRoll.append(rollNir2Vis)
+
     return theoreticalRoll
 
 
-def interpolationAngle(listPts, angle, i, timelapse_Vis):
+def interpolParabolicAngle(listPts, angle, i, timelapse_Vis):
+    """
+        Parabolic interpolation of the drone angle at the moment (t) the NIR image was taken.
+        dt = t0-t with t0 : date camera VIS and  t : date camera NIR.
+        If k is index of t0 = tk then t_1 = tk-1 ; t1 = tk+1 etc.
+        t_1 <= t <= t1
+        "Forward" interpolation if dt<0.
+    """
+    dt = listPts[i].timeDeviation
+    try:
+        t_2 = listPts[i - 2].timeLine
+        t_1 = listPts[i - 1].timeLine
+        t0 = listPts[i].timeLine
+        t1 = listPts[i + 1].timeLine
+        t2 = listPts[i + 2].timeLine
+        t = t0 - dt
+        if t_1 <= t <= t1:
+            alpha = Parabolic(listPts, angle, i, t)
+        elif t_2 <= t <= t_1:
+            alpha = Parabolic(listPts, angle, i-1, t)
+        elif t1 <= t <= t2:
+            alpha = Parabolic(listPts, angle, i+1, t)
+        else:
+            alpha, dt = interpolLinearAngle(listPts, angle, i, timelapse_Vis)
+
+    except:
+        alpha, dt = interpolLinearAngle(listPts, angle, i, timelapse_Vis)
+
+    return alpha, dt
+
+
+def Parabolic(listPts, angle, k, t):
+    t_1 = listPts[k - 1].timeLine
+    t0 = listPts[k].timeLine
+    t1 = listPts[k + 1].timeLine
+    d_1 = (angle[k - 1] - angle[k]) / (t_1 - t0)
+    d1 = (angle[k + 1] - angle[k]) / (t1 - t0)
+    a = (d_1 - d1) / (t_1 - t1)
+    b = d_1 - a * (t_1 + t0)
+    c = angle[k] - a * t0**2 - b * t0
+    alpha = a * t**2 + b * t + c
+    return alpha
+
+
+def interpolLinearAngle(listPts, angle, i, timelapse_Vis):
     """
     Linear interpolation of the drone angle at the moment the NIR image was taken.
     dt = tk-t with tk : date camera VIS and  t : date camera NIR.
@@ -1425,7 +1470,6 @@ def interpolationAngle(listPts, angle, i, timelapse_Vis):
     else:
         alpha = (angle[i - 1] * dt / timelapse_Vis - angle[i] * (dt / timelapse_Vis - 1))
     return alpha, dt
-
 
 
 def interpolationCameraCenterVis(x, k, dt, timelapse_Vis):
@@ -1477,8 +1521,7 @@ def average_Timelapse(tStart, tEnd, nbImageMission, mute=True):
     av_Timelapse_timedelta = timedelta(seconds=int(str(av_Timelapse).split('.')[0]),
                                        microseconds=int(round(microsec, 6) * 10 ** 6))
     if not mute:
-        txt = '...  Visible image acquisition interval : ' + str(np.round(av_Timelapse, 6)) + ' s'
-        print(Style.GREEN + txt + Style.RESET)
+        print(Style.GREEN + 'Visible image acquisition interval : %s  s '%(str(np.round(av_Timelapse, 6))) + Style.RESET)
     return av_Timelapse, av_Timelapse_timedelta
 
 
@@ -1487,7 +1530,7 @@ def selectAllImages(listImgMatch, listPts, planVol, ratioSynchro=0.25):
         Selects all pairs of images for alignment process.
         Tag alignment and best synchro (if ok) in summary-flight file
     """
-    print(Style.CYAN + '------ Selecting all available image pairs in the AerialPhotography folder.' + Style.GREEN)
+    print(Style.CYAN + 'INFO : ------ Selecting all available image pairs in the AerialPhotography folder.' + Style.GREEN)
     ImgMatch, Pts = [], []
     DTmin = planVol['drone']['timelapse'] * ratioSynchro
     for pointImage in listPts:
@@ -1530,7 +1573,7 @@ def selectBestMapping(listImgMatch, listPts, planVol,  overlap_x=0.30, overlap_y
     lCapt_y = height_capteur    image size VIS  axe e_2                pixels
     f = focalPix                focal length camera VIS                pixels
     """
-    print(Style.CYAN + '------ Selection of mapping image pairs for the alignment process.  ' + Style.GREEN)
+    print(Style.CYAN + 'INFO : ------ Selection of mapping image pairs for the alignment process.  ' + Style.GREEN)
     ImgMatch, Pts = [], []
     camera_make, camera_type, width_capteur, height_capteur, focal_factor, focalPix = lectureCameraIrdrone()
     # TODO  prendre en compte la trajectoire exacte et pas seulement le mouvement  suivant e_2

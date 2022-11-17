@@ -7,7 +7,7 @@ CROP = 50       # Final crop after alignment  3992 x 2992 -> 3892 x 2892   (3892
 PRE_CROP = 4    # RawTherapee cropping from the original . DNG image   4000 x 3000 -> 3992 x 2992  (4000 - 2* PRE_CROP)x(3000 - 2* PRE_CROP)
 VIS_CAMERA_PIX_X = 4000     # Image size (width).  Visible camera (DJI)
 VIS_CAMERA_PIX_Y = 3000     # Image size (height). Visible camera (DJI)
-VIS_LPIX = 1.6 * 10 ** -6   # Visible camera pixel size. DJI Mavic Air 2.   (1.6 micro meter)
+VIS_LPIX = 1.6 * 10 ** -6   # Visible camera pixel size. DJI Mavic Air 2.   (1.6 micron meter)
 VIS_CAMERA_F_MAX = 2.8  # Maximum aperture
 IRD_CAMERA_MAKER = "irdrone"
 IRD_CAMERA_MODEL = "multispectral"
@@ -23,7 +23,7 @@ IRD_FOCAL_LENGTH_PIX = 2898     # Default value
 IRD_LENS_INFO = '%s mm f/%s' % (str(round(IRD_FOCAL_LENGTH_35MM, 0)), str(round(VIS_CAMERA_F_MAX,1)))
 OVERLAP_X = 0.30    #
 OVERLAP_Y = 0.75    # Image Overlay for mapping   [0.50 ; 0.90]
-CNIRCVIS_0 = 0.046  # Ddistance between the lenses of two cameras (DJI Mavic Air 2 and SJCam M20) = 46 mm.
+CNIRCVIS_0 = 0.046  # Distance between the lenses of two cameras (DJI Mavic Air 2 and SJCam M20) = 46 mm.
 
 
 # User Settings --------------------------------------------------------------------------------------
