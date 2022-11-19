@@ -79,6 +79,7 @@ def equalize_adapthist(image, ntiles_x=8, ntiles_y=8, clip_limit=0.01,
     else:
         image = skimage.img_as_uint(image)
         args[0] = rescale_intensity(image, out_range=(0, NR_OF_GREY - 1))
+        args[0] = np.round(args[0]).astype(int)
         out = _clahe(*args)
         image[:out.shape[0], :out.shape[1]] = out
         image = rescale_intensity(image)

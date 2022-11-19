@@ -3,13 +3,17 @@ import numpy as np
 from primitive import *
 from PIL import Image
 
+
 class BurtOF:
     def __init__(self, flow, levels=4):
         self.flow = flow
         self.levels = 4
 
     def __call__(self, I0, I1, **kparams):
-        if 'levels'in kparams:
+        if len(I0.shape) == 3:
+            I0 = I0.mean(axis=-1)
+            I1 = I1.mean(axis=-1)
+        if 'levels' in kparams:
             self.levels = kparams.pop('levels')
 
         I0 = (I0-I0.min())/(I0.max()-I0.min())
@@ -39,15 +43,20 @@ class BurtOF:
     def conv2SepMatlab(self, I, fen):
 
         rad = int((fen.size-1)/2)
-        ligne = np.zeros((rad, I.shape[1]))
+        input_shape = I.shape
+        ligne = np.zeros((rad, *I.shape[1:]))
         I = np.append(ligne, I, axis=0)
         I = np.append(I, ligne, axis=0)
 
-        colonne = np.zeros((I.shape[0], rad))
+        colonne = np.zeros((I.shape[0], rad, *I.shape[2:]))
         I = np.append(colonne, I, axis=1)
         I = np.append(I, colonne, axis=1)
-
-        res = conv2bis(conv2bis(I, fen.T), fen)
+        if len(I.shape) == 3:
+            res = np.empty(input_shape)
+            for ch in range(res.shape[-1]):
+                res[..., ch] = conv2bis(conv2bis(I[..., ch], fen.T), fen)
+        else:
+            res = conv2bis(conv2bis(I, fen.T), fen)
         return res
 
     def pyrUp(self, I):
