@@ -9,6 +9,10 @@ version 1.07 2022-02-15 18:50:00.   Class ShootPoint
 version 1.3  2022-09-27 19:37:00
 @authors: balthazar/alain
 """
+
+
+
+
 import logging
 import os
 import os.path as osp
@@ -38,9 +42,11 @@ import irdrone.utils as ut
 from irdrone.utils import Style
 import utils.utils_GPS as uGPS
 import utils.utils_odm as odm
-import utils.angles_analyzis as analys
 import utils.utils_IRdrone_Class as IRcl
+import utils.angles_analyzis as analys
 import config as cf
+
+
 
 # -----   Convertisseurs de dates   Exif<->Python  Excel->Python    ------
 def dateExcelString2Py(dateTimeOriginal):
@@ -775,7 +781,7 @@ def nameImageNIRSummary(nameImageComplet):
 def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=None,
                   seaLevel=False, dirSavePlanVol=None, saveGpsTrack=False,
                   saveExcel=False, savePickle=True, createMappingList=False, mute=True, altitude_api_disabled=False,
-                  optionAlignment=None, ratioSynchro=0.25):
+                  optionAlignment=None, ratioSynchro=0.25, muteGraph=False):
     """
     :param listImg:      list of image pairs VI/IR matched at the same point
     :param mute:
@@ -843,21 +849,23 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
         theoreticalIrToVi(listPts, av_timelapse_Vis, offset=offsetTheoreticalAngle)
 
     # ---------  Plot the flight profile --------------------------------------------------------------------
-    dirSaveFig = osp.join(dirSavePlanVol, "Flight Analytics", "Topo")
-    if not osp.isdir(dirSaveFig):
-        Path(dirSaveFig).mkdir(parents=True, exist_ok=True)
+    if not muteGraph:
+        dirSaveFig = osp.join(dirSavePlanVol, "Flight Analytics", "Topo")
+        if not osp.isdir(dirSaveFig):
+            Path(dirSaveFig).mkdir(parents=True, exist_ok=True)
 
-    title = os.path.dirname(dirPlanVol).split("/")[-1]
-    analys.flightProfil_plot(distFlight, altDroneSealLevel, altGround, title=title, dirSaveFig=dirSaveFig, mute=False)
+        title = os.path.dirname(dirPlanVol).split("/")[-1]
+        analys.flightProfil_plot(distFlight, altDroneSealLevel, altGround, title=title, dirSaveFig=dirSaveFig, mute=False)
 
     # ---------  Save GPS Track in Garmin format (.gpx) -----------------------------------------------------
-    if saveGpsTrack:
-        uGPS.writeGPX(listPts, dirSaveFig, planVol['mission']['date'], mute=True)
+        if saveGpsTrack:
+            uGPS.writeGPX(listPts, dirSaveFig, planVol['mission']['date'], mute=True)
 
     # ---- Selecting the image pairs for the alignment among the available images according to the alignment option value :
     #  optionAlignment == 'all' or None   Selecting all available image pairs in the AerialPhotography folder.
     #  optionAlignment == 'best-synchro'         Selecting the best synchronized image pairs for alignment.
     #  optionAlignment == 'best-mapping'         Selection of image pairs for mapping among aligned images.
+    #  optionAlignment == 'best-offset'          Selection of image pairs with a timing deviation of less than 0.05s. Used to calculate offset angles.
     ImgMatchForAlignment, PtsForAlignment = [], []
     if optionAlignment == None or optionAlignment == 'all' or timeLapseDrone <= 0:
         ImgMatchForAlignment, PtsForAlignment = selectAllImages(listImg, listPts, planVol, ratioSynchro=ratioSynchro)
@@ -865,10 +873,16 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
         ImgMatchForAlignment, PtsForAlignment = selectBestSynchro(listImg, listPts, planVol, ratioSynchro=ratioSynchro)
     elif optionAlignment == 'best-mapping':
         ImgMatchForAlignment, PtsForAlignment = selectBestMapping(listImg, listPts, planVol, overlap_x=cf.OVERLAP_X, overlap_y=cf.OVERLAP_Y, ratioSynchro=ratioSynchro)
+    elif optionAlignment == 'best-offset':
+        timeOffsetMin = 0.039
+        print(Style.CYAN + 'INFO : ------ Selects pairs of images with a timing deviation of less than ~ %.4f s. Used to calculate offset angles. '%timeOffsetMin + Style.RESET)
+        print(Style.GREEN + 'Current NIR camera offset angles : [Yaw, Pitch, Roll]= [ %.2f° | %.2f° | %.2f° ].   ' % (planVol["offset_angles"][0], planVol["offset_angles"][1], planVol["offset_angles"][2]) + Style.RESET)
+        ImgMatchForAlignment, PtsForAlignment = selectBestOffset(listImg, listPts, planVol, timeOffset=timeOffsetMin,  mute=True)
     else:
         print(Style.RED + '[error] ')
         pass
     # --------- Selection of image pairs for mapping among aligned images. ------------------------------------------
+
     if createMappingList and timeLapseDrone > 0:
         mappingList = odm.buildMappingList(ImgMatchForAlignment, listPts, overlap_x=cf.OVERLAP_X, overlap_y=cf.OVERLAP_Y, dirSaveFig=dirSaveFig)
     else:
@@ -1036,8 +1050,10 @@ def writeSummaryFlightExcel(flightPlanSynthesis, pathName):
 
     sheet = workbook['Summary']
     sheet.protection.sheet = False
-    sheet.delete_rows(2, 1000)
-
+    #sheet.delete_rows(2, 1000)
+    for i in range(1000):
+        for j in range(37):
+            sheet.cell(row=i+2, column=j+1, value="")
     listHeadCol = headColumnSummaryFlight()
     for k in range(len(listHeadCol)):
         sheet.cell(1, k + 1).value = listHeadCol[k]
@@ -1565,6 +1581,51 @@ def selectBestSynchro(listImgMatch, listPts, planVol, ratioSynchro=0.25):
     return ImgMatchSync, PtsSync
 
 
+def selectBestOffset(listImg, listPts, planVol, timeOffset=0.025, mute=True):
+    """
+        Selects pairs pairs of images with a timing deviation of less than 0.05s.
+        Used to calculate offset angles.
+            DTmin = drone timelapse * ratioOffset.
+        'ratioOffset' is a percentage of drone timelapse.  DTmin in [0.05 , 0.25]
+    """
+    ImgMatch, Pts, numPts= [], [], []
+    for pointImage in listPts:
+        if abs(pointImage.timeDeviation) <= timeOffset:
+            listPts[pointImage.num-1].bestOffset = 1
+            listPts[pointImage.num - 1].bestSynchro = 1
+            listPts[pointImage.num - 1].alignment = 1
+            pointImage.alignment = 1
+            ImgMatch.append(listImg[pointImage.num-1])
+            Pts.append(pointImage)
+            numPts.append(pointImage.num - 1)
+        else:
+            listPts[pointImage.num - 1].bestOffset = 0
+            listPts[pointImage.num - 1].bestSynchro = 0
+            listPts[pointImage.num - 1].alignment = 0
+    if len(Pts) < 4:
+        #print('len(Pts)  ', len(Pts), '   timeOffset  ', timeOffset, '>>>>' , 1.05*timeOffset)
+        timeOffset = 1.05 * timeOffset
+        ImgMatch, Pts = selectBestOffset(listImg, listPts, planVol, timeOffset= timeOffset)
+    else:
+        print(Style.GREEN + '%s images were found for offsets calculation. Timing deviation < %.3f s' % (len(Pts), timeOffset) + Style.RESET)
+        if not mute:
+            for n in range(len(Pts)):
+                print(listPts[numPts[n]])
+
+    return ImgMatch, Pts
+
+def estimOffset(ptsOffset):
+    sumYaw, sumPitch = 0, 0
+    for ptOffset in ptsOffset:
+        sumYaw += ptOffset.rollDrone + ptOffset.yawCoarseAlign
+        sumPitch += ptOffset.pitchDrone + ptOffset.pitchCoarseAlign
+    offsetYaw = sumYaw / len(ptsOffset)
+    offsetPitch = sumPitch / len(ptsOffset)
+    offsetRoll = -2.00
+    print(Style.GREEN + 'New NIR camera offset angles : [Yaw, Pitch, Roll]= [ %.2f° | %.2f° | %.2f° ].   ' % (offsetYaw, offsetPitch, offsetRoll) + Style.RESET)
+    return offsetYaw, offsetPitch, offsetRoll
+
+
 def selectBestMapping(listImgMatch, listPts, planVol,  overlap_x=0.30, overlap_y=0.75, ratioSynchro=0.25):
     """
     overlap_x = 0.30  # percentage of overlap between two images  axe e_1
@@ -1607,6 +1668,40 @@ def selectBestMapping(listImgMatch, listPts, planVol,  overlap_x=0.30, overlap_y
     return ImgMatch, Pts
 
 
+def save_motion_camera(dirMission, shootingPts, planVol, listImgMatch, mute=True):
+    timeLine, yawIR2VI, pitchIR2VI, rollIR2VI = [], [], [], []
+    timeLinePostProcess, yawCoarse, pitchCoarse, rollCoarse = [], [], [], []
+
+    # List of motion models of IRdrone images.  Ext .py
+    result_dir = Path(dirMission) / "ImgOffset"
+    ImgPostProcess = sorted(result_dir.glob("*.npy"))
+
+    # -------------------------------------------------------
+    k = 0
+    for shootPt in shootingPts:
+        timeLine.append(shootPt.timeLine)
+        yawIR2VI.append(shootPt.yawIR2VI)
+        pitchIR2VI.append(shootPt.pitchIR2VI)
+        rollIR2VI.append(shootPt.rollIR2VI)
+        if shootPt.alignment == 1:
+            timeLinePostProcess.append(shootPt.timeLine)
+            try:
+                assert ImgPostProcess[k].is_file()
+                #  yaw & pitch .  Coarse  registration angle of near infrared images.
+                mouvement = np.load(ImgPostProcess[k], allow_pickle=True).item()
+                yawCoarse.append(mouvement["yaw"])
+                pitchCoarse.append(mouvement["pitch"])
+                rollCoarse.append(mouvement["roll"])
+                shootingPts[shootPt.num - 1].yawCoarseAlign = mouvement["yaw"]
+                shootingPts[shootPt.num - 1].pitchCoarseAlign = mouvement["pitch"]
+                shootingPts[shootPt.num - 1].rollCoarseAlign = mouvement["roll"]
+                k += 1
+            except Exception as exc:
+                print(Style.RED + "erreur lors de la lectures des angles process \nError = {}"%exc + Style.RESET)
+    SaveSummaryInExcelFormat(dirMission, True, shootingPts, listImgMatch, mute=mute)
+    SaveSummaryInNpyFormat(dirMission, False, planVol, shootingPts)
+    return
+
 def lectureCameraIrdrone():
     odm_camera_conf = Path(__file__).parent / ".." / "thirdparty" / "odm_data" / "irdrone_multispectral.json"
     # print('le fichier de calibration de la caméra du dji est dans : ', odm_camera_conf)
@@ -1629,7 +1724,6 @@ def lectureCameraIrdrone():
 
 
     return camera_make, camera_type, width_capteur, height_capteur, focal_factor, focalPix
-
 
 
 def logoIRDrone(num=None):

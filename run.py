@@ -23,6 +23,7 @@ import automatic_registration
 from version import __version__ as versionIRdrone
 from config import CROP
 from pathlib import Path
+import offset_angles
 
 if __name__ == "__main__":
     # --------------------------------------------------------------------------------------------------------------
@@ -99,6 +100,7 @@ if __name__ == "__main__":
     #   In order for an A_j image to be considered synchronized with a B_k image, the closest (nearest) time criterion is used:
     #   Selected from the {B_k} images that have the minimum date difference (deltaTime) with the A_j image
     #
+    #   - Find pairs of images with a timing deviation of less than ~ 0,05 s. Used to calculate offset angles [Yaw, Pitch, Roll].
     #   - Construction of the GPS trace between the image pairs. (file format .gpx)
     #   - Write data in Excel and Binary files.
     #   - Plot of the drone flight profile and the image mapping diagram (file format .png)
@@ -110,9 +112,15 @@ if __name__ == "__main__":
     if synchro_date is None:
         raise NameError(Style.RED + "Synchro start date needs to be provided!" + Style.RESET)
     shootingPts = None # process_raw_pairs shall work with None shootingPts
+
+    #  Find matching pairs of images from both cameras
     listImgMatch, DtImgMatch, listdateMatch, shootingPts = \
         IRd.matchImagesFlightPath(imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR,
                                   synchro_date, mute=True)
+
+    #  Offset angles estimation
+    offsetYaw, offsetPitch, offsetRoll = offset_angles.estimOffsetYawPitchRoll(shootingPts, listImgMatch, planVol, dirPlanVol, dirMission, dirNameIRdrone)
+    planVol["offset_angles"] =[offsetYaw, offsetPitch, offsetRoll]
 
     # Image selection for VIS NIR pair alignment process based on option-alignment value
     # > 'all'  or None   Selects all available pairs of images in AerialPhotography
@@ -131,7 +139,6 @@ if __name__ == "__main__":
 
     try:
         # Fixed the alignment defect [yaw,pitch,roll] of the NIR camera aiming axis in °
-        print(Style.GREEN + 'NIR camera offset angles : [Yaw, Pitch, Roll]= [ %.2f° | %.2f° | %.2f° ].   '%(planVol["offset_angles"][0], planVol["offset_angles"][1], planVol["offset_angles"][2]) + Style.RESET)
         mappingList, ImgMatchProcess, ptsProcess = IRd.summaryFlight(shootingPts, listImgMatch, planVol, dirPlanVol,
                         optionAlignment=selection_option,
                         offsetTheoreticalAngle=planVol["offset_angles"],
@@ -150,7 +157,7 @@ if __name__ == "__main__":
     # -------------------------------------------------------------------------------------------------------------
     # 3 > Image processing.
     #     Automatic_registration of Vi and IR image pairs.
-    #     Build ViR and NDVI images.
+    #     Build multispectal images ( Red/Green/Blue/NIR   .tif) and  vis, nir images (.jpg). vir & ndvi images are optional.
     # -------------------------------------------------------------------------------------------------------------
     odm_image_directory = None
     if odm_multispectral:
@@ -196,7 +203,7 @@ if __name__ == "__main__":
             IRd.SaveSummaryInNpyFormat(dirMission, savePickle, planVol, shootingPts)
         except Exception as exc:
             logging.error(
-                Style.YELLOW + "WARNIG : Flight analytics cannot plot.\nError = {}".format(
+                Style.YELLOW + "WARNING : Flight analytics cannot plot.\nError = {}".format(
                     exc) + Style.RESET)
 
     # -------------------------------------------------------------------------------------------------------------
