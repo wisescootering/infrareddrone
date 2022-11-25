@@ -876,7 +876,6 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
     elif optionAlignment == 'best-offset':
         timeOffsetMin = 0.039
         print(Style.CYAN + 'INFO : ------ Selects pairs of images with a timing deviation of less than ~ %.4f s. Used to calculate offset angles. '%timeOffsetMin + Style.RESET)
-        print(Style.GREEN + 'Current NIR camera offset angles : [Yaw, Pitch, Roll]= [ %.2f° | %.2f° | %.2f° ].   ' % (planVol["offset_angles"][0], planVol["offset_angles"][1], planVol["offset_angles"][2]) + Style.RESET)
         ImgMatchForAlignment, PtsForAlignment = selectBestOffset(listImg, listPts, planVol, timeOffset=timeOffsetMin,  mute=True)
     else:
         print(Style.RED + '[error] ')
@@ -1615,14 +1614,19 @@ def selectBestOffset(listImg, listPts, planVol, timeOffset=0.025, mute=True):
     return ImgMatch, Pts
 
 def estimOffset(ptsOffset):
+    """
+    Utilisation du critère basique basé sur la moyenne.
+    Attention faible taille de l'échantillon et écart type parfois important
+    :param ptsOffset:
+    :return offsetYaw, offsetPitch, offsetRoll:
+    """
     sumYaw, sumPitch = 0, 0
     for ptOffset in ptsOffset:
         sumYaw += ptOffset.rollDrone + ptOffset.yawCoarseAlign
         sumPitch += ptOffset.pitchDrone + ptOffset.pitchCoarseAlign
     offsetYaw = sumYaw / len(ptsOffset)
     offsetPitch = sumPitch / len(ptsOffset)
-    offsetRoll = -2.00
-    print(Style.GREEN + 'New NIR camera offset angles : [Yaw, Pitch, Roll]= [ %.2f° | %.2f° | %.2f° ].   ' % (offsetYaw, offsetPitch, offsetRoll) + Style.RESET)
+    offsetRoll = -2.00  # ToDo  prendre en compte via le rollCoarseAlign si disponible
     return offsetYaw, offsetPitch, offsetRoll
 
 

@@ -19,8 +19,10 @@ import automatic_registration
 
 
 
+
 def estimOffsetYawPitchRoll(shootingPts, listImgMatch, planVol, dirPlanVol, dirMission, dirNameIRdrone):
-    offsetAngles_0 = planVol["offset_angles"]
+    offsetAngles_0 = planVol["offset_angles"]   # use offset angles  in FlightPlan (Excel ) or config.json (??)
+    print(Style.GREEN + 'Current NIR camera offset angles : [Yaw, Pitch, Roll]= [ %.3f° | %.3f° | %.3f° ].   ' % (planVol["offset_angles"][0], planVol["offset_angles"][1], planVol["offset_angles"][2]) + Style.RESET)
     try:
         mappingList, ImgMatchOffset, ptsOffset = IRd.summaryFlight(shootingPts, listImgMatch, planVol, dirPlanVol,
                                                                    optionAlignment='best-offset',
@@ -51,7 +53,7 @@ def estimOffsetYawPitchRoll(shootingPts, listImgMatch, planVol, dirPlanVol, dirM
                                              crop=config.CROP,
                                              listPts=ptsOffset,
                                              option_alti='sealevel',
-                                             clean_proxy=False,
+                                             clean_proxy=True,
                                              multispectral_folder=None,
                                              traces=traces)
     try:
@@ -59,5 +61,8 @@ def estimOffsetYawPitchRoll(shootingPts, listImgMatch, planVol, dirPlanVol, dirM
     except Exception as exc:
         logging.error(Style.YELLOW + "WARNING : Flight analytics cannot plot.\nError = {}".format(exc) + Style.RESET)
     offsetYaw, offsetPitch, offsetRoll = IRd.estimOffset(ptsOffset)
+    print(Style.GREEN + 'New NIR camera offset angles : [Yaw, Pitch, Roll]= [ %.3f° | %.3f° | %.3f° ].   ' % (offsetYaw, offsetPitch, offsetRoll) + Style.RESET)
+
+
 
     return offsetYaw, offsetPitch, offsetRoll

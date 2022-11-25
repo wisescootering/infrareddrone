@@ -19,13 +19,18 @@ from irdrone.utils import Style
 
 
 
-def analyzis_motion_camera(dirMission, shootingPts, planVol, showAnglPlot=False, showDisperPlot=False):
+def analyzis_motion_camera(dirMission, shootingPts, offsetAngles=None, showAnglPlot=False, showDisperPlot=False):
     timeLine, yawIR2VI, pitchIR2VI, rollIR2VI = [], [], [], []
     timeLinePostProcess, yawCoarse, pitchCoarse, rollCoarse = [], [], [], []
 
     # List of motion models of IRdrone images.  Ext .py
     result_dir = Path(dirMission) / "ImgIRdrone"
     ImgPostProcess = sorted(result_dir.glob("*.npy"))
+
+    if offsetAngles is not None:
+        yawOffset, pitchOffset, rollOffset = offsetAngles[0], offsetAngles[1], offsetAngles[1]
+    else:
+        yawOffset, pitchOffset, rollOffset = 0., 0., 0.
 
     # -------------------------------------------------------
     k = 0
@@ -51,19 +56,17 @@ def analyzis_motion_camera(dirMission, shootingPts, planVol, showAnglPlot=False,
                 print(Style.RED + "erreur lors de la lectures des angles process \nError = {}"%exc + Style.RESET)
 
     # -----------------------------------------------------------------------------------
-    plotAnglesAlignment(timeLine, yawIR2VI, pitchIR2VI, rollIR2VI,
-                        timeLinePostProcess, yawCoarse, pitchCoarse, rollCoarse, dirMission=dirMission, showPlot=showAnglPlot)
-    plotRollAlignment(timeLine, rollIR2VI, timeLinePostProcess, rollCoarse, dirMission=dirMission, showPlot=showAnglPlot)
-    plotDisperPitchYaw(yawIR2VI, pitchIR2VI, rollIR2VI,
-                       yawCoarse, pitchCoarse, rollCoarse, planVol, dirMission=dirMission, showPlot=showDisperPlot)
+    plotAnglesAlignment(timeLine, yawIR2VI, pitchIR2VI,  yawCoarse, pitchCoarse, rollCoarse, rollIR2VI, yawOffset, pitchOffset, rollOffset, timeLinePostProcess, dirMission=dirMission, showPlot=showAnglPlot)
+    plotRollAlignment(timeLine, rollIR2VI, timeLinePostProcess, rollCoarse, rollOffset, dirMission=dirMission, showPlot=showAnglPlot)
+    plotDisperPitchYaw(yawIR2VI, pitchIR2VI, rollIR2VI, yawCoarse, pitchCoarse, rollCoarse, yawOffset, pitchOffset, rollOffset, dirMission=dirMission, showPlot=showDisperPlot)
     return
 
 
-def plotDisperPitchYaw(yawIR2VI, pitchIR2VI, rollIR2VI, yawCoarse, pitchCoarse, rollCoarse, planVol, dirMission=None, showPlot=False):
+def plotDisperPitchYaw(yawIR2VI, pitchIR2VI, rollIR2VI, yawCoarse, pitchCoarse, rollCoarse, yawOffset, pitchOffset, rollOffset, dirMission=None, showPlot=False):
     # --------   Courbe de dispersion des angles   pitch(yaw)
     _, (ax1, ax2) = plt.subplots(nrows=1, ncols=2)
-    myTitleX = '. Offset = ' + str(np.round(planVol["offset_angles"][0], 2)) + '°'
-    myTitleY = '. Offset =' + str(np.round(planVol["offset_angles"][1], 2)) + '°'
+    myTitleX = '. Offset = %.2f °' % yawOffset
+    myTitleY = '. Offset = %.2f °' % pitchOffset
     missionTitle = dirMission.split("/")[-1]
     min, max = disperLimit(yawIR2VI, pitchIR2VI, yawCoarse, pitchCoarse)
     disperPitchYaw_plot(ax1, pitchIR2VI, yawIR2VI, min, max, missionTitle, myTitleX, myTitleY, 'Theoretical alignment', color='darkorange')
@@ -120,11 +123,11 @@ def disperPitchYaw_plot(ax, fx, fy, mini, maxi, missionTitle, myTitleX, myTitleY
     return
 
 
-def plotRollAlignment(timeLine, rollIR2VI, timeLinePostProcess, rollCoarse, dirMission=None, showPlot=True):
+def plotRollAlignment(timeLine, rollIR2VI, timeLinePostProcess, rollCoarse, rollOffset, dirMission=None, showPlot=True):
     if dirMission is None:
         return
 
-    missionTitle = dirMission.split("/")[-1]
+    missionTitle = "Mission : %s   Roll Offset = %.3f" % (dirMission.split("/")[-1], rollOffset)
     _, (ax1) = plt.subplots(nrows=1, ncols=1)
     plotAnglesAlignment_2curves(ax1, timeLine, rollIR2VI, timeLinePostProcess, rollCoarse,
                                 label1="Roll theoretical.              average = {:.2f}°".format(
@@ -142,13 +145,11 @@ def plotRollAlignment(timeLine, rollIR2VI, timeLinePostProcess, rollCoarse, dirM
     return
 
 
-def plotAnglesAlignment(timeLine, yawIR2VI, pitchIR2VI, rollIR2VI,
-                        timeLinePostProcess, yawCoarse, pitchCoarse, rollCoarse,
-                        dirMission=None, showPlot=False):
+def plotAnglesAlignment(timeLine, yawIR2VI, pitchIR2VI,  yawCoarse, pitchCoarse, rollCoarse, rollIR2VI, yawOffset, pitchOffset, rollOffset, timeLinePostProcess,dirMission=None, showPlot=False):
     if dirMission is None:
         return
 
-    missionTitle = dirMission.split("/")[-1]
+    missionTitle = "Mission : %s   Yaw Offset = %.3f   Pitch Offset = %.3f" % (dirMission.split("/")[-1], yawOffset, pitchOffset)
     _, (ax1, ax2) = plt.subplots(nrows=2, ncols=1)
     plotAnglesAlignment_2curves(ax1, timeLine, yawIR2VI, timeLinePostProcess, yawCoarse,
                                 label1="Yaw theoretical.              average = {:.2f}°".format(np.average(yawIR2VI, axis=0)), color1='green',marksize1=1,
