@@ -787,7 +787,7 @@ def nameImageNIRSummary(nameImageComplet):
 def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=None,
                   seaLevel=False, dirSavePlanVol=None, saveGpsTrack=False,
                   saveExcel=False, savePickle=True, mute=True, altitude_api_disabled=False,
-                  optionAlignment=None, ratioSynchro=0.25, muteGraph=False):
+                  muteGraph=False):
     """
     :param listImg:      list of image pairs VI/IR matched at the same point
     :param mute:
@@ -867,14 +867,21 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
     # ---------  Save GPS Track in Garmin format (.gpx) -----------------------------------------------------
         if saveGpsTrack:
             uGPS.writeGPX(listPts, dirSaveFig, planVol['mission']['date'], mute=True)
+    # ----------  Save summary in Excel format -----------------------------------------------------------
+    SaveSummaryInExcelFormat(dirSavePlanVol, saveExcel, listPts, listImg, mute=True)
+    # ----------  Save summary in Pickle format -----------------------------------------------------------
+    SaveSummaryInNpyFormat(dirSavePlanVol, savePickle, planVol, listPts)
+    return listPts
 
+
+def select_pairs(listPts, listImg, planVol, optionAlignment=None, ratioSynchro=0.25, folder_save=None):
     # ---- Selecting the image pairs for the alignment among the available images according to the alignment option value :
     #  optionAlignment == 'all' or None   Selecting all available image pairs in the AerialPhotography folder.
     #  optionAlignment == 'best-synchro'         Selecting the best synchronized image pairs for alignment.
     #  optionAlignment == 'best-mapping'         Selection of image pairs for mapping among aligned images.
     #  optionAlignment == 'best-offset'          Selection of image pairs with a timing deviation of less than 0.05s. Used to calculate offset angles.
     ImgMatchForAlignment, PtsForAlignment = [], []
-    if optionAlignment == None or optionAlignment == 'all' or timeLapseDrone <= 0:
+    if optionAlignment == None or optionAlignment == 'all':
         ImgMatchForAlignment, PtsForAlignment = selectAllImages(listImg, listPts, planVol, ratioSynchro=ratioSynchro)
     elif optionAlignment == 'best-synchro':
         ImgMatchForAlignment, PtsForAlignment = selectBestSynchro(listImg, listPts, planVol, ratioSynchro=ratioSynchro)
@@ -888,18 +895,15 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
         print(Style.RED + '[error] ')
         pass
     # --------- Selection of image pairs for mapping among aligned images. ------------------------------------------
-    visualize_matches_on_map(PtsForAlignment, listPts, folder_save=dirSaveFig, name=optionAlignment)
-    # ----------  Save summary in Excel format -----------------------------------------------------------
-    SaveSummaryInExcelFormat(dirSavePlanVol, saveExcel, listPts, listImg, mute=True)
-    # ----------  Save summary in Pickle format -----------------------------------------------------------
-    SaveSummaryInNpyFormat(dirSavePlanVol, savePickle, planVol, listPts)
-
+    visualize_matches_on_map(PtsForAlignment, listPts, folder_save=folder_save, name=optionAlignment)
     return ImgMatchForAlignment, PtsForAlignment
 
 def legacy_best_mapping_selection(listPts, folder_save=None):
     return odm.legacy_buildMappingList(listPts, overlap_x=cf.OVERLAP_X, overlap_y=cf.OVERLAP_Y, dirSaveFig=folder_save)
 
 def visualize_matches_on_map(selected_points, all_points_list, folder_save=None, name=None):
+    if folder_save is not None and not osp.isdir(folder_save):
+        Path(folder_save).mkdir(parents=True, exist_ok=True)
     _camera_make, _camera_type, lCapt_x, lCapt_y, _focal_factor, focalPix = lectureCameraIrdrone()
     odm.visu_mapping(selected_points, all_points_list, focal_DJI=focalPix, lCapt_x=lCapt_x, lCapt_y=lCapt_y, dirSaveFig=folder_save, name=name)
 

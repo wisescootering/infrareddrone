@@ -56,6 +56,7 @@ def extract_flight_data(config_file: Union[str, Path]) -> dict:
     flight_data_dict = IRd.extractFlightPlan(config_file, mute=True)
     print(Style.GREEN + "Time shift between original VIS and NIR images :  %s s   "
     "First image shooting at  %s" %(round(flight_data_dict["delta_time_ir"],2), flight_data_dict["mission"]["date"]) + Style.RESET)
+
     return flight_data_dict
 
 
@@ -176,9 +177,8 @@ def select_matching_pairs(flight_data_dict: dict, matched_images_paths_list: Lis
         # Fixed the alignment defect [yaw,pitch,roll] of the NIR camera aiming axis in °
         print(Style.GREEN + 'NIR camera offset angles : [Yaw, Pitch, Roll]= [ %.2f° | %.2f° | %.2f° ].   '%(
             flight_data_dict["offset_angles"][0], flight_data_dict["offset_angles"][1], flight_data_dict["offset_angles"][2]) + Style.RESET)
-        matched_images_paths_selection, shooting_pts_selection = IRd.summaryFlight(
+        shooting_pts_list = IRd.summaryFlight(
             shooting_pts_list, matched_images_paths_list, flight_data_dict, configuration["config_file"],
-            optionAlignment=selection_option,
             offsetTheoreticalAngle=offsetAngle,
             seaLevel=configuration['seaLevel'],
             dirSavePlanVol=osp.dirname(configuration["config_file"]),
@@ -187,6 +187,10 @@ def select_matching_pairs(flight_data_dict: dict, matched_images_paths_list: Lis
             savePickle=configuration['savePickle'],
             mute=True,
             altitude_api_disabled=configuration["disable_altitude_api"]
+        )
+        matched_images_paths_selection, shooting_pts_selection = IRd.select_pairs(
+            shooting_pts_list, matched_images_paths_list, flight_data_dict, optionAlignment=selection_option,
+            folder_save=configuration["working_directory"]
         )
     except Exception as exc:
         logging.error(Style.RED + "Cannot compute flight analytics - you can still process your images but you won't get altitude profiles and gpx\nError = {}".format(exc)+ Style.RESET)
@@ -292,6 +296,7 @@ def analyzis(flight_data_dict: dict, shootingPts: List[ShootPoint], listImgMatch
         logging.error(
             Style.YELLOW + "WARNING : Flight analytics cannot plot.\nError = {}".format(
                 exc) + Style.RESET)
+        traceback.print_exc()
 
 
 def configure(args: argparse.Namespace) -> dict:
@@ -394,6 +399,8 @@ def main_process(args: argparse.Namespace):
     flight_data_dict = extract_flight_data(conf["config_file"])
     conf["out_images_folder"] = flight_data_dict["out_images_folder"]
     conf["timelapse_vis_interval"] = flight_data_dict["timelapse_vis_interval"]
+    if conf["timelapse_vis_interval"] <= 0:
+        conf["selection"] = "all"
     
     # 2 > Find all matching pairs of images from both cameras
     # --------------------------------------------------------------------------------------------------------------
