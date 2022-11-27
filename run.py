@@ -23,6 +23,7 @@ import automatic_registration
 from version import __version__ as versionIRdrone
 from config import CROP
 from pathlib import Path
+import offset_angles
 
 if __name__ == "__main__":
     # --------------------------------------------------------------------------------------------------------------
@@ -47,8 +48,10 @@ if __name__ == "__main__":
         help= 'best-synchro: only pick pairs of images with gap < 1/4th of the TimeLapseDJI interval ~ 0.5 seconds'
         + 'best-mapping: select best synchronized images + granting a decent overlap'
     )
+    parser.add_argument('--offset', type=str, default="manual", choices=["manual", "auto"],  help='Choix des angles offset')
     args = parser.parse_args()
     clean_proxy = args.clean_proxy
+    offset = args.offset
     dirPlanVol = args.config
     if dirPlanVol is None or not os.path.isfile(dirPlanVol):
         print(Style.GREEN + "File browser")
@@ -99,6 +102,7 @@ if __name__ == "__main__":
     #   In order for an A_j image to be considered synchronized with a B_k image, the closest (nearest) time criterion is used:
     #   Selected from the {B_k} images that have the minimum date difference (deltaTime) with the A_j image
     #
+    #   - Find pairs of images with a timing deviation of less than ~ 0,05 s. Used to calculate offset angles [Yaw, Pitch, Roll].
     #   - Construction of the GPS trace between the image pairs. (file format .gpx)
     #   - Write data in Excel and Binary files.
     #   - Plot of the drone flight profile and the image mapping diagram (file format .png)
@@ -110,31 +114,46 @@ if __name__ == "__main__":
     if synchro_date is None:
         raise NameError(Style.RED + "Synchro start date needs to be provided!" + Style.RESET)
     shootingPts = None # process_raw_pairs shall work with None shootingPts
+
+    #  Find matching pairs of images from both cameras
     listImgMatch, DtImgMatch, listdateMatch, shootingPts = \
         IRd.matchImagesFlightPath(imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR,
                                   synchro_date, mute=True)
-
-    # Image selection for VIS NIR pair alignment process based on option-alignment value
-    # > 'all'  or None   Selects all available pairs of images in AerialPhotography
-    # > 'best-synchro'   Selects only images with timing deviation less than TimeLapseDJI*0.25
-    # > 'best-mapping'   Selects in well-synchronized images those with appropriate mapping overlap.
-    # Note: If the shooting mode is not HYPERLAPSE the registration option is forced to "all".
-    selection_option = args.selection
-    if timeLapseDrone > 0:
-        print(Style.GREEN + 'Option for images alignment is %s ' % selection_option + Style.RESET)
-    else:
-        selection_option = 'all'
-        traces = ["vis", "nir", "vir"]
-        createMappingList = False
-        print(
-            Style.YELLOW + 'The shots of this mission were not taken in hyperlapse mode.\n All pairs will be aligned.\n No mapping.\n Option for images alignment is %s ' % selection_option + Style.RESET)
-
     try:
+        #  Offset angles estimation
+        if offset == "auto":
+            offsetYaw, offsetPitch, offsetRoll = offset_angles.estimOffsetYawPitchRoll(shootingPts, listImgMatch, planVol, dirPlanVol, dirMission, dirNameIRdrone)
+            offsetAngle = [offsetYaw, offsetPitch, offsetRoll]
+            planVol["offset_angles"] = offsetAngle
+        else:
+            offsetAngle = planVol["offset_angles"]
+
+        phase_test = False
+        if phase_test:
+            analys.analyzis_motion_camera(dirMission, shootingPts, [offsetYaw, offsetPitch, offsetRoll],
+                                          showAnglPlot=True, showDisperPlot=True)
+
+        # Image selection for VIS NIR pair alignment process based on option-alignment value
+        # > 'all'  or None   Selects all available pairs of images in AerialPhotography
+        # > 'best-synchro'   Selects only images with timing deviation less than TimeLapseDJI*0.25
+        # > 'best-mapping'   Selects in well-synchronized images those with appropriate mapping overlap.
+        # Note: If the shooting mode is not HYPERLAPSE the registration option is forced to "all".
+        selection_option = args.selection
+        if timeLapseDrone > 0:
+            print(Style.GREEN + 'Option for images alignment is %s ' % selection_option + Style.RESET)
+        else:
+            selection_option = 'all'
+            traces = ["vis", "nir", "vir"]
+            createMappingList = False
+            print(
+                Style.YELLOW + 'The shots of this mission were not taken in hyperlapse mode.\n All pairs will be aligned.\n No mapping.\n Option for images alignment is %s ' % selection_option + Style.RESET)
+
+
         # Fixed the alignment defect [yaw,pitch,roll] of the NIR camera aiming axis in °
         print(Style.GREEN + 'NIR camera offset angles : [Yaw, Pitch, Roll]= [ %.2f° | %.2f° | %.2f° ].   '%(planVol["offset_angles"][0], planVol["offset_angles"][1], planVol["offset_angles"][2]) + Style.RESET)
         mappingList, ImgMatchProcess, ptsProcess = IRd.summaryFlight(shootingPts, listImgMatch, planVol, dirPlanVol,
                         optionAlignment=selection_option,
-                        offsetTheoreticalAngle=planVol["offset_angles"],
+                        offsetTheoreticalAngle=offsetAngle,
                         seaLevel=seaLevel,
                         dirSavePlanVol=osp.dirname(dirPlanVol),
                         saveGpsTrack=saveGpsTrack,
@@ -150,7 +169,7 @@ if __name__ == "__main__":
     # -------------------------------------------------------------------------------------------------------------
     # 3 > Image processing.
     #     Automatic_registration of Vi and IR image pairs.
-    #     Build ViR and NDVI images.
+    #     Build multispectal images ( Red/Green/Blue/NIR   .tif) and  vis, nir images (.jpg). vir & ndvi images are optional.
     # -------------------------------------------------------------------------------------------------------------
     odm_image_directory = None
     if odm_multispectral:
@@ -191,7 +210,7 @@ if __name__ == "__main__":
 
     if analysisAlignment:
         try:
-            analys.analyzis_motion_camera(dirMission, shootingPts, planVol, showAnglPlot=showAnglPlot, showDisperPlot=showDisperPlot)
+            analys.analyzis_motion_camera(dirMission, shootingPts, planVol["offset_angles"], showAnglPlot=showAnglPlot, showDisperPlot=showDisperPlot)
             IRd.SaveSummaryInExcelFormat(dirMission, saveExcel, shootingPts, listImgMatch, mute=True)
             IRd.SaveSummaryInNpyFormat(dirMission, savePickle, planVol, shootingPts)
         except Exception as exc:

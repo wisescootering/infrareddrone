@@ -30,6 +30,7 @@ class ShootPoint:
         self.timeDeviation = timeDeviation
         self.bestSynchro = 0
         self.bestMapping = 0
+        self.bestOffset = 0
         self.alignment = 0
         self.altGround = 324.
         self.altGeo = 357.
@@ -116,6 +117,7 @@ class ShootPoint:
                     "timeDeviation": self.timeDeviation,
                     "bestSynchro": self.bestSynchro,
                     "bestMapping": self.bestMapping,
+                    "bestOffset": self.bestMapping,
                     "alignment": self.alignment
                 },
                 'Attitude': {
@@ -177,6 +179,7 @@ class ShootPoint:
         self.timeDeviation = dic['Img']["timeDeviation"]
         self.bestSynchro = dic['Img']['bestSynchro']
         self.bestMapping = dic['Img']['bestMapping']
+        self.bestOffset = dic['Img']['bestOffset']
         self.alignment = dic['Img']['alignment']
 
         self.yawDrone = dic['Attitude']['drone']["yaw"]
@@ -327,6 +330,7 @@ def newPpoint(numero):
                  "timeDeviation": 0.54,
                  "bestSynchro": 0,
                  "bestMapping": 0,
+                 "bestOffset": 0,
                  "alignment": 0
                  },
             'Attitude':
