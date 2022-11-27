@@ -307,8 +307,14 @@ def extractFlightPlan(dirPlanVol, mute=True):
         if len(imgListDrone) == 0 and len(imgListIR) == 0:
             print('%i visible images (Vi) and %i near infrared images (NiR) for this flight.' %
                   (len(imgListDrone), len(imgListIR)))
-
-    return planVol, imgListDrone, deltaTimeDrone, timeLapseDrone, imgListIR, deltaTimeIR, timeLapseIR, dirNameIRdrone
+    planVol["timelapse_vis_interval"] = timeLapseDrone
+    planVol["delta_time_vis"] = deltaTimeDrone
+    planVol["timelapse_ir_interval"] = timeLapseIR
+    planVol["delta_time_ir"] = deltaTimeIR
+    planVol["images_path_list_vis"] = imgListDrone
+    planVol["images_path_list_ir"] = imgListIR
+    planVol["out_images_folder"] = dirNameIRdrone
+    return planVol
 
 
 def offsetAnglesCheck(planVol, mute=False):
@@ -780,7 +786,7 @@ def nameImageNIRSummary(nameImageComplet):
 
 def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=None,
                   seaLevel=False, dirSavePlanVol=None, saveGpsTrack=False,
-                  saveExcel=False, savePickle=True, createMappingList=False, mute=True, altitude_api_disabled=False,
+                  saveExcel=False, savePickle=True, mute=True, altitude_api_disabled=False,
                   optionAlignment=None, ratioSynchro=0.25, muteGraph=False):
     """
     :param listImg:      list of image pairs VI/IR matched at the same point
@@ -796,7 +802,7 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
         timeline ---------------------- delay between visible image at point P and the first visible image.
         dateVi ------------------------ date the visible image was shot             [YY-MM-DD hh:mm:ss]
         Lat, Lon, AltGround ----------- GPS coordinates of point P                  [°],[°],[m]
-        altGeo------------------- altitude of ground / sealevel               [m]
+        altGeo ------------------------ altitude of ground / sealevel               [m]
         altTakeOff -------------------- altitude of the drone relative to take-off point  (DJI ref)  [m]
         distToNextPt------------------- distance to next point                                       [m]
         capToNextPt-------------------- direction to the next point relative to the geographic north [°]
@@ -849,6 +855,7 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
         theoreticalIrToVi(listPts, av_timelapse_Vis, offset=offsetTheoreticalAngle)
 
     # ---------  Plot the flight profile --------------------------------------------------------------------
+    dirSaveFig = None
     if not muteGraph:
         dirSaveFig = osp.join(dirSavePlanVol, "Flight Analytics", "Topo")
         if not osp.isdir(dirSaveFig):
@@ -881,18 +888,20 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
         print(Style.RED + '[error] ')
         pass
     # --------- Selection of image pairs for mapping among aligned images. ------------------------------------------
-
-    if createMappingList and timeLapseDrone > 0:
-        mappingList = odm.buildMappingList(ImgMatchForAlignment, listPts, overlap_x=cf.OVERLAP_X, overlap_y=cf.OVERLAP_Y, dirSaveFig=dirSaveFig)
-    else:
-        mappingList = None
+    visualize_matches_on_map(PtsForAlignment, listPts, folder_save=dirSaveFig, name=optionAlignment)
     # ----------  Save summary in Excel format -----------------------------------------------------------
     SaveSummaryInExcelFormat(dirSavePlanVol, saveExcel, listPts, listImg, mute=True)
     # ----------  Save summary in Pickle format -----------------------------------------------------------
     SaveSummaryInNpyFormat(dirSavePlanVol, savePickle, planVol, listPts)
 
-    return mappingList, ImgMatchForAlignment, PtsForAlignment
+    return ImgMatchForAlignment, PtsForAlignment
 
+def legacy_best_mapping_selection(listPts, folder_save=None):
+    return odm.legacy_buildMappingList(listPts, overlap_x=cf.OVERLAP_X, overlap_y=cf.OVERLAP_Y, dirSaveFig=folder_save)
+
+def visualize_matches_on_map(selected_points, all_points_list, folder_save=None, name=None):
+    _camera_make, _camera_type, lCapt_x, lCapt_y, _focal_factor, focalPix = lectureCameraIrdrone()
+    odm.visu_mapping(selected_points, all_points_list, focal_DJI=focalPix, lCapt_x=lCapt_x, lCapt_y=lCapt_y, dirSaveFig=folder_save, name=name)
 
 def SaveSummaryInExcelFormat(dirMission, saveExcel, listPts, listImg, mute=True):
     dirAnalytics = Path(dirMission) / "Flight Analytics"
@@ -1626,7 +1635,7 @@ def estimOffset(ptsOffset):
         sumPitch += ptOffset.pitchDrone + ptOffset.pitchCoarseAlign
     offsetYaw = sumYaw / len(ptsOffset)
     offsetPitch = sumPitch / len(ptsOffset)
-    offsetRoll = -2.00  # ToDo  prendre en compte via le rollCoarseAlign si disponible
+    offsetRoll = 0. # @TODO:  USE ESTIMATED COARSE ROLL WHEN AVAILABLE!
     return offsetYaw, offsetPitch, offsetRoll
 
 

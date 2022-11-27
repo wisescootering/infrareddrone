@@ -73,7 +73,7 @@ def odm_mapping_optim(dirMission, dirNameIRdrone, multispectral_modality="VIR", 
     return image_database
 
 
-def buildMappingList(listPtsOptim, listPts, overlap_x=0.33, overlap_y=0.80, dirSaveFig=None, mute=True):
+def legacy_buildMappingList(listPts, overlap_x=0.33, overlap_y=0.80, dirSaveFig=None, mute=True):
     """
     focalPix            focal length camera VIS                pixels , m
     overlap_x = 0.30    percentage of overlap between two images  axe e_1
@@ -93,7 +93,7 @@ def buildMappingList(listPtsOptim, listPts, overlap_x=0.33, overlap_y=0.80, dirS
     firstImg = False
     for pointImage in listPts:
         d_y = pointImage.altGround * (1 - overlap_y) * lCapt_y / focalPix
-        if pointImage.bestSynchro ==1:
+        if pointImage.bestSynchro == 1:
             if d == 0 and firstImg is False:   # The first point for mapping has been found.
                 mappingList.append(pointImage)
                 listPts[pointImage.num - 1].bestMapping = 1
@@ -122,25 +122,29 @@ def buildMappingList(listPtsOptim, listPts, overlap_x=0.33, overlap_y=0.80, dirS
     return mappingList
 
 
-def visu_mapping(mappingList, listPts, focal_DJI=cf.IRD_FOCAL_LENGTH_PIX, lCapt_x=cf.IRD_PIX_X, lCapt_y=cf.IRD_PIX_Y, dirSaveFig=None):
-
+def visu_mapping(mappingList, listPts, focal_DJI=cf.IRD_FOCAL_LENGTH_PIX, lCapt_x=cf.IRD_PIX_X, lCapt_y=cf.IRD_PIX_Y, dirSaveFig=None, name=None):
     figure = plt.figure(figsize=(6, 6))
     ax = figure.add_subplot(111)
     order = len(mappingList)
     # --------------  Plot trajectory of the drone in the geographical referential X: W->E   Y: S->N
     #  Use UTM coordinates
-    listDrone_X, listDrone_Y , listMapping_X, listMapping_Y, listSynchro_X, listSynchro_Y = [], [], [], [], [], []
+    listDrone_X, listDrone_Y , listBestMapping_X, listBestMapping_Y, listSynchro_X, listSynchro_Y = [], [], [], [], [], []
     offsetMappingArea = (lCapt_x/1.5) * IRd.avAltitude(listPts) / focal_DJI   # in meter
-
     for pt in listPts:
         if pt.bestMapping ==1:
-            listMapping_X.append(pt.gpsUTM_X)
-            listMapping_Y.append(pt.gpsUTM_Y)
+            listBestMapping_X.append(pt.gpsUTM_X)
+            listBestMapping_Y.append(pt.gpsUTM_Y)
         if pt.bestSynchro ==1:
             listSynchro_X.append(pt.gpsUTM_X)
             listSynchro_Y.append(pt.gpsUTM_Y)
         listDrone_X.append(pt.gpsUTM_X)
         listDrone_Y.append(pt.gpsUTM_Y)
+
+    listMapping_X, listMapping_Y = [], []
+    for pt in mappingList:
+        listMapping_X.append(pt.gpsUTM_X)
+        listMapping_Y.append(pt.gpsUTM_Y)
+
     # -------------   limits
     dx = np.max(listDrone_X) - np.min(listDrone_X) + 2 * offsetMappingArea
     xmiddle = np.min(listDrone_X) - offsetMappingArea + dx/2
@@ -169,11 +173,24 @@ def visu_mapping(mappingList, listPts, focal_DJI=cf.IRD_FOCAL_LENGTH_PIX, lCapt_
             zorder=order,
             label='Shooting ~synchro.')
     # images for mapping
+    for i in range(len(listBestMapping_X)):
+        ax.plot(listBestMapping_X[i], listBestMapping_Y[i], linestyle='None',
+            marker='o', markerfacecolor=colorNames[20 + i], markeredgecolor='black', markeredgewidth=0.5,markersize=8, zorder=order)
+    if len(listBestMapping_X)>0:
+        ax.plot(listBestMapping_X[0], listBestMapping_Y[0], linestyle='None',
+            marker='o', markerfacecolor=colorNames[20], markeredgecolor='black', markeredgewidth=0.5, markersize=8, zorder=order, label='Best mapping ODM images')
+
+    # selected images for processing  
     for i in range(len(listMapping_X)):
         ax.plot(listMapping_X[i], listMapping_Y[i], linestyle='None',
             marker='o', markerfacecolor=colorNames[20 + i], markeredgecolor='black', markeredgewidth=0.5,markersize=6, zorder=order)
-    ax.plot(listMapping_X[0], listMapping_Y[0], linestyle='None',
-            marker='o', markerfacecolor=colorNames[20], markeredgecolor='black', markeredgewidth=0.5, markersize=6, zorder=order, label='Image for mapping.')
+    if len(listMapping_X)>0:
+        ax.plot(listMapping_X[0], listMapping_Y[0], linestyle='None',
+            marker='o', markerfacecolor=colorNames[20], markeredgecolor='black', markeredgewidth=0.5, markersize=6, zorder=order, label='Selected images ' + ("" if name is None else name))
+
+
+
+
 
     # -------------- Plot area scanned by images for mapping ----------------------------------------------------------
 
@@ -200,10 +217,10 @@ def visu_mapping(mappingList, listPts, focal_DJI=cf.IRD_FOCAL_LENGTH_PIX, lCapt_
     plt.gcf().subplots_adjust(left=0., bottom=0., right=1., top=1., wspace=0., hspace=0.)
 
     # -------------- Save Mapping scheme -------------------------------------------------------------------------------
-    filepath = osp.join(dirSaveFig, 'Mapping scheme')
     if dirSaveFig is None:
         pass
     else:
+        filepath = osp.join(dirSaveFig, 'Mapping scheme')
         plt.savefig(filepath, dpi=300, facecolor='w', edgecolor='w', orientation='portrait',
                     format=None, transparent=False,
                     bbox_inches='tight', pad_inches=0.1, metadata=None)
