@@ -1,8 +1,11 @@
 from skimage import filters, transform
 import numpy as np
+import os.path as osp
+import sys
+sys.path.append(osp.join(osp.dirname(__file__), ".."))
 from irdrone.utils import c2g, g2c
 from numba import jit
-import os.path as osp
+
 import logging
 import irdrone.process as pr
 from registration.constants import LAPLACIAN_ENERGIES, GRAY_SCALE, COLORED, SSD, NTG
@@ -35,48 +38,52 @@ def viz_laplacian_energy(ms_img):
     return out
 
 
-def debug_image_inputs(ref_orig, mov_orig, ref, mov, debug_fig=None, title="", mode=LAPLACIAN_ENERGIES):
+def representation_visualization(rep):
+    if rep.shape[-1] == 4:
+        mode = LAPLACIAN_ENERGIES 
+        ttl = f"Directional energies"
+        viz = [
+            (g2ci(rep[:, :, 0]), "-"), (g2ci(rep[:, :, 1]), "|"),
+            (g2ci(rep[:, :, 2]), "/"), (g2ci(rep[:, :, 3]), "\\")
+        ]
+        viz+= [(viz_laplacian_energy(rep), "Energies")]
+    elif rep.shape[-1] == 1:
+        mode = ttl = GRAY_SCALE
+        viz =  [(g2ci(rep[:, :, 0]), ttl)]
+    elif rep.shape[-1] == 3:
+        mode = ttl = COLORED
+        viz =  [(rep, "Colored")]
+    ttl += f"{rep.shape}"
+    return viz, mode, ttl
+
+
+def representation_visualization_pairs(ref, mov, ref_orig=None, mov_orig=None, debug_fig=None, title="", **kwargs):
     """
     Support various modes of plotting the images depending on the representation mode
     """
+    
+    viz_ref, mode, ttl  = representation_visualization(ref)
+    if ref_orig is not None:
+        viz_ref+= [(ref_orig.data, "VIS")]
+    viz_mov, _, _ = representation_visualization(mov)
+    if ref_orig is not None:
+        viz_mov+= [(mov_orig.data, "NIR")]
+    viz = [viz_ref, viz_mov]
     debug_fig = None if debug_fig is None else (debug_fig + "inputs_"+mode+".png")
-    if mode == LAPLACIAN_ENERGIES:
-        pr.show(
-            [
-                [(ref_orig.data, "VIS"), (g2ci(ref[:, :, 0]), "-"), (g2ci(ref[:, :, 1]), "|"),
-                 (g2ci(ref[:, :, 2]), "/"), (g2ci(ref[:, :, 3]), "\\"), (viz_laplacian_energy(ref), "Energies")
-                 ],
-                [(mov_orig.data, "NIR"), (g2ci(mov[:, :, 0]), "-"), (g2ci(mov[:, :, 1]), "|"),
-                 (g2ci(mov[:, :, 2]), "/"), (g2ci(mov[:, :, 3]), "\\"), (viz_laplacian_energy(mov), "Energies")
-                 ]
-            ],
-            suptitle=title+"Directional energies {}".format(mov.shape),
-            save=debug_fig
-        )
-    if mode == GRAY_SCALE:
-        pr.show(
-            [
-                [(ref_orig.data, "VIS"), (g2ci(ref[:, :, 0]), "Gray")],
-                [(mov_orig.data, "NIR"), (g2ci(mov[:, :, 0]), "Gray")]
-            ],
-            suptitle=title+"Gray {}".format(mov.shape),
-            save=debug_fig
-        )
-    if mode == COLORED:
-        pr.show(
-            [
-                [(ref_orig.data, "VIS"), (mov_orig.data, "NIR")],
-            ],
-            suptitle=title+"Colored {}".format(mov.shape),
-            save=debug_fig
-        )
+    pr.show(
+        viz,
+        suptitle=title+ttl,
+        save=debug_fig,
+        **kwargs
+    )
 
 
 # --------------------------------------------------- Representations --------------------------------------------------
 # ----------------------------------------------------------------------------------------------------------------------
-def multispectral_representation(img, sigma_gaussian=None, mode=LAPLACIAN_ENERGIES):
+def multispectral_representation(_img, sigma_gaussian=None, mode=LAPLACIAN_ENERGIES):
     """Laplacian Energy , Gray scales, Colors
     """
+    img = _img if isinstance(_img, np.ndarray) else _img.data
     shp = img.shape
     if mode == LAPLACIAN_ENERGIES:
         ms_img = np.empty((shp[0], shp[1], 4))
@@ -305,7 +312,7 @@ def run_multispectral_cost(ref_orig, mov_orig, debug_dir=None, debug=True, suffi
     prefix = prefix+"ds{}_{}".format(align_config.downscale, align_config.mode)
     if debug or debug_dir is not None:
         debug_fig = None if debug_dir is None else osp.join(debug_dir, "{}_{}".format(prefix, suffix))
-        debug_image_inputs(ref_orig, mov_orig, ref, mov, mode=align_config.mode, debug_fig=debug_fig, title="{} {}".format(prefix, suffix))
+        representation_visualization_pairs(ref, mov, ref_orig=ref_orig, mov_orig=mov_orig, debug_fig=debug_fig, title="{} {}".format(prefix, suffix))
     if align_config.downscale >1:
         ref_pyr = transform.pyramid_reduce(ref, downscale=align_config.downscale, multichannel=True)
         mov_pyr = transform.pyramid_reduce(mov, downscale=align_config.downscale, multichannel=True)
@@ -332,6 +339,7 @@ if __name__ == '__main__':
     debug_dir = "_debug_cost_factorize"
     if not osp.isdir(debug_dir):
         mkdir(debug_dir)
+    debug_dir = None
     align_conf = AlignmentConfig(
         mode=[LAPLACIAN_ENERGIES, GRAY_SCALE, COLORED][0],
         dist_mode=[SSD, NTG][1],

@@ -2,7 +2,6 @@
 """
 image processing utilities
 """
-from genericpath import isfile
 import shutil
 import cv2
 import sys

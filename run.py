@@ -150,6 +150,7 @@ if __name__ == "__main__":
 
 
         # Fixed the alignment defect [yaw,pitch,roll] of the NIR camera aiming axis in °
+        print(Style.GREEN + 'NIR camera offset angles : [Yaw, Pitch, Roll]= [ %.2f° | %.2f° | %.2f° ].   '%(planVol["offset_angles"][0], planVol["offset_angles"][1], planVol["offset_angles"][2]) + Style.RESET)
         mappingList, ImgMatchProcess, ptsProcess = IRd.summaryFlight(shootingPts, listImgMatch, planVol, dirPlanVol,
                         optionAlignment=selection_option,
                         offsetTheoreticalAngle=offsetAngle,
@@ -214,7 +215,7 @@ if __name__ == "__main__":
             IRd.SaveSummaryInNpyFormat(dirMission, savePickle, planVol, shootingPts)
         except Exception as exc:
             logging.error(
-                Style.YELLOW + "WARNING : Flight analytics cannot plot.\nError = {}".format(
+                Style.YELLOW + "WARNIG : Flight analytics cannot plot.\nError = {}".format(
                     exc) + Style.RESET)
 
     # -------------------------------------------------------------------------------------------------------------
