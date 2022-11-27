@@ -11,20 +11,22 @@ import logging
 import os
 import os.path as osp
 import sys
+
 import utils.utils_IRdrone as IRd
 from irdrone.utils import Style
+
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
-import config
+import traceback
+
 import automatic_registration
+import config
 
 
-
-
-def estimOffsetYawPitchRoll(shootingPts, listImgMatch, planVol, dirPlanVol, dirMission, dirNameIRdrone):
+def estimOffsetYawPitchRoll(shootingPts, listImgMatch, planVol, dirPlanVol, dirMission):
     offsetAngles_0 = planVol["offset_angles"]   # use offset angles  in FlightPlan (Excel ) or config.json (??)
     print(Style.GREEN + 'Current NIR camera offset angles : [Yaw, Pitch, Roll]= [ %.3f° | %.3f° | %.3f° ].   ' % (planVol["offset_angles"][0], planVol["offset_angles"][1], planVol["offset_angles"][2]) + Style.RESET)
     try:
-        mappingList, ImgMatchOffset, ptsOffset = IRd.summaryFlight(shootingPts, listImgMatch, planVol, dirPlanVol,
+        ImgMatchOffset, ptsOffset = IRd.summaryFlight(shootingPts, listImgMatch, planVol, dirPlanVol,
                                                                    optionAlignment='best-offset',
                                                                    offsetTheoreticalAngle=offsetAngles_0,
                                                                    seaLevel=True,
@@ -32,7 +34,6 @@ def estimOffsetYawPitchRoll(shootingPts, listImgMatch, planVol, dirPlanVol, dirM
                                                                    saveGpsTrack=False,
                                                                    saveExcel=True,
                                                                    savePickle=False,
-                                                                   createMappingList=False,
                                                                    muteGraph=True,
                                                                    mute=True,
                                                                    altitude_api_disabled=False)
@@ -40,9 +41,9 @@ def estimOffsetYawPitchRoll(shootingPts, listImgMatch, planVol, dirPlanVol, dirM
         logging.error(
             Style.RED + "Cannot compute flight analytics - you can still process your images but you won't get altitude profiles and gpx\nError = {}".format(
                 exc) + Style.RESET)
-        mappingList = None
+        traceback.print_exc()
 
-    traces = ["vir"]  # ["vis", "nir", "vir", "ndvi"]
+    traces = ["vir", "vis"] #, "nir", "vir", "ndvi"]
     nbImgProcess = len(ptsOffset)
     print(Style.YELLOW + 'WARNING : The processing of these %i images will take %.2f h.' % (nbImgProcess, 1.5 * nbImgProcess / 60.) + Style.RESET)
     dirNameOffset = os.path.join(dirMission, 'ImgOffset')
