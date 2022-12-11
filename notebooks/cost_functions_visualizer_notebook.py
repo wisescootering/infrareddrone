@@ -177,14 +177,47 @@ cost_dict = compute_cost_surfaces_with_traces(
     prefix="",
     align_config=align_config
 )
+
+# %%
+def build_x_poly_values(_x):
+    x = np.array([_x]).T
+    a_mat = np.concatenate([x**2, x, np.ones_like(x)], axis=1)
+    return a_mat
+
+def poly_fit_1d(profile, amin, neighborhood = 1):
+    '''
+    [x1², x1 , 1]  * [ a ] = [y1]
+    [x2², x2 , 1]    [ b ]   [y2]
+        ...          [ c ]    ...
+    '''
+    if neighborhood==1:
+        y = profile[amin-1:amin+1+1]
+        x = np.array([-1, 0, 1])
+    if neighborhood==2:
+        y = profile[amin-2:amin+2+1]
+        x = np.array([-2, -1, 0, 1, 2])
+    a_mat = build_x_poly_values(x)
+    a_mat_pinv = np.linalg.pinv(a_mat) #.shape, y.shape
+    return np.dot(a_mat_pinv, y)
+
+# %%
 profile = cost_dict["costs"][0, 0, :, 0, :].sum(axis=-1)
 amin, min_cost = np.argmin(profile), np.min(profile)
-plt.figure(figsize=(10, 10))
-plt.plot(np.arange(len(profile)) - len(profile)//2, profile, "r--")
-plt.plot(amin- len(profile)//2, min_cost, "go")
-plt.title("Polar matching cost")
-plt.xlabel("Polar Angle")
-plt.ylabel("Matching cost")
-plt.grid()
-
-
+poly_coeffs = poly_fit_1d(profile, amin, neighborhood = 1)
+coarse_roll_angle = amin - poly_coeffs[1]/(2*poly_coeffs[0]) - len(profile)//2
+plot=True
+if plot:
+    refined_argmin = - poly_coeffs[1] /(2 * poly_coeffs[0])
+    refined_min = poly_coeffs[0]*refined_argmin**2 + poly_coeffs[1]*refined_argmin+poly_coeffs[2]
+    x_fit = build_x_poly_values(np.linspace(-2, 2, num=100))
+    y_fit = np.dot(x_fit, poly_coeffs)
+    plt.figure(figsize=(10, 10))
+    plt.plot(np.arange(len(profile)) - len(profile)//2, profile, "r--", label="cost function")
+    plt.plot(amin- len(profile)//2, min_cost, "go")
+    plt.plot(x_fit[:, 1]+amin - len(profile)//2, y_fit, "b-", label="Parabola fitting")
+    plt.plot(amin+refined_argmin - len(profile)//2, refined_min, "mo", label=f"REFINED {coarse_roll_angle}")
+    plt.title("Polar matching cost")
+    plt.xlabel("Polar Angle")
+    plt.ylabel("Matching cost")
+    plt.legend()
+    plt.grid()
