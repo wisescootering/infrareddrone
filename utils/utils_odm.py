@@ -225,10 +225,12 @@ def visu_mapping(mappingList, listPts, focal_DJI=cf.IRD_FOCAL_LENGTH_PIX, lCapt_
                     format=None, transparent=False,
                     bbox_inches='tight', pad_inches=0.1, metadata=None)
         print(Style.CYAN + 'INFO : ------ Save Mapping scheme in %s' % filepath + Style.RESET)
+        # plt.close()
 
     print(Style.YELLOW + 'WARNING : Look at the mapping scheme  >>>>' + Style.RESET)
     plt.show()
     plt.close()
+    
 
 
 def northArrow(x0,y0,d):

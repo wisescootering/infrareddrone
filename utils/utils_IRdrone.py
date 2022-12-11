@@ -13,39 +13,42 @@ version 1.3  2022-09-27 19:37:00
 
 
 
+import json
 import logging
 import os
 import os.path as osp
-import pandas as pd
-import sys
 import pickle
-import json
+import sys
 from copy import copy, deepcopy
 from pathlib import Path
-import subprocess
+
+import pandas as pd
+
 sep = '\\' if os.name == "nt" else "/"
 try:
     from tkinter import Tk
-    from tkinter.filedialog import askopenfilename, askdirectory
+    from tkinter.filedialog import askdirectory, askopenfilename
 except:
     pass
-from operator import itemgetter
 import datetime
+from datetime import timedelta
+from operator import itemgetter
+
+import numpy as np
 import openpyxl
 from openpyxl import Workbook
-import numpy as np
-from datetime import timedelta
 
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
+from typing import List, Optional
+
+import config as cf
 import irdrone.process as pr
 import irdrone.utils as ut
-from irdrone.utils import Style
+import utils.angles_analyzis as analys
 import utils.utils_GPS as uGPS
 import utils.utils_odm as odm
-import utils.utils_IRdrone_Class as IRcl
-import utils.angles_analyzis as analys
-import config as cf
-
+from irdrone.utils import Style
+from utils.utils_IRdrone_Class import ShootPoint
 
 
 # -----   Convertisseurs de dates   Exif<->Python  Excel->Python    ------
@@ -523,14 +526,14 @@ def timelapseRectification(imgList, date_mission):
 # -----------------------------------     Appairement des images      -------------------------------------------------
 
 
-def matchImagesFlightPath(imgListDrone,
-                          deltaTimeDrone,
-                          timeLapseDrone,
-                          imgListIR,
-                          deltaTimeIR,
-                          timeLapseIR,
-                          dateMission=None,
-                          mute=False):
+def matchImagesFlightPath(imgListDrone: List[Path],
+                          deltaTimeDrone: float,
+                          timeLapseDrone: float,
+                          imgListIR: List[Path],
+                          deltaTimeIR: float,
+                          timeLapseIR: float,
+                          dateMission: Optional[datetime.timedelta]=None,
+                          mute: Optional[bool]=False) -> List[ShootPoint]:
     """
     :param imgListDrone:  [...,(file name, path name, date), ...]
     :param deltaTimeDrone:
@@ -542,8 +545,7 @@ def matchImagesFlightPath(imgListDrone,
     :param mute:
     :return:  listImgMatch   [..., (imgListDrone[i][1], imgListIR[k][1]), ...]
     """
-
-    listImgMatch, DtImgMatch, listdateMatch, listPts = [], [], [], []
+    listPts = []
 
     repA, imgListA, deltaTimeA, repB, imgListB, deltaTimeB, timeDeviationMax = \
         matchImagesAorB(timeLapseDrone, imgListDrone, deltaTimeDrone, timeLapseIR, imgListIR, deltaTimeIR)
@@ -576,10 +578,8 @@ def matchImagesFlightPath(imgListDrone,
             kBmatch = k
             n += 1
             timeline = (imgListA[i][2] - originDate).total_seconds()
-            DtImgMatch.append(deltaTime[i][k])
-            listImgMatch.append((imgListA[i][1], imgListB[kBmatch][1]))
-            listdateMatch.append((imgListA[i][2], imgListB[kBmatch][2]))
-            listPts.append(IRcl.ShootPoint(numero=n, nameVis=imgListA[i][1], nameNir=imgListB[kBmatch][1],
+            # DtImgMatch.append(deltaTime[i][k])
+            listPts.append(ShootPoint(numero=n, nameVis=imgListA[i][1], nameNir=imgListB[kBmatch][1],
                                            visDate=str(imgListA[i][2]), nirDate=str(imgListB[kBmatch][2]),
                                            timeDeviation=deltaTime[i][k], timeLine=timeline))
 
@@ -595,15 +595,15 @@ def matchImagesFlightPath(imgListDrone,
                                '.  Minimum time deviation = ',
                                round(min(DTime[i][:]), 3), 's' + Style.RESET)
 
-    if len(listImgMatch) == 0:
+    if len(listPts) == 0:
         print(Style.RED, 'No pair of Visible-Infrared images were detected for this flight.', Style.RESET)
         sys.exit(2)
     else:
         print(Style.GREEN + ' %i pairs of Visible-Infrared images were detected for the flight on  %s' % (
-            len(listImgMatch), dateMission), '\n',
+            len(listPts), dateMission), '\n',
               '%i  images Vi (%s) have been eliminated  ' % (nRejet, repA) + Style.RESET)
 
-    return listImgMatch, DtImgMatch, listdateMatch, listPts
+    return listPts
 
 
 def matchImagesAorB(timeLapseDrone, imgListDrone, deltaTimeDrone, timeLapseIR, imgListIR, deltaTimeIR):
@@ -787,7 +787,7 @@ def nameImageNIRSummary(nameImageComplet):
 def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=None,
                   seaLevel=False, dirSavePlanVol=None, saveGpsTrack=False,
                   saveExcel=False, savePickle=True, mute=True, altitude_api_disabled=False,
-                  optionAlignment=None, ratioSynchro=0.25, muteGraph=False):
+                  muteGraph=False):
     """
     :param listImg:      list of image pairs VI/IR matched at the same point
     :param mute:
@@ -867,39 +867,45 @@ def summaryFlight(listPts, listImg, planVol, dirPlanVol, offsetTheoreticalAngle=
     # ---------  Save GPS Track in Garmin format (.gpx) -----------------------------------------------------
         if saveGpsTrack:
             uGPS.writeGPX(listPts, dirSaveFig, planVol['mission']['date'], mute=True)
+    # ----------  Save summary in Excel format -----------------------------------------------------------
+    SaveSummaryInExcelFormat(dirSavePlanVol, saveExcel, listPts, listImg, mute=True)
+    # ----------  Save summary in Pickle format -----------------------------------------------------------
+    SaveSummaryInNpyFormat(dirSavePlanVol, savePickle, planVol, listPts)
+    return listPts
 
+
+def select_pairs(listPts, planVol, optionAlignment=None, ratioSynchro=0.25, folder_save=None):
+    listImg = list(map(lambda pt: (pt.Vis, pt.Nir), listPts))
     # ---- Selecting the image pairs for the alignment among the available images according to the alignment option value :
     #  optionAlignment == 'all' or None   Selecting all available image pairs in the AerialPhotography folder.
     #  optionAlignment == 'best-synchro'         Selecting the best synchronized image pairs for alignment.
     #  optionAlignment == 'best-mapping'         Selection of image pairs for mapping among aligned images.
     #  optionAlignment == 'best-offset'          Selection of image pairs with a timing deviation of less than 0.05s. Used to calculate offset angles.
-    ImgMatchForAlignment, PtsForAlignment = [], []
-    if optionAlignment == None or optionAlignment == 'all' or timeLapseDrone <= 0:
-        ImgMatchForAlignment, PtsForAlignment = selectAllImages(listImg, listPts, planVol, ratioSynchro=ratioSynchro)
+    _, PtsForAlignment = [], []
+    if optionAlignment == None or optionAlignment == 'all':
+        _, PtsForAlignment = selectAllImages(listImg, listPts, planVol, ratioSynchro=ratioSynchro)
     elif optionAlignment == 'best-synchro':
-        ImgMatchForAlignment, PtsForAlignment = selectBestSynchro(listImg, listPts, planVol, ratioSynchro=ratioSynchro)
+        _, PtsForAlignment = selectBestSynchro(listImg, listPts, planVol, ratioSynchro=ratioSynchro)
     elif optionAlignment == 'best-mapping':
-        ImgMatchForAlignment, PtsForAlignment = selectBestMapping(listImg, listPts, planVol, overlap_x=cf.OVERLAP_X, overlap_y=cf.OVERLAP_Y, ratioSynchro=ratioSynchro)
+        _, PtsForAlignment = selectBestMapping(listImg, listPts, planVol, overlap_x=cf.OVERLAP_X, overlap_y=cf.OVERLAP_Y, ratioSynchro=ratioSynchro)
     elif optionAlignment == 'best-offset':
         timeOffsetMin = 0.039
         print(Style.CYAN + 'INFO : ------ Selects pairs of images with a timing deviation of less than ~ %.4f s. Used to calculate offset angles. '%timeOffsetMin + Style.RESET)
-        ImgMatchForAlignment, PtsForAlignment = selectBestOffset(listImg, listPts, planVol, timeOffset=timeOffsetMin,  mute=True)
+        _, PtsForAlignment = selectBestOffset(listImg, listPts, planVol, timeOffset=timeOffsetMin,  mute=True)
     else:
         print(Style.RED + '[error] ')
         pass
     # --------- Selection of image pairs for mapping among aligned images. ------------------------------------------
-    visualize_matches_on_map(PtsForAlignment, listPts, folder_save=dirSaveFig, name=optionAlignment)
-    # ----------  Save summary in Excel format -----------------------------------------------------------
-    SaveSummaryInExcelFormat(dirSavePlanVol, saveExcel, listPts, listImg, mute=True)
-    # ----------  Save summary in Pickle format -----------------------------------------------------------
-    SaveSummaryInNpyFormat(dirSavePlanVol, savePickle, planVol, listPts)
-
-    return ImgMatchForAlignment, PtsForAlignment
+    # @FIXME: jupyter notebook
+    visualize_matches_on_map(PtsForAlignment, listPts, folder_save=folder_save, name=optionAlignment)
+    return PtsForAlignment
 
 def legacy_best_mapping_selection(listPts, folder_save=None):
     return odm.legacy_buildMappingList(listPts, overlap_x=cf.OVERLAP_X, overlap_y=cf.OVERLAP_Y, dirSaveFig=folder_save)
 
 def visualize_matches_on_map(selected_points, all_points_list, folder_save=None, name=None):
+    if folder_save is not None and not osp.isdir(folder_save):
+        Path(folder_save).mkdir(parents=True, exist_ok=True)
     _camera_make, _camera_type, lCapt_x, lCapt_y, _focal_factor, focalPix = lectureCameraIrdrone()
     odm.visu_mapping(selected_points, all_points_list, focal_DJI=focalPix, lCapt_x=lCapt_x, lCapt_y=lCapt_y, dirSaveFig=folder_save, name=name)
 
@@ -1012,8 +1018,8 @@ def readMissionAndPtsPickl(fileName):
         try:
             dictPt = unpickler.load()
             listDicPts.append(dictPt)
-            listPtPy.append(IRcl.ShootPoint())
-            IRcl.ShootPoint.loadDicPoint2Point(listPtPy[n], dictPt)
+            listPtPy.append(ShootPoint())
+            ShootPoint.loadDicPoint2Point(listPtPy[n], dictPt)
             n = n + 1
         except:
             endFile = True
@@ -1378,6 +1384,16 @@ def theoreticalIrToVi(listPts, timelapse_Vis, offset=None):
         listPts[i].rollIR2VI = theoreticalRoll[i]
 
     return listPts, theoreticalPitch, theoreticalYaw, theoreticalRoll
+
+
+def add_offset_theoretical_angles(list_pts, offset=None):
+    if offset is None:
+        return
+    for idx in range(len(list_pts)):
+        list_pts[idx].yawIR2VI += offset[0]
+        list_pts[idx].pitchIR2VI += offset[1]
+        list_pts[idx].rollIR2VI += offset[2]
+
 
 
 def theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, axe=0):

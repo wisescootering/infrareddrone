@@ -14,13 +14,16 @@ import datetime
 import logging
 import os
 import os.path as osp
+import sys
 import time
 import traceback
+from copy import deepcopy
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
+import numpy as np
+
 import automatic_registration
-import offset_angles
 import utils.angles_analyzis as analys
 import utils.utils_IRdrone as IRd
 from config import CROP
@@ -56,11 +59,12 @@ def extract_flight_data(config_file: Union[str, Path]) -> dict:
     flight_data_dict = IRd.extractFlightPlan(config_file, mute=True)
     print(Style.GREEN + "Time shift between original VIS and NIR images :  %s s   "
     "First image shooting at  %s" %(round(flight_data_dict["delta_time_ir"],2), flight_data_dict["mission"]["date"]) + Style.RESET)
+
     return flight_data_dict
 
 
 
-def find_all_matching_pairs(flight_data_dict: dict) -> Tuple[List[Tuple[Path, Path]], List[ShootPoint]]:
+def find_all_matching_pairs(flight_data_dict: dict) -> List[ShootPoint]:
     """
     2 > Find all matching pairs of images from both cameras
     --------------------------------------------------------------------------------------------------------------
@@ -73,8 +77,9 @@ def find_all_matching_pairs(flight_data_dict: dict) -> Tuple[List[Tuple[Path, Pa
         NameError: No synchronization provided
 
     Returns:
-        List[Tuple[Path, Path]]: path to the matched pairs images  ( visible `.DNG` , NIR `.RAW`) images
         List[ShootPoint]: list of all ShootPoint points with metadata.
+    
+    ```matched_images_paths_list = list(map(lambda pt: (pt.Vis, pt.Nir), shooting_pts_list))```
 
     Notes:
     ------
@@ -99,7 +104,7 @@ def find_all_matching_pairs(flight_data_dict: dict) -> Tuple[List[Tuple[Path, Pa
     shooting_pts_list = None # process_raw_pairs shall work with None shootingPts
 
     #  Find matching pairs of images from both cameras
-    matched_images_paths_list, _dt_img_match, _list_date_match, shooting_pts_list = IRd.matchImagesFlightPath(
+    shooting_pts_list = IRd.matchImagesFlightPath(
         flight_data_dict["images_path_list_vis"],
         flight_data_dict["delta_time_vis"],
         flight_data_dict["timelapse_vis_interval"] , 
@@ -109,54 +114,107 @@ def find_all_matching_pairs(flight_data_dict: dict) -> Tuple[List[Tuple[Path, Pa
         synchro_date, 
         mute=True
     )
-    # @TODO: shooting_pts_list already integrates pairs paths, redundant with matched_images_paths_list
-    return matched_images_paths_list, shooting_pts_list
+    return shooting_pts_list
 
 
-def auto_angles_offset_pre_computation(flight_data_dict: dict, matched_images_paths_list: List[Tuple[Path, Path]], shooting_pts_list: List[ShootPoint], configuration: Optional[dict]={}):
+def gather_metadata(flight_data_dict: dict, shooting_pts_list: List[ShootPoint], configuration: dict):
     """
-    3 > Pre-compute angles offset from a sub-selection of frames (with minimum delay)
+    3 > Retrieve altitudes and fill shooting points from exif metadata
+    """
+    offsetAngle = flight_data_dict["offset_angles"]
+    print(Style.GREEN  + f"Initial offset angles {offsetAngle}" + Style.RESET)
+    matched_images_paths_list = list(map(lambda pt: (pt.Vis, pt.Nir), shooting_pts_list))
+    shooting_pts_list = IRd.summaryFlight(
+        shooting_pts_list, matched_images_paths_list, flight_data_dict, configuration["config_file"],
+        offsetTheoreticalAngle=offsetAngle,
+        seaLevel=configuration['seaLevel'],
+        dirSavePlanVol=osp.dirname(configuration["config_file"]),
+        saveGpsTrack=configuration['saveGpsTrack'],
+        saveExcel=configuration['saveExcel'],
+        savePickle=configuration['savePickle'],
+        mute=True,
+        altitude_api_disabled=configuration["disable_altitude_api"]
+    )
+
+def auto_angles_offset_pre_computation(flight_data_dict: dict, shooting_pts_list: List[ShootPoint], configuration: Optional[dict]={}):
+    """
+    4 > Pre-compute angles offset from a sub-selection of frames (with minimum delay)
     --------------------------------------------------------------------------------------------------------------
     """
     try:
+        offset_estimation_folder = Path(configuration["working_directory"]) / "offset_pre_estimation"
+        shooting_pts_offset_selection = IRd.select_pairs(
+            deepcopy(shooting_pts_list), flight_data_dict, optionAlignment='best-offset',
+            folder_save=os.path.join(offset_estimation_folder, 'Mapping selection for offset')
+        )
         #  Offset angles estimation
         # images will be processed in a new offset directory
-        offsetYaw, offsetPitch, offsetRoll = offset_angles.estimOffsetYawPitchRoll(
-            shooting_pts_list,
-            matched_images_paths_list,
+        offsetYaw, offsetPitch, offsetRoll = estim_offsets_from_subselection(
+            shooting_pts_offset_selection,
             flight_data_dict,
             configuration["config_file"],
-            configuration["working_directory"]
+            Path(configuration["working_directory"]) / "offset_pre_estimation"
         )
         offsetAngle = [offsetYaw, offsetPitch, offsetRoll]
-        flight_data_dict["offset_angles"] = offsetAngle
-        phase_test = False
-        if phase_test:
-            analys.analyzis_motion_camera(
-                configuration["working_directory"],
-                shooting_pts_list,
-                [offsetYaw, offsetPitch, offsetRoll],
-                showAnglPlot=True,
-                showDisperPlot=True
-            )
+        flight_data_dict["estimated_offset_angles"] = offsetAngle
+        flight_data_dict["offset_angles"] = list(np.array(offsetAngle) +  np.array(flight_data_dict["offset_angles"]))
+        # phase_test = False
+        # if phase_test:
+        #     analys.analyzis_motion_camera(
+        #         configuration["working_directory"],
+        #         shooting_pts_list,
+        #         [offsetYaw, offsetPitch, offsetRoll],
+        #         showAnglPlot=True,
+        #         showDisperPlot=True
+        #     )
     except Exception as exc:
         logging.error(Style.RED + "Cannot pre-compute flight offset\nError = {}".format(exc)+ Style.RESET)
         traceback.print_exc()
+    return offsetAngle, shooting_pts_offset_selection
 
 
-def select_matching_pairs(flight_data_dict: dict, matched_images_paths_list: List[Tuple[Path, Path]], shooting_pts_list: List[ShootPoint], configuration: Optional[dict]={}, selection_option: str='all') -> Tuple[List[Tuple[Path, Path]], List[ShootPoint], List[ShootPoint]]:
+def estim_offsets_from_subselection(shooting_pts_offset_selection, flight_data_dict, dirPlanVol, dirMission):
+    offsetYaw, offsetPitch, offsetRoll = 0., 0., 0.
+    traces = ["vir", "vis"] #, "nir", "vir", "ndvi"]
+    nbImgProcess = len(shooting_pts_offset_selection)
+    print(Style.YELLOW + 'WARNING : The processing of these %i images will take %.2f h.' % (nbImgProcess, 1.5 * nbImgProcess / 60.) + Style.RESET)
+    dirNameOffset = os.path.join(dirMission, 'ImgOffset')
+    IRd.reformatDirectory(dirNameOffset, rootdir=dirPlanVol, makeOutdir=True)
+    print(Style.CYAN + 'INFO : ------ Automatic_registration.process_raw_pairs \n' + Style.RESET)
+    matched_images_paths_offset_selection = list(map(lambda pt: (pt.Vis, pt.Nir), shooting_pts_offset_selection))
+    automatic_registration.process_raw_pairs(matched_images_paths_offset_selection,
+                                             out_dir=dirNameOffset,
+                                             crop=CROP,
+                                             listPts=shooting_pts_offset_selection,
+                                             option_alti='sealevel',
+                                             clean_proxy=True,
+                                             multispectral_folder=None,
+                                             skip=True,
+                                             traces=traces)
+    try:
+        IRd.SaveSummaryInExcelFormat(dirMission, True, shooting_pts_offset_selection, matched_images_paths_offset_selection, mute=True)
+        IRd.SaveSummaryInNpyFormat(dirMission, True, flight_data_dict, shooting_pts_offset_selection)
+    except Exception as exc:
+        logging.error(Style.YELLOW + "WARNING : Offset angle analytics cannot be saved to excel.\nError = {}".format(exc) + Style.RESET)
+        traceback.print_exc()
+    offsetYaw, offsetPitch, offsetRoll = IRd.estimOffset(shooting_pts_offset_selection)
+    print(Style.GREEN + 'Extra NIR camera offset angles : [Yaw, Pitch, Roll]= [ %.3f° | %.3f° | %.3f° ].   ' % (offsetYaw, offsetPitch, offsetRoll) + Style.RESET)
+
+    return offsetYaw, offsetPitch, offsetRoll
+
+
+def select_matching_pairs(flight_data_dict: dict, shooting_pts_list: List[ShootPoint], configuration: Optional[dict]={}, selection_option: str='all') -> Tuple[List[Tuple[Path, Path]], List[ShootPoint], List[ShootPoint]]:
     """
-    3 > Select matching pairs of images from both cameras
+    5 > Select matching pairs of images from both cameras
     --------------------------------------------------------------------------------------------------------------
     
-      - Find pairs of images with a timing deviation of less than ~ 0,05 s. Used to calculate offset angles [Yaw, Pitch, Roll].
+      - Find pairs of images with a timing deviation of less than ~ 0,05 s.
       - Construction of the GPS trace between the image pairs. (file format .gpx)
       - Write data in Excel and Binary files.
       - Plot of the drone flight profile and the image mapping diagram (file format .png)
     
     --------------------------------------------------------------------------------------------------------------
     """
-    offsetAngle = flight_data_dict["offset_angles"]
     try:
         # Image selection for VIS NIR pair alignment process based on option-alignment value
         # > 'all'  or None   Selects all available pairs of images in AerialPhotography
@@ -176,26 +234,18 @@ def select_matching_pairs(flight_data_dict: dict, matched_images_paths_list: Lis
         # Fixed the alignment defect [yaw,pitch,roll] of the NIR camera aiming axis in °
         print(Style.GREEN + 'NIR camera offset angles : [Yaw, Pitch, Roll]= [ %.2f° | %.2f° | %.2f° ].   '%(
             flight_data_dict["offset_angles"][0], flight_data_dict["offset_angles"][1], flight_data_dict["offset_angles"][2]) + Style.RESET)
-        matched_images_paths_selection, shooting_pts_selection = IRd.summaryFlight(
-            shooting_pts_list, matched_images_paths_list, flight_data_dict, configuration["config_file"],
-            optionAlignment=selection_option,
-            offsetTheoreticalAngle=offsetAngle,
-            seaLevel=configuration['seaLevel'],
-            dirSavePlanVol=osp.dirname(configuration["config_file"]),
-            saveGpsTrack=configuration['saveGpsTrack'],
-            saveExcel=configuration['saveExcel'],
-            savePickle=configuration['savePickle'],
-            mute=True,
-            altitude_api_disabled=configuration["disable_altitude_api"]
+        shooting_pts_selection = IRd.select_pairs(
+            shooting_pts_list, flight_data_dict, optionAlignment=selection_option,
+            folder_save=configuration["working_directory"]
         )
     except Exception as exc:
         logging.error(Style.RED + "Cannot compute flight analytics - you can still process your images but you won't get altitude profiles and gpx\nError = {}".format(exc)+ Style.RESET)
         traceback.print_exc()
-    return matched_images_paths_selection, shooting_pts_selection
+    return shooting_pts_selection
 
-def image_processing_engine(ImgMatchProcess: List[Tuple[Path, Path]], ptsProcess: List[ShootPoint], odm_multispectral: bool=True, traces: Optional[List[str]]=None, configuration: dict={}):
+def image_processing_engine(ImgMatchProcess: List[Tuple[Path, Path]], ptsProcess: List[ShootPoint], odm_multispectral: bool=True, traces: Optional[List[str]]=None, configuration: dict={}, skip=False):
     """
-    4 > Image processing.
+    6 > Image processing.
     -------------------------------------------------------------------------------------------------------------
         Automatic_registration of Vi and IR image pairs.
         Build multispectal images ( Red/Green/Blue/NIR   .tif) and  vis, nir images (.jpg). 
@@ -227,7 +277,8 @@ def image_processing_engine(ImgMatchProcess: List[Tuple[Path, Path]], ptsProcess
         automatic_registration.process_raw_pairs(
                 ImgMatchProcess, out_dir=configuration["out_images_folder"], crop=CROP, listPts=ptsProcess,
                 option_alti=configuration['option_alti'], clean_proxy=configuration.get("clean_proxy", False), multispectral_folder=odm_image_directory,
-                traces=traces
+                traces=traces,
+                skip=skip
             )
     else:
         print(
@@ -236,7 +287,7 @@ def image_processing_engine(ImgMatchProcess: List[Tuple[Path, Path]], ptsProcess
 
 def legacy_prepare_odm_postprocessing(shooting_pts_list: List[ShootPoint], configuration: dict={}):
     """
-    5 > Open Drone Map post processing [OPTIONAL]
+    7 > Open Drone Map post processing [OPTIONAL]
     -------------------------------------------------------------------------------------------------------------
     [OPTIONAL IN MULTISPECTRAL MODE]
     Prepare ODM folders (with .bat, images and camera calibrations)
@@ -262,9 +313,9 @@ def legacy_prepare_odm_postprocessing(shooting_pts_list: List[ShootPoint], confi
     # @TODO: potentially could directly run the ODM post processing straight away, without the need for any user intervention
 
 
-def analyzis(flight_data_dict: dict, shootingPts: List[ShootPoint], listImgMatch: List[Tuple[Path, Path]], configuration: dict={}):
+def analyzis(flight_data_dict: dict, shootingPts: List[ShootPoint], configuration: dict={}):
     """
-    6 > Analysis
+    8 > Analysis
     -------------------------------------------------------------------------------------------------------------
     - Draws roll, pitch and Yaw angles (roll, pitch & yaw)
     for the drone, the gimbal and the NIR image (coarse process and theoretical)
@@ -274,9 +325,9 @@ def analyzis(flight_data_dict: dict, shootingPts: List[ShootPoint], listImgMatch
     Args:
         flight_data_dict (dict): contains calibrated offset angles
         shootingPts (List[ShootPoint]): list of pairs of images including all metadata
-        listImgMatch (List[Tuple[Path, Path]]): list of pairs of images
         configuration (dict, optional): options including plotting flags. Defaults to {}.
     """
+    listImgMatch = list(map(lambda pt: (pt.Vis, pt.Nir), shootingPts))
     dirMission = configuration["working_directory"]
 
     if not configuration['analysisAlignment']:
@@ -292,6 +343,7 @@ def analyzis(flight_data_dict: dict, shootingPts: List[ShootPoint], listImgMatch
         logging.error(
             Style.YELLOW + "WARNING : Flight analytics cannot plot.\nError = {}".format(
                 exc) + Style.RESET)
+        traceback.print_exc()
 
 
 def configure(args: argparse.Namespace) -> dict:
@@ -340,7 +392,7 @@ def configure(args: argparse.Namespace) -> dict:
 
 
 
-def parse_arguments() -> argparse.Namespace:
+def parse_arguments(argv) -> argparse.Namespace:
     """
     0 > Parse command line
     ------------------------------------------------------------------------------------------------------------
@@ -365,7 +417,7 @@ def parse_arguments() -> argparse.Namespace:
         + 'best-mapping: select best synchronized images + granting a decent overlap'
     )
     parser.add_argument('--offset', type=str, default="manual", choices=["manual", "auto"],  help='offset angles choice - auto allows pre-computing offsets')
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.config is None or not os.path.isfile(args.config):
         print(Style.GREEN + "File browser")
@@ -394,29 +446,36 @@ def main_process(args: argparse.Namespace):
     flight_data_dict = extract_flight_data(conf["config_file"])
     conf["out_images_folder"] = flight_data_dict["out_images_folder"]
     conf["timelapse_vis_interval"] = flight_data_dict["timelapse_vis_interval"]
+    if conf["timelapse_vis_interval"] <= 0:
+        conf["selection"] = "all"
     
     # 2 > Find all matching pairs of images from both cameras
+    # 3 > Then retrieve metadata from exifs & altitudes
+    #[4]> Pre-compute angles offset and add
     # --------------------------------------------------------------------------------------------------------------
-    matched_images_paths_list, shooting_pts_list = find_all_matching_pairs(flight_data_dict)
-    
-    # 3 > Pre-compute offset, selection of frames
-    # --------------------------------------------------------------------------------------------------------------
+    shooting_pts_list = find_all_matching_pairs(flight_data_dict)
+    gather_metadata(flight_data_dict, shooting_pts_list, conf)
     if conf["offset"] == "auto":
-        auto_angles_offset_pre_computation(flight_data_dict, matched_images_paths_list, shooting_pts_list, configuration=conf)
-    matched_images_paths_selection, shooting_pts_selection = select_matching_pairs(flight_data_dict, matched_images_paths_list, shooting_pts_list, configuration=conf, selection_option=conf.get("selection", "all"))
+        offset_angles, _ = auto_angles_offset_pre_computation(flight_data_dict, shooting_pts_list, configuration=conf)
+        IRd.add_offset_theoretical_angles(shooting_pts_list, offset=offset_angles)
     
-    # 4 > Image processing.
+    # 5 > Selection of frames
     # --------------------------------------------------------------------------------------------------------------
+    shooting_pts_selection = select_matching_pairs(flight_data_dict, shooting_pts_list, configuration=conf, selection_option=conf.get("selection", "all"))
+    
+    # 6 > Image processing.
+    # --------------------------------------------------------------------------------------------------------------
+    matched_images_paths_selection = list(map(lambda pt: (pt.Vis, pt.Nir), shooting_pts_selection))
     image_processing_engine(matched_images_paths_selection, shooting_pts_selection, odm_multispectral=conf["odm_multispectral"], traces=conf["traces"], configuration=conf)
     
-    # 5 > Open Drone Map - [NOT REQUIRED WHEN ODM MULTISPECTRAL MODE]
+    # 7 > Open Drone Map - [NOT REQUIRED WHEN ODM MULTISPECTRAL MODE]
     # --------------------------------------------------------------------------------------------------------------
     if conf["createMappingList"]:
-        legacy_prepare_odm_postprocessing(shooting_pts_list, configuration=conf)
+        legacy_prepare_odm_postprocessing(shooting_pts_selection, configuration=conf)
     
-    # 6 > Analysis
+    # 8 > Analysis
     # --------------------------------------------------------------------------------------------------------------
-    analyzis(flight_data_dict, shooting_pts_list, matched_images_paths_list, configuration=conf)
+    analyzis(flight_data_dict, shooting_pts_list, configuration=conf)
 
 
 if __name__ == "__main__":
@@ -426,7 +485,7 @@ if __name__ == "__main__":
     timeDebut = datetime.datetime.now()
     startTime = time.process_time()
     print(Style.CYAN + 'INFO : ------ Start IRdrone-v%s  at  %s ' % (versionIRdrone, timeDebut.time()) + Style.RESET)
-    args = parse_arguments()
+    args = parse_arguments(sys.argv[1:])
     main_process(args)
     # -------------------------------------------------------------------------------------------------------------
     #        End of calculation time measurement.
