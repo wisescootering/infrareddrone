@@ -13,6 +13,11 @@ from registration.cost import *
 import matplotlib.pyplot as plt
 import irdrone.process as process
 import irdrone.utils as utils
+from irdrone.semi_auto_registration import mellin_transform
+from automatic_registration import user_assisted_manual_alignment
+from irdrone.semi_auto_registration import manual_warp
+from registration.cost import compute_cost_surfaces_with_traces
+import matplotlib.pyplot as plt
 plt.style.use('dark_background')
 calibrations = dict(refcalib=utils.cameracalibration(camera="DJI_RAW"), movingcalib=utils.cameracalibration(camera="M20_RAW"))
 # mandatory to avoid plotting figures in separate windows
@@ -20,10 +25,10 @@ calibrations = dict(refcalib=utils.cameracalibration(camera="DJI_RAW"), movingca
 
 # %% [markdown]
 # # Loading images
-# |Image             | Loading time   | Resolution          |
-# |------------------|----------------|---------------------|
-# | visible DJI DNG  | 7.6s           | 12Mpix (2992x3992)  |
-# | nir sjcam RAW    | 27.2s          | 16Mpix (3448x4600)  |
+# |Image             | Loading time   | Resolution          | Loading time (cached  tif) |
+# |------------------|----------------|---------------------|----------------------------|
+# | visible DJI DNG  | 7.6s           | 12Mpix (2992x3992)  |     3.3s                   |
+# | nir sjcam RAW    | 27.2s          | 16Mpix (3448x4600)  |     4.6s                   |
 # 
 
 # %%
@@ -81,12 +86,16 @@ vis_rep = multispectral_representation(
         vis_img,
         sigma_gaussian=align_config.sigma_ref, mode=align_config.mode
 )
+
+pr.show(representation_visualization(vis_rep)[0], figsize=(15, 3), suptitle="VIS")
+
 nir_rep = multispectral_representation(
         nir_img,
         sigma_gaussian=align_config.sigma_mov, mode=align_config.mode
 )
-pr.show(representation_visualization(nir_rep)[0], figsize=(15, 3), suptitle="NIR")
-pr.show(representation_visualization(vis_rep)[0], figsize=(15, 3), suptitle="VIS")
+
+
+pr.show(representation_visualization(nir_rep)[0], figsize=(15, 3), suptitle="NIR distorted")
 # representation_visualization_pairs(vis_rep, nir_rep, ref_orig=vis_img, mov_orig=nir_img, figsize=(10, 3))
 
 # %% [markdown]
@@ -96,10 +105,86 @@ pr.show(representation_visualization(vis_rep)[0], figsize=(15, 3), suptitle="VIS
 #     * Roll of the drone leads to camera yaw, Pitch of the drone leads to camera pitch. Camera roll misalignment is usually zero because of the gimbal lock when the camera points towards the ground. 
 #     * Hopefully, the fisheye has a much wider field of view than the DJI visible camera, therefore we're able to align the NIR image onto the visible image.
 # * Let's manually align the NIR image onto the visible image using 3 degrees of freedom: virtual camera yaw, pitch and roll. You are virtually rotating the NIR camera and projecting into the visible camera (you get a much narrower field of view than the fisheye... equivalent to the DJI camera *this is all possible thanks to the initial camera calibrations*)
+# * But first, let's get a coarse estimation of the camera misalignment from the EXIF data. Please beware that the exact computation is much more complex than this naïve computation and requires the estimated altitude
 # 
 
 # %%
-from automatic_registration import user_assisted_manual_alignment
-alignment_params = user_assisted_manual_alignment(vis_img.data, nir_img.data, calibrations)
+pitch = (vis_img.flight_info["Gimbal Pitch"] + 90.)
+yaw = -(vis_img.flight_info["Flight Roll"])
+# roll = -3.
+roll = 0. #cannot be estimated from metadata , shall be zero due to gimbal lock when camera points to the ground
+yaw, pitch, roll
+# 5.210 -2.523 -2.399
+
+
+# %%
+_alignment_params = user_assisted_manual_alignment(vis_img.data, nir_img.data, calibrations, yaw=yaw, pitch=pitch, roll=roll)
+
+# %% [markdown]
+# # Estimating the roll angle
+# * It is possible to efficiently estimate the optimal roll by transforming the images into an efficient space using polar warp.
+# In the polar representation (radius=x-axis, angle=y-axis), you simply have to perform a vertical search to get the equivalent roll.
+# * First, we need to prepare the NIR data:
+#     - with an undistorted NIR fisheye image. Precisely, this image has some distorsions (the one from the visible image, we simply reproject into that camera space).
+#     - with a coarse pre-alignment in terms of yaw & pitch (allows the center to be correctly located)
+# * Next we'll compute the MSR (laplacian energy)
+# * Finally,
+#     * we'll tranform into polar representation
+#     * perform a "translation search" in the vertical direction (equivalent to polar application of a roll)
+
+# %%
+#NIR undistorted
+niru = manual_warp(
+    vis_img.data, nir_img.data,
+    yaw, pitch, roll,
+    refcalib=calibrations["refcalib"], movingcalib=calibrations["movingcalib"],
+    refinement_homography=None,
+    bigger_size_factor=1.,
+)
+pr.show(niru, suptitle=f"NIR undistorted Y={yaw:.1f}° P={pitch:.1f}° R={roll:.1f}°")
+niru_rep = multispectral_representation(
+        niru,
+        sigma_gaussian=align_config.sigma_mov, mode=align_config.mode
+)
+pr.show(representation_visualization(niru_rep)[0], figsize=(15, 3), suptitle="NIR undistorted MSR")
+
+# %% [markdown]
+# Taking polar(MSR(NIR)) & polar(MSR(VIS))
+
+# %%
+vis_rep_polar, niru_rep_polar = mellin_transform(vis_rep, niru_rep)
+pr.show([(vis_rep_polar, 'Polar - visible'), (niru_rep_polar, "Polar - NIR")], figsize=(5, 5))
+pr.show([representation_visualization(vis_rep_polar)], figsize=(10, 2), suptitle='Polar - visible')
+pr.show([representation_visualization(niru_rep_polar)], figsize=(10, 2), suptitle='Polar - NIR undistorted')
+
+# %%
+align_config = AlignmentConfig(
+    mode=[LAPLACIAN_ENERGIES, GRAY_SCALE, COLORED][0],
+    dist_mode=[SSD, NTG][1],
+    downscale=16,
+    sigma_ref=5.,
+    sigma_mov=3.,  # reducing blur for NIR image
+    num_patches=1,
+    search_size=5
+)
+align_config.search_x = 0
+align_config.search_y = 10 
+
+cost_dict = compute_cost_surfaces_with_traces(
+    vis_rep_polar[:, :, :], niru_rep_polar[:, :, :],
+    debug=True,
+    suffix="",
+    prefix="",
+    align_config=align_config
+)
+profile = cost_dict["costs"][0, 0, :, 0, :].sum(axis=-1)
+amin, min_cost = np.argmin(profile), np.min(profile)
+plt.figure(figsize=(10, 10))
+plt.plot(np.arange(len(profile)) - len(profile)//2, profile, "r--")
+plt.plot(amin- len(profile)//2, min_cost, "go")
+plt.title("Polar matching cost")
+plt.xlabel("Polar Angle")
+plt.ylabel("Matching cost")
+plt.grid()
 
 
