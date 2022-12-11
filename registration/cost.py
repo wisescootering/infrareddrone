@@ -34,7 +34,10 @@ def g2ci(ms_img):
 
 def viz_laplacian_energy(ms_img):
     avg = np.average(ms_img)
-    out = (255*(ms_img[:, :, :3]*0.5/avg).clip(0, 1)).astype(np.uint8)
+    if avg !=0:
+        out = (255*(ms_img[:, :, :3]*0.5/avg).clip(0, 1)).astype(np.uint8)
+    else:
+        out = (255*ms_img.clip(0, 1)).astype(np.uint8)
     return out
 
 
@@ -151,7 +154,7 @@ def get_patch(ref, mov, crop):
 
 
 @jit(nopython=True)
-def compute_cost_surfaces(
+def compute_cost_surfaces_2d(
         ref, mov,
         y_n=3, x_n=3, search_y=3, search_x=3,
         dist_mode=SSD
@@ -178,6 +181,45 @@ def compute_cost_surfaces(
             costs[y_id, x_id] = cost
     return costs, centers, patch_coords
 
+# @jit(nopython=True)
+def compute_cost_profile(
+        ref, mov,
+        y_n=3, x_n=3, search_y=3, search_x=3,
+        dist_mode=SSD
+    ):
+    y_s, x_s, c_s = ref.shape
+    p_size_x = int(np.floor(x_s / x_n))
+    p_size_y = int(np.floor(y_s / y_n))
+    costs = np.empty((y_n, x_n, 2*search_y+1, 2*search_x+1, c_s))
+    centers = np.empty((y_n, x_n, 2))
+    patch_coords = np.empty((y_n, x_n, 4))
+    for y_id in range(y_n):
+        for x_id in range(x_n):
+            y_start, y_end = y_id*p_size_y, (y_id+1)*p_size_y
+            x_start, x_end = x_id*p_size_x, (x_id+1)*p_size_x
+            y_center, x_center = (y_start+y_end)/2., (x_start+x_end)/2.
+            patch_coords[y_id, x_id, :] = [y_start, y_end, x_start, x_end]
+            centers[y_id, x_id, :] = [x_center, y_center]
+            patch_ref, patch_mov = get_patch(ref, mov, (y_start, y_end, x_start, x_end))
+            if search_y==0:
+                patch_mov_search = patch_mov[:, search_x:-search_x, :]
+            if search_x==0:
+                patch_mov_search = patch_mov[search_y:-search_y, :, :]
+            if dist_mode == SSD:
+                cost = cost_surface_SSD(patch_ref.astype(np.float32), patch_mov_search.astype(np.float32), search_y, search_x)
+            elif dist_mode == NTG:
+                cost = cost_surface_NTG(patch_ref.astype(np.float32), patch_mov_search.astype(np.float32), search_y, search_x)
+            costs[y_id, x_id] = cost
+    return costs, centers, patch_coords
+
+def compute_cost_surfaces(ref, mov, y_n=3, x_n=3, search_y=3, search_x=3, dist_mode=SSD):
+    if search_x >0 and search_y>0:
+        return compute_cost_surfaces_2d(ref, mov, y_n=y_n, x_n=x_n, search_y=search_y, search_x=search_x, dist_mode=dist_mode)
+    else:
+        return compute_cost_profile(ref, mov, y_n=y_n, x_n=x_n, search_y=search_y, search_x=search_x, dist_mode=dist_mode)
+
+
+
 
 def plot_costs_overview(cost_dict, debug_fig=None, title=None, pickle_path=None):
     _costs_dbg = []
@@ -198,8 +240,8 @@ def plot_costs_overview(cost_dict, debug_fig=None, title=None, pickle_path=None)
 def plot_single_cost_function(cost_dict, ref, mov, patch_coords, prefix="", suffix="", align_config=AlignmentConfig(),
                               debug=False, debug_fig=None):
 
-    for y_id in range(align_config.y_n):
-        for x_id in range(align_config.x_n):
+    for y_id in (range(align_config.y_n) if align_config.y_n>0 else [0]):
+        for x_id in (range(align_config.x_n) if align_config.x_n>0 else [0]):
             y_start, y_end, x_start, x_end = patch_coords[y_id, x_id, :].astype(int)
             patch_ref, patch_mov = get_patch(ref, mov, (y_start, y_end, x_start, x_end))
             cost = cost_dict["costs"][y_id][x_id]
@@ -226,11 +268,16 @@ def plot_single_cost_function(cost_dict, ref, mov, patch_coords, prefix="", suff
                         (cost[:, :, 1], "{} G".format(align_config.dist_mode)),
                         (cost[:, :, 2], "{} B".format(align_config.dist_mode)),
                     ]
-                patch_mov_search = patch_mov[
-                                   align_config.search_y:-align_config.search_y,
-                                   align_config.search_x:-align_config.search_x,
-                                   :
-               ]
+                if align_config.search_x >0 and align_config.search_y>0:
+                    patch_mov_search = patch_mov[
+                                    align_config.search_y:-align_config.search_y,
+                                    align_config.search_x:-align_config.search_x,
+                                    :
+                    ]
+                elif align_config.search_x == 0:
+                    patch_mov_search = patch_mov[align_config.search_y:-align_config.search_y, :, :]
+                elif align_config.search_y == 0:
+                    patch_mov_search = patch_mov[:, align_config.search_x:-align_config.search_x, :]
                 pr.show(
                     [
                         [
