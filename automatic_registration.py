@@ -20,6 +20,11 @@ from pathlib import Path
 from copy import deepcopy
 from config import CROP
 
+try:
+    conda_env_name = os.environ['CONDA_DEFAULT_ENV']
+except:
+    conda_env_name = None
+    logging.warning("cannot retrieve conda env")
 exif_dict_minimal = np.load(osp.join(osp.dirname(__file__), "utils", "minimum_exif_dji.npy"), allow_pickle=True).item()
 TRACES = ["vis", "nir", "vir", "ndvi"]
 VIS, NIR, VIR, NDVI = TRACES
@@ -314,7 +319,8 @@ def write_manual_bat_redo(vis_pth, nir_pth_list, debug_bat_pth, out_dir=None, de
     if out_dir is None:
         out_dir = osp.abspath(debug_bat_pth.replace(".bat", ""))
     with open(debug_bat_pth, "w") as fi:
-        fi.write("call activate {}\n".format(os.environ['CONDA_DEFAULT_ENV']))
+        if conda_env_name is not None:
+            fi.write("call activate {}\n".format(conda_env_name))
         for id_sync, nir_pth in enumerate(nir_pth_list):
             out_dir_current = out_dir
             if async_suffix is not None:
@@ -343,8 +349,12 @@ def process_raw_pairs(
         clean_proxy=False,
         multispectral_folder=None,
         traces=[VIS, NIR, VIR, NDVI],
-        angles=None
+        angles=None,
+        skip=False
     ):
+    """
+    listPts [optional]: contains all metadata & theoretical angles
+    """
     # if debug_folder is None:
     #     debug_folder = osp.dirname(sync_pairs[0][0])
     if out_dir is None:
@@ -369,7 +379,16 @@ def process_raw_pairs(
         if not osp.exists(motion_model_file + ".npy"):
             motion_model_file = None
         else:
-            logging.warning(f"Using cached motion file {motion_model_file}")
+            logging.info(f"Using cached motion file {motion_model_file}")
+            if skip:
+                if listPts is not None:
+                    motion_model = np.load(motion_model_file+".npy", allow_pickle=True).item()
+                    listPts[index_pair].yawCoarseAlign = motion_model["yaw"]
+                    listPts[index_pair].pitchCoarseAlign = motion_model["pitch"]
+                    listPts[index_pair].rollCoarseAlign = motion_model["roll"]
+                    listPts[index_pair].motion_model = motion_model
+                logging.info(f"SKIP IMAGE PROCESSING - loaded motion from {motion_model_file}")
+                continue
         logging.warning("processing {} {}".format(osp.basename(vis_pth), osp.basename(nir_pth)))
         
         # DEBUG FOLDER
@@ -436,7 +455,13 @@ def process_raw_pairs(
             if motion_model_file is None:
                 motion_model_file = osp.join(out_dir, osp.basename(vis_pth[:-4])+"_motion_model")
             np.save(motion_model_file, motion_model, allow_pickle=True)
+        if listPts is not None:
+            listPts[index_pair].yawCoarseAlign = motion_model["yaw"]
+            listPts[index_pair].pitchCoarseAlign = motion_model["pitch"]
+            listPts[index_pair].rollCoarseAlign = motion_model["roll"]
+            listPts[index_pair].motion_model = motion_model
         if multispectral_folder is not None:
+            #----------------------------------------------------------------------------------------------- MULTISPECTRAL EXPORT
             img = pr.Image(vis_pth)
             ms_img = np.zeros((ref_full.shape[0], ref_full.shape[1], 4))
             ms_img[:, :, :3] = ref_full
@@ -445,6 +470,7 @@ def process_raw_pairs(
             # out_name = f"{(index_pair+1):04d}"
             out_name = osp.basename(vis_pth[:-4])
             img.save_multispectral(Path(multispectral_folder)/out_name)
+            #--------------------------------------------------------------------------------------------------------------------
         if VIS in traces:
             vis_img = pr.Image((ut.contrast_stretching(ref_full)[0]*255).astype(np.uint8))
             vis_img.path = vis_pth

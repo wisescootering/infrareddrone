@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
 import utils.utils_IRdrone as IRd
 from irdrone.utils import Style
-
+import traceback
 
 
 def analyzis_motion_camera(dirMission, shootingPts, offsetAngles=None, showAnglPlot=False, showDisperPlot=False):
@@ -24,6 +24,7 @@ def analyzis_motion_camera(dirMission, shootingPts, offsetAngles=None, showAnglP
     timeLinePostProcess, yawCoarse, pitchCoarse, rollCoarse = [], [], [], []
 
     # List of motion models of IRdrone images.  Ext .py
+    # @FIXME: Folder ImgIRdrone may not be the right folder!
     result_dir = Path(dirMission) / "ImgIRdrone"
     ImgPostProcess = sorted(result_dir.glob("*.npy"))
 
@@ -42,6 +43,7 @@ def analyzis_motion_camera(dirMission, shootingPts, offsetAngles=None, showAnglP
         if shootPt.alignment == 1:
             timeLinePostProcess.append(shootPt.timeLine)
             try:
+                # @FIXME: ISSUE HERE! what happens in case extra .npy have been processed. :-(
                 assert ImgPostProcess[k].is_file()
                 #  yaw & pitch .  Coarse  registration angle of near infrared images.
                 mouvement = np.load(ImgPostProcess[k], allow_pickle=True).item()
@@ -53,7 +55,11 @@ def analyzis_motion_camera(dirMission, shootingPts, offsetAngles=None, showAnglP
                 shootingPts[shootPt.num - 1].rollCoarseAlign = mouvement["roll"]
                 k += 1
             except Exception as exc:
-                print(Style.RED + "erreur lors de la lectures des angles process \nError = {}"%exc + Style.RESET)
+                yawCoarse.append(shootPt.yawCoarseAlign)
+                pitchCoarse.append(shootPt.pitchCoarseAlign)
+                rollCoarse.append(shootPt.rollCoarseAlign)
+                print(Style.RED + f"erreur lors de la lectures des angles process \nError = \n{exc}" + Style.RESET)
+                traceback.print_exc()
 
     # -----------------------------------------------------------------------------------
     plotAnglesAlignment(timeLine, yawIR2VI, pitchIR2VI,  yawCoarse, pitchCoarse, rollCoarse, rollIR2VI, yawOffset, pitchOffset, rollOffset, timeLinePostProcess, dirMission=dirMission, showPlot=showAnglPlot)
