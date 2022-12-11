@@ -475,7 +475,7 @@ def main_process(args: argparse.Namespace):
     
     # 8 > Analysis
     # --------------------------------------------------------------------------------------------------------------
-    analyzis(flight_data_dict, shooting_pts_selection, configuration=conf)
+    analyzis(flight_data_dict, shooting_pts_list, configuration=conf)
 
 
 if __name__ == "__main__":
