@@ -29,7 +29,7 @@ def analyzis_motion_camera(dirMission, shootingPts, offsetAngles=None, showAnglP
     ImgPostProcess = sorted(result_dir.glob("*.npy"))
 
     if offsetAngles is not None:
-        yawOffset, pitchOffset, rollOffset = offsetAngles[0], offsetAngles[1], offsetAngles[1]
+        yawOffset, pitchOffset, rollOffset = offsetAngles[0], offsetAngles[1], offsetAngles[2]
     else:
         yawOffset, pitchOffset, rollOffset = 0., 0., 0.
 

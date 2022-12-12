@@ -165,6 +165,7 @@ def visu_mapping(mappingList, listPts, focal_DJI=cf.IRD_FOCAL_LENGTH_PIX, lCapt_
             marker='o', markerfacecolor='white', markeredgecolor='black', markeredgewidth=0.3,  markersize=2, zorder=order,
             label='Shooting point.')
     # best synchro images
+    couleursSynchro = cycleColor(len(listSynchro_X))
     for i in range(len(listSynchro_X)):
         ax.plot(listSynchro_X[i], listSynchro_Y[i], linestyle='None',
             marker='o', markerfacecolor='orangered', markeredgecolor='darkred', markeredgewidth=0.5,markersize=2, zorder=order)
@@ -173,24 +174,22 @@ def visu_mapping(mappingList, listPts, focal_DJI=cf.IRD_FOCAL_LENGTH_PIX, lCapt_
             zorder=order,
             label='Shooting ~synchro.')
     # images for mapping
+    couleursMapping = cycleColor(len(listBestMapping_X))
     for i in range(len(listBestMapping_X)):
         ax.plot(listBestMapping_X[i], listBestMapping_Y[i], linestyle='None',
-            marker='o', markerfacecolor=colorNames[20 + i], markeredgecolor='black', markeredgewidth=0.5,markersize=8, zorder=order)
+            marker='o', markerfacecolor=couleursMapping[i], markeredgecolor='black', markeredgewidth=0.5,markersize=8, zorder=order)
     if len(listBestMapping_X)>0:
         ax.plot(listBestMapping_X[0], listBestMapping_Y[0], linestyle='None',
             marker='o', markerfacecolor=colorNames[20], markeredgecolor='black', markeredgewidth=0.5, markersize=8, zorder=order, label='Best mapping ODM images')
 
-    # selected images for processing  
+    # selected images for processing
+    couleursProcess = cycleColor(len(listMapping_X))
     for i in range(len(listMapping_X)):
         ax.plot(listMapping_X[i], listMapping_Y[i], linestyle='None',
-            marker='o', markerfacecolor=colorNames[20 + i], markeredgecolor='black', markeredgewidth=0.5,markersize=6, zorder=order)
+            marker='o', markerfacecolor=couleursProcess[i], markeredgecolor='black', markeredgewidth=0.5,markersize=6, zorder=order)
     if len(listMapping_X)>0:
         ax.plot(listMapping_X[0], listMapping_Y[0], linestyle='None',
             marker='o', markerfacecolor=colorNames[20], markeredgecolor='black', markeredgewidth=0.5, markersize=6, zorder=order, label='Selected images ' + ("" if name is None else name))
-
-
-
-
 
     # -------------- Plot area scanned by images for mapping ----------------------------------------------------------
 
@@ -203,7 +202,7 @@ def visu_mapping(mappingList, listPts, focal_DJI=cf.IRD_FOCAL_LENGTH_PIX, lCapt_
         ptGeo = coordRef2coordGeo(A, coord_Img)
         poly = Polygon(ptGeo, facecolor='whitesmoke', lw=0, hatch='', fill=True, zorder=order-1-i)
         ax.add_patch(poly)
-        poly = Polygon(ptGeo, facecolor='None', edgecolor=colorNames[20 + i], lw=0.5, hatch='', fill=True, zorder=order)
+        poly = Polygon(ptGeo, facecolor='None', edgecolor=couleursProcess[i], lw=0.5, hatch='', fill=True, zorder=order)
         ax.add_patch(poly)
 
     # ------------ plot north arrow -----------------------------------------------------------------------------------
@@ -231,6 +230,18 @@ def visu_mapping(mappingList, listPts, focal_DJI=cf.IRD_FOCAL_LENGTH_PIX, lCapt_
     plt.show()
     plt.close()
     
+
+def cycleColor(number):
+    couleur = []
+    offsetColor = 20
+    k = 0
+    for i in range(number):
+        if offsetColor + k >= len(colorNames):
+            k = 0
+        else:
+            k+= 1
+        couleur.append(colorNames[offsetColor + k-1])
+    return couleur
 
 
 def northArrow(x0,y0,d):
