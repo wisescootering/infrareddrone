@@ -5,19 +5,20 @@ import numpy as np
 import logging
 import os.path as osp
 import registration.rigid as rigid
-from irdrone.semi_auto_registration import manual_warp, ManualAlignment, Transparency, Absgrad
+from irdrone.semi_auto_registration import manual_warp, ManualAlignment, Transparency, Absgrad, mellin_transform
 from skimage import transform
 import os
 osp = os.path
 import time
 from datetime import datetime, timedelta
 from matplotlib.colors import LinearSegmentedColormap
+import matplotlib.pyplot as plt
 import interactive.imagepipe as ipipe
-import shutil
 import cv2
 import argparse
 from pathlib import Path
 from copy import deepcopy
+import traceback
 from config import CROP
 
 try:
@@ -144,6 +145,81 @@ def user_assisted_manual_alignment(ref, mov, cals, yaw=0, pitch=0, roll=0):
     ipi.gui()
     return rotate3d.alignment_parameters
 
+def build_x_poly_values(_x):
+    x = np.array([_x]).T
+    a_mat = np.concatenate([x**2, x, np.ones_like(x)], axis=1)
+    return a_mat
+
+def poly_fit_1d(profile, amin, neighborhood = 1):
+    '''
+    [x1², x1 , 1]  * [ a ] = [y1]
+    [x2², x2 , 1]    [ b ]   [y2]
+        ...          [ c ]    ...
+    '''
+    if neighborhood==1:
+        y = profile[amin-1:amin+1+1]
+        x = np.array([-1, 0, 1])
+    if neighborhood==2:
+        y = profile[amin-2:amin+2+1]
+        x = np.array([-2, -1, 0, 1, 2])
+    a_mat = build_x_poly_values(x)
+    a_mat_pinv = np.linalg.pinv(a_mat) #.shape, y.shape
+    return np.dot(a_mat_pinv, y)
+
+def coarse_roll_estimation(msr_ref, msr_mov, alignment_config, roll_search_window=10, debug=False, debug_dir=None):
+    if roll_search_window==0:
+        return 0.
+    try:
+        align_config_polar = deepcopy(alignment_config)
+        align_config_polar.search_x = 0
+        align_config_polar.search_y = roll_search_window
+        vis_rep_polar, niru_rep_polar = mellin_transform(msr_ref, msr_mov)
+        cost_dict_polar = rigid.compute_cost_surfaces_with_traces(
+            vis_rep_polar, niru_rep_polar,
+            debug=debug,
+            suffix="Polar search",
+            prefix="",
+            align_config=align_config_polar,
+            debug_dir=debug_dir
+        )
+        profile = cost_dict_polar["costs"][0, 0, :, 0, :].sum(axis=-1)
+        amin, min_cost = np.argmin(profile), np.min(profile)
+        coarse_roll_angle = amin - len(profile)//2
+        plot = debug or debug_dir is not None
+        if plot:
+            plt.figure(figsize=(10, 10))
+            plt.plot(np.arange(len(profile)) - len(profile)//2, profile, "r--", label="cost function")
+            plt.plot(amin- len(profile)//2, min_cost, "go")
+        
+        neighborhood_refine = 1
+        if amin > neighborhood_refine and amin < len(profile)-neighborhood_refine-1:
+            poly_coeffs = poly_fit_1d(profile, amin, neighborhood = neighborhood_refine)
+            coarse_roll_angle = amin - poly_coeffs[1]/(2*poly_coeffs[0]) - len(profile)//2
+            refined_argmin = - poly_coeffs[1] /(2 * poly_coeffs[0])
+            refined_min = poly_coeffs[0]*refined_argmin**2 + poly_coeffs[1]*refined_argmin+poly_coeffs[2]
+            x_fit = build_x_poly_values(np.linspace(-2, 2, num=100))
+            y_fit = np.dot(x_fit, poly_coeffs)
+            plt.plot(x_fit[:, 1]+amin - len(profile)//2, y_fit, "b-", label="Parabola fitting")
+            plt.plot(amin+refined_argmin - len(profile)//2, refined_min, "mo", label=f"REFINED {coarse_roll_angle}")
+        
+        if plot:
+            plt.title("Polar matching cost")
+            plt.xlabel("Polar Angle")
+            plt.ylabel("Matching cost")
+            plt.legend()
+            plt.grid()
+            if debug and debug_dir is None:
+                plt.show()
+            elif debug_dir is not None:
+                debug_fig_main = osp.join(debug_dir, "polar_matching profile")
+                plt.savefig(debug_fig_main)
+            plt.close()
+       
+    except:
+        coarse_roll_angle = 0.
+        logging.warning("Cannot find refined roll!")
+        traceback.print_exc()
+    return coarse_roll_angle
 
 def coarse_alignment(ref_full, mov_full, cals, yaw_main, pitch_main, roll_main, extension=1.4,
                      debug_dir=None, debug=False):
@@ -164,8 +240,8 @@ def coarse_alignment(ref_full, mov_full, cals, yaw_main, pitch_main, roll_main, 
     msr_ref_full = rigid.multispectral_representation(ref_full, mode=msr_mode, sigma_gaussian=3.).astype(np.float32)
     # @TODO: re-use MSR of full res!
     msr_mov_full = rigid.multispectral_representation(mov_w_full, mode=msr_mode, sigma_gaussian=1.).astype(np.float32)
-    msr_ref = transform.pyramid_reduce(msr_ref_full, downscale=ds, multichannel=True).astype(np.float32)
-    msr_mov = transform.pyramid_reduce(msr_mov_full, downscale=ds, multichannel=True).astype(np.float32)
+    msr_ref = transform.pyramid_reduce(msr_ref_full, downscale=ds, channel_axis=-1).astype(np.float32)
+    msr_mov = transform.pyramid_reduce(msr_mov_full, downscale=ds, channel_axis=-1).astype(np.float32)
     pad_y = (msr_mov.shape[0]-msr_ref.shape[0])//2
     pad_x = (msr_mov.shape[1]-msr_ref.shape[1])//2
     align_config = rigid.AlignmentConfig(num_patches=1, search_size=pad_x, mode=msr_mode)
@@ -192,13 +268,17 @@ def coarse_alignment(ref_full, mov_full, cals, yaw_main, pitch_main, roll_main, 
     yaw_refine = np.rad2deg(np.arctan(translation[0]/focal))
     pitch_refine = np.rad2deg(np.arctan(translation[1]/focal))
     print("2D translation {}".format(translation, yaw_refine, pitch_refine))
+    roll_refine = 0.
+    # roll_refine = coarse_roll_estimation(msr_ref, msr_mov, alignment_config=align_config, roll_search_window=10)
+    roll_refine = coarse_roll_estimation(msr_ref_full, msr_mov_full, alignment_config=align_config, roll_search_window=5, debug=debug, debug_dir=debug_dir)
+    print(f"Roll {roll_refine}°")
     ts_end_coarse_search = time.perf_counter()
     logging.warning("{:.2f}s elapsed in coarse search".format(ts_end_coarse_search - ts_start_coarse_search))
     ts_start_warp = time.perf_counter()
     if debug_dir is not None and debug:
         mov_wr = manual_warp(
             msr_ref, cv2.resize(mov_full, (mov_full.shape[1]//ds, mov_full.shape[0]//ds)),
-            yaw_main + yaw_refine, pitch_main + pitch_refine, roll_main,
+            yaw_main + yaw_refine, pitch_main + pitch_refine, roll_main + roll_refine,
             refcalib=cals["refcalib"], movingcalib=cals["movingcalib"],
             geometric_scale=1/ds, refinement_homography=None,
             )
@@ -207,7 +287,7 @@ def coarse_alignment(ref_full, mov_full, cals, yaw_main, pitch_main, roll_main, 
             osp.join(debug_dir, "_LOWRES_REF.jpg"))
     mov_wr_fullres = manual_warp(
         ref_full, mov_full,
-        yaw_main + yaw_refine, pitch_main + pitch_refine, roll_main,
+        yaw_main + yaw_refine, pitch_main + pitch_refine, roll_main + roll_refine,
         refcalib=cals["refcalib"], movingcalib=cals["movingcalib"],
         geometric_scale=None, refinement_homography=None,
     )
@@ -216,7 +296,7 @@ def coarse_alignment(ref_full, mov_full, cals, yaw_main, pitch_main, roll_main, 
     if debug_dir is not None:
         pr.Image(ref_full).save(osp.join(debug_dir, "FULLRES_REF.jpg"))
         pr.Image(mov_wr_fullres).save(osp.join(debug_dir, "FULLRES_REGISTERED_COARSE.jpg"))
-    return mov_wr_fullres, dict(yaw=yaw_main + yaw_refine, pitch=pitch_main + pitch_refine, roll=roll_main)
+    return mov_wr_fullres, dict(yaw=yaw_main + yaw_refine, pitch=pitch_main + pitch_refine, roll=roll_main+roll_refine)
 
 
 def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extension=1.4, manual=True, init_angles=[0., 0., 0.], motion_model_file = None):

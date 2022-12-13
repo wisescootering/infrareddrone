@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import irdrone.process as process
 import irdrone.utils as utils
 from irdrone.semi_auto_registration import mellin_transform
-from automatic_registration import user_assisted_manual_alignment
+from automatic_registration import user_assisted_manual_alignment, poly_fit_1d, build_x_poly_values
 from irdrone.semi_auto_registration import manual_warp
 from registration.cost import compute_cost_surfaces_with_traces
 import matplotlib.pyplot as plt
@@ -178,27 +178,6 @@ cost_dict = compute_cost_surfaces_with_traces(
     align_config=align_config
 )
 
-# %%
-def build_x_poly_values(_x):
-    x = np.array([_x]).T
-    a_mat = np.concatenate([x**2, x, np.ones_like(x)], axis=1)
-    return a_mat
-
-def poly_fit_1d(profile, amin, neighborhood = 1):
-    '''
-    [x1², x1 , 1]  * [ a ] = [y1]
-    [x2², x2 , 1]    [ b ]   [y2]
-        ...          [ c ]    ...
-    '''
-    if neighborhood==1:
-        y = profile[amin-1:amin+1+1]
-        x = np.array([-1, 0, 1])
-    if neighborhood==2:
-        y = profile[amin-2:amin+2+1]
-        x = np.array([-2, -1, 0, 1, 2])
-    a_mat = build_x_poly_values(x)
-    a_mat_pinv = np.linalg.pinv(a_mat) #.shape, y.shape
-    return np.dot(a_mat_pinv, y)
 
 # %%
 profile = cost_dict["costs"][0, 0, :, 0, :].sum(axis=-1)

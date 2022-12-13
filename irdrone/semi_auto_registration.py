@@ -96,8 +96,11 @@ def estimate_translation(ref, mov_warped, refcalib, geometricscale=None):
 def mellin_transform(refi, movi):
     radius = np.min(refi.shape[:2])/2.*0.75
     scaling= ["linear", "log"][0]
-    polar_mov = warp_polar(movi, radius=radius, multichannel=len(movi.shape) == 3, scaling=scaling)
-    polar_ref = warp_polar(refi, radius=radius, multichannel=len(refi.shape) == 3, scaling=scaling)
+    channel_axis = None
+    if len(movi.shape) == 3:
+        channel_axis = -1
+    polar_mov = warp_polar(movi, radius=radius, channel_axis=channel_axis, scaling=scaling)
+    polar_ref = warp_polar(refi, radius=radius, channel_axis=channel_axis, scaling=scaling)
     return polar_ref, polar_mov
 
 
