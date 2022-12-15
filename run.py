@@ -238,6 +238,7 @@ def select_matching_pairs(flight_data_dict: dict, shooting_pts_list: List[ShootP
             shooting_pts_list, flight_data_dict, optionAlignment=selection_option,
             folder_save=configuration["working_directory"]
         )
+
     except Exception as exc:
         logging.error(Style.RED + "Cannot compute flight analytics - you can still process your images but you won't get altitude profiles and gpx\nError = {}".format(exc)+ Style.RESET)
         traceback.print_exc()
@@ -302,6 +303,8 @@ def legacy_prepare_odm_postprocessing(shooting_pts_list: List[ShootPoint], confi
         return
     shooting_pts_selection_best_mapping = legacy_best_mapping_selection(shooting_pts_list)
     dirMission = configuration["working_directory"]
+
+
     if not configuration["odm_multispectral"] and configuration["timelapse_vis_interval"] > 0:
         for ext in ["VIS", "NIR_local", "NDVI__local", "VIR__local"]:
             for trace in configuration["traces"]:
@@ -462,7 +465,8 @@ def main_process(args: argparse.Namespace):
     # 5 > Selection of frames
     # --------------------------------------------------------------------------------------------------------------
     shooting_pts_selection = select_matching_pairs(flight_data_dict, shooting_pts_list, configuration=conf, selection_option=conf.get("selection", "all"))
-    
+
+
     # 6 > Image processing.
     # --------------------------------------------------------------------------------------------------------------
     matched_images_paths_selection = list(map(lambda pt: (pt.Vis, pt.Nir), shooting_pts_selection))
@@ -470,6 +474,7 @@ def main_process(args: argparse.Namespace):
     
     # 7 > Open Drone Map - [NOT REQUIRED WHEN ODM MULTISPECTRAL MODE]
     # --------------------------------------------------------------------------------------------------------------
+    IRd.shootPoint2imgMappingOdm(shooting_pts_list, dirMission=Path(conf["working_directory"]))
     if conf["createMappingList"]:
         legacy_prepare_odm_postprocessing(shooting_pts_selection, configuration=conf)
     
