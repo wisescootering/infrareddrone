@@ -54,6 +54,7 @@ from irdrone.utils import Style
 
 
 
+
 # -----   Convertisseurs de dates   Exif<->Python  Excel->Python    ------
 def dateExcelString2Py(dateTimeOriginal):
     """
@@ -886,14 +887,17 @@ def select_pairs(listPts, planVol, optionAlignment=None, ratioSynchro=0.25, fold
         visualize_matches_on_map(PtsForAlignment, listPts, folder_save=folder_save, name=optionAlignment)
     return PtsForAlignment
 
+
 def legacy_best_mapping_selection(listPts, folder_save=None):
     return odm.legacy_buildMappingList(listPts, overlap_x=cf.OVERLAP_X, overlap_y=cf.OVERLAP_Y, dirSaveFig=folder_save)
+
 
 def visualize_matches_on_map(selected_points, all_points_list, folder_save=None, name=None):
     if folder_save is not None and not osp.isdir(folder_save):
         Path(folder_save).mkdir(parents=True, exist_ok=True)
     _camera_make, _camera_type, lCapt_x, lCapt_y, _focal_factor, focalPix = lectureCameraIrdrone()
     odm.visu_mapping(selected_points, all_points_list, focal_DJI=focalPix, lCapt_x=lCapt_x, lCapt_y=lCapt_y, dirSaveFig=folder_save, name=name)
+
 
 def SaveSummaryInExcelFormat(dirMission, saveExcel, listPts, listImg, mute=True):
     dirAnalytics = Path(dirMission) / "Flight Analytics"
@@ -1875,20 +1879,6 @@ def logoIRDrone_2():
 
 def logoIRDrone_3():
     print(Style.CYAN + '\n ')
-    print('  III    IIIIIIIIII      IIIIIIIIIII')
-    print('  III    III      III    III      IIII')
-    print('  III    III        II   III        III')
-    print('  III    III       II    III         III   II IIIII      IIIIII    IIIIIII     IIIIII')
-    print('  III    IIIIIIIIIII     III         III   III     II   II    II   II     II  II     II')
-    print('  III    III    III      III         III   III         II      II  II     II  IIIIIII')
-    print('  III    III     III     III        III    III          II    II   II     II  II        ')
-    print('  III    III      III    IIIIIIIIIIII      III           IIIIII    II     II   IIIIIII ')
-    print('  ')
-    return
-
-
-def logoIRDrone_4():
-    print(Style.CYAN + '\n ')
     print(' _______   __________      ___________    ')
     print('   |I|     |R|      \R\     |D|      \D\  ' )
     print('   |I|     |R|       |R|    |D|       \D\ ' )
@@ -1901,6 +1891,30 @@ def logoIRDrone_4():
     print('')
     print('=====================================================================================================')
     return
+
+
+def logoIRDrone_4():
+    print(Style.CYAN + '\n ')
+    print('...........................................................................................................')
+    print('...........................................................................................................')
+    print('...........................................................................................................')
+    print('...........................................................................................................')
+    print('.....   .....          .......           ..................................................................')
+    print('.....   .....   ......   .....   ......   .................................................................')
+    print('.....   .....   .......   ....   .......   ................................................................')
+    print('.....   .....   ......   .....   ........   ...          .....       ......         ......         ........')
+    print('.....   .....           ......   ........   ...    .....  ..   .....   ...   .....   ....   .....   .......')
+    print('.....   .....   ...    .......   ........   ...   .........   .......   ..   ......   ..   .......   ......')
+    print('.....   .....   .....   ......   ........   ...   .........   .......   ..   ......   ..             ......')
+    print('.....   .....   ......   .....   ........   ...   .........   .......   ..   ......   ..   ................')
+    print('.....   .....   .......   ....   .......   ....   .........   .......   ..   ......   ..    ......   ......')
+    print('.....   .....   ........   ...            .....   ...........         ....   ......   .....        ........')
+    print('...........................................................................................................')
+    print('...........................................................................................................')
+    print('...........................................................................................................')
+    print('...........................................................................................................')
+    return
+
 
 if __name__ == "__main__":
     logoIRDrone(num=1)
