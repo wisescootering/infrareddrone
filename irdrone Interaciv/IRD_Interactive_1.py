@@ -1,3 +1,10 @@
+# --------------------------------------------------------------------------------
+#   IR_drone interactive
+#   Creation of the mission by selection of the first image taken by the DJI (visible spectrum, image in dng format)
+#   7/10/2023   V001
+# ---------------------------------------------------------------------------------
+
+
 import sys
 import os
 import shutil

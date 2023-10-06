@@ -1,3 +1,12 @@
+# --------------------------------------------------------------------------------
+#   IR_drone interactive
+#   Selection of reference images for the stages of the mission.
+#   7/10/2023   V001
+# ---------------------------------------------------------------------------------
+
+
+
+
 import os
 import sys
 import shutil
