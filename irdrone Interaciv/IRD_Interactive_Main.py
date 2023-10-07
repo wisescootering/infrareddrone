@@ -13,7 +13,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap, QColor, QIcon
 # -------------- IRDrone Library ------------------------------------
 from IRD_Interactive_1 import Window_11, Window_12
-import IRD_Interactive_2
+from IRD_Interactive_2 import LoadVisNirImagesDialog
 from IRD_Interactive_3 import Window_21
 import IRD_interactive_utils as Uti
 from IRD_interactive_utils import Prefrence_Screen
@@ -39,7 +39,7 @@ class Main_Window(QMainWindow):
 
 
     def initGUI(self):
-        self.image_display_size = (400, 400)   # Size of the log image displayed in the main window.
+        self.image_display_size: tuple[int, int] = (500, 500)   # Size of the log image displayed in the main window.
 
         # self.location_info = None
 
@@ -68,9 +68,9 @@ class Main_Window(QMainWindow):
         # Creating the command bar
         self.btn_create_mission = QPushButton("Step 1 : Define the mission", self)
         self.btn_create_mission.setStyleSheet("background-color: darkBlue; color: white;")
-        self.btn_load_images = QPushButton("Step 2 : Set reference images.", self)
+        self.btn_load_images = QPushButton("Step 2 : Choice of reference image set.", self)
         self.btn_load_images.setAutoDefault(False)
-        self.btn_load_images.setEnabled(True)  # False
+        self.btn_load_images.setEnabled(False)
         self.btn_load_images.setStyleSheet("background-color: Gray; color: darkGray;")
 
         self.btn_pre_process_images = QPushButton("Step 3 : Image pre-processing", self)
@@ -140,13 +140,10 @@ class Main_Window(QMainWindow):
 
         """
         try:
-            # Instantiate Window_11  (l'argument "self" correspond ici à main_window (instancié dans def main par l'ordre main_window = Main_Window() et qui est le parent)
-            #print("TEST Instantiate Window_11")
             self.window_11 = Window_11(self)
             self.window_11.show()
             self.dic_takeoff_light = self.window_11.dic_takeoff_light
-            #print("TEST open_window_11  in main_window   dic_takeoff_light = ", self.dic_takeoff_light)
-            #print("TEST window 11   avant ouverture de window_12")
+
             self.window_11.btnNextStep.clicked.connect(self.open_window_12)  # Connect Window_12 signal to Main_Window method
         except Exception as e:
             print("Error in Main_Window open_window_11:", e)
@@ -167,7 +164,7 @@ class Main_Window(QMainWindow):
             print("Error in Main_Window open_window_12:", e)
 
 
-    def handle_data_from_window_12(self, validate, dic_takeoff):
+    def handle_data_from_window_12(self, validate: bool, dic_takeoff: dict):
         """
         Handle data from Window_12.
 
@@ -179,24 +176,17 @@ class Main_Window(QMainWindow):
 
         """
         if validate:
-            #print("TEST  The user has validated his entries. \n handle_data_from_window_12 in class Main_Window")
-            #print("TEST  Data from Window_12:", dic_takeoff)
             self.dic_takeoff = dic_takeoff
-            #self.test()
             self.window_12.data_signal_from_window_12_to_main_window.disconnect()  # Disconnect the signal
             self.window_12.close()  # Close window_12
             self.btn_load_images.setAutoDefault(True)
             self.btn_load_images.setEnabled(True)
-            self.btn_load_images.setStyleSheet("background-color: Gray; color: Black;")
+            self.btn_load_images.setStyleSheet("background-color: Gray; color: White;")
         else:
             print("The user has not validated his entries.")
 
         self.window_11.close()
 
-    def test(self):
-        txt_Date = f"{self.dic_takeoff['Year']}{self.dic_takeoff['Month']}{self.dic_takeoff['Day']}"
-        txt_Time = f"{self.dic_takeoff['Hour']}{self.dic_takeoff['Minute']}"
-        #print(f"TEST NOM DE FICHIER  dans Main_Window              FLY_{ txt_Date}_{ txt_Time}_{ self.dic_takeoff['Location']} ")
 
     # ===================================================================================
     #                   Button #2 click handlers
@@ -219,41 +209,75 @@ class Main_Window(QMainWindow):
         if not coherent_response:
             return()
 
-        # ----------------------------------------------------------------------------------------------------------
+        # ---------------- Loads the 5 reference “VIS” images --------------------------------------------
 
-        dialog_NIR = IRD_Interactive_2.LoadVisNirImagesDialog(width, height, "NIR", folderMissionPath)
-        result = dialog_NIR.exec()
-        if result == QDialog.DialogCode.Accepted:
-            print("reference_images NIR")
-            pass
-        IRD_Interactive_2.LoadVisNirImagesDialog.reset_flags()
-
-
-        dialog_VIS = IRD_Interactive_2.LoadVisNirImagesDialog(width, height, "VIS", folderMissionPath)
+        if self.dic_takeoff is not None:
+            dialog_VIS = LoadVisNirImagesDialog(width, height, "VIS",
+                                                                  folderMission=folderMissionPath, path_image_takeoff=self.dic_takeoff["File path take-off"])
+        else:
+            dialog_VIS = LoadVisNirImagesDialog(width, height, "VIS",
+                                                                  folderMission=folderMissionPath)
         result = dialog_VIS.exec()
         if result == QDialog.DialogCode.Accepted:
             print("reference_images VIS")
             pass
-        IRD_Interactive_2.LoadVisNirImagesDialog.reset_flags()
+        LoadVisNirImagesDialog.reset_flags()
+
+        # ---------------- Loads the 5 reference “NIR” images --------------------------------------------
+
+        dialog_NIR = LoadVisNirImagesDialog(width, height, "NIR", folderMission=folderMissionPath)
+        result = dialog_NIR.exec()
+        if result == QDialog.DialogCode.Accepted:
+            print("reference_images NIR")
+            pass
+        LoadVisNirImagesDialog.reset_flags()
+
 
     def choose_folder_name(self):
-        Uti.show_warning_OK_Cancel_message("IRDrone", "Choose the mission folder.", "It is of the form : \n FLY_Year Month Day_hour minute_[Place]", QMessageBox.Icon.Information)
         try:
-            folderMissionPath = QFileDialog.getExistingDirectory(self, 'Select Mission Folder', self.prefrence_screen.default_user_dir)
-            if folderMissionPath and folderMissionPath != self.prefrence_screen.default_user_dir:
-                coherent_response = Uti.folder_name_consistency_analysis(folderMissionPath)
-                if not coherent_response:
-                    #main_win.update()
-                    Uti.show_warning_OK_Cancel_message("IRDrone", f"You have chosen the folder : \n{folderMissionPath} \nwhich is not a Mission IRDrone folder.",
-                                                       " Choose a compatible folder ( name FLY_YYYYMMDD_hhmm_<free text> ).\n or create a mission \n Use the <Create a New Mission> command.")
+            image_takeoff_available = self.image_takeoff_available_test(self.dic_takeoff['File path mission'])
+            if image_takeoff_available:
+                # construction du nom du dossier de la mission
+                folderMissionPath = self.dic_takeoff['File path mission']
+                coherent_response = True
+                Uti.show_info_message("IRDrone", f"Your images will be transferred to the  mission folder : \n {folderMissionPath}",
+                                      f"They will be distributed between the folders {self.window_12.AerialPhotoFolder} and {self.window_12.SynchroFolder}")
+                return folderMissionPath, coherent_response
             else:
-                Uti.show_warning_OK_Cancel_message("IRDrone", f"You have chosen the folder : \n {folderMissionPath} \n",
-                                                   " Your choice of folder is not recognized in IRDrone\n Choose a compatible folder ( name FLY_YYYYMMDD_hhmm_[Optional text] ).")
-                coherent_response = False
+                Uti.show_warning_OK_Cancel_message("IRDrone", "Choose the mission folder.", "It is of the form : \n FLY_Year Month Day_hour minute_[Place]", QMessageBox.Icon.Information)
+                try:
+                    folderMissionPath = QFileDialog.getExistingDirectory(self, 'Select Mission Folder', self.prefrence_screen.default_user_dir)
+                    if folderMissionPath and folderMissionPath != self.prefrence_screen.default_user_dir:
+                        coherent_response = Uti.folder_name_consistency_analysis(folderMissionPath)
+                        if not coherent_response:
+                            Uti.show_warning_OK_Cancel_message("IRDrone", f"You have chosen the folder : \n{folderMissionPath} \nwhich is not a Mission IRDrone folder.",
+                                                               " Choose a compatible folder ( name FLY_YYYYMMDD_hhmm_<free text> ).\n or create a mission \n Use the <Create a New Mission> command.")
+                    else:
+                        Uti.show_warning_OK_Cancel_message("IRDrone", f"You have chosen the folder : \n {folderMissionPath} \n",
+                                                           " Your choice of folder is not recognized in IRDrone\n Choose a compatible folder ( name FLY_YYYYMMDD_hhmm_[Optional text] ).")
+                        coherent_response = False
 
-            return folderMissionPath, coherent_response
+                    return folderMissionPath, coherent_response
+                except Exception as e:
+                    print("error 1   in choose_folder_name :", e)
         except Exception as e:
-            print("error   in choose_folder_name :", e)
+            print("error 2   in choose_folder_name :", e)
+
+
+    def image_takeoff_available_test(self, path_image_takeoff):
+        try:
+            image_takeoff_available = False
+            # Test if the takeoff point image is available..
+            if path_image_takeoff is not None:
+                if os.path.exists(path_image_takeoff):
+                    coherent_response = Uti.folder_name_consistency_analysis(path_image_takeoff)
+                    if coherent_response:
+                        self.path_image_takeoff = path_image_takeoff
+                        image_takeoff_available = True
+            return image_takeoff_available
+        except Exception as e:
+            print("error   in image_takeoff_available", e)
+
 
     # ===================================================================================
     #                   Button #3 click handlers

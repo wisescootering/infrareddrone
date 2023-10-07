@@ -12,6 +12,8 @@ import sys
 import shutil
 import rawpy
 from functools import partial
+from typing import Any, Dict, Optional, Tuple, List, Union
+from pathlib import Path
 # -------------- PyQt6 Library ------------------------------------
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QProgressBar, QFileDialog,  QMessageBox, QApplication
 from PyQt6.QtGui import QPixmap, QColor, QImage, QCloseEvent, QIcon
@@ -73,12 +75,8 @@ class LoadVisNirImagesDialog(QDialog):
     flags = [False, False, False, False, False]
 
 
-    def __init__(self, width, height, type_img,  folderMission):
+    def __init__(self, width: int, height: int, type_img: str,  folderMission: Path = None, path_image_takeoff: Path = None):
         super().__init__()
-
-        print("TEST  folderMission ", folderMission)
-        lecteur, reste_du_chemin = os.path.splitdrive(folderMission)
-        print(lecteur,"     ", reste_du_chemin)
 
         self.pref_screen = Uti.Prefrence_Screen()
         self.screen_width = width
@@ -86,7 +84,12 @@ class LoadVisNirImagesDialog(QDialog):
         self.target_screen_index = self.pref_screen.defaultScreenID
         self.screen_adjust = self.pref_screen.screenAdjust
         self.window_display_size = self.pref_screen.windowDisplaySize
+
         self.type_img = type_img
+        if self.type_img == "VIS" or self.type_img == "DNG":
+            self.ext = "DNG"
+        else:
+            self.ext = "jpg"
 
 
         self.currentUserDir = self.pref_screen.current_directory
@@ -97,14 +100,8 @@ class LoadVisNirImagesDialog(QDialog):
             self.folderMissionPath = folderMission
         else:
             print("error. Problem with: ", folderMission)
-        if self.type_img == "VIS" or self.type_img == "DNG":
-            self.ext = "DNG"
-        elif self.type_img == "NIR" or self.type_img == "RAW":
-            self.ext = "jpg"
-        else:
-            # print(f"The {self.type_img} extension is not supported by IRDrone")
-            Uti.show_info_message("IRDrone", f"The {self.type_img} extension is not supported by IRDrone", "", QMessageBox.Icon.Information)
-        #print("TEST  type_img ", self.type_img)
+
+        self.init_image_takeoff_available(path_image_takeoff)
         self.init_GUI()
 
 
@@ -157,6 +154,12 @@ class LoadVisNirImagesDialog(QDialog):
             self.btn_help.setStyleSheet("background-color: darkGreen; color: white;")
             self.btn_help.setFixedWidth(button_width)
 
+            button_width = int(0.7 * (self.screen_width // num_images))
+            self.btn_validate_load_all_images = QPushButton("Validate (next step) >>>")
+            self.btn_validate_load_all_images.setFixedWidth(button_width)
+            self.btn_validate_load_all_images.setEnabled(False)
+            self.btn_validate_load_all_images.setStyleSheet("background-color: gray; color: darkGray;")
+
             # Progress bar when loading all images.
             self.progress_bar = QProgressBar()
             self.progress_bar.setValue(0)
@@ -172,15 +175,16 @@ class LoadVisNirImagesDialog(QDialog):
             for label in self.image_name_labels:
                 middle_layout.addWidget(label)
 
-
             # ---------------- Image area. Creating a neutral image -----------------
             self.image_display_size = (int((self.screen_width-100)/num_images), int((self.screen_width-100)/num_images*3/4))  # image area size
             # Create an empty pixmap of the desired size and adjust the size if necessary
-            self.empty_pixmap = QPixmap(int((self.screen_width-100)/num_images),  int((self.screen_width-100)/num_images*3/4))
+            #self.empty_pixmap = QPixmap(int((self.screen_width-100)/num_images),  int((self.screen_width-100)/num_images*3/4))
+            self.empty_pixmap = QPixmap(* self.image_display_size)
             self.empty_pixmap.fill(QColor(Qt.GlobalColor.gray))  # transparent, gray, darkYellow etc)
             # Adjust the size if necessary
             self.empty_pixmap.scaled(*self.image_display_size, Qt.AspectRatioMode.KeepAspectRatio)
-
+            #      Affiche l'image du Take-off (si elle est  disponible) comme première image.
+            #      Dans ce cas le dossier qui la contient sera le dossier par défaut pour rechercher les autres images.
 
             # Creating a list to store pairs (image, QLabel)
             image_label_pairs = []
@@ -209,14 +213,17 @@ class LoadVisNirImagesDialog(QDialog):
                 # Adds the vertical layout of the pair (image , legend) to the horizontal layout of the middle window.
                 middle_layout.addLayout(pair_layout)
 
+            if self.image_takeoff_available:
+                self.open_takeoff_image(self.path_image_takeoff)
+
             #  bottom window for "load mission images" command and progress bar.
             bottom_layout = QVBoxLayout()
             bottom_command = QHBoxLayout()
             bottom_command.addWidget(self.btn_load_all_images)
+            bottom_command.addWidget(self.btn_validate_load_all_images)
             bottom_command.addWidget(self.btn_help)
             bottom_layout.addLayout(bottom_command)
             bottom_layout.addWidget(self.progress_bar)
-
 
             layout.addLayout(top_layout)
             layout.addLayout(middle_layout)
@@ -224,14 +231,15 @@ class LoadVisNirImagesDialog(QDialog):
 
             center_on_screen(self, self.target_screen_index, self.screen_adjust, self.window_display_size)
 
-            # Disables btn_load_all_images on startup. It will be activated when all three images are loaded.
+            # Disables btn_*_load_all_images on startup. It will be activated when all three images are loaded.
             self.btn_load_all_images.setEnabled(False)
+            self.btn_load_all_images.setStyleSheet("background-color: darkBlue; color: gray;")
 
             # Setting button actions
             for index, btn in enumerate(self.btn_command):
                 btn.clicked.connect(partial(self.open_image, index, self.image_labels[index], self.image_name_labels[index], self.ext))
             self.btn_load_all_images.clicked.connect(self.on_load_all_images)
-            self.btn_load_all_images.setStyleSheet("background-color: darkGray; color: black;")
+            self.btn_validate_load_all_images.clicked.connect(self.on_validate_load_all_images)
             self.btn_help.clicked.connect(self.on_help)
             self.btn_help.setStyleSheet("background-color: green; color: white;")
             self.setLayout(layout)
@@ -273,31 +281,35 @@ class LoadVisNirImagesDialog(QDialog):
             print("error in closeEvent(self, event: QCloseEvent) :", e)
 
 
+    def on_validate_load_all_images(self):
+        self.close()
+
+
     def on_load_all_images(self):
+        """
+
+        :return:
+
+         The structure of image names is different depending on the camera.
+          > For the DJI drone camera which takes images in the visible spectrum ("VIS") we have names
+          like HYPERLAPSE_XXXX.DNG.   Here XXXX is the image number between 0001 and 9999.
+          Note that we only recover dng files (they contain the correct EXIF data)
+
+          > For the SJCam M20 camera embedded under the DJI drone and which takes images in
+          the near infrared ("NIR") spectrum, we have two types of images:
+           - Les images jpeg (format jpg)
+           - les images raw  (format RAW).
+          This double recording is automatic as soon as you record RAW images on the SJCam M20.
+          The RAW format does not meet ADOBE standards.
+          The EXIF data must therefore be found in the associated jpeg image.
+         Finally for NIR images we have the name structures:
+                - YYYY_MMDD_hhmmss_aaa.jpg where aaa is the (even) number of the image between 002 and 998.
+                - YYYY_MMDD_hhmms's'_bbb.RAW where bbb = aaa -1 is the (odd) number between 001 and 997
+          Note: By examining the names of the raw and jpg images we can deduce that the RAW image
+          is saved before the associated jpeg image.
+
+        """
         try:
-            # -------------------------------------------------------------------------------------------------
-            #
-            # The structure of image names is different depending on the camera.
-            #  > For the DJI drone camera which takes images in the visible spectrum ("VIS") we have names
-            #  like HYPERLAPSE_XXXX.DNG.   Here XXXX is the image number between 0001 and 9999.
-            #  Note that we only recover dng files (they contain the correct EXIF data)
-            #
-            #  > For the SJCam M20 camera embedded under the DJI drone and which takes images in
-            #  the near infrared ("NIR") spectrum, we have two types of images:
-            #   - Les images jpeg (format jpg)
-            #   - les images raw  (format RAW).
-            #  This double recording is automatic as soon as you record RAW images on the SJCam M20.
-            #  The RAW format does not meet ADOBE standards.
-            #  The EXIF data must therefore be found in the associated jpeg image.
-            # Finally for NIR images we have the name structures:
-            #        - YYYY_MMDD_hhmmss_aaa.jpg where aaa is the (even) number of the image between 002 and 998.
-            #        - YYYY_MMDD_hhmms's'_bbb.RAW where bbb = aaa -1 is the (odd) number between 001 and 997
-            #  Note: By examining the names of the raw and jpg images we can deduce that the RAW image
-            #  is saved before the associated jpeg image.
-            #
-            # --------------------------------------------------------------------------------------------------
-
-
             # ---------------- destination folders -----------------------------------------------------------
             outputFolder = self.folderMissionPath
 
@@ -348,62 +360,118 @@ class LoadVisNirImagesDialog(QDialog):
                                 QMessageBox.Icon.Information)
 
             if self.currentImgTyp == "NIR":
+                print("TEST   inputFolder:", inputFolder, type(inputFolder))
 
                 # ----------  transfer of NIR images of the Sync and Fly phase (jpg) ----------------
                 listInputImages = self.create_list_image_in_input_folder(inputFolder, "jpg")
-                self.load_inputFolder_2_outputFolder(inputFolder, listInputImages, outputSyncFolder, idMinSync, idMaxSync, 0)
-                self.load_inputFolder_2_outputFolder(inputFolder, listInputImages, outputFlyFolder, idMinFly, idMaxFly, 10)
+                self.load_inputFolder_2_outputFolder(inputFolder, listInputImages, outputSyncFolder, idMinSync, idMaxSync, 0, 10)
+                self.load_inputFolder_2_outputFolder(inputFolder, listInputImages, outputFlyFolder, idMinFly, idMaxFly, 10, 30)
                 # ----------  transfer of NIR images of the Sync and Fly phase (raw) ----------------
                 listInputImages = self.create_list_image_in_input_folder(inputFolder, "raw")
-                self.load_inputFolder_2_outputFolder(inputFolder, listInputImages, outputSyncFolder, idMinSync - 1, idMaxSync - 1, 30)
-                self.load_inputFolder_2_outputFolder(inputFolder, listInputImages, outputFlyFolder, idMinFly - 1, idMaxFly - 1, 60)
+                self.load_inputFolder_2_outputFolder(inputFolder, listInputImages, outputSyncFolder, idMinSync - 1, idMaxSync - 1, 30, 60)
+                self.load_inputFolder_2_outputFolder(inputFolder, listInputImages, outputFlyFolder, idMinFly - 1, idMaxFly - 1, 60, 100)
             elif self.currentImgTyp == "VIS":
                 listInputImages = self.create_list_image_in_input_folder(inputFolder, "dng")
                 # ----------   transfer of NIR images of the Sync  phase (dng) ----------------
-                self.load_inputFolder_2_outputFolder(inputFolder, listInputImages, outputSyncFolder, idMinSync, idMaxSync, 0)
+                self.load_inputFolder_2_outputFolder(inputFolder, listInputImages, outputSyncFolder, idMinSync, idMaxSync, 0, 30)
                 # ----------   transfer of NIR images of the Fly  phase (dng)----------------
-                self.load_inputFolder_2_outputFolder(inputFolder, listInputImages, outputFlyFolder, idMinFly, idMaxFly, 30)
+                self.load_inputFolder_2_outputFolder(inputFolder, listInputImages, outputFlyFolder, idMinFly, idMaxFly, 30, 100)
 
             self.progress_bar.setValue(100)
 
             # print("All images have been transferred successfully.")
             Uti.show_info_message("IRDrone", f"Your {(max((idMaxFly - idMinFly),0) + max((idMaxSync - idMinSync),0))}  images have been transferred \n from directory {inputFolder}  of the camera SD card \n to the mission directory {outputFlyFolder}.",
                                   "You can close this window.", QMessageBox.Icon.Information)
+            self.btn_validate_load_all_images.setEnabled(True)
+            self.btn_validate_load_all_images.setStyleSheet("background-color: gray; color: white;")
+
 
         except Exception as e:
             print("error in on_load_all_images  :", e)
 
 
-    def load_inputFolder_2_outputFolder(self, inputFolder, listInputImages, outputFolder, id_min, id_max, pgsbar):
+    def load_inputFolder_2_outputFolder(self, inputFolder: str, listInputImages: List[str], outputFolder: str, id_min: int, id_max: int, pgsbar0: int, pgrbar1: int) ->None:
+        """
+        Load images from the input folder to the output folder based on specified criteria.
 
+        Parameters:
+        - inputFolder (str): The folder from which images will be loaded.
+        - listInputImages (List[Tuple[int, str]]): List of image data, where each item is a tuple containing an image number and image name.
+        - outputFolder (str): The folder to which selected images will be copied.
+        - id_min (int): The minimum image number to be considered for copying.
+        - id_max (int): The maximum image number to be considered for copying.
+        - pgsbar0 (int): Initial value for progress bar updating.
+        - pgrbar1 (int): Final value for progress bar updating.
+
+        Returns:
+        None
+        """
         listFileName = []
         for imgFileName in listInputImages:   # imgFileName   name + extension
             num_img, name_img = self.extract_num_image(imgFileName)
             if id_min <= num_img <= id_max:
                 listFileName.append(imgFileName)
                 self.copy_images(inputFolder, imgFileName, outputFolder)
-                self.progress_bar.setValue(pgsbar + 25*(len(listFileName) / (id_max + 1 - id_min)))
+                self.progress_bar.setValue(pgsbar0 + int((pgrbar1-pgsbar0)*(len(listFileName) / (id_max + 1 - id_min))))
 
         #  end of loading images associated with the imgTyp type in the mission files
         LoadVisNirImagesDialog.flagAllImageOK = True
 
 
-    def create_list_image_in_input_folder(self, InputFolder, ext):
+    def create_list_image_in_input_folder(self, input_folder: Union[str, str], ext: str) -> Optional[List[str]]:
+        """
+        Create a list of image file names with a specific extension in the given input folder.
+
+        Parameters:
+        - input_folder (Union[str, str]): The folder from which image file names will be listed.
+        - ext (str): The file extension to filter image files.
+
+        Returns:
+        - List[str]: A list of image file names with the specified extension.
+          Returns None if the input_folder is not a directory.
+        """
+
         # Checks if the given path is a folder
-        if not os.path.isdir(InputFolder):
+        if not os.path.isdir(input_folder):
             return None
         # List all files in folder
-        files = os.listdir(InputFolder)
+        files = os.listdir(input_folder)
         # Filter the list to keep only .ext type files
         listInputImages = [f for f in files if f.lower().endswith('.' + ext)]
         return listInputImages
 
-    def extract_num_image(self, imgPath):
-        frame_name = os.path.splitext(os.path.basename(imgPath))[0]
-        frame_index = int(frame_name.split("_")[-1])
+
+    def extract_num_image(self, imgPath: str) -> Tuple[int, str]:
+        """
+        Extract the frame index and frame name from an image path.
+
+        Given an image path in the format 'C:/...../HYPERLAPSE_9999.dng', this method
+        extracts the frame name ('HYPERLAPSE_9999') and frame index (9999).
+
+        Parameters:
+        - imgPath (str): The path to the image file.
+
+        Returns:
+        - Tuple[int, str]: A tuple containing the frame index as an integer and the
+                           frame name as a string.
+        """
+        frame_name: str = os.path.splitext(os.path.basename(imgPath))[0]
+        frame_index: int = int(frame_name.split("_")[-1])
         return frame_index, frame_name
 
-    def copy_images(self, inputDir, imgName, outputDir):
+
+    def copy_images(self, inputDir: str, imgName: str, outputDir: str) -> Optional[str]:
+        """
+        Copy an image file from the input directory to the output directory.
+
+        Parameters:
+        - inputDir (str): The directory from which the image file will be copied.
+        - imgName (str): The name of the image file to be copied.
+        - outputDir (str): The directory to which the image file will be copied.
+
+        Returns:
+        - str: A message indicating the result of the copy operation.
+        """
         source = os.path.join(inputDir, imgName)     # Constructs the full path of the source file
         # Check if the source file exists
         if not os.path.isfile(source):
@@ -416,14 +484,111 @@ class LoadVisNirImagesDialog(QDialog):
         return f"File {imgName} was successfully copied from {inputDir} to {outputDir}."
 
 
-    def open_image(self, numBtn, image_label, image_name_label, image_type):
+    def init_image_takeoff_available(self, path_image_takeoff: str) -> None:
+        """
+        Initialize the availability of a takeoff image based on the provided path and image type.
+
+        This method checks whether the provided path to the takeoff image exists and whether
+        the image type is either "VIS" or "DNG". If both conditions are true, it sets the
+        `image_takeoff_available` attribute to True and stores the path; otherwise, it sets
+        the `image_takeoff_available` attribute to False.
+
+        Parameters:
+        - path_image_takeoff (str): The path to the takeoff image.
+
+        Returns:
+        None
+        """
+        try:
+            self.image_takeoff_available = False    # Initialize as False
+            # Check if the image type is "VIS" or "DNG"
+            if self.type_img in {"VIS", "DNG"}:
+                self.ext = "DNG"
+                # Check if the path to the takeoff image is provided and it exists
+
+                # ---------------------------------------------------
+                # Test if the takeoff point image is available..
+                # if path_image_takeoff is not None:
+                #    if os.path.exists(path_image_takeoff):
+                # ---------------------------------------------------
+
+                if path_image_takeoff is not None and os.path.exists(path_image_takeoff):
+                    self.path_image_takeoff = path_image_takeoff
+                    self.image_takeoff_available = True
+        except Exception as e:
+            print("error   in init_image_takeoff_available", e)
+
+
+    def open_takeoff_image(self, path_image_takeoff: Path) -> None:
+        """
+        Open and display a takeoff image given its path.
+
+        This method attempts to open an image from a specified path, processes it,
+        and displays it on the user interface. It also sets various attributes and
+        updates the UI components accordingly. If the image file is successfully processed
+        and displayed, relevant path attributes are updated, and UI components are adjusted
+        to reflect the loaded image.
+
+        Parameters:
+        - path_image_takeoff (Path): The path to the takeoff image to be opened and displayed.
+
+        Returns:
+        None
+        """
+        try:
+            file_path = path_image_takeoff
+            if file_path:
+                self.flags[0] = True
+                self.new_user_dir = os.path.dirname(file_path)
+                self.user_dir = os.path.dirname(file_path)
+                # Use rawpy library to open DNG files
+                with rawpy.imread(file_path) as raw:
+                    rgb = raw.postprocess()
+                    pixmap = QPixmap.fromImage(
+                        QImage(rgb.data, rgb.shape[1], rgb.shape[0], rgb.strides[0], QImage.Format.Format_RGB888))
+                pixmap = pixmap.scaled(* self.image_display_size, Qt.AspectRatioMode.KeepAspectRatio)
+                self.image_labels[0].setPixmap(pixmap)
+                filename, file_extension = os.path.splitext(os.path.basename(file_path))
+                self.image_name_labels[0].setText(f"{self.img_legend[0]}  : \n {filename}  {file_extension}")
+                self.image_name_labels[0].setStyleSheet("color: darkBlue;")
+                self.listImgRefPath[0] = file_path
+                self.listVisRefPath[0] = file_path
+
+            # Updated class flags with new values. New window position if moved
+            self.currentUserDir = self.new_user_dir
+            if all(elem is True for elem in self.flags):
+                self.btn_load_all_images.setEnabled(True)
+                self.btn_load_all_images.setStyleSheet("background-color: darkBlue; color: white;")
+        except Exception as e:
+            print("error in open_takeoff_image : ", e)
+
+
+
+    def open_image(self, numBtn: int, image_label: QLabel, image_name_label: QLabel, image_type: str):
+        """
+        Open an image and update relevant UI components.
+
+        This method attempts to open and display an image based on the provided image type.
+        It also sets various flags and updates UI components based on the operation's success.
+
+        Parameters:
+        - numBtn (int): Index used for referencing certain UI components and flags.
+        - image_label (QLabel): QLabel to display the image.
+        - image_name_label (QLabel): QLabel to display the image name.
+        - image_type (str): Type of the image to be opened ("dng" or "jpg").
+
+        Returns:
+        None
+        """
         try:
             flags = self.flags
             self.user_dir = self.currentUserDir
             flags[numBtn] = self.open_and_display_image(numBtn, image_label, image_name_label, image_type)
             # Updated class flags with new values. New window position if moved
             self.flags[numBtn] = flags[numBtn]
+
             self.currentUserDir = self.new_user_dir
+
             if all(LoadVisNirImagesDialog.flags):
                 self.btn_load_all_images.setEnabled(True)
                 self.btn_load_all_images.setStyleSheet("background-color: darkBlue; color: white;")
@@ -431,15 +596,23 @@ class LoadVisNirImagesDialog(QDialog):
             print("error in open_image : ", e)
 
 
-    def open_and_display_image(self, numBtn: int, image_label, image_name_label, image_type: str):
+    def open_and_display_image(self, numBtn: int, image_label: QLabel, image_name_label: QLabel, image_type: str):
         """
-        Function to choose an image whose extension is image_type (dng or jpeg)
-        :param numBtn:
-        :param image_label:
-        :param image_name_label:
-        :param image_type:
-        :return:
+        Open and display an image of a specified type.
+
+        This method tries to open an image file of the specified type, process it if necessary,
+        and then display it in the provided QLabel. It also updates other relevant UI components.
+
+        Parameters:
+        - numBtn (int): Index used for referencing certain UI components and flags.
+        - image_label (QLabel): QLabel to display the image.
+        - image_name_label (QLabel): QLabel to display the image name.
+        - image_type (str): Type of the image to be opened ("dng" or "jpg").
+
+        Returns:
+        - bool: Flag indicating whether the image was successfully opened and displayed.
         """
+
         try:
             flag = False
             if all(elem is False for elem in self.flags) or not os.path.exists(self.user_dir):
@@ -482,7 +655,9 @@ class LoadVisNirImagesDialog(QDialog):
         except Exception as e:
             print("error in open_and_display_image ; ", e)
 
-    def on_help(self):
+    def on_help(self) -> None:
+        """
+        """
         try:
             Uti.show_info_message("IRDrone", "Sorry, this feature is under development.", "")
         except Exception as e:
@@ -519,10 +694,10 @@ if __name__ == '__main__':
 
     app = QApplication(sys.argv)  # initializes the Qt application loop (ESSENTIAL!)
 
-    main_win_1 = LoadVisNirImagesDialog( 900, 600, 'VIS',  os.path.join(os.path.abspath('/'), "Air-Mission","FLY-20220125-1159-Blassac"), screen_ID, screen_adjust, window_display_size)
+    main_win_1 = LoadVisNirImagesDialog( 900, 600, 'VIS',  os.path.join(os.path.abspath('/'), "Air-Mission","FLY-20220125-1159-Blassac"))
     Uti.center_on_screen(main_win_1, screen_ID, screen_adjust, window_display_size)
     Uti.show(main_win_1)  # Uses the utils_interactiv module function to display the window
-    main_win_2 = LoadVisNirImagesDialog(900, 550, 'NIR', os.path.join(os.path.abspath('/'), "Air-Mission", "FLY-20220125-1159-Blassac"), screen_ID, screen_adjust,window_display_size)
+    main_win_2 = LoadVisNirImagesDialog(900, 550, 'NIR', os.path.join(os.path.abspath('/'), "Air-Mission", "FLY-20220125-1159-Blassac"))
     Uti.center_on_screen(main_win_2, screen_ID, [20, 40], (750, 550))
     Uti.show(main_win_2)  # Uses the utils_interactiv module function to display the window
 

@@ -1,7 +1,7 @@
 # --------------------------------------------------------------------------------
 #   IR_drone interactive
 #   General utility
-#   7/10/2023   V001
+#   7/10/2023   V001   *
 # ---------------------------------------------------------------------------------
 
 
@@ -9,6 +9,7 @@ import os
 import json
 from datetime import datetime, date
 from typing import Any, Dict, Optional, Tuple, List, Union
+from pathlib import Path
 from fractions import Fraction
 import time
 # ------------- geophysics Library --------------------------------
@@ -25,6 +26,7 @@ from PyQt6.QtWidgets import QMessageBox, QApplication
 
 
 class Prefrence_Screen:
+
     def __init__(self):
         super().__init__()
         self.current_directory = os.getcwd()
@@ -39,7 +41,15 @@ class Prefrence_Screen:
         self.windowDisplaySize = (800, 640)
 
 
-def show_info_message(title, text, informativeText, icon=QMessageBox.Icon.Information):
+def show_info_message(title: str, text: str, informativeText: str, icon=QMessageBox.Icon.Information):
+    """
+    Display an info message.
+    :param title:
+    :param text:
+    :param informativeText:
+    :param icon:
+    :return:
+    """
     try:
         msg_box = QMessageBox()
         msg_box.setIcon(icon)
@@ -52,7 +62,15 @@ def show_info_message(title, text, informativeText, icon=QMessageBox.Icon.Inform
         print("error  in def show_info_message(self, title, text, informativeText, icon)", e)
 
 
-def show_warning_OK_Cancel_message(title, text, informativeText, icon=QMessageBox.Icon.Warning):
+def show_warning_OK_Cancel_message(title: str, text: str, informativeText: str, icon=QMessageBox.Icon.Warning):
+    """
+    Display an warning OK Cancel message.
+    :param title:
+    :param text:
+    :param informativeText:
+    :param icon:
+    :return:
+    """
     msg_box = QMessageBox()
     msg_box.setIcon(icon)
     msg_box.setText(text)
@@ -62,8 +80,13 @@ def show_warning_OK_Cancel_message(title, text, informativeText, icon=QMessageBo
     msg_box.exec()
 
 
-def show_error_message(message):
-    """Display an error message."""
+def show_error_message(message: str):
+    """
+    Display an error message.
+    :param message:
+    :return:
+    """
+
     msgBox = QMessageBox()
     msgBox.setIcon(QMessageBox.Icon.Critical)
     msgBox.setText(message)
