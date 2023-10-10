@@ -42,42 +42,44 @@ from IRD_interactive_utils import center_on_screen
                                 time and the alignment of the images is not guaranteed after leaving the area to be 
                                 studied (variable altitude and too high speed).
 
- The "Mission" :
-    The mission has five step:
-    > Step 1       : Take-off.
-    > Step 2 (SYNC): Synchronization.
-    > Step 3       : Route to the area to be studied.
-    > Step 4 (FLY) : Flight over the area to be studied which constitutes the flight itself and named FLY.
-    > Step 5       : Return to the take-off point.
-
- Take-off:
-    Takeoff is a quick step where after triggering the NIR camera (SJCam) the rotors are started and the drone rises
-    to 2-3 m above the ground. The drone (DJI) shot in hyper lapse mode is then triggered.
-    This moment will be the reference point for the entire mission (zero point of the timeline).
-
- The synchronization (SYNC):
-    The synchronization step is carried out at the take-off point at an altitude of approximately 3 m and at the fixed point.
-    The drone is above a sight (ARUCO) which rotates on itself.
-    The set of images associated with this synchronization step goes from the first image of the mission taken by
-    the drone and the image taken just before the start of step 3.
-
- The flight (FLY):
-    The FLY includes the images recorded during the flight in stabilized mode over the area to be studied.
-    The trajectory above the area connects a starting point (Fly start point) to an ending point (Fly end point)
-    Note: As a general rule, images taken during the flight to the area to be studied are excluded from flight images.
-    In fact, the altitude varies quickly and the drone moves at high speed. However, this rule is not obligatory.
+     The "Mission" :
+        The mission has five step:
+        > Step 1       : Take-off.
+        > Step 2 (SYNC): Synchronization.
+        > Step 3       : Route to the area to be studied.
+        > Step 4 (FLY) : Flight over the area to be studied which constitutes the flight itself and named FLY.
+        > Step 5       : Return to the take-off point.
+    
+     Take-off:
+        Takeoff is a quick step where after triggering the NIR camera (SJCam) the rotors are started and the drone rises
+        to 2-3 m above the ground. The drone (DJI) shot in hyper lapse mode is then triggered.
+        This moment will be the reference point for the entire mission (zero point of the timeline).
+    
+     The synchronization (SYNC):
+        The synchronization step is carried out at the take-off point at an altitude of approximately 3 m and at the fixed point.
+        The drone is above a sight (ARUCO) which rotates on itself.
+        The set of images associated with this synchronization step goes from the first image of the mission taken by
+        the drone and the image taken just before the start of step 3.
+    
+     The flight (FLY):
+        The FLY includes the images recorded during the flight in stabilized mode over the area to be studied.
+        The trajectory above the area connects a starting point (Fly start point) to an ending point (Fly end point)
+        Note: As a general rule, images taken during the flight to the area to be studied are excluded from flight images.
+        In fact, the altitude varies quickly and the drone moves at high speed. However, this rule is not obligatory.
 
 """
 
 
 class LoadVisNirImagesDialog(QDialog):
     flagAllImageOK = False
-    flags = [False, False, False, False, False]
+    num_images = 5
+    flags = [False] * num_images
 
 
     def __init__(self, width: int, height: int, type_img: str,  folderMission: Path = None, path_image_takeoff: Path = None):
         super().__init__()
 
+        self.num_images = 5
         self.pref_screen = Uti.Prefrence_Screen()
         self.screen_width = width
         self.screen_height = height
@@ -117,21 +119,21 @@ class LoadVisNirImagesDialog(QDialog):
                 self.setWindowIcon(icon)
             self.setGeometry(0, 0, self.screen_width, self.screen_height)
 
-            num_images = 5  # First mission image | First image of the Sync sequence | Last image of the Sync sequence | First Fly image | Last Fly image
+            # First mission image | First image of the Sync sequence | Last image of the Sync sequence | First Fly image | Last Fly image
             # list of paths to the 5 reference images
-            self.listVisRefPath = [None, None, None, None, None]
-            self.listNirRefPath = [None, None, None, None, None]
-            self.listImgRefPath = [None, None, None, None, None]
+            self.listVisRefPath = [None] * self.num_images
+            self.listNirRefPath = [None] * self.num_images
+            self.listImgRefPath = [None] * self.num_images
             self.currentImgTyp = self.type_img
             # Creating locations for images
-            self.image_labels = [QLabel() for _ in range(num_images)]
+            self.image_labels = [QLabel() for _ in range(self.num_images)]
             # Creating locations for image captions.
             self.img_legend = ["Take-off image:",
                                "First sync image.",
                                "Last sync image.",
                                "First fly image.",
                                "Last fly image."]
-            self.image_name_labels = [QLabel(self.img_legend[i]) for i in range(num_images)]
+            self.image_name_labels = [QLabel(self.img_legend[i]) for i in range(self.num_images)]
 
             # Creating command bar buttons (one per image)
             btn_legend = ["Load first mission image.",
@@ -140,21 +142,21 @@ class LoadVisNirImagesDialog(QDialog):
                           "Load first image of fly.",
                           "Load last image of fly."]
             # Connection of buttons to actions
-            button_width = int(0.9 * (self.screen_width // num_images))
-            self.btn_command = [QPushButton(btn_legend[i]) for i in range(num_images)]
+            button_width = int(0.9 * (self.screen_width // self.num_images))
+            self.btn_command = [QPushButton(btn_legend[i]) for i in range(self.num_images)]
             for btn in self.btn_command:
                 btn.setFixedWidth(button_width)
                 btn.setStyleSheet("background-color: darkGray; color: black;")
 
             # Button to load all the images in the mission once the reference images have been chosen.
-            button_width = int(0.7 * (self.screen_width // num_images))
+            button_width = int(0.7 * (self.screen_width // self.num_images))
             self.btn_load_all_images = QPushButton("Unload all mission images")
             self.btn_load_all_images.setFixedWidth(button_width)
             self.btn_help = QPushButton("Help")
             self.btn_help.setStyleSheet("background-color: darkGreen; color: white;")
             self.btn_help.setFixedWidth(button_width)
 
-            button_width = int(0.7 * (self.screen_width // num_images))
+            button_width = int(0.7 * (self.screen_width // self.num_images))
             self.btn_validate_load_all_images = QPushButton("Validate (next step) >>>")
             self.btn_validate_load_all_images.setFixedWidth(button_width)
             self.btn_validate_load_all_images.setEnabled(False)
@@ -176,9 +178,8 @@ class LoadVisNirImagesDialog(QDialog):
                 middle_layout.addWidget(label)
 
             # ---------------- Image area. Creating a neutral image -----------------
-            self.image_display_size = (int((self.screen_width-100)/num_images), int((self.screen_width-100)/num_images*3/4))  # image area size
+            self.image_display_size = (int((self.screen_width-100)/self.num_images), int((self.screen_width-100)/self.num_images*3/4))  # image area size
             # Create an empty pixmap of the desired size and adjust the size if necessary
-            #self.empty_pixmap = QPixmap(int((self.screen_width-100)/num_images),  int((self.screen_width-100)/num_images*3/4))
             self.empty_pixmap = QPixmap(* self.image_display_size)
             self.empty_pixmap.fill(QColor(Qt.GlobalColor.gray))  # transparent, gray, darkYellow etc)
             # Adjust the size if necessary
@@ -257,8 +258,9 @@ class LoadVisNirImagesDialog(QDialog):
             Allows you to reset the flag and dir when the set of reference images is complete
             We can then make the “load all images” button visible.
         """
-        cls.flags = [False, False, False, False, False]
+        cls.flags = [False] * cls.num_images
         cls.currentUserDir = os.path.join(os.path.abspath('/'), "Air-Mission")
+
 
     @classmethod
     def reset_flag_AllImageOK(cls):
@@ -360,7 +362,6 @@ class LoadVisNirImagesDialog(QDialog):
                                 QMessageBox.Icon.Information)
 
             if self.currentImgTyp == "NIR":
-                print("TEST   inputFolder:", inputFolder, type(inputFolder))
 
                 # ----------  transfer of NIR images of the Sync and Fly phase (jpg) ----------------
                 listInputImages = self.create_list_image_in_input_folder(inputFolder, "jpg")
@@ -563,7 +564,6 @@ class LoadVisNirImagesDialog(QDialog):
             print("error in open_takeoff_image : ", e)
 
 
-
     def open_image(self, numBtn: int, image_label: QLabel, image_name_label: QLabel, image_type: str):
         """
         Open an image and update relevant UI components.
@@ -655,6 +655,7 @@ class LoadVisNirImagesDialog(QDialog):
         except Exception as e:
             print("error in open_and_display_image ; ", e)
 
+
     def on_help(self) -> None:
         """
         """
@@ -664,23 +665,49 @@ class LoadVisNirImagesDialog(QDialog):
             print("error", e)
         pass
 
-    def choice_of_reference_images_consistency_analysis(self, inputFolder):
+
+
+    def choice_of_reference_images_consistency_analysis(self, inputFolder: str) -> bool:
+        """
+        Analyze the consistency of the choice of reference images.
+
+        This method checks if all specified reference images are located within the provided
+        input folder. An inconsistency is detected if any of the reference images are not
+        found in the provided input folder, and an error message will be displayed, detailing
+        which images are inconsistent.
+
+        Parameters:
+        - inputFolder (str): The path of the folder expected to contain the reference images.
+
+        Returns:
+        - bool: True if the choice of reference images is consistent (all images are in the
+                input folder), False otherwise.
+        """
         message = ""
-        if inputFolder != os.path.dirname(self.listImgRefPath[1]) or inputFolder != os.path.dirname(self.listImgRefPath[2]) or inputFolder != os.path.dirname(self.listImgRefPath[3]) or inputFolder != os.path.dirname(self.listImgRefPath[4]):
+        if (inputFolder != os.path.dirname(self.listImgRefPath[1]) or
+                inputFolder != os.path.dirname(self.listImgRefPath[2]) or
+                inputFolder != os.path.dirname(self.listImgRefPath[3]) or
+                inputFolder != os.path.dirname(self.listImgRefPath[4])):
+
             consistency_choice = False
+
             if inputFolder != os.path.dirname(self.listImgRefPath[1]):
                 message = f"{message} | first image of Sync \n"
-                if inputFolder != os.path.dirname(self.listImgRefPath[2]):
-                    message = f"{message} | last image of Sync \n"
-                    if inputFolder != os.path.dirname(self.listImgRefPath[3]):
-                        message = f"{message} | first image of Fly  \n"
-                        if inputFolder != os.path.dirname(self.listImgRefPath[4]):
-                            message = f"{message} | last image of Fly \n"
+            if inputFolder != os.path.dirname(self.listImgRefPath[2]):
+                message = f"{message} | last image of Sync \n"
+            if inputFolder != os.path.dirname(self.listImgRefPath[3]):
+                message = f"{message} | first image of Fly  \n"
+            if inputFolder != os.path.dirname(self.listImgRefPath[4]):
+                message = f"{message} | last image of Fly \n"
         else:
             consistency_choice = True
+
         if not consistency_choice:
-            Uti.show_error_message(f"We detected an inconsistency in the choice of reference images: \n {message} \n Please note they must come from the same folder. : \n {inputFolder} !")
+            # Uti.show_error_message` is a method to display error messages to the user.
+            Uti.show_error_message(f"We detected an inconsistency in the choice of reference images: \n {message} \n Please note they must come from the same folder: \n {inputFolder} !")
+
         return consistency_choice
+
 
 if __name__ == '__main__':
     pref_screen = Uti.Prefrence_Screen()

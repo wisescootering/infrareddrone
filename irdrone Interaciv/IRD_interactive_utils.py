@@ -8,7 +8,7 @@
 import os
 import json
 from datetime import datetime, date
-from typing import Any, Dict, Optional, Tuple, List, Union
+from typing import Any, Dict, Optional, Tuple, List,  Union
 from pathlib import Path
 from fractions import Fraction
 import time
@@ -21,6 +21,10 @@ import re
 # -------------------- Exif Library -------------------------------
 import piexif
 import exifread
+from PIL import Image
+import rawpy
+
+
 # -----------------------PyQt6 Library ----------------------------
 from PyQt6.QtWidgets import QMessageBox, QApplication
 
@@ -451,14 +455,14 @@ def extract_exif(file_path: str) -> Tuple[Optional[float], Optional[float], Opti
     return latitude, longitude, altitude, date_time, maker, model, id_camera
 
 
-def convert_coordinates(latitude: float, longitude: float, altitude: float) -> Tuple[float, float, float]:
+def convert_coordinates(latitude, longitude, altitude) -> Tuple[float, float, float]:
     """
     Convert geographical coordinates to decimal format.
 
     Parameters:
-    - latitude (float): Latitude in IFD tag format to be converted to decimal format.
-    - longitude (float): Longitude in IFD tag format to be converted to decimal format.
-    - altitude (float): Altitude in IFD tag format to be converted to decimal format.
+    - latitude : Latitude in IFD tag format to be converted to decimal format.
+    - longitude : Longitude in IFD tag format to be converted to decimal format.
+    - altitude : Altitude in IFD tag format to be converted to decimal format.
 
     Returns:
     - Tuple[float, float, float]: A tuple containing the latitude, longitude, and altitude
@@ -470,15 +474,23 @@ def convert_coordinates(latitude: float, longitude: float, altitude: float) -> T
     - For the altitude, it strips brackets from the input string, converts it to a fraction,
       and then to a float in decimal format.
     """
-    # Assuming ifdtag_to_decimal is a previously defined function
-    lat_decimal = ifdtag_to_decimal(latitude)
-    lon_decimal = ifdtag_to_decimal(longitude)
-    alt_decimal = float(Fraction(str(altitude).strip("[]")))
+    lat_decimal = ifdtag_angle_to_decimal(latitude)
+    lon_decimal = ifdtag_angle_to_decimal(longitude)
+    alt_decimal = ifdtag_altitude_to_decimal(altitude)
+
+    return lat_decimal, lon_decimal, alt_decimal
+
+def convert_dng_coordinates(latitude, longitude, altitude) -> Tuple[float, float, float]:
+    """
+    """
+    lat_decimal = dng_angle_to_decimal(latitude)
+    lon_decimal = dng_angle_to_decimal(longitude)
+    alt_decimal = ifdtag_altitude_to_decimal(altitude)
 
     return lat_decimal, lon_decimal, alt_decimal
 
 
-def ifdtag_to_decimal(ifdtag) -> float:
+def ifdtag_angle_to_decimal(ifdtag) -> float:
     """
     Convert geographical coordinates from IFD tag format to decimal format.
 
@@ -497,14 +509,22 @@ def ifdtag_to_decimal(ifdtag) -> float:
       otherwise it is converted to an integer.
     - A helper function `dms_to_decimal` (which should be defined elsewhere in the code) is
       then called with the converted values to obtain the final decimal coordinate.
-
-    Note:
-    - Ensure that `dms_to_decimal` is defined in your code to convert the extracted
-      degree, minute, and second values to decimal format.
     """
-    str_values = str(ifdtag.values).strip("[]")
-    values = [Fraction(part) if '/' in part else int(part) for part in str_values.split(", ")]
-    return dms_to_decimal(values)
+    if ifdtag:
+        str_values = str(ifdtag.values).strip("[]")
+        values = [Fraction(part) if '/' in part else int(part) for part in str_values.split(", ")]
+        return dms_to_decimal(values)
+    else:
+        return None
+
+def dng_angle_to_decimal(angle: str) -> float:
+
+    if angle:
+        str_values = str(angle).strip("[]")
+        values = [Fraction(part) if '/' in part else int(part) for part in str_values.split(", ")]
+        return dms_to_decimal(values)
+    else:
+        return None
 
 
 def dms_to_decimal(dms: List[Union[int, Fraction]]) -> float:
@@ -534,6 +554,26 @@ def dms_to_decimal(dms: List[Union[int, Fraction]]) -> float:
     decimal_degrees = float(degrees) + float(minutes) / 60 + float(seconds) / 3600
 
     return decimal_degrees
+
+
+def ifdtag_altitude_to_decimal(ifdtag) -> float:
+    """
+    Convert geographical altitude from IFD tag format to decimal format.
+
+    Parameters:
+    - ifdtag (object): An object containing the IFD tag values to be converted to decimal format.
+                       The function expects the values to be accessible via the `values` attribute
+                       of the input object, and to be representable as a string in the format "[a, b/c, d]".
+
+    Returns:
+    - float: The geographical altitude in decimal format.
+
+    """
+    if ifdtag:
+        alt_decimal = float(Fraction(str(ifdtag).strip("[]")))
+    else:
+        alt_decimal = None
+    return alt_decimal
 
 
 def find_value_in_dic(dictionary: Dict[str, Any], key_searched: str) -> Optional[Any]:
@@ -653,3 +693,163 @@ def extract_geotag_AVR(dic_geo: Dict[str, Any]):
 
     except Exception as e:
         print("error", e,)
+
+
+def display_dictionary_EXIF_jpg(exif_dict: Dict[str, Any], tag_type=None, indentation="", verbose=False) -> Dict[str, Any]:
+    dic_exif_utf = {}
+    for key, value in exif_dict.items():
+        readable_key = key
+
+        # Si key est un entier, essayez de le convertir en une clé lisible
+        if isinstance(key, int) and tag_type:
+            readable_key = piexif.TAGS[tag_type][key]["name"] if key in piexif.TAGS[tag_type] else key
+
+        # Si la valeur est un dictionnaire, appelez la fonction récursivement avec le tag_type approprié
+        if isinstance(value, dict):
+            if verbose: print(f"{indentation}{readable_key}:")
+            new_tag_type = tag_type  # Par défaut, conservez le tag_type actuel pour les sous-dictionnaires
+            if key in ["0th", "Exif", "GPS", "1st", "Interop", "thubnail"]:
+                new_tag_type = key
+            dic_exif_utf[readable_key] = display_dictionary_EXIF_jpg(value, new_tag_type, indentation + "    ", verbose=verbose)
+        elif isinstance(value, list):
+            if verbose: print(f"{indentation}{readable_key}:")
+            list_content = []
+            for i, item in enumerate(value):
+                if verbose: print(f"{indentation}    Item {i}:")
+                if isinstance(item, dict):
+                    list_content.append(display_dictionary_EXIF_jpg(item, tag_type, indentation + "        ", verbose=verbose))
+                else:
+                    if verbose: print(f"{indentation}        {item}")
+                    list_content.append(item)
+            dic_exif_utf[readable_key] = list_content
+        else:
+            value_print = value
+            if isinstance(value, bytes):
+                try:
+                    # Essayez de décoder en utf-8
+                    decoded_value = value.decode('utf-8')
+                    # Vérifiez si la valeur décodée semble être du texte lisible
+                    if all(32 <= ord(c) <= 126 for c in decoded_value):
+                        value_print = decoded_value
+                    else:
+                        value_print = value  # Conservez la représentation binaire brute
+                except UnicodeDecodeError:
+                        value_print = value  # Conservez la représentation binaire brute
+            if verbose: print(f"{indentation}{readable_key}: {value_print}")
+            dic_exif_utf[readable_key] = value
+
+    return dic_exif_utf
+
+
+def get_filesystem_metadata(image_path: str) -> dict:
+    metadata = {}
+    metadata["FileName"] = os.path.basename(image_path)
+    metadata["FileSize"] = os.path.getsize(image_path)
+    metadata["FileCreationDate"] = time.ctime(os.path.getctime(image_path))
+    metadata["FileLastModifiedDate"] = time.ctime(os.path.getmtime(image_path))
+    return metadata
+
+
+def bytes2utf(value):
+    if isinstance(value, bytes):
+        try:
+            value = value.decode('utf-8')
+        except UnicodeDecodeError:
+            # Gestion de l'erreur ou utilisation de la byte-string telle quelle
+            pass
+    return value
+
+
+def ecriture_donnees_EXIF():
+    # ceci est un exemple à étudier ....................
+    import piexif
+
+    # Créer un dictionnaire EXIF de base.
+    exif_dict = {"0th": {piexif.ImageIFD.Make: b"CameraBrand",
+                         piexif.ImageIFD.Model: b"CameraModel"},
+                 "Exif": {piexif.ExifIFD.DateTimeOriginal: b"2022:10:07 10:00:00"},
+                 "1st": {},
+                 "thumbnail": None}
+
+    # Convertir le dictionnaire EXIF en octets.
+    exif_bytes = piexif.dump(exif_dict)
+
+    # Ecrire les données EXIF dans une image.
+    piexif.insert(exif_bytes, "path_to_output_image.jpg")
+
+
+
+def extract_exif_data(file_path: str) -> Dict[str, Any]:
+    """
+    Extract and return EXIF data from a DNG file.
+
+    :param file_path: str, path to the DNG file.
+    :return: Dict[str, Any], extracted EXIF data.
+    """
+    exif_data = {}
+
+    # Open the image file and extract the EXIF data
+    with open(file_path, 'rb') as f:
+        exif_data = exifread.process_file(f)
+
+    return exif_data
+
+
+def display_exif_data(exif_data: Dict[str, Any], indentation="", verbose=False) -> Dict[str, Any]:
+    """
+    Recursively display and return EXIF data.
+
+    :param exif_data: Dict[str, Any], the EXIF data to display.
+    :param indentation: str, the current indentation level for display.
+    :return: Dict[str, Any], a new dictionary with readable EXIF data.
+    """
+    dic_exif_utf = {}
+
+    for key, value in exif_data.items():
+        # Check and format value if it's bytes
+        formatted_value = value.printable if hasattr(value, 'printable') else value
+
+        # Print the key-value pair
+        if verbose: print(f"{indentation}{key}: {formatted_value}")
+
+        # Add to new dictionary
+        dic_exif_utf[key] = formatted_value
+
+    return dic_exif_utf
+
+"""
+import libxmp
+
+def extract_xmp_data(file_path: str) -> libxmp.XMPMeta:
+
+        # Extract XMP data from an image file.
+    
+        #:param file_path: str, path to the image file.
+        #:return: libxmp.XMPMeta, extracted XMP data.
+
+ 
+    with open(file_path, 'rb') as f:
+        xmp_file = libxmp.files.XMPFiles(file_path=file_path, open_forupdate=False)
+        xmp = xmp_file.get_xmp()
+        return xmp
+
+
+def display_xmp_data(xmp: libxmp.XMPMeta) -> None:
+
+    #Display XMP data.
+
+    #:param xmp: libxmp.XMPMeta, the XMP data to display.
+
+    for schema in xmp:
+        print(f"Schema namespace: {schema.namespace}")
+        for prop in schema:
+            print(f"  Property: {prop.name}")
+            print(f"    Value: {prop.value}")
+            
+"""
+
+
+
+
+
+
