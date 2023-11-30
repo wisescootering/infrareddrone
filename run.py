@@ -454,7 +454,7 @@ def main_process(args: argparse.Namespace):
     
     # 2 > Find all matching pairs of images from both cameras
     # 3 > Then retrieve metadata from exifs & altitudes
-    #[4]> Pre-compute angles offset and add
+    # 4 > Pre-compute angles offset and add
     # --------------------------------------------------------------------------------------------------------------
     shooting_pts_list = find_all_matching_pairs(flight_data_dict)
     gather_metadata(flight_data_dict, shooting_pts_list, conf)

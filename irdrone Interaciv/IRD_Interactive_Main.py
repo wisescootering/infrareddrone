@@ -1,12 +1,13 @@
 # --------------------------------------------------------------------------------
 #   IR_drone interactive
 #   Main window of the interactive IRDrone GUI
-#   7/10/2023   V001
+#   29/10/2023   V002
 # ---------------------------------------------------------------------------------
 
 
 import os
 import sys
+from pathlib import Path
 # ------------------PyQt6 Library -----------------------------------
 from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout,  QWidget, QPushButton, QLabel, QFrame, QProgressBar, QDialog, QFileDialog, QMessageBox
 from PyQt6.QtCore import Qt
@@ -14,7 +15,7 @@ from PyQt6.QtGui import QPixmap, QColor, QIcon
 # -------------- IRDrone Library ------------------------------------
 from IRD_Interactive_1 import Window_11, Window_12
 from IRD_Interactive_2 import LoadVisNirImagesDialog
-from IRD_Interactive_3 import Window_21
+from IRD_Interactive_3 import Window_31, Window_32
 import IRD_interactive_utils as Uti
 from IRD_interactive_utils import Prefrence_Screen
 
@@ -30,9 +31,7 @@ class Main_Window(QMainWindow):
 
         """
         super().__init__()
-        self.dic_takeoff: dict = None
-
-        self.prefrence_screen = Prefrence_Screen()
+        self.pref_screen = Prefrence_Screen()
         self.dic_takeoff_light: dict = {"key": "value"}
         self.dic_takeoff: dict = None
         self.initGUI()
@@ -44,20 +43,20 @@ class Main_Window(QMainWindow):
         # self.location_info = None
 
         self.setStyleSheet("background-color: white; color: black;")
-        self.def_app_dir = self.prefrence_screen.default_app_dir
-        self.def_user_dir = self.prefrence_screen.default_user_dir
+        self.def_app_dir = self.pref_screen.default_app_dir
+        self.def_user_dir = self.pref_screen.default_user_dir
 
         # Définir la disposition et les widgets
         # Créer le widget central
         #   Setting the top bar and window dimensions.
         self.setWindowTitle("IRdrone interactive v01")
-        icon_path = os.path.join(self.prefrence_screen.default_app_dir, "Icon", "IRDrone.ico")
+        icon_path = os.path.join(self.pref_screen.default_app_dir, "Icon", "IRDrone.ico")
         if os.path.exists(icon_path):
             icon = QIcon(icon_path)
             QApplication.setWindowIcon(icon)  # Set the applicable icon in the class.
 
-        width = self.prefrence_screen.windowDisplaySize[0]   # Main window width
-        height = self.prefrence_screen.windowDisplaySize[1]  # Main window height
+        width = self.pref_screen.windowDisplaySize[0]   # Main window width
+        height = self.pref_screen.windowDisplaySize[1]  # Main window height
         self.setGeometry(0, 0, width, height)
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
@@ -70,7 +69,7 @@ class Main_Window(QMainWindow):
         self.btn_create_mission.setStyleSheet("background-color: darkBlue; color: white;")
         self.btn_load_images = QPushButton("Step 2 : Choice of reference image set.", self)
         self.btn_load_images.setAutoDefault(False)
-        self.btn_load_images.setEnabled(False)
+        self.btn_load_images.setEnabled(True)   # (True) pour test  et (False) en prod !
         self.btn_load_images.setStyleSheet("background-color: Gray; color: darkGray;")
 
         self.btn_pre_process_images = QPushButton("Step 3 : Image pre-processing", self)
@@ -105,7 +104,7 @@ class Main_Window(QMainWindow):
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # IRDrone default image
-        image_path = os.path.join(self.prefrence_screen.default_app_dir, "Icon", "image_IRdrone_appli.jpg")
+        image_path = os.path.join(self.pref_screen.default_app_dir, "Icon", "image_IRdrone_appli.jpg")
         if os.path.exists(image_path):
             # Load image and Adjust the size if necessary
             default_pixmap = QPixmap(image_path)
@@ -144,7 +143,7 @@ class Main_Window(QMainWindow):
             self.window_11.show()
             self.dic_takeoff_light = self.window_11.dic_takeoff_light
 
-            self.window_11.btnNextStep.clicked.connect(self.open_window_12)  # Connect Window_12 signal to Main_Window method
+            self.window_11.btn_NextStep.clicked.connect(self.open_window_12)  # Connect Window_12 signal to Main_Window method
         except Exception as e:
             print("Error in Main_Window open_window_11:", e)
 
@@ -205,7 +204,7 @@ class Main_Window(QMainWindow):
 
         # ----------------------- Choice of mission file -------------------------------------------------
 
-        folderMissionPath, coherent_response = self.choose_folder_name()
+        folderMissionPath, coherent_response = self.choose_folder_mission()
         if not coherent_response:
             return()
 
@@ -233,21 +232,24 @@ class Main_Window(QMainWindow):
         LoadVisNirImagesDialog.reset_flags()
 
 
-    def choose_folder_name(self):
+    def choose_folder_mission(self):
+        image_takeoff_available, path_image_takeoff = Uti.image_takeoff_available_test(self.dic_takeoff, self.pref_screen.default_user_dir)
         try:
-            image_takeoff_available = self.image_takeoff_available_test(self.dic_takeoff['File path mission'])
             if image_takeoff_available:
                 # construction du nom du dossier de la mission
-                folderMissionPath = self.dic_takeoff['File path mission']
-                coherent_response = True
-                Uti.show_info_message("IRDrone", f"Your images will be transferred to the  mission folder : \n {folderMissionPath}",
-                                      f"They will be distributed between the folders {self.window_12.AerialPhotoFolder} and {self.window_12.SynchroFolder}")
+                folderMissionPath = Path(self.dic_takeoff['File path mission'])
+                coherent_response = Uti.folder_name_consistency_analysis(folderMissionPath)
+                if coherent_response:
+                    Uti.show_info_message("IRDrone", f"Your images will be transferred to the  mission folder : \n {folderMissionPath}",
+                                          f"They will be distributed between the folders {self.window_12.AerialPhotoFolder} and {self.window_12.SynchroFolder}")
+                else:
+                    coherent_response = False
                 return folderMissionPath, coherent_response
             else:
                 Uti.show_warning_OK_Cancel_message("IRDrone", "Choose the mission folder.", "It is of the form : \n FLY_Year Month Day_hour minute_[Place]", QMessageBox.Icon.Information)
                 try:
-                    folderMissionPath = QFileDialog.getExistingDirectory(self, 'Select Mission Folder', self.prefrence_screen.default_user_dir)
-                    if folderMissionPath and folderMissionPath != self.prefrence_screen.default_user_dir:
+                    folderMissionPath = Path(QFileDialog.getExistingDirectory(self, 'Select Mission Folder', self.pref_screen.default_user_dir))
+                    if folderMissionPath.exists() and folderMissionPath != self.pref_screen.default_user_dir:
                         coherent_response = Uti.folder_name_consistency_analysis(folderMissionPath)
                         if not coherent_response:
                             Uti.show_warning_OK_Cancel_message("IRDrone", f"You have chosen the folder : \n{folderMissionPath} \nwhich is not a Mission IRDrone folder.",
@@ -259,32 +261,69 @@ class Main_Window(QMainWindow):
 
                     return folderMissionPath, coherent_response
                 except Exception as e:
-                    print("error 1   in choose_folder_name :", e)
+                    print("error 1   in choose_folder_mission :", e)
         except Exception as e:
-            print("error 2   in choose_folder_name :", e)
-
-
-    def image_takeoff_available_test(self, path_image_takeoff):
-        try:
-            image_takeoff_available = False
-            # Test if the takeoff point image is available..
-            if path_image_takeoff is not None:
-                if os.path.exists(path_image_takeoff):
-                    coherent_response = Uti.folder_name_consistency_analysis(path_image_takeoff)
-                    if coherent_response:
-                        self.path_image_takeoff = path_image_takeoff
-                        image_takeoff_available = True
-            return image_takeoff_available
-        except Exception as e:
-            print("error   in image_takeoff_available", e)
+            print("error 2   in choose_folder_mission :", e)
 
 
     # ===================================================================================
     #                   Button #3 click handlers
     # ===================================================================================
+
     def on_pre_process_images(self):
-        Uti.show_info_message("IRDrone", "En cours d'implémentation ...", "")
+        """
+        Open Window_31.  (preprocess_step 1  Extract and save Exif tags)
+
+        Open the Window_31 when the corresponding button (btn_pre_process_images) is clicked.
+
+        """
+        try:
+            self.window_31 = Window_31(self.dic_takeoff)
+            self.window_31.show()
+            self.window_31.btn_preprocess_step1.clicked.connect(self.open_window_32)  # Connect Window_32 signal to Main_Window method
+
+        except Exception as e:
+            print("Error in Main_Window open_window_31:", e)
+
+    def open_window_32(self):
+        """
+        Open Window_32.  (preprocess_step 2  Synchro time-line NIR/VIS)
+
+        Open the Window_32 when called from Window_31.
+
+        """
+        self.window_32 = Window_32(self)  # Instantiate Window_32
+        try:
+            self.window_32.data_signal_from_window_32_to_main_window.connect(self.handle_data_from_window_32)
+            self.window_32.show()
+        except Exception as e:
+            print("Error in Main_Window open_window_32:", e)
+
+
+    def handle_data_from_window_32(self, validate: bool):
+        """
+        Handle data from Window_32.
+
+        Handle data received from Window_32 and close parent windows.
+
+        Args:
+            validate (bool): True if the user has validated the entries, False otherwise.
+            dic_takeoff (dict): A dictionary containing image_path, location, and pilot data.
+
+        """
+        if validate:
+            #self.dic_takeoff = dic_takeoff
+            print(f"TEST Le décalage des horloges est de : {self.window_32.delta_horloge} s.")
+            self.window_32.data_signal_from_window_32_to_main_window.disconnect()  # Disconnect the signal
+            self.window_32.close()  # Close window_32
+        else:
+            print("The user has not validated his entries.")
+
+        self.window_31.close()
+
+
         pass
+
 
     # ===================================================================================
     #                   Button #4 click handlers

@@ -1,7 +1,7 @@
 # --------------------------------------------------------------------------------
 #   IR_drone interactive
 #   Creation of the mission by selection of the first image taken by the DJI (visible spectrum, image in dng format)
-#   7/10/2023   V001
+#   29/10/2023   V002
 # ---------------------------------------------------------------------------------
 
 
@@ -16,7 +16,7 @@ from typing import Any, Dict, Optional, Tuple, List, Union
 import rawpy
 import imageio
 # -------------- PyQt6 Library ------------------------------------
-from PyQt6.QtWidgets import QApplication, QFileDialog, QMainWindow,  QWidget,  QLineEdit, QFrame,  QPushButton,\
+from PyQt6.QtWidgets import QFileDialog, QWidget,  QLineEdit, QFrame,  QPushButton,\
                             QProgressBar, QHBoxLayout,  QVBoxLayout, QLabel, QMessageBox, QDialog
 from PyQt6.QtGui import QPixmap, QImage, QColor, QIcon, QRegularExpressionValidator
 from PyQt6.QtCore import Qt, pyqtSignal, QRegularExpression
@@ -25,17 +25,17 @@ from PyQt6.QtCore import Qt, pyqtSignal, QRegularExpression
 import IRD_interactive_utils as Uti
 from IRD_interactive_utils import Prefrence_Screen
 
+
 class Window_11(QDialog):
 
     def __init__(self, parent):
         super().__init__(parent)
-        self.prefScreen = Uti.Prefrence_Screen()    # Initialisation des préférence d'écran
-        self.initGUI()                               # Initialisation de l'interface utilisateur
+        self.prefScreen = Uti.Prefrence_Screen()    # Initializing screen preferences
+        self.initGUI()                              # Initializing the GUI
         self.setLayout(self.main_layout)
-        self.dic_takeoff_light = None
-        self.dic_info_geo = None
+        self.dic_takeoff_light = dict()
+        self.dic_info_geo = dict()
         self.init_dic_takeoff_light()
-        #print("TEST  juste  après   self.init_dic_takeoff      self.dic_takeoff_light = ", self.dic_takeoff_light)
 
 
     def initGUI(self):
@@ -139,16 +139,16 @@ class Window_11(QDialog):
         self.btnPreviousStep = QPushButton("<< previous step")
         self.btnPreviousStep.setFixedWidth(100)
         self.btnPreviousStep.setStyleSheet("background-color: darkGray; color: black;")
-        self.btnNextStep = QPushButton("next step >>>>")
-        self.btnNextStep.setFixedWidth(100)
-        self.btnNextStep.setStyleSheet("background-color: darkGray; color: black;")
+        self.btn_NextStep = QPushButton("next step >>>>")
+        self.btn_NextStep.setFixedWidth(100)
+        self.btn_NextStep.setStyleSheet("background-color: darkGray; color: black;")
         # Disable Next Step  button
-        self.btnNextStep.setAutoDefault(False)
-        self.btnNextStep.setEnabled(False)
-        self.btnNextStep.setStyleSheet("background-color: darkGray; color:gray;")
+        self.btn_NextStep.setAutoDefault(False)
+        self.btn_NextStep.setEnabled(False)
+        self.btn_NextStep.setStyleSheet("background-color: darkGray; color:gray;")
 
         zone4_layout.addWidget(self.btnPreviousStep)
-        zone4_layout.addWidget(self.btnNextStep)
+        zone4_layout.addWidget(self.btn_NextStep)
 
         # Progress bar
         self.progress_bar = QProgressBar(self)
@@ -157,7 +157,7 @@ class Window_11(QDialog):
         self.progress_bar.setValue(0)
 
         self.btn_load_image.clicked.connect(self.load_takeoff_image)
-        self.btnNextStep.clicked.connect(self.placeholder_method)
+        self.btn_NextStep.clicked.connect(self.placeholder_method)
         self.btnPreviousStep.clicked.connect(self.cancel_clicked)
         self.resize(600, 600)
         Uti.center_on_screen(self, screen_Id=1)
@@ -170,20 +170,14 @@ class Window_11(QDialog):
         try:
             self.dic_takeoff_light = {
                 "File path": "C:/",
-                "Maker": "XXX",
-                "Model":"xxxxxx",
-                "Body serial number": "yyyyyyyyy",
-                "Date_Exif": "1900:01:01 12:00:01",
+                "Maker": "Nimbus",
+                "Model": "Old",
+                "Body serial number": "570608",
+                "Date Exif": "1900:01:01 12:00:00",
                 "Date": '1900-01-01',
-                "Year": '1900',
-                "Month":  '01',
-                "Day": '01',
-                "Time": f"12:00:01",
-                "Hour": '12',
-                "Minute": '00',
-                "Second":  '01',
+                "Time": f"12:00:00",
                 "Location": "Paris",
-                "Description": "",
+                "Description": "Eiffel tower",
                 "GPS coordinate": f"N 48.858370° E 2.294481°",
                 "GPS N-S": "N",
                 "GPS lat": 48.858370,
@@ -203,9 +197,9 @@ class Window_11(QDialog):
         The "real" connection is in the open_window_11 method of the Main_Window class of the main module.
         def open_window_11(self):  de la class Main_Window() du module principal.
         The line of code is:
-        self.window_11.btnNextStep.clicked.connect(self.open_window_12)  # Connect Window_12 signal to Main_Window method
+        self.window_11.btn_NextStep.clicked.connect(self.open_window_12)  # Connect Window_12 signal to Main_Window method
 
-        If we delete the line of code in initGUI method: self.btnNextStep.clicked.connect(self.placeholder_method)
+        If we delete the line of code in initGUI method: self.btn_NextStep.clicked.connect(self.placeholder_method)
         as well as this method (placeholder_method) the code works perfectly!
         """
         try:
@@ -214,7 +208,7 @@ class Window_11(QDialog):
             pass
 
         except Exception as e:
-            print("error in extration de date       message :", e)
+            print("error in placeholder_method       message :", e)
 
 
     def closeEvent(self, event):
@@ -278,9 +272,9 @@ class Window_11(QDialog):
                 self.info_Geo_label.setText(geo_data)
                 self.info_Geo_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
                 Uti.center_on_screen(self.central_widget, screen_Id=0, screen_adjust=(1, 1), window_display_size=(800, 600))
-                self.btnNextStep.setAutoDefault(True)
-                self.btnNextStep.setEnabled(True)
-                self.btnNextStep.setStyleSheet("background-color: darkGray; color:Black;")
+                self.btn_NextStep.setAutoDefault(True)
+                self.btn_NextStep.setEnabled(True)
+                self.btn_NextStep.setStyleSheet("background-color: darkGray; color:Black;")
                 self.progress_bar.setValue(100)
             else:
                 return
@@ -293,19 +287,8 @@ class Window_11(QDialog):
         self.dic_takeoff_light['Maker'] = str(maker)
         self.dic_takeoff_light['Model'] = str(model)
         self.dic_takeoff_light['Body serial number'] = str(id_camera)
-        self.dic_takeoff_light['Date_Exif'] = str(date_time_excif)
-        date_obj = datetime.strptime(str(date_time_excif), "%Y:%m:%d %H:%M:%S")
-        date_part, time_part = str(date_time_excif).split(" ")
-        year, month, day = date_part.split(":")
-        hour, minute, second = time_part.split(":")
-        self.dic_takeoff_light['Year'] = year
-        self.dic_takeoff_light['Month'] = month
-        self.dic_takeoff_light['Day'] = day
-        self.dic_takeoff_light['Date'] = f"{year}-{month}-{day}"
-        self.dic_takeoff_light['Hour'] = hour
-        self.dic_takeoff_light['Minute'] = minute
-        self.dic_takeoff_light['Second'] = second
-        self.dic_takeoff_light['Time'] = f"{hour}:{minute}:{second}"
+        self.dic_takeoff_light['Date Exif'] = str(date_time_excif)
+        self.py_date_time = datetime.strptime(str(date_time_excif), "%Y:%m:%d %H:%M:%S")
         self.dic_takeoff_light['Location'] = self.dic_info_geo['ville']
         if self.dic_info_geo['lat'] >= 0:
             self.dic_takeoff_light["GPS N-S"] = "N"
@@ -340,7 +323,34 @@ class Window_11(QDialog):
         except Exception as e:
             print("error in Window_11   cancel_clicked :", e)
 
+
+# --------------------------------------------------------------------------------------------
+#
+#              Window_12
+#
+#                Creation of the mission file structure
+#
+# --------------------------------------------------------------------------------------------
+
+
 class Window_12(QDialog):
+    """
+    Creation of the mission file structure
+    C:/Air-Mission/
+        └── FLY-YYYYMMDD-hhmm-<txt>/
+            │
+            ├── AerialPhotography/
+            ├── Synchro/
+            ├── ImgIRdrone/
+            ├── mapping_MULTI/
+            └── cameras/
+            │       └── camera_IRdrone.json
+            ├── FlightAnalytics/
+            │       └── HYPERLAPSE_0001.dng      ( first image at the  take-off)
+            └── config.json                      ( mission parameters )
+
+
+    """
     # Creates a class signal to transmit the data to the parent which will here be an instance of the window_11 class
     # Here the return is a boolean (click on OK True or False and the dictionary containing the answers to the questionnaire)
     data_signal_from_window_12_to_main_window = pyqtSignal(bool, dict)
@@ -349,15 +359,21 @@ class Window_12(QDialog):
         super().__init__(parent)
         # -----------Name of folders to store mission images. ----------------
 
-        self.AerialPhotoFolder: str = "AerialPhotography"  # folder of images taken by VIS and NIR cameras
-        self.AnalyticFolder: str = "FlightAnalytics"  # technical folder containing information on the mission
-        self.ImgIRdroneFolder: str = "ImgIRdrone"  # folder of images processed by IRDrone
-        self.SynchroFolder: str = "Synchro"  # folder for images from the camera synchronization phase
-        self.MappingFolder: str = "mapping_MULTI"  # folder for image assembly with Open Drone Map
-        self.CameraFolder: str = "cameras"  # here the “s” of cameras is obligatory. Used by ODM
-        self.missionFolder: str = "C:/"
+        self.pref = Prefrence_Screen()
+
+        self.AerialPhotoFolder: str = self.pref.AerialPhotoFolder  # folder of images taken by VIS and NIR cameras
+        self.AnalyticFolder: str = self.pref.AnalyticFolder  # technical folder containing information on the mission
+        self.ImgIRdroneFolder: str = self.pref.ImgIRdroneFolder  # folder of images processed by IRDrone
+        self.SynchroFolder: str = self.pref.SynchroFolder  # folder for images from the camera synchronization phase
+        self.MappingFolder: str = self.pref.MappingFolder  # folder for image assembly with Open Drone Map
+        self.CameraFolder: str = self.pref.CameraFolder  # Used by ODM
+        self.missionFolder: str = self.pref.directory
+
         self.dic_takeoff_light: dict = dic_takeoff_light
-        self.pref_screen = Prefrence_Screen()
+
+        self.py_date_time = datetime.strptime(self.dic_takeoff_light['Date Exif'], "%Y:%m:%d %H:%M:%S")
+        self.py_date = self.py_date_time.date()
+        self.py_time = self.py_date_time.time()
 
         self.initGUI()
 
@@ -419,7 +435,6 @@ class Window_12(QDialog):
 
         """
         try:
-            #print("TEST  ok_clicked")
             self.update_dic_takeoff()
             self.validate_answer = True
             self.create_mission_folder()
@@ -472,16 +487,15 @@ class Window_12(QDialog):
 
 
     def init_fields(self):
-        """Initializes takeoff point data fields."""
-        self.Date_Exif = "1900"
-        #print(" TEST  in init_fields    de la class Window_12    self.Date_Exif  = ", self.Date_Exif)
+        """
+        Initializes takeoff point data fields.
+        The Date, Time, GPS coordinates and Location fields are pre-populated.
+        They are extracted from the Exif data of the image taken at takeoff.
+        These fields cannot be modified by the user (setReadOnly(True),
+        with the exception of the location field (setReadOnly(False).
+        """
         # ---------------- date field-------------------------------
         try:
-            self.py_date = None
-            self.year: int = None
-            self.month: int = None
-            self.day: int = None
-
             self.date_label = QLabel("Date:")
             self.date_field = QLineEdit(self)
             # Date formatting
@@ -490,15 +504,15 @@ class Window_12(QDialog):
             self.date_field.setValidator(date_validator)
             self.date_field.setInputMask("9999/99/99")
             self.date_field.setPlaceholderText("YYYY/MM/DD")
-            if int(self.dic_takeoff_light['Month']) < 10:
-                str_month = str(f"0{int(self.dic_takeoff_light['Month'])}")
+            if int(self.py_date_time.month) < 10:
+                str_month = str(f"0{self.py_date_time.month}")
             else:
-                str_month = str(f"{str(self.dic_takeoff_light['Month'])}")
-            if int(self.dic_takeoff_light['Day']) < 10:
-                str_day = str(f"0{int(self.dic_takeoff_light['Day'])}")
+                str_month = str(self.py_date_time.month)
+            if int(self.py_date_time.day) < 10:
+                str_day = str(f"0{self.py_date_time.day}")
             else:
-                str_day = str(f"{str(self.dic_takeoff_light['Day'])}")
-            date_takeoff = f"{str(self.dic_takeoff_light['Year'])}/{str_month}/{str_day}"
+                str_day = str(f"{self.py_date_time.day}")
+            date_takeoff = f"{str(self.py_date_time.year)}/{str_month}/{str_day}"
             self.date_field.setText(date_takeoff)
             self.date_field.setStyleSheet("background-color: gray; color: white;")
             self.date_field.setReadOnly(True)
@@ -513,10 +527,6 @@ class Window_12(QDialog):
 
         # ---------------- time  field  -------------------------------
         try:
-            self.py_time = None
-            self.hour: int = None
-            self.minute: int = None
-            self.second: int = None
             self.time_label = QLabel("Hour:")
             self.time_field = QLineEdit(self)
             # Time formatting
@@ -525,14 +535,14 @@ class Window_12(QDialog):
             self.time_field.setValidator(time_validator)
             self.time_field.setInputMask("99:99")
             self.time_field.setPlaceholderText("hh:mm")
-            if int(self.dic_takeoff_light['Hour']) < 10:
-                str_hour = str(f"0{int(self.dic_takeoff_light['Hour'])}")
+            if int(self.py_date_time.hour) < 10:
+                str_hour = str(f"0{self.py_date_time.hour}")
             else:
-                str_hour = str(f"{str(self.dic_takeoff_light['Hour'])}")
-            if int(self.dic_takeoff_light['Minute']) < 10:
-                str_minute = str(f"0{int(self.dic_takeoff_light['Minute'])}")
+                str_hour = str(self.py_date_time.hour)
+            if int(self.py_date_time.minute) < 10:
+                str_minute = str(f"0{self.py_date_time.minute}")
             else:
-                str_minute = str(f"{str(self.dic_takeoff_light['Minute'])}")
+                str_minute = str(self.py_date_time.minute)
 
             time_takeoff = f"{str_hour}/{str_minute}"
             self.time_field.setText(time_takeoff)
@@ -809,15 +819,9 @@ class Window_12(QDialog):
                 "File path mission": self.missionFolder,
                 "File path take-off": self.dic_takeoff_light["File path"],
                 "Body serial number": self.dic_takeoff_light["Body serial number"],
-                "Date_Exif": f"{Uti.datePy2dateJson(self.py_date)} {Uti.timePy2timeJson(self.py_time)}",
+                "Date Exif": f"{Uti.datePy2dateJson(self.py_date)} {Uti.timePy2timeJson(self.py_time)}",
                 "Date": Uti.datePy2dateJson(self.py_date),
-                "Year": int(self.py_date.year),
-                "Month":  int(self.py_date.month),
-                "Day": int(self.py_date.day),
                 "Time": Uti.timePy2timeJson(self.py_time),
-                "Hour": int(self.py_time.hour),
-                "Minute": int(self.py_time.minute),
-                "Second": int(self.py_time.second),
                 "Location": self.location_field.text(),
                 "Description": self.description_field.text(),
                 "GPS coordinate": f"{self.GPS_NS} {str(self.GPS_lat)}° {self.GPS_EW} {str(self.GPS_lon)}°",
@@ -859,35 +863,10 @@ class Window_12(QDialog):
 
 
     def fields_consistency_analysis(self):
-        """Checks the validity of the data (date, time, GPS coordinates, etc.)"""
+        """
+        Checks the validity of the data ( GPS coordinates, etc.)
+        """
         try:
-            # ------------- validation of date input ------------------------
-            date_str = self.date_field.text()
-            parts = date_str.split('/')
-            if len(parts) != 3:
-                raise ValueError("Incomplete date input")
-            if len(parts[0]) != 4 or not parts[0].isdigit():  # Check for YYYY format
-                raise ValueError("Year must be in YYYY format")
-            if len(parts[1]) != 2 or not parts[1].isdigit():  # Check for MM format
-                raise ValueError("Month must be in MM format")
-            if len(parts[2]) != 2 or not parts[2].isdigit():  # Check for DD format
-                raise ValueError("Day must be in DD format")
-            year, month, day = map(int, parts)
-            self.py_date = date(year, month, day)
-
-            # ------------- validation of hour input ------------------------
-            time_str = self.time_field.text()
-            parts = time_str.split(':')
-            if len(parts) != 2:
-                raise ValueError("Incomplete hour input")
-            if len(parts[0]) != 2 or not parts[0].isdigit():  # Check for hh format
-                raise ValueError("Hour must be in hh format")
-            if len(parts[1]) != 2 or not parts[1].isdigit():  # Check for mm format
-                raise ValueError("Minute must be in mm format")
-            hour, minute = map(int, time_str.split(':'))
-            second = 1
-            self.py_time = time(hour, minute, second)
-
             # ------------- validation of GPS input ------------------------
             gps_lat_str = self.GPS_lat_field.text()
             gps_lon_str = self.GPS_lon_field.text()
@@ -921,7 +900,7 @@ class Window_12(QDialog):
             Uti.show_info_message("IRDrone", str(e), "", icon=QMessageBox.Icon.Warning)
             return
         except Exception as e:
-            print("Unexpected error in on_ok:", e)
+            print("Unexpected error in fields_consistency_analysis :", e)
             Uti.show_info_message("IRDrone", "An unexpected error occurred.", "", icon=QMessageBox.Icon.Warning)
             return
 
@@ -936,7 +915,7 @@ class Window_12(QDialog):
                 fileName = f"FLY-{date_str}-{time_str}-{self.location_field.text()}"
             else:
                 fileName = f"FLY-{date_str}-{time_str}"
-            path = os.path.join(self.pref_screen.default_user_dir, fileName)
+            path = os.path.join(self.pref.default_user_dir, fileName)
             directory = os.path.normpath(path).replace('\\', '/')
             return directory
         except Exception as e:
@@ -946,15 +925,7 @@ class Window_12(QDialog):
     def create_mission_folder(self):
 
         # Create mission folder
-        # Convert date and time objects to strings
-        date_str = self.py_date.strftime('%Y%m%d')
-        time_str = self.py_time.strftime('%H%M')
-        if self.location_field.text():
-            fileName = f"FLY-{date_str}-{time_str}-{self.location_field.text()}"
-        else:
-            fileName = f"FLY-{date_str}-{time_str}"
-        directory = os.path.join(self.pref_screen.default_user_dir, fileName)
-
+        directory = self.build_mission_folder_name()
         try:
             if not os.path.exists(directory):
                 os.makedirs(directory)
@@ -965,37 +936,38 @@ class Window_12(QDialog):
                 os.makedirs(os.path.join(directory, self.MappingFolder))
                 os.makedirs(os.path.join(directory, self.CameraFolder))
 
-                change_ico = True
-                dir_ico = os.path.join("C:/", "Program Files", "IRdrone", "Icon")
-                if change_ico:
-                    self.change_icon(directory, os.path.join(dir_ico, "IRdrone_appli.ico"))
-                    self.change_icon(os.path.join(directory, self.AerialPhotoFolder), os.path.join(dir_ico, "AerialPhoto.ico"))
-                    self.change_icon(os.path.join(directory, self.AnalyticFolder), os.path.join(dir_ico, "FlyAnalytic.ico"))
-                    self.change_icon(os.path.join(directory, self.ImgIRdroneFolder), os.path.join(dir_ico, "ImgIRdrone.ico"))
-                    self.change_icon(os.path.join(directory, self.SynchroFolder), os.path.join(dir_ico, "synchro.ico"))
-                    self.change_icon(os.path.join(directory, self.MappingFolder), os.path.join(dir_ico, "mapping_MULTI.ico"))
-                    self.change_icon(os.path.join(directory, self.CameraFolder), os.path.join(dir_ico, "camera.ico"))
-
+                try:
+                    change_ico = True
+                    dir_ico = os.path.join(self.pref.default_app_dir, "Icon")
+                    if change_ico:
+                        self.change_icon(directory, os.path.join(dir_ico, "IRdrone_appli.ico"))
+                        self.change_icon(os.path.join(directory, self.AerialPhotoFolder), os.path.join(dir_ico, "AerialPhoto.ico"))
+                        self.change_icon(os.path.join(directory, self.AnalyticFolder), os.path.join(dir_ico, "FlyAnalytic.ico"))
+                        self.change_icon(os.path.join(directory, self.ImgIRdroneFolder), os.path.join(dir_ico, "ImgIRdrone.ico"))
+                        self.change_icon(os.path.join(directory, self.SynchroFolder), os.path.join(dir_ico, "synchro.ico"))
+                        self.change_icon(os.path.join(directory, self.MappingFolder), os.path.join(dir_ico, "mapping_MULTI.ico"))
+                        self.change_icon(os.path.join(directory, self.CameraFolder), os.path.join(dir_ico, "camera.ico"))
+                except Exception as e:
+                    print("error. in create_mission_folder   change icon :", e)
+                    pass
         except Exception as e:
-            print("error. in on_ok   creating folder tree :", e)
+            print("error. in create_mission_folder   creating folder tree :", e)
 
         try:
             # Save to JSON file
             with open(os.path.join(directory, "config.json"), "w") as file:
                 json.dump(self.dic_takeoff, file, ensure_ascii=False, indent=4)
 
-            txt_Date = str(self.dic_takeoff['Year']) + str(self.dic_takeoff['Month']) + str(self.dic_takeoff['Day'])
-            txt_Time = str(self.dic_takeoff['Hour']) + str(self.dic_takeoff['Minute'])
+            txt_Date = str(self.py_date_time.year) + str(self.py_date_time.month) + str(self.py_date_time.day)
+            txt_Time = str(self.py_date_time.hour) + str(self.py_date_time.minute)
             txt_comment = str(self.dic_takeoff['Location'])
-
-            Uti.show_info_message("IRDrone", "Mission has been successfully created, ", f"in the folder :   \n"
-                                                                                        f"FLY_{txt_Date}_{txt_Time}_{txt_comment}")
-
-
+            Uti.show_info_message("IRDrone", "Mission has been successfully created, ", 
+                                  f"in the folder :   \n"
+                                  f"FLY_{txt_Date}_{txt_Time}_{txt_comment}")
 
             self.accept()  # Close the form    alternative   self.close()
         except Exception as e:
-            print("error  in on_ok   save JSON  :", e)
+            print("error  in create_mission_folder   save JSON  :", e)
 
 
     def change_icon(self, folder_path, file_path):

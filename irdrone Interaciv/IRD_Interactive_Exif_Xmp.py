@@ -1,33 +1,20 @@
-
+# --------------------------------------------------------------------------------
+#   IR_drone interactive
+#   Exif Xmp data
+#   29/10/2023   V002   *
+# ---------------------------------------------------------------------------------
 import os.path as osp
 import subprocess
 from pathlib import Path
 import json
-
-def get_EXIF_XMP_interactive(list_pth: list[Path], verbose: bool = False) :
-    """
-    Writing Exif and Xmp data from a list of images.
-    Each image is processed individually by the get_EXIF_XMP procedure which
-    extracts the data and writes it to a json file.
-    The exif/xmp data file has the same name as its image and has the extension .exif.
-    It is readable in text format.
-
-    The get_EXIF_XMP procedure uses third-party software: ExifTool.exe.
-    The get_EXIF_XMP procedure uses third-party software: ExifTool.exe.
-    However, it is very effective because ExifTool is capable of reading both classic Exif data and also XMP data.
-    In addition it also allows you to write keys (including personal keys).
-    Useful for example to add geographic altitude or "true time" to a timeline.
-
-    :param list_pth:
-    :param verbose:
-    :return:
-    """
-    for index, pth in enumerate(list_pth):
-        print(f"Writing Exif and Xmp data: :  {round(100 * index / (len(list_pth)-1),1)} %")
-        get_EXIF_XMP(pth, verbose=verbose)
+from datetime import datetime, date
+import time
+# -------------- IRDrone Library ------------------------------------
+import IRD_interactive_utils as Uti
 
 
-def get_EXIF_XMP(pth: Path, verbose: bool = False):
+
+def get_EXIF_XMP(pth: Path, index, verbose: bool = False):
     """
     Extract gimbal and drone information from the XMP data
     and classical EXIF tags  of a specified image file
@@ -94,9 +81,9 @@ def get_EXIF_XMP(pth: Path, verbose: bool = False):
 
     Note: ATTENTION avec os.path le niveau du fichier est IMPLICITE et on remonterai d'un seul niveau.
     La commande  osp.dirname(__file__)  part de irdrone Interaciv  et pas de IRD_Interactive_Exif_Xmp.py
-    On écrirait donc  si  ":" remonte d'un niveau (   ":","," de deux etc) :
+    On écrirait donc  (si  le signe ":" signifie remonte d'un niveau et   ":",":" de deux etc) :
 
-    EXIFTOOLPATH = osp.join(osp.dirname(__file__), "..", "irdrone", "exiftool", "exiftool.exe")
+    EXIFTOOLPATH = osp.join(osp.dirname(__file__), "::", "irdrone", "exiftool", "exiftool.exe")
 
     """
 
@@ -109,16 +96,19 @@ def get_EXIF_XMP(pth: Path, verbose: bool = False):
         return
 
     exif_file = pth.with_suffix(".exif")
-    # ************************************************************************
-    #  Test neutralisé (par la présence de False) sinon le fichier exif stocké est lu  ...
-    #  A rétablir dans une version définitive du code
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    #  Utilisation du cache neutralisée (par la présence de False)
+    #  Sinon le fichier exif déjà stocké est lu directement
+    #  ...
+    #  Attention en phase de test si les données inscrites dans le fichier .exif sont modifiée par ailleurs mettre False
+    #  Dans une version définitive du code ou pour gagner du temps si le .exif est figé  mettre True !
     #
     utilise_cache = True
     if exif_file.exists() and utilise_cache:
         with open(exif_file, "r") as fi:
             dic = json.load(fi)
     #
-    # ************************************************************************
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     else:
         cmd = [EXIFTOOLPATH, pth]
         p = subprocess.run(cmd,  capture_output=True, text=True)
@@ -152,27 +142,6 @@ def get_EXIF_XMP(pth: Path, verbose: bool = False):
                     if verbose: print(" problème sur la ligne    :",    li, "   ", e)
                     pass
 
-
-        with open(exif_file, "w") as fi:
-            json.dump(dic, fi, indent=" ")
     return dic
 
 
-if __name__ == "__main__":
-    print("debut test Exiftool")
-    # fichier source contenant les données  (au format str et convertis en Path)
-    pathImage_dng = Path(r'C:\Air-Mission\FLY-20220125-1159-Blassac\AerialPhotography\HYPERLAPSE_0136.DNG')
-    pathImage_jpg = Path(r'C:\Air-Mission\FLY-20220125-1159-Blassac\AerialPhotography\2022_0125_130600_072.JPG')
-    pathImage_RAW = Path(r'C:\Air-Mission\FLY-20220125-1159-Blassac\AerialPhotography\2022_0125_130558_071.RAW')
-    list_path_image = (pathImage_dng, pathImage_jpg, pathImage_RAW)
-
-
-    folder_path = Path(r'C:\Air-Mission\FLY-20220125-1159-Blassac\AerialPhotography')
-    # Créez une liste de tous les fichiers .dng, .jpg et .RAW dans le dossier
-    list_path_image = [file for file in folder_path.glob('*') if file.suffix.lower() in ['.dng', '.jpg', '.raw']]
-
-    # Affichez la liste des fichiers
-    for file in list_path_image:
-        #print(file)
-        pass
-    dic_exif_xmp = get_EXIF_XMP_interactive(list_path_image, verbose=False)

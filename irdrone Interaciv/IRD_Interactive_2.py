@@ -1,10 +1,8 @@
 # --------------------------------------------------------------------------------
 #   IR_drone interactive
 #   Selection of reference images for the stages of the mission.
-#   7/10/2023   V001
+#   29/10/2023   V002
 # ---------------------------------------------------------------------------------
-
-
 
 
 import os
@@ -232,7 +230,7 @@ class LoadVisNirImagesDialog(QDialog):
 
             center_on_screen(self, self.target_screen_index, self.screen_adjust, self.window_display_size)
 
-            # Disables btn_*_load_all_images on startup. It will be activated when all three images are loaded.
+            # Disables btn_*_load_all_images on startup. It will be activated when all five images are loaded.
             self.btn_load_all_images.setEnabled(False)
             self.btn_load_all_images.setStyleSheet("background-color: darkBlue; color: gray;")
 
@@ -333,8 +331,12 @@ class LoadVisNirImagesDialog(QDialog):
             idMinFly = int(os.path.splitext(os.path.basename(self.listImgRefPath[3]))[0].split("_")[-1])
             idMaxFly = int(os.path.splitext(os.path.basename(self.listImgRefPath[4]))[0].split("_")[-1])
 
+            idMinTakeoff = int(os.path.splitext(os.path.basename(self.listImgRefPath[0]))[0].split("_")[-1])
+            idMaxTakeoff = idMinTakeoff
+
 
             outputFlyFolder = os.path.join(outputFolder, "AerialPhotography")
+            outputTakeoffFolder = os.path.join(outputFolder, "FlightAnalytics")
             if not os.path.isdir(outputFlyFolder):
                 # print("The destination folder ", outputFlyFolder, " of the images does not exist!")
                 Uti.show_error_message(f"The destination folder {outputFlyFolder} for the images does not exist!\n"
@@ -371,12 +373,15 @@ class LoadVisNirImagesDialog(QDialog):
                 listInputImages = self.create_list_image_in_input_folder(inputFolder, "raw")
                 self.load_inputFolder_2_outputFolder(inputFolder, listInputImages, outputSyncFolder, idMinSync - 1, idMaxSync - 1, 30, 60)
                 self.load_inputFolder_2_outputFolder(inputFolder, listInputImages, outputFlyFolder, idMinFly - 1, idMaxFly - 1, 60, 100)
+
             elif self.currentImgTyp == "VIS":
                 listInputImages = self.create_list_image_in_input_folder(inputFolder, "dng")
-                # ----------   transfer of NIR images of the Sync  phase (dng) ----------------
+                # ----------   transfer of VIS images of the Sync  phase (dng) ----------------
                 self.load_inputFolder_2_outputFolder(inputFolder, listInputImages, outputSyncFolder, idMinSync, idMaxSync, 0, 30)
-                # ----------   transfer of NIR images of the Fly  phase (dng)----------------
-                self.load_inputFolder_2_outputFolder(inputFolder, listInputImages, outputFlyFolder, idMinFly, idMaxFly, 30, 100)
+                # ----------   transfer of VIS images of the Fly  phase (dng)----------------
+                self.load_inputFolder_2_outputFolder(inputFolder, listInputImages, outputFlyFolder, idMinFly, idMaxFly, 30, 98)
+                # ----------   transfer of VIS images of the take-off (dng)----------------
+                self.load_inputFolder_2_outputFolder(inputFolder, listInputImages, outputTakeoffFolder, idMinTakeoff, idMaxTakeoff, 98, 100)
 
             self.progress_bar.setValue(100)
 
@@ -666,7 +671,6 @@ class LoadVisNirImagesDialog(QDialog):
         pass
 
 
-
     def choice_of_reference_images_consistency_analysis(self, inputFolder: str) -> bool:
         """
         Analyze the consistency of the choice of reference images.
@@ -714,9 +718,9 @@ if __name__ == '__main__':
     default_app_dir = pref_screen.default_app_dir
     default_user_dir = pref_screen.default_user_dir
     # setting to manage multiple screens
-    screen_ID = pref_screen.defaultScreenID           # DEFAULT_SCREEN_ID = 1  Set to 0 for screen 1, 1 for screen 2, and so on
-    screen_adjust = pref_screen.screenAdjust        # SCREEN_ADJUST = [0, 40]            # 40 for taskbar and
-    window_display_size = pref_screen.windowDisplaySize     # WINDOW_DISPLAY_SIZE = (800, 600)
+    screen_ID = pref_screen.defaultScreenID  # DEFAULT_SCREEN_ID = 1  Set to 0 for screen 1, 1 for screen 2, and so on
+    screen_adjust = pref_screen.screenAdjust  # SCREEN_ADJUST = [0, 40]   # 40 for taskbar and
+    window_display_size = pref_screen.windowDisplaySize  # WINDOW_DISPLAY_SIZE = (800, 600)
     VERBOSE = True
 
     app = QApplication(sys.argv)  # initializes the Qt application loop (ESSENTIAL!)

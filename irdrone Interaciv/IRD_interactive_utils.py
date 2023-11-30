@@ -1,17 +1,17 @@
 # --------------------------------------------------------------------------------
 #   IR_drone interactive
 #   General utility
-#   7/10/2023   V001   *
+#   29/10/2023   V002   *
 # ---------------------------------------------------------------------------------
 
 
 import os
 import json
 from datetime import datetime, date
+import time
 from typing import Any, Dict, Optional, Tuple, List,  Union
 from pathlib import Path
 from fractions import Fraction
-import time
 # ------------- geophysics Library --------------------------------
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut
@@ -23,10 +23,9 @@ import piexif
 import exifread
 from PIL import Image
 import rawpy
-
-
 # -----------------------PyQt6 Library ----------------------------
 from PyQt6.QtWidgets import QMessageBox, QApplication
+# ---------------------------------------------------------------------------------
 
 
 class Prefrence_Screen:
@@ -40,9 +39,15 @@ class Prefrence_Screen:
         self.default_app_dir = os.path.join(self.directory, "Program Files", "IRdrone")
         self.default_user_dir = os.path.join(self.directory, "Air-Mission")
         # setting to manage multiple screens
-        self.defaultScreenID = 1  # Set to 0 for screen 1, 1 for screen 2, and so on
+        self.defaultScreenID: int = 1  # Set to 0 for screen 1, 1 for screen 2, and so on
         self.screenAdjust = [0, 40]  # 40 for taskbar and
         self.windowDisplaySize = (800, 640)
+        self.AerialPhotoFolder: str = "AerialPhotography"  # folder of images taken by VIS and NIR cameras
+        self.AnalyticFolder: str = "FlightAnalytics"  # technical folder containing information on the mission
+        self.ImgIRdroneFolder: str = "ImgIRdrone"  # folder of images processed by IRDrone
+        self.SynchroFolder: str = "Synchro"  # folder for images from the camera synchronization phase
+        self.MappingFolder: str = "mapping_MULTI"  # folder for image assembly with Open Drone Map
+        self.CameraFolder: str = "cameras"  # here the “s” of cameras is obligatory. Used by ODM
 
 
 def show_info_message(title: str, text: str, informativeText: str, icon=QMessageBox.Icon.Information):
@@ -99,6 +104,40 @@ def show_error_message(message: str):
     msgBox.exec()
 
 
+def datetimePy2datetimeJson(py_datetime: datetime) -> str:
+    """
+    Convert a Python datetime object (date & time ) to a string in JSON datetime format (Exif).
+
+    Parameters:
+    - py_datetime (datetime): A Python datetime object to be converted.
+
+    Returns:
+    - str: The input datetime as a string in JSON/Exif datetime format ('%Y:%m:%d %H:%M:%S').
+
+    Note:
+    - The function uses the strftime method to format the datetime in the '%Y:%m:%d %H:%M:%S' format,
+      which is commonly used to represent times in JSON / EXIF.
+    """
+    return py_datetime.strftime('%Y:%m:%d %H:%M:%S')
+
+
+def datetimeJson2datetimePy(json_str: str) -> datetime:
+    """
+    Convert a Python datetime object (date & time ) to a string in JSON datetime format (Exif).
+
+    Parameters:
+    - py_datetime (datetime): A Python datetime object to be converted.
+
+    Returns:
+    - str: The input datetime as a string in JSON/Exif datetime format ('%Y:%m:%d %H:%M:%S').
+
+    Note:
+    - The function uses the strftime method to format the time in the '%Y:%m:%d %H:%M:%S' format,
+      which is commonly used to represent times in JSON / EXIF.
+    """
+    return datetime.strptime(json_str, '%Y:%m:%d %H:%M:%S')
+
+
 def datePy2dateJson(py_date: datetime) -> str:
     """
     Convert a Python datetime object to a string in JSON date format.
@@ -114,7 +153,7 @@ def datePy2dateJson(py_date: datetime) -> str:
       which is commonly used to represent dates in JSON.
     - If the input is None, the function returns None.
     """
-    return py_date.strftime('%Y-%m-%d')
+    return py_date.strftime('%Y:%m:%d')
 
 
 def dateJson2datePy(json_str: str) -> date:
@@ -132,7 +171,7 @@ def dateJson2datePy(json_str: str) -> date:
       convert it to a date object. The input string should be in 'YYYY-MM-DD' format.
     - If the input is None, the function returns None.
     """
-    return datetime.strptime(json_str, '%Y-%m-%d').date()
+    return datetime.strptime(json_str, '%Y:%m:%d').date()
 
 
 def timePy2timeJson(py_time: time) -> str:
@@ -172,6 +211,53 @@ def timeJson2timePy(json_str: str) -> time:
     - If the input is None, the function returns None.
     """
     return datetime.strptime(json_str, '%H:%M:%S').time()
+
+
+def extract_date_RAW_SJCam(fileName: str) -> tuple:
+    """
+    Extract shooting number and shooting date from a RAW or JPG file name.
+
+    :param fileName: The file name with extension.
+    :type fileName: str
+    :return: A tuple containing the shooting number (int) and shooting date (datetime).
+    """
+    # Check if the file extension is RAW or JPG (case-insensitive)
+    if fileName.split(".")[1].lower() in ["raw", "jpg"]:
+        if fileName.split(".")[1].lower() == "raw":
+            # Calculate shooting number for RAW files
+            shootingNumber = int(int(fileName[17:20]) / 2 + 0.5)
+        else:
+            # Calculate shooting number for JPG files
+            shootingNumber = int(int(fileName[17:20]) / 2)
+        # Extract year, month, day, hour, minute, and second from the file name
+        year = int(fileName[0:4])
+        month = int(fileName[5:7])
+        day = int(fileName[7:9])
+        hour = int(fileName[10:12])
+        minute = int(fileName[12:14])
+        second = int(fileName[14:16])
+        # Create a datetime object for the shooting date
+        shootingDate = datetime(year, month, day, hour, minute, second)
+        # Return the shooting number and shooting date as a tuple
+        return shootingNumber, shootingDate
+
+
+def extract_num_DNG_DJI(fileName: str) -> tuple:
+    """
+    Extract shooting number and shooting date from a DNG file name.
+
+    :param fileName: The file name with extension.
+    :type fileName: str
+    :return: A tuple containing the shooting number (int) and shooting date (datetime).
+    """
+    # Check if the file extension is DNG (case-insensitive)
+    if fileName.split(".")[1].lower() in ["dng"]:
+        temp = fileName.split(".")[0].split("_")[1]
+        shootingNumber = int(temp)
+        return shootingNumber
+
+    # Return None values if the file extension is not RAW or JPG
+    return None, None
 
 
 def show(widget):
@@ -480,6 +566,7 @@ def convert_coordinates(latitude, longitude, altitude) -> Tuple[float, float, fl
 
     return lat_decimal, lon_decimal, alt_decimal
 
+
 def convert_dng_coordinates(latitude, longitude, altitude) -> Tuple[float, float, float]:
     """
     """
@@ -516,6 +603,7 @@ def ifdtag_angle_to_decimal(ifdtag) -> float:
         return dms_to_decimal(values)
     else:
         return None
+
 
 def dng_angle_to_decimal(angle: str) -> float:
 
@@ -778,7 +866,6 @@ def ecriture_donnees_EXIF():
     piexif.insert(exif_bytes, "path_to_output_image.jpg")
 
 
-
 def extract_exif_data(file_path: str) -> Dict[str, Any]:
     """
     Extract and return EXIF data from a DNG file.
@@ -817,36 +904,30 @@ def display_exif_data(exif_data: Dict[str, Any], indentation="", verbose=False) 
 
     return dic_exif_utf
 
-"""
-import libxmp
 
-def extract_xmp_data(file_path: str) -> libxmp.XMPMeta:
+def image_takeoff_available_test(dic_takeoff: Dict, default_user_dir: Path):
+    """
 
-        # Extract XMP data from an image file.
-    
-        #:param file_path: str, path to the image file.
-        #:return: libxmp.XMPMeta, extracted XMP data.
-
- 
-    with open(file_path, 'rb') as f:
-        xmp_file = libxmp.files.XMPFiles(file_path=file_path, open_forupdate=False)
-        xmp = xmp_file.get_xmp()
-        return xmp
-
-
-def display_xmp_data(xmp: libxmp.XMPMeta) -> None:
-
-    #Display XMP data.
-
-    #:param xmp: libxmp.XMPMeta, the XMP data to display.
-
-    for schema in xmp:
-        print(f"Schema namespace: {schema.namespace}")
-        for prop in schema:
-            print(f"  Property: {prop.name}")
-            print(f"    Value: {prop.value}")
-            
-"""
+    :param dic_takeoff:
+    :param default_user_dir:
+    :return:
+    """
+    try:
+        image_takeoff_available = False
+        path_image_mission = Path(default_user_dir)
+        try:
+            if isinstance(dic_takeoff, dict) and 'File path mission' in dic_takeoff:
+                path_image_mission = Path(dic_takeoff['File path mission'])
+                if path_image_mission.exists():
+                    coherent_response = folder_name_consistency_analysis(path_image_mission)
+                    if coherent_response:
+                        image_takeoff_available = True
+        except (TypeError, KeyError) as e:
+            print("Error in image_takeoff_available", e)
+            pass
+        return image_takeoff_available, path_image_mission
+    except Exception as e:
+        print("error   in image_takeoff_available", e)
 
 
 
