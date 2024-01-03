@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # --------------------------------------------------------------------------------
 #   IR_drone interactive
 #   Main window of the interactive IRDrone GUI
@@ -6,18 +7,21 @@
 
 
 import os
+import os.path as osp
 import sys
 from pathlib import Path
 # ------------------PyQt6 Library -----------------------------------
-from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout,  QWidget, QPushButton, QLabel, QFrame, QProgressBar, QDialog, QFileDialog, QMessageBox
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout,  QWidget, QPushButton, QLabel, QFrame, QProgressBar
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap, QColor, QIcon
 # -------------- IRDrone Library ------------------------------------
-from IRD_Interactive_1 import Window_11, Window_12
-from IRD_Interactive_2 import LoadVisNirImagesDialog
-from IRD_Interactive_3 import Window_31, Window_32
+from IRD_Interactive_1 import Window_Load_TakeOff_Image, Window_create_file_structure
+from IRD_Interactive_2 import LoadVisNirImagesDialog, choose_folder_mission
+from IRD_Interactive_3 import Dialog_extract_exif, Dialog_synchro_clock
 import IRD_interactive_utils as Uti
 from IRD_interactive_utils import Prefrence_Screen
+# -------------------- IRD Library -----------------------------------------------
+sys.path.append(osp.join(osp.dirname(__file__), '../utils'))
 
 
 
@@ -25,23 +29,20 @@ class Main_Window(QMainWindow):
 
     def __init__(self):
         """
-        Initialize the Main_Window.
-
-        Initialize the main window of the application.
-
+        Initialize the main window of the interactive application.
         """
         super().__init__()
         self.pref_screen = Prefrence_Screen()
         self.dic_takeoff_light: dict = {"key": "value"}
         self.dic_takeoff: dict = None
-        self.initGUI()
+        self.list_dic_exif_xmp: list[dict] = None
+        self.list_summary: list[dict] = None
+        self.pathImageTakeoff = None
+        self.init_GUI()
 
 
-    def initGUI(self):
+    def init_GUI(self):
         self.image_display_size: tuple[int, int] = (500, 500)   # Size of the log image displayed in the main window.
-
-        # self.location_info = None
-
         self.setStyleSheet("background-color: white; color: black;")
         self.def_app_dir = self.pref_screen.default_app_dir
         self.def_user_dir = self.pref_screen.default_user_dir
@@ -60,30 +61,31 @@ class Main_Window(QMainWindow):
         self.setGeometry(0, 0, width, height)
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
-        #self.central_widget.setStyleSheet("background-color: black;")
         self.main_layout = QVBoxLayout(self.central_widget)
 
-
-        # Creating the command bar
+        #  Creating the command bar:
+        #  btn create_mission
         self.btn_create_mission = QPushButton("Step 1 : Define the mission", self)
         self.btn_create_mission.setStyleSheet("background-color: darkBlue; color: white;")
+        self.btn_create_mission.clicked.connect(self.open_window_define_mission)
+        #  btn load_images
         self.btn_load_images = QPushButton("Step 2 : Choice of reference image set.", self)
         self.btn_load_images.setAutoDefault(False)
         self.btn_load_images.setEnabled(True)   # (True) pour test  et (False) en prod !
         self.btn_load_images.setStyleSheet("background-color: Gray; color: darkGray;")
-
+        self.btn_load_images.clicked.connect(self.open_window_load_set_images)
+        #  btn pre_process_images
         self.btn_pre_process_images = QPushButton("Step 3 : Image pre-processing", self)
         self.btn_pre_process_images.setStyleSheet("background-color: darkGray; color: white;")
+        self.btn_pre_process_images.clicked.connect(self.on_pre_process_images)
+        #  btn process_images
         self.btn_process_images = QPushButton("Step 4 : Image processing", self)
         self.btn_process_images.setStyleSheet("background-color: darkRed; color: white;")
+        self.btn_process_images.clicked.connect(self.on_process_images)
+        #  btn help
         self.btn_help = QPushButton("Help", self)
         self.btn_help.setStyleSheet("background-color: darkGreen; color: white;")
         self.btn_help.setFixedWidth(60)
-
-        self.btn_create_mission.clicked.connect(self.open_window_11)
-        self.btn_load_images.clicked.connect(self.open_window_21)
-        self.btn_pre_process_images.clicked.connect(self.on_pre_process_images)
-        self.btn_process_images.clicked.connect(self.on_process_images)
         self.btn_help.clicked.connect(self.on_help)
 
         # Layout for command bar
@@ -125,208 +127,151 @@ class Main_Window(QMainWindow):
         self.main_layout.addWidget(self.progress_bar)
         self.progress_bar.setValue(0)
 
-
     # ===================================================================================
     #                   Button #1 click handlers
+    #     Step 1 Define the mission
     # ===================================================================================
 
-
-    def open_window_11(self):
+    def open_window_define_mission(self):
         """
-        Open Window_11.
-
-        Open the Window_11 when the corresponding button is clicked.
-
+        Open dialog_load_takeoff_image when the corresponding button is clicked.
         """
         try:
-            self.window_11 = Window_11(self)
-            self.window_11.show()
-            self.dic_takeoff_light = self.window_11.dic_takeoff_light
-
-            self.window_11.btn_NextStep.clicked.connect(self.open_window_12)  # Connect Window_12 signal to Main_Window method
+            self.dialog_load_takeoff_image = Window_Load_TakeOff_Image(self)
+            self.dialog_load_takeoff_image.show()
+            self.dic_takeoff_light = self.dialog_load_takeoff_image.dic_takeoff_light
+            self.dialog_load_takeoff_image.btn_NextStep.clicked.connect(self.open_window_create_file_structure)  # Connect dialog_create_file_structure signal to Main_Window method
         except Exception as e:
-            print("Error in Main_Window open_window_11:", e)
+            print("Error in Main_Window open_window_define_mission:", e)
 
 
-    def open_window_12(self):
+    def open_window_create_file_structure(self):
         """
-        Open Window_12.
-
-        Open the Window_12 when called from Window_11.
-
+        Open dialog_create_mission_file_structure when called from dialog_load_takeoff_image.
         """
-        self.window_12 = Window_12(self, self.dic_takeoff_light) # Instantiate Window_12
+        self.dialog_create_file_structure = Window_create_file_structure(self, self.dic_takeoff_light)  # Instantiate Window_12
         try:
-            self.window_12.data_signal_from_window_12_to_main_window.connect(self.handle_data_from_window_12)
-            self.window_12.show()
+            self.dialog_create_file_structure.data_signal_from_dialog_create_file_structure_to_main_window.connect(self.handle_data_from_dialog_create_file_structure)
+            self.dialog_create_file_structure.show()
         except Exception as e:
-            print("Error in Main_Window open_window_12:", e)
+            print("Error in Main_Window open_window_create_file_structure:", e)
 
 
-    def handle_data_from_window_12(self, validate: bool, dic_takeoff: dict):
+    def handle_data_from_dialog_create_file_structure(self, validate: bool, dic_takeoff: dict):
         """
-        Handle data from Window_12.
-
-        Handle data received from Window_12 and close parent windows.
-
+        Handle data from Window_create_file_structure and close parent windows.
         Args:
             validate (bool): True if the user has validated the entries, False otherwise.
             dic_takeoff (dict): A dictionary containing image_path, location, and pilot data.
-
         """
         if validate:
             self.dic_takeoff = dic_takeoff
-            self.window_12.data_signal_from_window_12_to_main_window.disconnect()  # Disconnect the signal
-            self.window_12.close()  # Close window_12
+            self.dialog_create_file_structure.data_signal_from_dialog_create_file_structure_to_main_window.disconnect()  # Disconnect the signal
+            self.dialog_create_file_structure.close()  # Close dialog_create_file_structure
             self.btn_load_images.setAutoDefault(True)
             self.btn_load_images.setEnabled(True)
             self.btn_load_images.setStyleSheet("background-color: Gray; color: White;")
         else:
             print("The user has not validated his entries.")
 
-        self.window_11.close()
+        self.dialog_load_takeoff_image.close()
 
 
     # ===================================================================================
     #                   Button #2 click handlers
+    #     Step 2 load set of VIS and NIR images of he mission.
     # ===================================================================================
 
-    def open_window_21(self):
-        """ load set of VIS and NIR images of he mission. """
-        screens = QApplication.screens()
-        active_widget = QApplication.activeWindow()
-        active_screen_id = QApplication.screens().index(active_widget.screen()) if active_widget else 0
-        target_screen_id = screens[active_screen_id]
-        screen_geometry = target_screen_id.availableGeometry()
+    def open_window_load_set_images(self):
+        """
+        load set of VIS and NIR images of he mission.
+        """
+        # ------------------ setting window size to load image sets -------------------------------------
+        active_screen_id = QApplication.screens().index(QApplication.activeWindow().screen()) if QApplication.activeWindow() else 0
+        screen_geometry = QApplication.screens()[active_screen_id].availableGeometry()
         width = screen_geometry.width() - 20  # width of the window
         height = 500  # height of the window
 
-
         # ----------------------- Choice of mission file -------------------------------------------------
-
-        folderMissionPath, coherent_response = self.choose_folder_mission()
-        if not coherent_response:
-            return()
-
+        folderMissionPath, coherent_response = choose_folder_mission(self.dic_takeoff, self.pref_screen.default_user_dir, self.dialog_create_file_structure.AerialPhotoFolder, self.dialog_create_file_structure.SynchroFolder)
+        if not coherent_response: return()
         # ---------------- Loads the 5 reference “VIS” images --------------------------------------------
-
-        if self.dic_takeoff is not None:
-            dialog_VIS = LoadVisNirImagesDialog(width, height, "VIS",
-                                                                  folderMission=folderMissionPath, path_image_takeoff=self.dic_takeoff["File path take-off"])
-        else:
-            dialog_VIS = LoadVisNirImagesDialog(width, height, "VIS",
-                                                                  folderMission=folderMissionPath)
-        result = dialog_VIS.exec()
-        if result == QDialog.DialogCode.Accepted:
-            print("reference_images VIS")
-            pass
-        LoadVisNirImagesDialog.reset_flags()
-
+        if self.dic_takeoff is not None: self.pathImageTakeoff = self.dic_takeoff["File path take-off"]
+        dialog_VIS = LoadVisNirImagesDialog(width, height, "VIS", folderMission=folderMissionPath, path_image_takeoff=self.pathImageTakeoff)
+        dialog_VIS.exec()
+        dialog_VIS.reset_flags()
         # ---------------- Loads the 5 reference “NIR” images --------------------------------------------
-
         dialog_NIR = LoadVisNirImagesDialog(width, height, "NIR", folderMission=folderMissionPath)
-        result = dialog_NIR.exec()
-        if result == QDialog.DialogCode.Accepted:
-            print("reference_images NIR")
-            pass
-        LoadVisNirImagesDialog.reset_flags()
-
-
-    def choose_folder_mission(self):
-        image_takeoff_available, path_image_takeoff = Uti.image_takeoff_available_test(self.dic_takeoff, self.pref_screen.default_user_dir)
-        try:
-            if image_takeoff_available:
-                # construction du nom du dossier de la mission
-                folderMissionPath = Path(self.dic_takeoff['File path mission'])
-                coherent_response = Uti.folder_name_consistency_analysis(folderMissionPath)
-                if coherent_response:
-                    Uti.show_info_message("IRDrone", f"Your images will be transferred to the  mission folder : \n {folderMissionPath}",
-                                          f"They will be distributed between the folders {self.window_12.AerialPhotoFolder} and {self.window_12.SynchroFolder}")
-                else:
-                    coherent_response = False
-                return folderMissionPath, coherent_response
-            else:
-                Uti.show_warning_OK_Cancel_message("IRDrone", "Choose the mission folder.", "It is of the form : \n FLY_Year Month Day_hour minute_[Place]", QMessageBox.Icon.Information)
-                try:
-                    folderMissionPath = Path(QFileDialog.getExistingDirectory(self, 'Select Mission Folder', self.pref_screen.default_user_dir))
-                    if folderMissionPath.exists() and folderMissionPath != self.pref_screen.default_user_dir:
-                        coherent_response = Uti.folder_name_consistency_analysis(folderMissionPath)
-                        if not coherent_response:
-                            Uti.show_warning_OK_Cancel_message("IRDrone", f"You have chosen the folder : \n{folderMissionPath} \nwhich is not a Mission IRDrone folder.",
-                                                               " Choose a compatible folder ( name FLY_YYYYMMDD_hhmm_<free text> ).\n or create a mission \n Use the <Create a New Mission> command.")
-                    else:
-                        Uti.show_warning_OK_Cancel_message("IRDrone", f"You have chosen the folder : \n {folderMissionPath} \n",
-                                                           " Your choice of folder is not recognized in IRDrone\n Choose a compatible folder ( name FLY_YYYYMMDD_hhmm_[Optional text] ).")
-                        coherent_response = False
-
-                    return folderMissionPath, coherent_response
-                except Exception as e:
-                    print("error 1   in choose_folder_mission :", e)
-        except Exception as e:
-            print("error 2   in choose_folder_mission :", e)
+        dialog_NIR.exec()
+        dialog_NIR.reset_flags()
 
 
     # ===================================================================================
     #                   Button #3 click handlers
+    #     Step 3 pre process images  (clock synchronization, adjustment of shooting frequencies
+    #     creating the timeline, calculation of geographic coordinates,
+    #     camera attitudes( yaw, pitch roll).
     # ===================================================================================
 
     def on_pre_process_images(self):
         """
-        Open Window_31.  (preprocess_step 1  Extract and save Exif tags)
-
-        Open the Window_31 when the corresponding button (btn_pre_process_images) is clicked.
-
+        preprocess_step 1  Extract and save Exif tags)
+        Open the dialog_extract_exif when the corresponding button (btn_pre_process_images) is clicked.
         """
         try:
-            self.window_31 = Window_31(self.dic_takeoff)
-            self.window_31.show()
-            self.window_31.btn_preprocess_step1.clicked.connect(self.open_window_32)  # Connect Window_32 signal to Main_Window method
-
+            self.dialog_extract_exif = Dialog_extract_exif(self.dic_takeoff)     # Instantiate Window dialog_extract_exif
+            self.dialog_extract_exif.data_signal_from_dialog_extract_exif_to_main_window.connect(self.handle_data_from_dialog_extract_exif)
+            self.dialog_extract_exif.show()
+            self.dialog_extract_exif.btn_preprocess_step1.clicked.connect(self.open_dialog_synchro_clock)  # Connect dialog_synchro_clock signal to Main_Window method
         except Exception as e:
-            print("Error in Main_Window open_window_31:", e)
+            print("Error in Main_Window open_dialog_extract_exif:", e)
 
-    def open_window_32(self):
+    def handle_data_from_dialog_extract_exif(self, validate: bool):
         """
-        Open Window_32.  (preprocess_step 2  Synchro time-line NIR/VIS)
-
-        Open the Window_32 when called from Window_31.
-
-        """
-        self.window_32 = Window_32(self)  # Instantiate Window_32
-        try:
-            self.window_32.data_signal_from_window_32_to_main_window.connect(self.handle_data_from_window_32)
-            self.window_32.show()
-        except Exception as e:
-            print("Error in Main_Window open_window_32:", e)
-
-
-    def handle_data_from_window_32(self, validate: bool):
-        """
-        Handle data from Window_32.
-
-        Handle data received from Window_32 and close parent windows.
-
-        Args:
-            validate (bool): True if the user has validated the entries, False otherwise.
-            dic_takeoff (dict): A dictionary containing image_path, location, and pilot data.
-
+        Handle data received from dialog_extract_exif .
+        Args: validate (bool): True if the user has validated the entries, False otherwise.
         """
         if validate:
-            #self.dic_takeoff = dic_takeoff
-            print(f"TEST Le décalage des horloges est de : {self.window_32.delta_horloge} s.")
-            self.window_32.data_signal_from_window_32_to_main_window.disconnect()  # Disconnect the signal
-            self.window_32.close()  # Close window_32
+            self.list_dic_exif_xmp: list[dict] = self.dialog_extract_exif.list_dic_exif_xmp
+            self.folderMissionPath: Path = self.dialog_extract_exif.folderMissionPath
+            print(f"TEST  pour le vol {self.folderMissionPath} Extraction à construit {len(self.list_dic_exif_xmp)} dictionnaires exif/xmp")
+            self.dialog_extract_exif.data_signal_from_dialog_extract_exif_to_main_window.disconnect()  # Disconnect the signal
         else:
             print("The user has not validated his entries.")
 
-        self.window_31.close()
+    def open_dialog_synchro_clock(self):
+        """
+        preprocess_step 2  Synchro time-line NIR/VIS
+        Open the dialog_synchro_clock when called from dialog_extract_exif.
+        """
+        try:
+            self.dialog_synchro_clock = Dialog_synchro_clock(self.list_dic_exif_xmp, self.folderMissionPath)  # Instantiate dialog_synchro_clock
+            self.dialog_synchro_clock.data_signal_from_dialog_synchro_clock_to_main_window.connect(self.handle_data_from_dialog_synchro_clock)
+            self.dialog_synchro_clock.show()
+        except Exception as e:
+            print("Error in Main_Window open_dialog_synchro_clock:", e)
 
 
+    def handle_data_from_dialog_synchro_clock(self, validate: bool):
+        """
+        Handle data received from dialog_synchro_clock and close parent windows.
+        Args: validate (bool): True if the user has validated the entries, False otherwise.
+        """
+        if validate:
+            self.list_dic_exif_xmp = self.dialog_extract_exif.list_dic_exif_xmp
+            # print(f"TEST  Main sortie dialog_synchro_clock \n {self.list_dic_exif_xmp[-1]}")
+            print(f"TEST  Le décalage des horloges est de : {self.dialog_synchro_clock.delta_horloge} s. \n FIN DU PREPROCESS")
+            self.dialog_synchro_clock.data_signal_from_dialog_synchro_clock_to_main_window.disconnect()  # Disconnect the signal
+            self.dialog_synchro_clock.close()  # Close dialog_synchro_clock
+        else:
+            print("The user has not validated his entries.")
+        self.dialog_extract_exif.close()
         pass
 
 
     # ===================================================================================
     #                   Button #4 click handlers
+    #     Step 4 process images
     # ===================================================================================
     def on_process_images(self):
         Uti.show_info_message("IRDrone", "En cours d'implémentation ...", "")

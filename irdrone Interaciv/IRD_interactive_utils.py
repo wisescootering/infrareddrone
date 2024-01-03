@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # --------------------------------------------------------------------------------
 #   IR_drone interactive
 #   General utility
@@ -6,18 +7,17 @@
 
 
 import os
+import os.path as osp
+import sys
 import json
 from datetime import datetime, date
 import time
-from typing import Any, Dict, Optional, Tuple, List,  Union
+from typing import Optional, Union
 from pathlib import Path
 from fractions import Fraction
-# ------------- geophysics Library --------------------------------
-from geopy.geocoders import Nominatim
-from geopy.exc import GeocoderTimedOut
-from requests import Session
-import requests
 import re
+import numpy as np
+
 # -------------------- Exif Library -------------------------------
 import piexif
 import exifread
@@ -25,7 +25,12 @@ from PIL import Image
 import rawpy
 # -----------------------PyQt6 Library ----------------------------
 from PyQt6.QtWidgets import QMessageBox, QApplication
-# ---------------------------------------------------------------------------------
+# -----------------------------------------------------------------
+
+sys.path.append(osp.join(osp.dirname(__file__), ".."))
+from typing import List, Optional
+import config as cf
+# ------------------------------------------------------------------
 
 
 class Prefrence_Screen:
@@ -38,6 +43,7 @@ class Prefrence_Screen:
         # print("TEST  directory", self.directory)
         self.default_app_dir = os.path.join(self.directory, "Program Files", "IRdrone")
         self.default_user_dir = os.path.join(self.directory, "Air-Mission")
+        self.verbose = True
         # setting to manage multiple screens
         self.defaultScreenID: int = 1  # Set to 0 for screen 1, 1 for screen 2, and so on
         self.screenAdjust = [0, 40]  # 40 for taskbar and
@@ -48,6 +54,8 @@ class Prefrence_Screen:
         self.SynchroFolder: str = "Synchro"  # folder for images from the camera synchronization phase
         self.MappingFolder: str = "mapping_MULTI"  # folder for image assembly with Open Drone Map
         self.CameraFolder: str = "cameras"  # here the “s” of cameras is obligatory. Used by ODM
+        self.background_color = "white"
+        self.txt_color = "black"
 
 
 def show_info_message(title: str, text: str, informativeText: str, icon=QMessageBox.Icon.Information):
@@ -267,7 +275,7 @@ def show(widget):
         print("show error ", e)
 
 
-def center_on_screen(widget, screen_Id=0, screen_adjust=(1, 1), window_display_size=(800, 650)):
+def center_on_screen(widget, screen_Id: int = 0, screen_adjust=(1, 1), window_display_size=(800, 650)):
     try:
         screens = QApplication.screens()
         active_widget = QApplication.activeWindow()
@@ -345,142 +353,7 @@ def folder_name_consistency_analysis(folderMissionPath: str) -> bool:
     return coherent_response
 
 
-def data_sig(coordinates: Tuple[float, float]) -> Optional[Dict[str, Any]]:
-    """
-    Retrieve geographic and geocoding information for given coordinates.
-
-    Parameters:
-    - coordinates (Tuple[float, float]): A tuple containing latitude and longitude.
-
-    Returns:
-    - Optional[Dict[str, Any]]: A dictionary containing geographic and geocoding information, or
-      None if an error occurs or if information cannot be retrieved.
-
-    Note:
-    - The function uses two helper functions, extract_alti_IGN and extract_geoTag, to retrieve
-      geographic altitude from the IGN API and geocoding information from the OpenStreetMap API,
-      respectively.
-    - Retrieved information is stored in the dictionary dic_geo, which is returned.
-    - If an error occurs, an error message is printed and the function returns None.
-    """
-    dic_geo = []
-    try:
-        dic_geo = extract_alti_IGN(coordinates)   # extracts the geographic altitude of the location (IGN API)
-        extract_geoTag(dic_geo)                   # extracts geocoding data (OpenStreetMap API)
-
-    except Exception as e:
-        print("error", e)
-
-    return dic_geo
-
-
-def extract_alti_IGN(coordinates: List[float]) -> Optional[Dict[str, Optional[float]]]:
-    """
-    Retrieve altitude information for a given coordinate using the IGN API.
-
-    Parameters:
-    - coordinates (List[float]): A list containing the latitude and longitude for which to retrieve altitude information.
-
-    Returns:
-    - Optional[Dict[str, Optional[float]]]: A dictionary containing latitude ('lat'), longitude ('lon'), and altitude ('alti').
-      If the IGN API fails to provide information, None is returned.
-
-    Note:
-    - The function constructs an API URL using the input coordinates and sends a request to the IGN API.
-    - The API's response is expected to be a JSON object which is parsed and from which altitude information is extracted and returned in a dictionary.
-    - If the API request fails or if other errors occur, an error message is printed and the function returns None.
-    """
-    for _ in range(3):  # Trois tentatives
-        try:
-            IGN_api_key = "essentiels"
-            formatted_latitude = ""
-            formatted_longitude = ""
-
-
-            latitude, longitude = coordinates[0], coordinates[1]
-            formatted_latitude += str(latitude) + '|'
-            formatted_longitude += str(longitude) + '|'
-
-            formatted_latitude = re.sub(r'\|$', '', formatted_latitude)
-            formatted_longitude = re.sub(r'\|$', '', formatted_longitude)
-
-            api_url = f"https://wxs.ign.fr/{IGN_api_key}/alti/rest/elevation.json?" \
-                      f"lon={formatted_longitude}&lat={formatted_latitude}&zonly=false"
-
-            dico_coordinates_IGN = json.loads(requests.get(api_url).text)
-
-            for dic_IGN in dico_coordinates_IGN['elevations']:
-                dic_geo = {'lat': dic_IGN.get('lat'),
-                           'lon': dic_IGN.get('lon'),
-                           'alti': dic_IGN.get('z')
-                           }
-            return dic_geo
-
-        except Exception as e:
-            print(f"Error while trying {_ + 1}: {str(e)}")
-            time.sleep(1)  # Wait 1 second before next attempt
-
-    print("error. IGN API server is unavailable", e)
-    return None
-
-
-def extract_geoTag(dic_geo: Dict[str, Any]) -> Dict[str, Optional[Any]]:
-    """
-    Enrich input dictionary with geolocation information using the Nominatim API.
-
-    Parameters:
-    - dic_geo (Dict[str, Any]): A dictionary containing at least 'lat' and 'lon' keys
-                                for latitude and longitude, respectively.
-
-    Returns:
-    - Dict[str, Optional[Any]]: The input dictionary enriched with additional keys for
-                                'road', 'lieu_dit', 'ville', 'code_postal', 'dept',
-                                'region', and 'pays'. If the geocoding API fails to
-                                provide some information, corresponding keys may be
-                                absent or set to None in the returned dictionary.
-
-    Note:
-    - The function uses the Nominatim API to reverse geocode 'lat' and 'lon' from the
-      input dictionary to extract address information in French ('fr').
-    - Extracted information is added to the input dictionary which is then returned.
-    - If the API fails to respond in time, an error message is printed and the
-      function proceeds. If no geocoding information can be retrieved, an error
-      message is printed and keys for address information are set to None in the
-      returned dictionary.
-    """
-    try:
-        try:
-            try:
-                geolocator = Nominatim(user_agent="IRdrone")
-                session = Session()
-                session.verify = True
-                geolocator.adapter.session = session
-                lat = dic_geo.get('lat')
-                lon = dic_geo.get('lon')
-
-                location = geolocator.reverse((lat, lon), language='fr')
-                address = location.raw['address']
-
-                dic_geo['road'] = address.get('road')
-                dic_geo['lieu_dit'] = address.get('hamlet') or address.get('farm') or address.get('isolated_dwelling') or address.get('locality') or address.get('city_block') or address.get('districr')
-                dic_geo['ville'] = address.get('village') or address.get('city') or address.get('municipality') or address.get('town')
-                dic_geo['code_postal'] = address.get('postcode')
-                dic_geo['dept'] = address.get('county')
-                dic_geo['region'] = address.get('state')
-                dic_geo['pays'] = address.get('country')
-
-                return dic_geo
-
-            except GeocoderTimedOut:
-                print(f"Geocoding service not responding for coordinates {dic_geo['lat']}, {dic_geo['lon']}. Merci de réessayer plus tard.")
-        except AttributeError as e:
-            print(f"No GPS coordinates for this point.")
-            dic_geo['road'], dic_geo['lieu_dit'], dic_geo['ville'], dic_geo['code_postal'], dic_geo['dept'], dic_geo['region'], dic_geo['pays'] = None, None, None, None, None, None, None
-    except Exception as e:
-        print("Erreur", e,)
-
-
-def extract_exif(file_path: str) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[str], Optional[str], Optional[str], Optional[str]]:
+def extract_exif(file_path: str) -> tuple[Optional[float], Optional[float], Optional[float], Optional[str], Optional[str], Optional[str], Optional[str]]:
     """
     Extract EXIF metadata from a file, either in DNG or JPEG format.
 
@@ -488,7 +361,7 @@ def extract_exif(file_path: str) -> Tuple[Optional[float], Optional[float], Opti
     - file_path (str): The path to the file from which to extract EXIF data.
 
     Returns:
-    - Tuple[Optional[Any], Optional[Any], Optional[Any], Optional[str], Optional[str], Optional[str], Optional[str]]:
+    - tuple[Optional[any], Optional[any], Optional[any], Optional[str], Optional[str], Optional[str], Optional[str]]:
       A tuple containing latitude, longitude, altitude, date_time, maker, model, and id_camera, respectively.
       The types of latitude, longitude, and altitude are not strictly defined because they depend on the format
       in which they are stored in the EXIF data, which may vary. The other returned values are strings or None
@@ -541,7 +414,7 @@ def extract_exif(file_path: str) -> Tuple[Optional[float], Optional[float], Opti
     return latitude, longitude, altitude, date_time, maker, model, id_camera
 
 
-def convert_coordinates(latitude, longitude, altitude) -> Tuple[float, float, float]:
+def convert_coordinates(latitude, longitude, altitude) -> tuple[float, float, float]:
     """
     Convert geographical coordinates to decimal format.
 
@@ -551,7 +424,7 @@ def convert_coordinates(latitude, longitude, altitude) -> Tuple[float, float, fl
     - altitude : Altitude in IFD tag format to be converted to decimal format.
 
     Returns:
-    - Tuple[float, float, float]: A tuple containing the latitude, longitude, and altitude
+    - tuple[float, float, float]: A tuple containing the latitude, longitude, and altitude
                                   in decimal format, respectively.
 
     Note:
@@ -567,7 +440,7 @@ def convert_coordinates(latitude, longitude, altitude) -> Tuple[float, float, fl
     return lat_decimal, lon_decimal, alt_decimal
 
 
-def convert_dng_coordinates(latitude, longitude, altitude) -> Tuple[float, float, float]:
+def convert_dng_coordinates(latitude, longitude, altitude) -> tuple[float, float, float]:
     """
     """
     lat_decimal = dng_angle_to_decimal(latitude)
@@ -615,7 +488,7 @@ def dng_angle_to_decimal(angle: str) -> float:
         return None
 
 
-def dms_to_decimal(dms: List[Union[int, Fraction]]) -> float:
+def dms_to_decimal(dms: list[Union[int, Fraction]]) -> float:
     """
     Convert geographical coordinates from Degrees, Minutes, Seconds (DMS) format to decimal format.
 
@@ -664,17 +537,17 @@ def ifdtag_altitude_to_decimal(ifdtag) -> float:
     return alt_decimal
 
 
-def find_value_in_dic(dictionary: Dict[str, Any], key_searched: str) -> Optional[Any]:
+def find_value_in_dic(dictionary: dict[str, any], key_searched: str) -> Optional[any]:
     """
     This function recursively searches for a key in a nested dictionary structure and
     returns the associated value if the key is found.
 
     Parameters:
-    - dictionary (Dict[Any, Any]): The dictionary in which to search for the key.
+    - dictionary (dict[any, any]): The dictionary in which to search for the key.
     - key_searched (str): The key to search for in the dictionary.
 
     Returns:
-    - Optional[Any]: The value associated with the key_searched if it is found;
+    - Optional[any]: The value associated with the key_searched if it is found;
                      otherwise, None.
 
     Usage:
@@ -706,7 +579,7 @@ def find_value_in_dic(dictionary: Dict[str, Any], key_searched: str) -> Optional
                         return results
 
 
-def display_dictionary(dictionary: Dict[str, Any], indentation=""):
+def display_dictionary(dictionary: dict[str, any], indentation=""):
     """
     This function recursively prints the contents of a dictionary, handling nested
     dictionaries and lists, with indentation to reflect the nesting level.
@@ -746,44 +619,7 @@ def display_dictionary(dictionary: Dict[str, Any], indentation=""):
             print(f"{indentation}{key}: {value}")
 
 
-def extract_geotag_AVR(dic_geo: Dict[str, Any]):
-    # direct query of OSM without using the geopy library
-    try:
-        try:
-            geolocator = Nominatim(user_agent="IRdrone")
-
-            session = Session()
-            session.verify = True
-            geolocator.adapter.session = session
-            latitude_AVR, longitude_AVR = dic_geo.get('lat'), dic_geo.get('lon')
-
-            api_OSM = f"https://nominatim.openstreetmap.org/reverse?format=geocodejson&lat={latitude_AVR}&lon={longitude_AVR}"
-            location_AVR = json.loads(requests.get(api_OSM).text)
-            road = find_value_in_dic(location_AVR, 'road')
-            label_road = find_value_in_dic(location_AVR, 'label').split(",")[0]
-            lieu_dit = find_value_in_dic(location_AVR, 'district')
-            if label_road != lieu_dit:
-                road = label_road
-            else:
-                road = None
-            dic_geo['road'] = road
-            dic_geo['lieu_dit'] = lieu_dit
-            dic_geo['ville'] = find_value_in_dic(location_AVR, 'level8')
-            dic_geo['code_postal'] = find_value_in_dic(location_AVR, 'postcode')
-            dic_geo['dept'] = find_value_in_dic(location_AVR, 'level6')
-            dic_geo['region'] = find_value_in_dic(location_AVR, 'level4')
-            dic_geo['pays'] = find_value_in_dic(location_AVR, 'level3')
-
-
-        except AttributeError as e:
-            print(f"Pas de coordonnées GPS pour ce point.")
-            dic_geo['road'], dic_geo['lieu_dit'], dic_geo['ville'], dic_geo['code_postal'], dic_geo['dept'], dic_geo['region'], dic_geo['pays'] = None, None, None, None, None, None, None
-
-    except Exception as e:
-        print("error", e,)
-
-
-def display_dictionary_EXIF_jpg(exif_dict: Dict[str, Any], tag_type=None, indentation="", verbose=False) -> Dict[str, Any]:
+def display_dictionary_EXIF_jpg(exif_dict: dict[str, any], tag_type=None, indentation="", verbose=False) -> dict[str, any]:
     dic_exif_utf = {}
     for key, value in exif_dict.items():
         readable_key = key
@@ -866,12 +702,12 @@ def ecriture_donnees_EXIF():
     piexif.insert(exif_bytes, "path_to_output_image.jpg")
 
 
-def extract_exif_data(file_path: str) -> Dict[str, Any]:
+def extract_exif_data(file_path: str) -> dict[str, any]:
     """
     Extract and return EXIF data from a DNG file.
 
     :param file_path: str, path to the DNG file.
-    :return: Dict[str, Any], extracted EXIF data.
+    :return: dict[str, any], extracted EXIF data.
     """
     exif_data = {}
 
@@ -882,13 +718,13 @@ def extract_exif_data(file_path: str) -> Dict[str, Any]:
     return exif_data
 
 
-def display_exif_data(exif_data: Dict[str, Any], indentation="", verbose=False) -> Dict[str, Any]:
+def display_exif_data(exif_data: dict[str, any], indentation="", verbose=False) -> dict[str, any]:
     """
     Recursively display and return EXIF data.
 
-    :param exif_data: Dict[str, Any], the EXIF data to display.
+    :param exif_data: dict[str, any], the EXIF data to display.
     :param indentation: str, the current indentation level for display.
-    :return: Dict[str, Any], a new dictionary with readable EXIF data.
+    :return: dict[str, any], a new dictionary with readable EXIF data.
     """
     dic_exif_utf = {}
 
@@ -905,7 +741,7 @@ def display_exif_data(exif_data: Dict[str, Any], indentation="", verbose=False) 
     return dic_exif_utf
 
 
-def image_takeoff_available_test(dic_takeoff: Dict, default_user_dir: Path):
+def image_takeoff_available_test(dic_takeoff: dict, default_user_dir: Path):
     """
 
     :param dic_takeoff:
@@ -928,6 +764,303 @@ def image_takeoff_available_test(dic_takeoff: Dict, default_user_dir: Path):
         return image_takeoff_available, path_image_mission
     except Exception as e:
         print("error   in image_takeoff_available", e)
+
+
+
+def format_nombre(nombre, decimal=3, car=" "):
+    format_string = f"{car}{{:.{decimal}f}}" if nombre >= 0 else f"{{:.{decimal}f}}"
+    return format_string.format(nombre)
+
+
+def gps_coordinate_to_float(gps_coordinate: str) -> float:
+    """
+    Convert a GPS coordinate (Exif dng DJI) in the format 'DD deg MM' SS.SS\" D' to a floating point number.
+    If the direction is N or W, the value is positive. If the direction is S or E, the value is negative.
+
+    Example usage:  coord_str = "45 deg 10' 12.74\" N"
+                    decimal_coord = gps_coordinate_to_float(coord_str)
+                    print(decimal_coord)   # 45.17020556
+    """
+    # Replacing 'deg' with space and splitting the string
+    parts = gps_coordinate.replace('deg', '').split()
+    if len(parts) != 4 or parts[1][-1] != '\'' or parts[2][-1] != '"' or parts[3] not in ('N', 'S', 'E', 'W'):
+        raise ValueError("Invalid GPS coordinate string format")
+
+    # Extracting degrees, minutes, seconds, and direction
+    degrees = float(parts[0])
+    minutes = float(parts[1][:-1])  # Removing the apostrophe '
+    seconds = float(parts[2][:-1])  # Removing the double quote "
+    direction = parts[3]
+
+    # Converting to float
+    decimal_coord = degrees + minutes / 60 + seconds / 3600
+
+    # Adjusting for direction
+    if direction in ['S', 'W']:
+        decimal_coord = -decimal_coord
+
+    return decimal_coord
+
+
+# ----------------------   A priori calculation of the pitch, yaw & roll "coarse".  -----------------------------------
+
+def motion_in_DroneAxis(listPts, mute=True):
+    """
+    Geographical axes:
+        e_EW vector  West > East          |e_EW|=1
+        e_SN vector  South > North        |e_SN|=1     e_EW . e_SN = 0  ; warning Clockwise  (e_z downwards!)
+    Axe orientation  e_EW <=> West > East ,   e_SN <=> South > North
+                    nord > 0°  ;  east > 90°  ;  south > 180°  ;  west > 270°
+
+    Axes of the drone:
+        e_1  vector normal to the axis of the drone       |e_1|=1
+        e_2  vector of the axis of the drone (forward)    |e_2|=1  ;  e_1 . e_2 =0
+        e_3 = e_1 x e_2 .        Counterclockwise ( e_3 upwards ).
+
+    x_1  distance travelled along the e_1 axis
+    x_2  distance travelled along the drone axis
+    x_3  distance travelled along the vertical axis.
+    """
+    x_WE, y_SN = motionDrone_in_GeographicAxis(listPts, mute=mute)  # motion in geographic axis
+    for i in range(len(listPts)):
+        sin_Yaw = np.sin(np.deg2rad(listPts[i].yawDrone))
+        cos_Yaw = np.cos(np.deg2rad(listPts[i].yawDrone))
+        listPts[i].x_1 = -x_WE[i] * cos_Yaw + y_SN[i] * sin_Yaw
+        listPts[i].x_2 = x_WE[i] * sin_Yaw + y_SN[i] * cos_Yaw
+
+    motionDroneZaxis(listPts)
+
+    return
+
+
+def motionDrone_in_GeographicAxis(listPt, mute=True):
+    """
+        vector   D = x_EW e_EW + y_SN e_SN       |e_EW|=1, |e_SN|=1, e_EW.e_SN=0
+        Axe orientation  e_EW <=> West > East ,   e_SN <=> South > North
+
+            N  e_SN
+              |
+        W ----E ----> E  e_WE
+              |
+              S
+        """
+    x_WE, y_SN = [], []
+    for i in range(len(listPt)):
+        if i >= len(listPt) - 1:
+            distWE = float(listPt[-1].gpsUTM_X) - float(listPt[-2].gpsUTM_X)
+            distSN = float(listPt[-1].gpsUTM_Y) - float(listPt[-2].gpsUTM_Y)
+        else:
+            distWE = float(listPt[i + 1].gpsUTM_X) - float(listPt[i].gpsUTM_X)
+            distSN = float(listPt[i + 1].gpsUTM_Y) - float(listPt[i].gpsUTM_Y)
+
+        x_WE.append(distWE)
+        y_SN.append(distSN)
+        if not mute:
+            print('point N° ', i, '   x_WE = ', distWE, ' m    y_SN = ', distSN, ' m    distance ',
+                  (distWE ** 2 + distSN ** 2) ** 0.5)
+
+    return x_WE, y_SN
+
+
+def motionDroneZaxis(listPts):
+    listPts[-1].x_3 = 0.
+    for i in range(0, len(listPts) - 1):
+        listPts[i].x_3 = (listPts[i + 1].altGround - listPts[i].altGround) + (listPts[i + 1].altGeo - listPts[i].altGeo)
+
+
+def theoreticalIrToVi(listPts, timelapse_Vis, offset=None):
+    #   theoretical  Yaw
+    angle = [listPts[n].rollDrone for n in range(len(listPts))]
+    x = [listPts[n].x_1 for n in range(len(listPts))]
+    theoreticalYaw = theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, axe=1)
+    #   theoretical  Pitch
+    angle = [listPts[n].pitchDrone for n in range(len(listPts))]
+    x = [listPts[n].x_2 for n in range(len(listPts))]
+    theoreticalPitch = theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, axe=2)
+    #   Theoretical  Roll
+    #   It is assumed that the "gimbal-lock" mode is used.  In other words gimbal_Yaw=drone_Yaw .
+    #   Note : the gimbal’s yaw angle is not reliable when the "gimbal-lock" mode is used.
+    theoreticalRoll = rollDeviation(listPts, timelapse_Vis)
+
+
+    for i in range(len(listPts)):
+        try:
+            theoreticalYaw[i] = theoreticalYaw[i] + offset[0]
+            theoreticalPitch[i] = theoreticalPitch[i] + offset[1]
+            theoreticalRoll[i] = theoreticalRoll[i] + offset[2]
+        except:
+            pass
+        listPts[i].yawIR2VI = theoreticalYaw[i]
+        listPts[i].pitchIR2VI = theoreticalPitch[i]
+        listPts[i].rollIR2VI = theoreticalRoll[i]
+
+    return listPts, theoreticalPitch, theoreticalYaw, theoreticalRoll
+
+
+def add_offset_theoretical_angles(list_pts, offset=None):
+    if offset is None:
+        return
+    for idx in range(len(list_pts)):
+        list_pts[idx].yawIR2VI += offset[0]
+        list_pts[idx].pitchIR2VI += offset[1]
+        list_pts[idx].rollIR2VI += offset[2]
+
+
+def theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, axe=0):
+    """
+    u  composante du déplacement    x = dist . e_idx
+    idx=1    Yaw    (le roll du drone correspond au yaw de la caméra NIR!)
+    idx=2    Pitch  (attention offset de 90° pour le DJI)
+    e_2  vecteur de l'axe du drone (vers l'avant)    |e_2|=1
+    e_1  vecteur normal à l'axe du drone    |e_1|=1  ;  e_1 . e_2 =0 ; repère direct
+
+    The distance between the lenses of two cameras (DJI Mavic Air 2 and SJCam M20) is CNIRCVIS_0 = 46 mm.
+    This distance is not negligible if the drone is at very low altitude.
+    For example during the synchronization step the drone is 2 m above the ground.
+    This distance must be added to the projection of the base line on the axis of the drone (Axis 2) for the
+    calculation of the pitch.
+    """
+    theoreticalAngle = []
+    for i in range(len(listPts)):
+        alpha, dt = interpolParabolicAngle(listPts, angle, i, timelapse_Vis)
+        Cvi_t_Cvi_tk = interpolationCameraCenterVis(x, i, dt, timelapse_Vis)  # Algebraic !!!
+        H = listPts[i].altGround
+        if axe == 1:
+            thetaVis = listPts[i].rollGimbal  # Roll Gimbal <=>  Yaw Camera VIS
+            baseline = Cvi_t_Cvi_tk
+        else:
+            thetaVis = listPts[i].pitchGimbal + 90.  # Pitch Gimbal <=> Pitch Camera VIS
+            baseline = Cvi_t_Cvi_tk + cf.CNIRCVIS_0
+
+        anglePhi = np.rad2deg(np.arctan(baseline / H + np.tan(np.deg2rad(thetaVis))))
+        anglePsi = anglePhi - alpha
+        theoreticalAngle.append(anglePsi)
+
+    return theoreticalAngle
+
+
+def rollDeviation(listPts, timelapse_Vis):
+    """
+    yaw drone  <=> roll NIR camera
+    yaw gimbal <=> roll VIS camera     is totally wrong if DJI "gimbal-lock" mode is used!
+
+    In "Gimbal lock" mode the information provided by the DJI drone about the gimbal’s yaw angle is not reliable.
+    We make the hypothesis (reasonable) that the gimbal is aligned on the axis of the drone.
+    The roll angle of the near infrared image (NIR) is obtained by interpolation of the yaw angle of the drone.
+    The "roll image" between the visible (VIS) and near infrared (NIR) images is obtained by difference between
+    the yaw angle of the drone (at the moment of the VIS shooting) and the roll angle of the NIR image.
+    Added to this is the roll offset caused by the misalignment of the infrared camera in relation to the drone’s longitudinal axis.
+
+    """
+    yaw_tVis = [listPts[n].yawDrone for n in range(len(listPts))]
+    theoreticalRoll = []
+    for i in range(len(listPts)):
+        yaw_tNir, dt = interpolParabolicAngle(listPts, yaw_tVis, i, timelapse_Vis)
+        rollNir2Vis = yaw_tVis[i] - yaw_tNir
+        theoreticalRoll.append(rollNir2Vis)
+
+    return theoreticalRoll
+
+
+def interpolParabolicAngle(listPts, angle, i, timelapse_Vis):
+    """
+        Parabolic interpolation of the drone angle at the moment (t) the NIR image was taken.
+        dt = t0-t with t0 : date camera VIS and  t : date camera NIR.
+        If k is index of t0 = tk then t_1 = tk-1 ; t1 = tk+1 etc.
+        t_1 <= t <= t1
+        "Forward" interpolation if dt<0.
+    """
+    dt = listPts[i].timeDeviation
+    try:
+        t_2 = listPts[i - 2].timeLine
+        t_1 = listPts[i - 1].timeLine
+        t0 = listPts[i].timeLine
+        t1 = listPts[i + 1].timeLine
+        t2 = listPts[i + 2].timeLine
+        t = t0 - dt
+        if t_1 <= t <= t1:
+            alpha = Parabolic(listPts, angle, i, t)
+        elif t_2 <= t <= t_1:
+            alpha = Parabolic(listPts, angle, i-1, t)
+        elif t1 <= t <= t2:
+            alpha = Parabolic(listPts, angle, i+1, t)
+        else:
+            alpha, dt = interpolLinearAngle(listPts, angle, i, timelapse_Vis)
+
+    except:
+        alpha, dt = interpolLinearAngle(listPts, angle, i, timelapse_Vis)
+
+    return alpha, dt
+
+
+def Parabolic(listPts, angle, k, t):
+    t_1 = listPts[k - 1].timeLine
+    t0 = listPts[k].timeLine
+    t1 = listPts[k + 1].timeLine
+    d_1 = (angle[k - 1] - angle[k]) / (t_1 - t0)
+    d1 = (angle[k + 1] - angle[k]) / (t1 - t0)
+    a = (d_1 - d1) / (t_1 - t1)
+    b = d_1 - a * (t_1 + t0)
+    c = angle[k] - a * t0**2 - b * t0
+    alpha = a * t**2 + b * t + c
+    return alpha
+
+
+def interpolLinearAngle(listPts, angle, i, timelapse_Vis):
+    """
+    Linear interpolation of the drone angle at the moment the NIR image was taken.
+    dt = tk-t with tk : date camera VIS and  t : date camera NIR.
+    "Forward" interpolation if dt<0.
+    """
+    dt = listPts[i].timeDeviation
+    if i == 1 or i == len(listPts) - 1:
+        alpha = angle[i]
+    elif dt < 0:
+        alpha = (angle[i] * (dt / timelapse_Vis + 1) - angle[i + 1] * dt / timelapse_Vis)
+    else:
+        alpha = (angle[i - 1] * dt / timelapse_Vis - angle[i] * (dt / timelapse_Vis - 1))
+    return alpha, dt
+
+
+def interpolationCameraCenterVis(x, k, dt, timelapse_Vis):
+    """
+    DeltaCvis =(Cvis_t Cvis_tk) is the distance ( algebraic) between the center Cvis_t of the Vis  camera at  time t
+    and the center Cvis_tk of the Vis camera at time tk. Linear interpolation of the base line is used..
+    A simple rule of three is used since x is directly the distance travelled during the period of the VIS timelapse.
+    TimeDeviation :   dt = (tk - t)  .
+                  > tk Date of the image  VIS
+                  > t  Date of nearest NIR image.
+    The dates are measured on the time-line (synchronized clocks).
+    x_k is the distance (Cvis(k+1)  Cvis(k)). This  distance is > 0  if drone flight forward and < 0 if backward.
+
+    "Forward" interpolation if dt<0.
+
+    Taking into account the possibility of a missing NIR image in the time lapse series.
+    (The phenomenon is related to a recording fault on the SD card of the SJCam M20 camera.)
+
+    """
+    try:
+        if dt < 0:
+            if abs(dt) > timelapse_Vis:
+                DeltaCvis = (x[k + 1] - x[k]) + x[k + 1] * (dt / timelapse_Vis)
+            else:
+                DeltaCvis = x[k] * (dt / timelapse_Vis)
+        else:
+            if dt > timelapse_Vis:
+                DeltaCvis = (x[k - 1] - x[k - 2]) + x[k - 2] * (dt / timelapse_Vis)
+            else:
+                DeltaCvis = x[k - 1] * (dt / timelapse_Vis)
+    except:
+        DeltaCvis = 0
+
+    return DeltaCvis
+
+
+
+
+
+
+
 
 
 

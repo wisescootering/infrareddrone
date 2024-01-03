@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # --------------------------------------------------------------------------------
 #   IR_drone interactive
 #   Selection of reference images for the stages of the mission.
@@ -711,6 +712,40 @@ class LoadVisNirImagesDialog(QDialog):
             Uti.show_error_message(f"We detected an inconsistency in the choice of reference images: \n {message} \n Please note they must come from the same folder: \n {inputFolder} !")
 
         return consistency_choice
+
+
+def choose_folder_mission(dic_takeoff, pref_screen_default_user_dir, AerialPhotoFolder, SynchroFolder):
+    image_takeoff_available, path_image_takeoff = Uti.image_takeoff_available_test(dic_takeoff, pref_screen_default_user_dir)
+    try:
+        if image_takeoff_available:
+            # construction du nom du dossier de la mission
+            folderMissionPath = Path(dic_takeoff['File path mission'])
+            coherent_response = Uti.folder_name_consistency_analysis(folderMissionPath)
+            if coherent_response:
+                Uti.show_info_message("IRDrone", f"Your images will be transferred to the  mission folder : \n {folderMissionPath}",
+                                      f"They will be distributed between the folders {AerialPhotoFolder} and {SynchroFolder}")
+            else:
+                coherent_response = False
+            return folderMissionPath, coherent_response
+        else:
+            Uti.show_warning_OK_Cancel_message("IRDrone", "Choose the mission folder.", "It is of the form : \n FLY_Year Month Day_hour minute_[Place]", QMessageBox.Icon.Information)
+            try:
+                folderMissionPath = Path(QFileDialog.getExistingDirectory('Select Mission Folder', pref_screen_default_user_dir))
+                if folderMissionPath.exists() and folderMissionPath != pref_screen_default_user_dir:
+                    coherent_response = Uti.folder_name_consistency_analysis(folderMissionPath)
+                    if not coherent_response:
+                        Uti.show_warning_OK_Cancel_message("IRDrone", f"You have chosen the folder : \n{folderMissionPath} \nwhich is not a Mission IRDrone folder.",
+                                                           " Choose a compatible folder ( name FLY_YYYYMMDD_hhmm_<free text> ).\n or create a mission \n Use the <Create a New Mission> command.")
+                else:
+                    Uti.show_warning_OK_Cancel_message("IRDrone", f"You have chosen the folder : \n {folderMissionPath} \n",
+                                                       " Your choice of folder is not recognized in IRDrone\n Choose a compatible folder ( name FLY_YYYYMMDD_hhmm_[Optional text] ).")
+                    coherent_response = False
+
+                return folderMissionPath, coherent_response
+            except Exception as e:
+                print("error 1   in choose_folder_mission :", e)
+    except Exception as e:
+        print("error 2   in choose_folder_mission :", e)
 
 
 if __name__ == '__main__':

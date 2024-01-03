@@ -14,16 +14,23 @@ import copy
 class ShootPoint:
 
     def __init__(self,
-                 numero=0,
-                 nameVis="EIFFEL_TOWER_0000.DNG",
-                 nameNir="2022_0101_130000_000.RAW",
-                 visDate='2022-01-01 12:00:00',
-                 nirDate='2022-01-01 12:00:00',
-                 timeLine=0,
-                 timeDeviation=0):
+                 numero: int = 0,
+                 nameVis: str = "EIFFEL_TOWER_00.DNG",
+                 nameNir: str = "2022_0101_130000_000.RAW",
+                 visDate: str = '2022-01-01 12:00:00',
+                 nirDate: str = '2022-01-01 12:00:00',
+                 timeLine: float = 0.,
+                 timeDeviation: float = 0.):
+        super().__init__()
         self.num = numero
         self.Vis = nameVis
+        self.VisDirectory = f'C:\\Air-Mission\\FLY-20010101-0201_Vide\\AerialPhotography'
+        self.VisShootNum = 1
+        self.VisTimeLine = timeLine
         self.Nir = nameNir
+        self.NirDirectory = f'C:\\Air-Mission\\FLY-20010101-0101_Vide\\AerialPhotography'
+        self.NirShootNum = 3
+        self.NirTimeLine = 0.
         self.dateVis = datetime.fromisoformat(visDate)
         self.dateNir = datetime.fromisoformat(nirDate)
         self.timeLine = timeLine
@@ -33,7 +40,7 @@ class ShootPoint:
         self.bestOffset = 0
         self.alignment = 0
         self.altGround = 324.
-        self.altGeo = 357.
+        self.altGeo = 35.
         self.altTakeOff = 324.
         self.gpsSN = "N"
         self.gpsWE = "E"
@@ -66,16 +73,23 @@ class ShootPoint:
         self.dic = ShootPoint.loadPoint2DicPoint(self)
 
     def __str__(self):
+        """
+        Formatting class data for printing on screen.
+        Pour l'affichage des vitesse  on suppose que la fréquence de prise de vue des images du DJI  est 2.02 s
+        ToDo:  utiliser pour la fréquence de prise de vue des images du DJI la variable calculée
+        :return:
+        """
         return "___________________________________________________________________________________________________\n" \
                "Point {0} .....IRDrone.....IRDrone.....IRDrone.....IRDrone.....IRDrone.....IRDrone.....IRDron..... \n" \
                "___________________________________________________________________________________________________\n" \
-               "Visible image        :  {1}    |  Date of shooting: {3}                                            \n" \
-               "Near Infrared image :   {2}    |  Date of shooting: {4}                                            \n" \
+               "Visible image       :   {1}         |  Date of shooting: {3} | N° shooting : {40}                  \n" \
+               "Near Infrared image :   {2}    |  Date of shooting: {4} | N° shooting : {41}                       \n" \
+               "Vis Time line :   {42} s   |  Nir Time line {43} s                                                 \n" \
                "Time line: {5} s                                                                                   \n" \
                "Time deviation Nir to Vis: {6} s                                                                   \n" \
                "Selected for alignment process : {36}                                                              \n" \
                "Best synchro : {34}                                                                                \n" \
-               "Selected for mapping               : {35}                                                          \n" \
+               "Selected for mapping : {35}                                                                        \n" \
                "________________________Coordinate_________________________________________________________________\n" \
                "Geo: {7} {8}°  {9} {10}°                                                                           \n" \
                "UTM: x {11} m    y {12} m   zone {13}                                                              \n" \
@@ -91,28 +105,35 @@ class ShootPoint:
             .format(self.num, self.Vis, self.Nir, self.dateVis, self.dateNir,
                     round(self.timeLine, 4), round(self.timeDeviation, 3),
                     self.gpsSN, round(self.gpsLat, 6), self.gpsWE, round(self.gpsLon, 6),
-                    round(self.gpsUTM_X, 2), round(self.gpsUTM_Y,2), self.gpsUTM_Zone,
+                    round(self.gpsUTM_X, 2), round(self.gpsUTM_Y, 2), self.gpsUTM_Zone,
                     self.altGround, self.altGeo, self.altTakeOff,
                     self.yawDrone, self.pitchDrone, self.rollDrone,
                     self.yawGimbal, self.pitchGimbal, self.rollGimbal,
                     round(self.yawIR2VI, 5), round(self.pitchIR2VI, 5), round(self.rollIR2VI, 5),
                     round(self.x_1, 3), round(self.x_2, 3), round(self.x_3, 3),
-                    round(self.gpsDist, 3), round(self.gpsCap, 3), round(self.gpsDistTot,3),
-                    round((self.x_1**2 + self.x_2**2)**0.5 / 2., 3),
-                    round(self.x_3 / 2., 3), round(self.bestSynchro, 0), round(self.bestMapping, 0), round(self.alignment, 0),
-                    round(self.yawCoarseAlign, 5), round(self.pitchCoarseAlign, 5), round(self.rollCoarseAlign, 5)
+                    round(self.gpsDist, 3), round(self.gpsCap, 3), round(self.gpsDistTot, 3),
+                    round((self.x_1**2 + self.x_2**2)**0.5 / 2.02, 3),
+                    round(self.x_3 / 2.02, 3), round(self.bestSynchro, 0), round(self.bestMapping, 0), round(self.alignment, 0),
+                    round(self.yawCoarseAlign, 5), round(self.pitchCoarseAlign, 5), round(self.rollCoarseAlign, 5),
+                    self.VisShootNum, self.NirShootNum, self.VisTimeLine, self.NirTimeLine
                     )
 
 
-    def loadPoint2DicPoint(self):
+    def loadPoint2DicPoint(self) -> dict:
         PointInfo = \
             {
                 'Img': {
                     "num": self.num,
                     "Vis": self.Vis,
-                    "Nir": self.Nir,
+                    "VisDirectory": self.VisDirectory,
                     "dateVis": self.dateVis,
+                    "VisShootNum": self.VisShootNum,
+                    "VisTimeLine": self.VisTimeLine,
+                    "Nir": self.Nir,
+                    "NirDirectory": self.NirDirectory,
                     "dateNir": self.dateNir,
+                    "NirShootNum": self.NirShootNum,
+                    "NirTimeLine": self.NirTimeLine,
                     "timeLine": self.timeLine,
                     "timeDeviation": self.timeDeviation,
                     "bestSynchro": self.bestSynchro,
@@ -152,8 +173,8 @@ class ShootPoint:
                     "Latitude": self.gpsLat,
                     "WE": self.gpsWE,
                     "Longitude": self.gpsLon,
-                    "Dist Last Pt":self.gpsDist,
-                    "Cap Last Pt":self.gpsCap,
+                    "Dist Next Pt": self.gpsDist,
+                    "Cap Next Pt": self.gpsCap,
                     "Dist Tot": self.gpsDistTot,
                     "UTM": {
                         "X": self.gpsUTM_X,
@@ -169,12 +190,19 @@ class ShootPoint:
             }
         return PointInfo
 
-    def loadDicPoint2Point(self, dic):
+
+    def loadDicPoint2Point(self, dic: dict):
         self.num = dic['Img']["num"]
         self.Vis = dic['Img']["Vis"]
+        self.VisDirectory = dic['Img']['VisDirectory']
+        self.dateVis = dic['Img']['dateVis']
+        self.VisShootNum = dic['Img']['VisShootNum']
+        self.VisTimeLine = dic['Img']['VisTimeLine']
         self.Nir = dic['Img']["Nir"]
-        self.dateVis = dic['Img']["dateVis"]
-        self.dateNir = dic['Img']["dateNir"]
+        self.NirDirectory = dic['Img']['NirDirectory']
+        self.dateNir = dic['Img']['dateNir']
+        self.NirShootNum = dic['Img']['NirShootNum']
+        self.NirTimeLine = dic['Img']['NirTimeLine']
         self.timeLine = dic['Img']["timeLine"]
         self.timeDeviation = dic['Img']["timeDeviation"]
         self.bestSynchro = dic['Img']['bestSynchro']
@@ -194,17 +222,16 @@ class ShootPoint:
         self.yawIR2VI = dic['Attitude']['IR2VI']["yaw"]
         self.pitchIR2VI = dic['Attitude']['IR2VI']["pitch"]
         self.rollIR2VI = dic['Attitude']['IR2VI']["roll"]
-        self.yawIR2VI = dic['Attitude']['Coarse']["yaw"]
-        self.pitchIR2VI = dic['Attitude']['Coarse']["pitch"]
-        self.rollIR2VI = dic['Attitude']['Coarse']["roll"]
-
+        self.yawCoarseAlign = dic['Attitude']['Coarse']["yaw"]
+        self.pitchCoarseAlign = dic['Attitude']['Coarse']["pitch"]
+        self.rollCoarseAlign = dic['Attitude']['Coarse']["roll"]
 
         self.gpsSN = dic['GPS']["SN"]
         self.gpsLat = dic['GPS']["Latitude"]
         self.gpsWE = dic['GPS']["WE"]
         self.gpsLon = dic['GPS']["Longitude"]
-        self.gpsDist = dic['GPS']["Dist Last Pt"]
-        self.gpsCap = dic['GPS']["Cap Last Pt"]
+        self.gpsDist = dic['GPS']["Dist Next Pt"]
+        self.gpsCap = dic['GPS']["Cap Next Pt"]
         self.gpsDistTot = dic['GPS']["Dist Tot"]
         self.gpsUTM_X = dic['GPS']["UTM"]["X"]
         self.gpsUTM_Y = dic['GPS']["UTM"]["Y"]
@@ -212,6 +239,64 @@ class ShootPoint:
         self.altGround = dic['GPS']["alt"]["ground"]
         self.altGeo = dic['GPS']["alt"]["Geo"]
         self.altTakeOff = dic['GPS']["alt"]["takeOff"]
+
+
+    def loadDicPointFly2Point(self, dic: dict):
+        """
+        Ce module assure la passerelle entre la version brute initiale de IRDrone et
+        la version interactive.
+        Dans la version interactive les paramètres d'un point de prise de vue de la phase de vol "FLY"
+        sont stockés dans un dictionnaire sous forme de clé:valeur.
+        Certaines clés n'exitaient pas dans la version initiale.
+        On les inclus dans de nouvelles variables de la class shootPoint pour assurer la compatibilité ascendante.
+        :param dic:
+        :return:
+        """
+        self.num = dic['Fly Shooting Number']
+        self.Vis = dic['Vis File Name']
+        self.VisDirectory = dic['Vis Directory']       # new
+        self.dateVis = datetime.strptime(dic['Vis Date/Time Original'], '%Y:%m:%d %H:%M:%S')
+        self.VisShootNum = dic['Vis Shooting Number']  # new
+        self.VisTimeLine = dic['Vis Time Line']        # nex equiv.    self.timeLine
+        self.Nir = dic["Nir File Name"]
+        self.NirDirectory = dic['Nir Directory']       # new
+        self.dateNir = datetime.strptime(dic['Nir Date/Time Original'], '%Y:%m:%d %H:%M:%S')
+        self.NirShootNum = dic['Nir Shooting Number']  # new
+        self.NirTimeLine = dic['Nir Time Line']        # nex  equiv.   self.timeLine + self.timeDeviation   (vérifier le signe !!)
+        self.timeLine = dic['Vis Time Line']
+        self.timeDeviation = dic['Dt Vis-Nir']
+        self.bestSynchro = dic['Best Synchro']
+        self.bestMapping = dic['Best Mapping']
+        self.bestOffset = dic['Best Offset']
+        self.alignment = dic['Alignment']
+        self.yawDrone = dic['Camera Nir Roll']
+        self.pitchDrone = dic['Camera Nir Pitch']
+        self.rollDrone = dic['Camera Nir Yaw']
+        self.yawGimbal = dic['Camera Vis Roll']
+        self.pitchGimbal = dic['Camera Vis Pitch']
+        self.rollGimbal = dic['Camera Vis Yaw']
+        self.x_1 = dic['x_1']
+        self.x_2 = dic['x_2']
+        self.x_3 = dic['x_3']
+        self.yawIR2VI = dic['Yaw IR to VI']
+        self.pitchIR2VI = dic['Pitch IR to VI']
+        self.rollIR2VI = dic['Roll IR to VI']
+        self.yawCoarseAlign = dic['Yaw Coarse Align']
+        self.pitchCoarseAlign = dic['Pitch Coarse Align']
+        self.rollCoarseAlign = dic['Roll Coarse Align']
+        self.gpsSN = dic['Drone S-N']
+        self.gpsLat = dic['Drone Latitude']
+        self.gpsWE = dic['Drone W-E']
+        self.gpsLon = dic['Drone Longitude']
+        self.gpsDist = dic['Dist To Next Pt']
+        self.gpsCap = dic['Cape To Next Pt']
+        self.gpsDistTot = dic['Dist Cumul']
+        self.gpsUTM_X = dic['X UTM']
+        self.gpsUTM_Y = dic['Y UTM']
+        self.gpsUTM_Zone = dic['Zone UTM']
+        self.altGround = dic['Altitude Drone/Ground']
+        self.altGeo = dic['Altitude Ground/Sea level']
+        self.altTakeOff = dic['Altitude Drone/TakeOff']
 
     @staticmethod
     def savePtsJson(fileName, listDic=None):
@@ -323,11 +408,17 @@ def newPpoint(numero):
             'Img':
                 {"num": numero,
                  "Vis": "HYPERLAPSE_" + nimgDNG + ".DNG",
-                 "Nir": "2022_0125_125011_" + nimgRAW + ".RAW",
+                 "VisDirectory": f'C:\\Air-Mission\\FLY-20010101-0201_Vide\\AerialPhotography',
                  "dateVis": datetime.fromisoformat('2022-01-25 11:45:17'),
+                 "VisShootNum": 130 + numero,
+                 "VisTimeLine": numero * (1 + 0.01987),
+                 "Nir": "2022_0125_125011_" + nimgRAW + ".RAW",
+                 "NirDirectory": f'C:\\Air-Mission\\FLY-20010101-0201_Vide\\AerialPhotography',
                  "dateNir": datetime.fromisoformat('2022-01-25 12:35:07'),
+                 "NirShootNum": int(round(numero * 3/2)),
+                 "NirTimeLine": numero * (1 + 0.01987) + 200.5 * (1 + 0.01),
                  "timeLine": numero * (1 + 0.01987),
-                 "timeDeviation": 0.54,
+                 "timeDeviation": (numero * (1 + 0.01987))-(numero * (1 + 0.01987) + 200.5 * (1 + 0.01)),
                  "bestSynchro": 0,
                  "bestMapping": 0,
                  "bestOffset": 0,
@@ -363,23 +454,23 @@ def newPpoint(numero):
                 },
             'GPS': {
                 "SN": 'N',
-                "Latitude": 45.010203 + numero,
+                "Latitude": 45.010203 + numero/10,
                 "WE": 'E',
-                "Longitude": 3.012345 + numero,
-                "Dist Last Pt": 3.33,
-                "Cap Last Pt": 55.5,
-                "Dist Tot": 111.1,
+                "Longitude": 3.012345 + numero/10,
+                "Dist Next Pt": 3.33,
+                "Cap Next Pt": 55.5,
+                "Dist Tot": numero * 3.33,
                 "UTM": {
                     "X": 531429.0 + numero,
                     "Y": 5000000 + numero,
                     "zone": 31
-                },
+                         },
                 "alt": {
                     "ground": 150.1 + numero,
                     "Geo": 550.1 + numero,
                     "takeOff": 120.12345 + numero
-                }
-            }
+                        }
+                    }
         }
 
     return dicPt
@@ -392,21 +483,22 @@ if __name__ == "__main__":
     dicShootingPts = []
     myPt_1 = ShootPoint()  # instanciation du point N°1  de la classe ShootPoint de prise de vue avec données par défaut
     # construit le dictionnaire arborescent du point N°1 à l'aide de la méthode de classe ShootPoint
+    # et le place comme premier élément de la liste des dictionnaires des points de prise de vue
     dicShootingPts = [myPt_1.loadPoint2DicPoint()]
 
     # Définition de nouveaux points  (Prédéfini ici  pour le test   voir def newPpoint(numero)  )
-    for i in range(3, 13):
+    for i in range(1, 13):
         dicPt = newPpoint(i)  # génère les données de test
-        myPt = ShootPoint()  # instanciation d'un nouveau point de la classe ShootPoint (données par défaut)
+        myPt = ShootPoint()   # instanciation d'un nouveau point de la classe ShootPoint (données par défaut)
         myPt.loadDicPoint2Point(dicPt)  # affectation du dictionnaire  au point N°i
-        # création de la 'liste' des dictionnaires des points. La liste contient déjà le dictionnaire du point N°1
+        # insertion dans la 'liste' des dictionnaires des points. La liste contient déjà le dictionnaire du point N°1
         dicShootingPts.append(myPt.loadPoint2DicPoint())
 
     # ----------------------------------------------------------------------------------------------------------------
     # Ecriture dans un fichier .json des données de la liste des points sous la forme d'une liste de dictionnaires.
     # Attention, d'origine ce format ne conserve pas le type datetime
     # ----------------------------------------------------------------------------------------------------------------
-    fileName = "testFile.json"
+    fileName = "testFile.json"    # sera sauvé dans ce cas dans le dossier qui contient le présent script python
     ShootPoint.savePtsJson(fileName, dicShootingPts)
     # Lecture de la liste des dictionnaires dans le fichier.json  et reconstruction de la liste des points
     listMyPt = ShootPoint.readPtsJson("testFile.json")
@@ -453,7 +545,7 @@ if __name__ == "__main__":
 
     # acces aux données par trois méthodes  (<class ShootPoint>)
     print('extraction  via')
-    print('point           ',type(listPtPy[1].dateVis), listPtPy[1].dateVis)
+    print('point           ', type(listPtPy[1].dateVis), listPtPy[1].dateVis)
     print('__getattribute__', type(ShootPoint.__getattribute__(listPtPy[1], 'dateVis')), ShootPoint.__getattribute__(listPtPy[1], 'dateVis'))
     print('dictionnaire    ', type(listDicPy[1]['Img']['dateVis']), listDicPy[1]['Img']['dateVis'])
 
@@ -475,7 +567,7 @@ if __name__ == "__main__":
     print(listPtPy[n].num, ' remplace ', oldnum)
     #
     oldname = listPtPy[n].Vis
-    ShootPoint.__setattr__(listPtPy[n], 'Vis', "EIFFEL_TOWER_9999.DNG")
+    ShootPoint.__setattr__(listPtPy[n], 'Vis', "EIFFEL_TOWER_99.DNG")
     print(ShootPoint.__getattribute__(listPtPy[n], 'Vis'), ' remplace ', oldname)
     #  méthode via le dictionnaire  (attention mettre le dictionnaire à jour avant de le modifier )
     olddateNir = listDicPy[n]['Img']['dateNir']

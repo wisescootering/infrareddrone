@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # --------------------------------------------------------------------------------
 #   IR_drone interactive
 #   Creation of the mission by selection of the first image taken by the DJI (visible spectrum, image in dng format)
@@ -23,10 +24,17 @@ from PyQt6.QtCore import Qt, pyqtSignal, QRegularExpression
 
 # -------------- IRDrone Library ------------------------------------
 import IRD_interactive_utils as Uti
+import IRD_interactive_geo as Geo
 from IRD_interactive_utils import Prefrence_Screen
 
-
-class Window_11(QDialog):
+# --------------------------------------------------------------------------------------------
+#
+#              Window_Load_TakeOff_Image
+#
+#                Load take-off image
+#
+# --------------------------------------------------------------------------------------------
+class Window_Load_TakeOff_Image(QDialog):
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -63,7 +71,6 @@ class Window_11(QDialog):
 
             self.setStyleSheet("background-color: white; color: black;")
             self.setWindowTitle("Choose the image taken by the drone during takeoff.")
-            #print("TEST screen.directory depuis initGUI de la class window_11:    ", self.prefScreen.directory)
             self.default_app_dir= os.path.join("C:/", "Program Files", "IRdrone") 
             self.default_user_dir = os.path.join("C:/", "Air-Mission")
             icon_path = os.path.join(self.default_app_dir, "Icon", "IRDrone.ico")
@@ -197,7 +204,7 @@ class Window_11(QDialog):
         The "real" connection is in the open_window_11 method of the Main_Window class of the main module.
         def open_window_11(self):  de la class Main_Window() du module principal.
         The line of code is:
-        self.window_11.btn_NextStep.clicked.connect(self.open_window_12)  # Connect Window_12 signal to Main_Window method
+        self.window_11.btn_NextStep.clicked.connect(self.open_window_12)  # Connect Window_create_file_structure signal to Main_Window method
 
         If we delete the line of code in initGUI method: self.btn_NextStep.clicked.connect(self.placeholder_method)
         as well as this method (placeholder_method) the code works perfectly!
@@ -253,16 +260,16 @@ class Window_11(QDialog):
 
                 # Utilise API IGN (Institut Géographique National. France)  pour obtenir, en fonction des coordonnées GPS, l'altitude géographique.
                 # C'est le niveau du sol par rapport au niveau de la mer
-                self.dic_info_geo = Uti.extract_alti_IGN((latitude, longitude))
+                self.dic_info_geo = Geo.extract_alti_IGN([(latitude, longitude)], bypass=False)
                 self.progress_bar.setValue(60)
                 # Utilise l'API Open Street Map pour obtenir les données géographiques (lieu-dit, ville, code postal, ...)
-                self.dic_info_geo = Uti.extract_geoTag(self.dic_info_geo )
+                self.dic_info_geo = Geo.extract_geoTag(self.dic_info_geo )
                 self.progress_bar.setValue(80)
                 # Mettre à jour le label d'information avec les données de localisation
                 # ... (formatez les données comme vous le souhaitez)
                 geo_data = f"Wpt: take-off \n" \
                            f"image: {file_name.lower()}\n" \
-                           f"Coordonnées: {self.dic_info_geo.get('lat')}°      {self.dic_info_geo.get('lon')}°   Alti. {self.dic_info_geo.get('alti')} m  (above sea level)\n" \
+                           f"Coordonnées: {round(self.dic_info_geo.get('lat'),6)}°      {round(self.dic_info_geo.get('lon'),6)}°   Alti. {round(self.dic_info_geo.get('z'),3)} m  (above sea level)\n" \
                            f"Date: {date_time_excif}  \n" \
                            f"Lieu-dit: {self.dic_info_geo.get('lieu_dit')}    {self.dic_info_geo.get('road') if self.dic_info_geo.get('road') is not None else ''}\n"\
                            f"Commune: {self.dic_info_geo.get('ville')}    {self.dic_info_geo.get('code_postal')}     {self.dic_info_geo.get('dept')} \n" \
@@ -280,38 +287,39 @@ class Window_11(QDialog):
                 return
 
         except Exception as e:
-            print("error in on_load_Image_take_off:", e)
+            print("error 1 in on_load_Image_take_off:", e)
 
+        try:
+            self.Date_Exif = str(date_time_excif)
+            self.dic_takeoff_light['Maker'] = str(maker)
+            self.dic_takeoff_light['Model'] = str(model)
+            self.dic_takeoff_light['Body serial number'] = str(id_camera)
+            self.dic_takeoff_light['Date Exif'] = str(date_time_excif)
+            self.py_date_time = datetime.strptime(str(date_time_excif), "%Y:%m:%d %H:%M:%S")
+            self.dic_takeoff_light['Location'] = self.dic_info_geo['ville']
+            if self.dic_info_geo['lat'] >= 0:
+                self.dic_takeoff_light["GPS N-S"] = "N"
+            else:
+                self.dic_takeoff_light["GPS N-S"] = "S"
+            if self.dic_info_geo['lon'] >= 0:
+                self.dic_takeoff_light["GPS E-W"] = "E"
+            else:
+                self.dic_takeoff_light["GPS E-W"] = "W"
+            self.dic_takeoff_light["GPS lat"] = self.dic_info_geo['lat']
+            if self.dic_info_geo['lon'] <10:
+                self.dic_takeoff_light["GPS lon"] = f"00{self.dic_info_geo['lon']}"
+            elif 10 <= self.dic_info_geo['lon'] < 10:
+                self.dic_takeoff_light["GPS lon"] = f"0{self.dic_info_geo['lon']}"
+            else:
+                self.dic_takeoff_light["GPS lon"] = f"{self.dic_info_geo['lon']}"
 
-        self.Date_Exif = str(date_time_excif)
-        self.dic_takeoff_light['Maker'] = str(maker)
-        self.dic_takeoff_light['Model'] = str(model)
-        self.dic_takeoff_light['Body serial number'] = str(id_camera)
-        self.dic_takeoff_light['Date Exif'] = str(date_time_excif)
-        self.py_date_time = datetime.strptime(str(date_time_excif), "%Y:%m:%d %H:%M:%S")
-        self.dic_takeoff_light['Location'] = self.dic_info_geo['ville']
-        if self.dic_info_geo['lat'] >= 0:
-            self.dic_takeoff_light["GPS N-S"] = "N"
-        else:
-            self.dic_takeoff_light["GPS N-S"] = "S"
-        if self.dic_info_geo['lon'] >= 0:
-            self.dic_takeoff_light["GPS E-W"] = "E"
-        else:
-            self.dic_takeoff_light["GPS E-W"] = "W"
-        self.dic_takeoff_light["GPS lat"] = self.dic_info_geo['lat']
-        if self.dic_info_geo['lon'] <10:
-            self.dic_takeoff_light["GPS lon"] = f"00{self.dic_info_geo['lon']}"
-        elif 10 <= self.dic_info_geo['lon'] < 10:
-            self.dic_takeoff_light["GPS lon"] = f"0{self.dic_info_geo['lon']}"
-        else:
-            self.dic_takeoff_light["GPS lon"] = f"{self.dic_info_geo['lon']}"
+            self.dic_takeoff_light["GPS lon"] = str(self.dic_info_geo['lon'])
+            self.dic_takeoff_light["GPS alti"] = str(self.dic_info_geo['z'])
+            self.dic_takeoff_light["GPS coordinate"] = f"{self.dic_takeoff_light['GPS N-S']} {str(self.dic_info_geo['lat'])}° {self.dic_takeoff_light['GPS E-W']} {self.dic_info_geo['lon']}°"
 
-        self.dic_takeoff_light["GPS lon"] = str(self.dic_info_geo['lon'])
-        self.dic_takeoff_light["GPS alti"] = str(self.dic_info_geo['alti'])
-        self.dic_takeoff_light["GPS coordinate"] = f"{self.dic_takeoff_light['GPS N-S']} {str(self.dic_info_geo['lat'])}° {self.dic_takeoff_light['GPS E-W']} {self.dic_info_geo['lon']}°"
-
-        self.dic_takeoff_light["GPS drone alti"]=self.altitude_DJI
-        #print("TEST   sortie de load_takeoff_image   self.dic_takeoff_light =", self.dic_takeoff_light)
+            self.dic_takeoff_light["GPS drone alti"] = self.altitude_DJI
+        except Exception as e:
+            print("error 2 in load_takeoff_image ", e)
 
         return
 
@@ -321,19 +329,19 @@ class Window_11(QDialog):
         try:
             self.close()
         except Exception as e:
-            print("error in Window_11   cancel_clicked :", e)
+            print("error in Window_Load_TakeOff_Image   cancel_clicked :", e)
 
 
 # --------------------------------------------------------------------------------------------
 #
-#              Window_12
+#                     Window_create_file_structure
 #
 #                Creation of the mission file structure
 #
 # --------------------------------------------------------------------------------------------
 
 
-class Window_12(QDialog):
+class Window_create_file_structure(QDialog):
     """
     Creation of the mission file structure
     C:/Air-Mission/
@@ -353,7 +361,7 @@ class Window_12(QDialog):
     """
     # Creates a class signal to transmit the data to the parent which will here be an instance of the window_11 class
     # Here the return is a boolean (click on OK True or False and the dictionary containing the answers to the questionnaire)
-    data_signal_from_window_12_to_main_window = pyqtSignal(bool, dict)
+    data_signal_from_dialog_create_file_structure_to_main_window = pyqtSignal(bool, dict)
 
     def __init__(self, parent, dic_takeoff_light: Dict[str, Any]):
         super().__init__(parent)
@@ -438,10 +446,10 @@ class Window_12(QDialog):
             self.update_dic_takeoff()
             self.validate_answer = True
             self.create_mission_folder()
-            self.data_signal_from_window_12_to_main_window.emit(self.validate_answer, self.dic_takeoff)
+            self.data_signal_from_dialog_create_file_structure_to_main_window.emit(self.validate_answer, self.dic_takeoff)
             self.close()
         except Exception as e:
-            print("error in Window_12 ok_clicked: ", e)
+            print("error in Window_create_file_structure ok_clicked: ", e)
 
 
     def cancel_clicked(self):
@@ -449,7 +457,7 @@ class Window_12(QDialog):
         try:
             self.close()
         except Exception as e:
-            print("error in Window_12  cancel_clicked  ", e)
+            print("error in Window_create_file_structure  cancel_clicked  ", e)
 
 
     def focus_sequence(self):
