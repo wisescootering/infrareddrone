@@ -29,8 +29,10 @@ import IRD_interactive_geo as Geo
 from IRD_interactive_utils import Prefrence_Screen
 import IRD_Interactive_Exif_Xmp as ExifXmp
 # -------------------- IRD Library -----------------------------------------------
-sys.path.append(osp.join(osp.dirname(__file__), '../utils'))
-import utils_IRdrone_Class as ClassPt
+sys.path.append(osp.join(osp.dirname(__file__), '..'))
+import utils.utils_IRdrone_Class as ClassPt
+import synchronization.synchro_by_aruco as synchro_by_aruco
+import config as global_config
 
 
 
@@ -61,16 +63,16 @@ class Dialog_extract_exif(QDialog):
                 icon = QIcon(icon_path)
                 QApplication.setWindowIcon(icon)            # Set the applicable icon in the class.
         except Exception as e:
-            print("error   in Window_31    initGUI  Setting the top command bar and window dimensions", e)
+            print("error  in Class Dialog_extract_exif    initGUI  Setting the top command bar and window dimensions", e)
         width = int(self.pref_screen.windowDisplaySize[0]/1.5)   # Main window width
         height = int(self.pref_screen.windowDisplaySize[1]/2)  # Main window height
 
         #  Setting the window dimensions.
-        # Créer le widget central
+        # Create the central widget
         self.setGeometry(0, 0, width, height)
         self.central_widget = QWidget()
         self.main_layout = QVBoxLayout(self.central_widget)
-        # Create the tre zones (and sublayouts for zone 3) and add them to the main layout
+        # Create the tre zones (and sub layouts for zone 3) and add them to the main layout
         zone1_layout = QHBoxLayout()
         zone2_layout = QVBoxLayout()
         zone3_layout = QVBoxLayout()
@@ -134,7 +136,104 @@ class Dialog_extract_exif(QDialog):
         Uti.center_on_screen(self, screen_Id=1)
 
 
-    def get_EXIF_XMP_interactive(self, list_pth: list[Path], verbose: bool = False) -> list[dict]:
+    def effective_recording_step_VIS(self, list_time_VIS: list[int, datetime]) -> datetime:
+        """
+        Calculation of the effective recording step of VIS images (it is a little greater than 2s announced by DJI)
+        This calculation takes into account all images (from the first photographed at takeoff to the last photo of the mission)
+        The absolute origin of the VIS timeline is in the config file
+        :return: dt_time_VIS
+        """
+        #  Marking the last VIS shot
+        data_array = np.array(list_time_VIS)
+        index_of_latest = np.argmax(data_array[:, 1])
+        num_shoot_end = int(data_array[index_of_latest, 0])
+        time_shoot_end = datetime.strptime(data_array[index_of_latest, 1], "%Y:%m:%d %H:%M:%S")
+        #  Real time interval between two VIS shots
+        dt_time_VIS = (time_shoot_end - self.origin_date_VIS()).total_seconds() / (num_shoot_end - 1)
+        print(f"TEST  dt_time_VIS = {dt_time_VIS} s")
+        return dt_time_VIS
+
+
+    def origin_date_VIS(self) -> datetime:
+        config_file = Path(self.folderMissionPath, 'config.json')
+        if config_file.exists():
+            with open(config_file, "r") as fi:
+                dic_config = json.load(fi)
+                origin_date_py = datetime.strptime(dic_config['Date Exif'], "%Y:%m:%d %H:%M:%S")
+        else:
+            origin_date_py = None
+        return origin_date_py
+
+
+    def cancel_clicked(self):
+        """Method called when the 'Cancel' button is clicked."""
+        try:
+            self.close()
+        except Exception as e:
+            print("Error in Class Dialog_extract_exif cancel_clicked", e)
+
+
+    def help_clicked(self):
+        """Method called when the 'Help' button is clicked."""
+        # Show a help message
+        Uti.show_info_message("IRDrone", "Currently being implemented ...", "")
+        pass
+
+
+    def extract_from_folder_mission(self):
+        try:
+            image_takeoff_available, path_image_mission = Uti.image_takeoff_available_test(self.dic_takeoff, self.pref_screen.default_user_dir)
+
+            if image_takeoff_available:
+                # search for the mission file
+                self.folderMissionPath = Path(self.dic_takeoff['File path mission'])
+                self.coherent_answer = Uti.folder_name_consistency_analysis(self.folderMissionPath)
+                self.extract_exif_aerial_photography()
+                self.extract_exif_synchro()
+                self.placeholder_method_dialog_extract_exif_2_32()
+            else:
+                try:
+                    self.folderMissionPath = Path(QFileDialog.getExistingDirectory(self, 'Select Mission Folder', self.pref_screen.default_user_dir))
+                    if self.folderMissionPath.exists() and self.folderMissionPath != self.pref_screen.default_user_dir:
+                        self.coherent_answer = Uti.folder_name_consistency_analysis(self.folderMissionPath)
+                        if self.coherent_answer:
+                            print(f"TEST  the mission exists and it is in the location : {self.folderMissionPath}")
+                            self.extract_exif_aerial_photography()
+                            self.extract_exif_synchro()
+                            self.placeholder_method_dialog_extract_exif_2_32()
+                        else:
+                            Uti.show_warning_OK_Cancel_message("IRDrone", f"You have chosen the folder : \n{self.folderMissionPath} \nwhich is not a Mission IRDrone folder.",
+                                               " Choose a compatible folder ( name FLY_YYYYMMDD_hhmm_<free text> ).\n or create a mission \n Use the <Create a New Mission> command.")
+                    else:
+                        Uti.show_warning_OK_Cancel_message("IRDrone", f"You have chosen the folder : \n {self.folderMissionPath} \n",
+                                                           " Your choice of folder is not recognized in IRDrone\n Choose a compatible folder ( name FLY_YYYYMMDD_hhmm_[Optional text] ).")
+                        self.coherent_answer = False
+                except Exception as e:
+                    print("error 1   in Class Dialog_extract_exif     extract_from_folder_mission :", e)
+            if not self.coherent_answer:
+                self.extract_from_folder_mission()
+        except Exception as e:
+            print("error 2   in Class Dialog_extract_exif   extract_from_folder_mission :", e)
+
+
+    def extract_exif_aerial_photography(self):
+        try:
+            if not self.coherent_answer:
+                self.cancel_clicked()
+            # Writing exif /xmp (enriched) data for the AerialPhotography folder
+            folder_path_FLY = Path(self.folderMissionPath, "AerialPhotography")
+            # 1) Create a list of all .dng, .jpg and .RAW files present in the AerialPhotography folder
+            list_path_image = [file for file in folder_path_FLY.glob('*') if file.suffix.lower() in ['.dng', '.jpg', '.raw']]
+            # 2) Construction of a list of dictionaries of standard and enriched Exif / xmp data (shot number, VIS time line).
+            self.list_dic_exif_xmp = self.get_EXIF_XMP_interactive_aerial_photography(list_path_image, verbose=False)
+            # 3) Writing Exif dictionaries to files (one for each image)
+            self.writing_enriched_exif_data_to_exif_files(list_path_image, self.list_dic_exif_xmp)
+        except Exception as e:
+            print("error   in Class Dialog_extract_exif     extract_exif_aerial_photography  ", e)
+            
+            
+            
+    def get_EXIF_XMP_interactive_aerial_photography(self, list_pth: list[Path], verbose: bool = False) -> list[dict]:
         """
         Writing Exif and Xmp data from a list of images.
         Each image is processed individually by the get_EXIF_XMP procedure which
@@ -180,38 +279,50 @@ class Dialog_extract_exif(QDialog):
                     list_dic[index]["Time Line"] = (list_dic[index]["Shooting Number"] - 1) * self.dt_time_VIS
             return list_dic
         except Exception as e:
-            print("error in get_EXIF_XMP_interactive  ", e)
+            print("error in Class Dialog_extract_exif    get_EXIF_XMP_interactive_aerial_photography  ", e)
+            
+
+    def extract_exif_synchro(self):
+        try:
+            if not self.coherent_answer:
+                self.cancel_clicked()
+
+            # Writing exif /xmp (enriched) data for the Synchro folder
+            folder_path_FLY = Path(self.folderMissionPath, "Synchro")
+            # 1) Create a list of all .dng files present in the Synchro folder
+            list_path_image = [file for file in folder_path_FLY.glob('*') if file.suffix.lower() in ['.dng']]
+            # 2) Construction of a list of dictionaries of standard and enriched Exif / xmp data (shot number, VIS time line).
+            list_dic_exif_xmp_synchro = self.get_EXIF_XMP_interactive_synchro(list_path_image, verbose=False)
+            # 3) Writing Exif dictionaries to files (one for each image)
+            self.writing_enriched_exif_data_to_exif_files(list_path_image, list_dic_exif_xmp_synchro)
+        except Exception as e:
+            print("error   in Class Dialog_extract_exif   extract_exif_synchro  ", e)
 
 
-    def effective_recording_step_VIS(self, list_time_VIS: list[int, datetime]) -> datetime:
-        """
-        Calculation of the effective recording step of VIS images (it is a little greater than 2s announced by DJI)
-        This calculation takes into account all images (from the first photographed at takeoff to the last photo of the mission)
-        The absolute origin of the VIS timeline is in the config file
-        :return: dt_time_VIS
-        """
-        #  Marking the last VIS shot
-        data_array = np.array(list_time_VIS)
-        index_of_latest = np.argmax(data_array[:, 1])
-        num_shoot_end = int(data_array[index_of_latest, 0])
-        time_shoot_end = datetime.strptime(data_array[index_of_latest, 1], "%Y:%m:%d %H:%M:%S")
-        #  Real time interval between two VIS shots
-        dt_time_VIS = (time_shoot_end - self.origine_date_VIS()).total_seconds() / (num_shoot_end - 1)
-        print(f"TEST  dt_time_VIS = {dt_time_VIS} s")
-        return dt_time_VIS
+    def get_EXIF_XMP_interactive_synchro(self, list_pth: list[Path], verbose: bool = False) -> list[dict]:
+        try:
+            list_dic = []
+            for index, pth in enumerate(list_pth):
+                progressBarValue = round(100 * index / (len(list_pth) - 1), 1)
+                self.progress_bar.setValue(progressBarValue)
+                #  Extracting original Exif data
+                dic = ExifXmp.get_EXIF_XMP(pth, index, verbose=verbose)
 
+                # Enrichment of classic Exif data. (shot number, corrected shooting time.)
+                if dic["File Name"].split(".")[1].lower() == "dng":
+                    shootNum = Uti.extract_num_DNG_DJI(dic["File Name"])
+                dic["Shooting Number"] = shootNum
+                list_dic.append(dic)
+            # Enriching Exif data from VIS images with timeline values.
+            for index in range(len(list_dic)):
+                if list_dic[index]["File Name"].split(".")[1].lower() == "dng":
+                    list_dic[index]["Time Line"] = (list_dic[index]["Shooting Number"] - 1) * self.dt_time_VIS
+            return list_dic
+        except Exception as e:
+            print("error in Class Dialog_extract_exif    get_EXIF_XMP_interactive_synchro  ", e)
 
-    def origine_date_VIS(self) -> datetime:
-        config_file = Path(self.folderMissionPath, 'config.json')
-        if config_file.exists():
-            with open(config_file, "r") as fi:
-                dic_config = json.load(fi)
-                origine_date_py = datetime.strptime(dic_config['Date Exif'], "%Y:%m:%d %H:%M:%S")
-        else:
-            origine_date_py = None
-        return origine_date_py
-
-
+            
+            
     def writing_enriched_exif_data_to_exif_files(self, list_pth, list_dic):
         try:
             # Writing enriched Exif data to .exif files
@@ -220,79 +331,14 @@ class Dialog_extract_exif(QDialog):
                 with open(exif_file, "w") as fi:
                     json.dump(list_dic[index], fi, indent=" ")
         except Exception as e:
-            print("TEST error in writing_enriched_exif_data_to_exif_files   write json ", e)
+            print("TEST error in Class Dialog_extract_exif   writing_enriched_exif_data_to_exif_files   write json ", e)
 
-
-    def cancel_clicked(self):
-        """Méthode appelée lorsque le bouton 'Cancel' est cliqué."""
-        try:
-            self.close()
-        except Exception as e:
-            print("Error in Calss Windows_1 cancel_clicked", e)
-
-
-    def help_clicked(self):
-        """Méthode appelée lorsque le bouton 'Help' est cliqué."""
-        # Afficher un message d'aide
-        Uti.show_info_message("IRDrone", "En cours d'implémentation ...", "")
-        pass
-
-
-    def extract_from_folder_mission(self):
-        try:
-            image_takeoff_available, path_image_mission = Uti.image_takeoff_available_test(self.dic_takeoff, self.pref_screen.default_user_dir)
-
-            if image_takeoff_available:
-                # construction du nom du dossier de la mission
-                self.folderMissionPath = Path(self.dic_takeoff['File path mission'])
-                self.coherent_response = Uti.folder_name_consistency_analysis(self.folderMissionPath)
-                self.extract_2()
-            else:
-                try:
-                    self.folderMissionPath = Path(QFileDialog.getExistingDirectory(self, 'Select Mission Folder', self.pref_screen.default_user_dir))
-                    if self.folderMissionPath.exists() and self.folderMissionPath != self.pref_screen.default_user_dir:
-                        self.coherent_response = Uti.folder_name_consistency_analysis(self.folderMissionPath)
-                        if self.coherent_response:
-                            print(f"TEST  la mission existe  et elle est à l'emplacement : {self.folderMissionPath}")
-                            self.extract_2()
-                        else:
-                            Uti.show_warning_OK_Cancel_message("IRDrone", f"You have chosen the folder : \n{self.folderMissionPath} \nwhich is not a Mission IRDrone folder.",
-                                               " Choose a compatible folder ( name FLY_YYYYMMDD_hhmm_<free text> ).\n or create a mission \n Use the <Create a New Mission> command.")
-                    else:
-                        Uti.show_warning_OK_Cancel_message("IRDrone", f"You have chosen the folder : \n {self.folderMissionPath} \n",
-                                                           " Your choice of folder is not recognized in IRDrone\n Choose a compatible folder ( name FLY_YYYYMMDD_hhmm_[Optional text] ).")
-                        self.coherent_response = False
-                except Exception as e:
-                    print("error 1   in extract_from_folder_mission :", e)
-            if not self.coherent_response:
-                self.extract_from_folder_mission()
-        except Exception as e:
-            print("error 2   in extract_from_folder_mission :", e)
-
-
-    def extract_2(self):
-        try:
-            if not self.coherent_response:
-                self.cancel_clicked()
-
-            # Writing exif /xmp (enriched) data for the AerialPhotography folder
-            folder_path_FLY = Path(self.folderMissionPath, "AerialPhotography")
-            # 1) Create a list of all .dng, .jpg and .RAW files present in the AerialPotography folder
-            list_path_image = [file for file in folder_path_FLY.glob('*') if file.suffix.lower() in ['.dng', '.jpg', '.raw']]
-            # 2) Construction of a list of dictionaries of standard and enriched Exif / xmp data (shot number, VIS time line).
-            self.list_dic_exif_xmp = self.get_EXIF_XMP_interactive(list_path_image, verbose=False)
-            # 3) Writing Exif dictionaries to files (one for each image)
-            self.writing_enriched_exif_data_to_exif_files(list_path_image, self.list_dic_exif_xmp)
-
-            self.placeholder_method_dialog_extract_exif_2_32()
-        except Exception as e:
-            print("error   in extract_2  ", e)
 
 
     def placeholder_method_dialog_extract_exif_2_32(self):
         """
         Dummy (empty) method for connecting the "btn_preprocess_step1" button
-        "btn_preprocess_step1" is connected to self.extract_from_folder_mission -> self.extract_2
+        "btn_preprocess_step1" is connected to self.extract_from_folder_mission
         The "real" connection is in the open_window_31 method of the Main_Window class of the main module.
         def open_window_31(self):  de la class Main_Window() du module principal.
         The line of code is:
@@ -301,8 +347,8 @@ class Dialog_extract_exif(QDialog):
         try:
             validate_answer = True
             self.data_signal_from_dialog_extract_exif_to_main_window.emit(validate_answer)
-            Uti.show_info_message("IRDrone", "Extraction et stockage des données Exif terminés. \n ",
-                                  "Synchroniser les time-line VIS et NIR  for this mission in the next step.")
+            Uti.show_info_message("IRDrone", "Exif data extraction and storage completed. \n ",
+                                  "Synchronize the VIS and NIR timelines for this mission in the next step.")
             pass
 
         except Exception as e:
@@ -325,8 +371,8 @@ class Dialog_synchro_clock(QDialog):
         self.init_GUI()
         self.list_dic_exif_xmp = list_dic_exif_xmp
         self.folderMissionPath = folderMissionPath
-        self.delta_horloge = None
-        self.delta_horloge_ini = None
+        self.delta_clock = None
+        self.delta_clock_initialization = None
 
     def init_GUI(self):
 
@@ -346,9 +392,7 @@ class Dialog_synchro_clock(QDialog):
             height = int(self.pref_screen.windowDisplaySize[1] / 2)  # Main window height
 
             #  Setting the window dimensions.
-            # Créer le widget central
-            self.setGeometry(0, 0, width, height)
-
+            self.setGeometry(0, 0, width, height)   # Create the central widget
             layout = QVBoxLayout()
 
             # Creating radio buttons
@@ -412,65 +456,18 @@ class Dialog_synchro_clock(QDialog):
 
 
     def on_synchro_clicked(self):
-        # Action à effectuer lors de l'appui sur le bouton valider le choix du type de méthode de synchronisation
-        # Ici choix entre synchro avec ARUCO  ou entrée manuelle de la valeur du décalage.
-        #
-        self.list_dic_exif_xmp[319]["toto"] = "TEST"   # TEST
-
-
-        if self.btn_rad2.isChecked():
-            # ---------------------------------------------------------
-            # utilisation de la mire tournante ARUCO
-            # ---------------------------------------------------------
-            msg_txt1 = f"IRDrone"
-
-            if not self.input_field_2.text().strip():
-                self.delta_horloge_ini = 0
-                if self.pref_screen.verbose: print("TEST  Option 2 sélectionnée. La valeur du décalage initial des horloges est:", self.delta_horloge_ini, " s")
-                msg_txt2 = f"Vous avez choisi un calcul automatique du décalge des horloges des caméras NIR et VIS.\n " \
-                           f"Ce calcul est basé sur l'utilisation de la mire tournante ARUCO."
-            else:
-                # Remplacement des virgules par des points
-                input_text = self.input_field_2.text().replace(',', '.')
-
-                # Tentative de conversion du texte en float
-                try:
-                    self.delta_horloge_ini = float(input_text)
-                    if self.pref_screen.verbose: print("TEST  Option 2 sélectionnée. La valeur du décalage initial des horloges est:", self.delta_horloge_ini, " s")
-                    msg_txt2 = f"Vous avez choisi un calcul automatique du décalge des horloges des caméras NIR et VIS.\n " \
-                           f"Ce calcul est basé sur l'utilisation de la mire tournante ARUCO.\n"\
-                           f"Vous avez choisi d'initialiser le calcul avec la valeur de décalage : {self.delta_horloge_ini} s"
-                except ValueError:
-                    QMessageBox.warning(self, "Erreur", "La valeur dinitialisation entrée n'est pas un nombre valide.")
-                    return
-
-
+        """
+            Action to perform when pressing the button validate the choice of the type of synchronization method
+            Here choice between synchronization with ARUCO or manual entry of the offset value.
+        """
+        if self.btn_rad2.isChecked():     # use of the ARUCO rotating sight
             self.aruco_process()
-
-        # Vérifie si le champ de saisie est vide
-        elif self.btn_rad1.isChecked() and not self.input_field_1.text().strip():
-            QMessageBox.warning(self, "Attention", "Veuillez entrer une valeur numérique.")
+        elif self.btn_rad1.isChecked() and not self.input_field_1.text().strip():   # Checks if the input field is empty
+            QMessageBox.warning(self, "Attention", "Please enter a numeric value.")
             return
-        elif self.btn_rad1.isChecked():
-            # ---------------------------------------------------------
-            # utilisation d'une valeur manuelle.
-            # ---------------------------------------------------------
-            # Remplacement des virgules par des points
-            input_text = self.input_field_1.text().replace(',', '.')
-
-            # Tentative de conversion du texte en float
-            try:
-                self.delta_horloge = float(input_text)
-                if self.pref_screen.verbose: print("TEST  Option 1 sélectionnée. La valeur du décalage des horloges est:", self.delta_horloge, " s")
-                msg_txt1 = f"IRDrone"
-                msg_txt2 = f"Vous avez choisi manuellement le décalge des horloges des caméras NIR et VIS.\n Il est de : {self.delta_horloge} s"
-            except ValueError:
-                QMessageBox.warning(self, "Erreur", "La valeur entrée n'est pas un nombre valide.")
-                return
-
+        elif self.btn_rad1.isChecked():   # use of a manual value.
             self.manual_process()
-
-        QMessageBox.information(self, msg_txt1, msg_txt2)
+        print("TEST    self.delta_clock ", self.delta_clock, " s")
         # Enabled OK  button
         self.btn_OK_Sync_Next_Step.setStyleSheet("background-color: white; color: black;")
         self.btn_OK_Sync_Next_Step.setAutoDefault(True)
@@ -478,34 +475,44 @@ class Dialog_synchro_clock(QDialog):
 
 
     def manual_process(self):
-        if self.delta_horloge_ini is None or self.delta_horloge_ini == 0:
-            delta_horloge_initialisation = 0
-            # lancer la procédure de clacul automatique avec une valeur d'initialisation nulle
-            if self.pref_screen.verbose: print("TEST  méthode manuelle ... en cours d'implémentation")
-            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!   Phase de TEST !!!!!!!!!!!!!!!!!!!!!!!
-            self.delta_horloge = self.delta_horloge_ini + 3894.91
-            pass
-        elif self.delta_horloge_ini is float:
-            delta_horloge_initialisation = self.delta_horloge_ini
-            # lancer la procédure de clacul automatique
-            print(f"TEST   méthode manuelle  {delta_horloge_initialisation} s ... en cours d'implémentation")
-            self.delta_horloge = self.delta_horloge_ini
-
+        """
+            Manual entry of the offset value.
+        """
+        self.delta_clock = 0.
+        try:
+            input_text = self.input_field_1.text().replace(',', '.')  # Replacing commas with periods
+            self.delta_clock = float(input_text)    # Attempting to convert text to float
+            msg_txt2 = f"You have chosen a manual offset of the NIR and VIS camera clocks..\n The offset is : {self.delta_clock} s"
+        except ValueError:
+            QMessageBox.warning(self, "Error", "The value entered is not a valid number.")
+            return
+        QMessageBox.information(self, "IRDrone", msg_txt2)
 
 
     def aruco_process(self):
-        if self.delta_horloge_ini is None or self.delta_horloge_ini == 0:
-            delta_horloge_initialisation = 0
-            # lancer la procédure de clacul automatique avec une valeur d'initialisation nulle
-            if self.pref_screen.verbose: print("TEST  ARUCO sans valeur initiale ... en cours d'implémentation")
-            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!   Phase de TEST !!!!!!!!!!!!!!!!!!!!!!!
-            self.delta_horloge = self.delta_horloge_ini + 3894.91
-            pass
-        elif self.delta_horloge_ini is float:
-            delta_horloge_initialisation = self.delta_horloge_ini
-            # lancer la procédure de clacul automatique
-            print(f"TEST   ARUCO avec valeur initiale  {delta_horloge_initialisation} s ... en cours d'implémentation")
-            self.delta_horloge = self.delta_horloge_ini
+        """
+            Synchronization with ARUCO
+        """
+        camera_definition = [('*.DNG', global_config.VIS_CAMERA), ('20*.RAW', global_config.NIR_CAMERA)]
+        manual = False   # If true we can manually adjust the sync directly with sliders
+        folder = os.path.join(self.folderMissionPath, "Synchro")
+        if not self.input_field_2.text().strip():
+            delta_clock_initialization = 0.
+        else:
+            try:
+                input_text = self.input_field_2.text().replace(',', '.')  # Replacing commas with periods
+                delta_clock_initialization = float(input_text)  # Attempting to convert text to float
+            except ValueError:
+                QMessageBox.warning(self, "Error", "The value entered is not a valid number.")
+                return
+        msg_txt2 = f"You have chosen an automatic calculation of the clock offset of the NIR and VIS cameras.\n " \
+                   f"This calculation is based on the use of the ARUCO rotating sight.\n" \
+                   f"You have chosen to initialize the calculation with the offset value: {delta_clock_initialization} s"
+        QMessageBox.information(self, "IRDrone", msg_txt2)
+        self.delta_clock = synchro_by_aruco.main_synchro(
+            camera_definition, manual, delta_clock_initialization, folder,
+            clean_proxy=False
+        )
 
 
     def OK_Sync_Next_Step_clicked(self):
@@ -517,27 +524,27 @@ class Dialog_synchro_clock(QDialog):
 
         """
         try:
-            self.time_line_img_NIR()     # Calcul de la time line
-            self.pairs_VIS_NIR()         # Appariment des images VIS et NIR
-            self.geo_data()              # Calcul des données géographiques (coordonnées UTM, altitudes, cap, distances)
+            self.time_line_img_NIR()     # Calculation of the time line of NIR images
+            self.pairs_VIS_NIR()         # Matching VIS and NIR images
+            self.geo_data()              # Calculation of geographic data (UTM coordinates, altitudes, heading, distances)
 
-            print("TEST  0136.DNG ", self.Fly[16])
-            print("TEST  0137.DNG ", self.Fly[17])
-            print("TEST  0138.DNG ", self.Fly[18])
+            # print("TEST  0136.DNG ", self.Fly[16])
+            # print("TEST  0137.DNG ", self.Fly[17])
+            # print("TEST  0138.DNG ", self.Fly[18])
 
-            # construit une première version de la liste des points de prise de vue (class ShootPoint)
+            # builds a first version of the list of shooting points (ShootPoint class)
             list_Pts = self.build_list_shooting_point()
-            # Writing list dictionnary FLY/ShootPoint
+            # Writing list dictionary FLY/ShootPoint
             self.save_shooting_point(list_Pts)
 
-            # Fin du preprocess de  préparation des données
+            # End of data preparation preprocess
             validate_answer = True
             self.data_signal_from_dialog_synchro_clock_to_main_window.emit(validate_answer)
-            txt_msg = f"La synchronisation des time-line a bien été prise en compte ...\n" \
-                      f"Le décalage des horloges est égal à {self.delta_horloge} s\n" \
-                      f"Les images visible et proche infrarouge ont été appariées\n" \
-                      f"Les angles de projection de l'image proche infrarouge sur l'image visible ont été calculés"
-            Uti.show_info_message("IRDrone", txt_msg, "Vous pouvez lancer le processus de traitement de vos images")
+            txt_msg = f"Timeline synchronization has been taken into account...\n" \
+                      f"The clock offset is equal to {self.delta_clock} s.\n" \
+                      f"Visible and near-infrared images were matched.\n" \
+                      f"The projection angles of the near-infrared image on the visible image were calculated."
+            Uti.show_info_message("IRDrone", txt_msg, "You can start the process of processing your images.")
 
             self.close()
         except Exception as e:
@@ -546,20 +553,20 @@ class Dialog_synchro_clock(QDialog):
 
     def build_list_shooting_point(self) -> list[dict]:
         """
-         Construit une version partielle de shoot point  avant le calcul des angles d'alignement.
-         A ce stade les informations sont stockées dans le dictionnaire Fly
-         La méthode loadDicPointFly2Point de class ShootPoint permet de transferer le dictionnaire Fly dans
-         la stucture de données de class ShootPoint.
+         Built a partial version of shoot point before calculating alignment angles.
+         At this stage the information is stored in the Fly dictionary
+         The loadDicPointFly2Point method of class ShootPoint allows you to transfer the Fly dictionary into
+         the data structure of class ShootPoint.
 
-         Note: La Class ShootPoint a été introduite dès la version primitive d'IRDrone. On assure donc ici la passerelle entre
-         cette version primitive et la version interactive.
-          Il existe aussi la méthode loadDicPoint2Point de class ShootPoint. Elle est grandement similaire à la précédente.
-          Toutefois la structure du dictionnaire est différente (arbre de clés et sous clés). De plus certain noms de clé différent
-        du nom de clé de la version interactive.
-          Pour cette structure en arbre il existe aussi le méthode loadPoint2DicPoint de class ShootPoint. Elle permet de transférer
-        la structure de donnée de class ShootPoint au dictionnaire en arbre  (opération inverse de la précédente).
+         Note: The ShootPoint Class was introduced in the early version of IRDrone. We therefore provide here the bridge between
+         this primitive version and the interactive version.
+          There is also the loadDicPoint2Point method of class ShootPoint. It is very similar to the previous one.
+          However, the structure of the dictionary is different (tree of keys and sub keys). Plus some different key names
+        of the key name of the interactive version.
+          For this tree structure there is also the loadPoint2DicPoint method of class ShootPoint. It allows you to transfer
+        the data structure of class ShootPoint to the tree dictionary (inverse operation of the previous one).
 
-        :return: list_Pts    liste des dictionnaires des points de prises de vues (class ShootPoint)
+        :return: list_Pts    list of shooting point dictionaries (class ShootPoint)
         """
         list_Pts = []
         self.Fly = sorted(self.Fly, key=lambda x: int(x['Vis Shooting Number']))
@@ -577,8 +584,8 @@ class Dialog_synchro_clock(QDialog):
 
     def tempo_1(self, index):
         """
-        Ces données ne sont pas encore calculées à ce stade mais elles doivent être initialisées pour pouvoir construire
-        le point de class ShootPoint
+        These data are not yet calculated at this stage but they must be initialized to be able to build
+        the point of class ShootPoint
         :param index:
         :return:
         """
@@ -598,44 +605,44 @@ class Dialog_synchro_clock(QDialog):
 
 
     def save_shooting_point(self, list_Pts):
-        print("TEST   save_shooting_point .... EN DEVELOPPEMENT ")
+        print("TEST   save_shooting_point .... Currently being implemented ")
 
 
     def time_line_img_NIR(self):
         """
-        1) Construit la time line des images NIR en la synchronisant à la time line des images VIS.
-        Attention cela ne signifie pas que les images NIR elles mêmes sont synchronisées avec les images VIS.
-        Il y aura toujours un petit décalage (qui n'est pas constant).
-        Ce décalage est inhérent au design du système "low coast" de caméra NIR SJCam M20 dont le déclenchement
-        n'est pas synchronisé avec celui de la caméra VIS du drone DJI.
+        1) Constructs the NIR image timeline by synchronizing it to the VIS image timeline.
+        Please note, this does not mean that the NIR images themselves are synchronized with the VIS images.
+        There will always be a small lag (which is not constant).
+        This shift is inherent to the design of the SJCam M20 NIR camera “low coast” system, the triggering of which
+        is not synchronized with that of the VIS camera of the DJI drone.
 
-        2) Débute la construction de liste des dictionnaires contenant le résumé des informations essentielles sur les images du vol.
-        Ce résumé donne pour chaque image VIS prise lors du survol de la zone à étudier:
-            - Le numéro de la prise de vue VIS dans le spectre visible (depuis le décollage).
-            - Sa position sur la time line
-            - L'image NIR dans le spectre proche infrarouge  temporellement la plus proche.
-            - l'écart temporel entre les deux images (positif ou négatif).
-            - La position GPS de la prise de vue de l'image VIS  (fournie par les données exif de l'image VIS au format dng  prise par le drone).
-            - L'attitude du drone et du gimbal au moment de cette prise de vue.
-              Les angles {yaw, pitch, roll} du gimbal et du drone sont affectés respectivement aux caméras VIS et NIR.
-              Attention : Le yaw gimbal et drone correspondent respectivement au roll caméra VIS et NIR.
-                          Le roll  gimbal et drone correspondent respectivement au yaw caméra VIS et NIR.
-                          Le pitch gimbal et drone correspondent respectivement au pitch caméra VIS et NIR.
+        2) Starts the construction of a list of dictionaries containing the summary of essential information on the images of the flight.
+        This summary gives for each VIS image taken during the flight over the area to be studied:
+            - The number of the VIS shot in the visible spectrum (since takeoff).
+            - Its position on the timeline
+            - The temporally closest NIR image in the near infrared spectrum.
+            - the time difference between the two images (positive or negative).
+            - The GPS position of the VIS image taken (provided by the exif data of the VIS image in dng format taken by the drone).
+            - The attitude of the drone and the gimbal at the time of this shot.
+              The angles {yaw, pitch, roll} of the gimbal and the drone are assigned to the VIS and NIR cameras, respectively.
+              Please note: The yaw gimbal and drone correspond respectively to the VIS and NIR camera roll.
+                          The roll gimbal and drone correspond respectively to the VIS and NIR camera yaw.
+                          The gimbal and drone pitch correspond respectively to the VIS and NIR camera pitch.
 
         :return:
         """
         try:
-            origine_date_py: datetime = self.origine_date_VIS()
+            origin_date_py: datetime = self.origin_date_VIS()
             self.Fly: list[dict[str, any]] = []
 
             for index, dic in enumerate(self.list_dic_exif_xmp):
                 if dic['File Name'].split(".")[1].lower() == "raw":
                     date_time_temp: datetime = Uti.datetimeJson2datetimePy(dic['Date/Time Original'])
-                    time_line_NIR: float = (date_time_temp - origine_date_py).total_seconds() - self.delta_horloge
+                    time_line_NIR: float = (date_time_temp - origin_date_py).total_seconds() - self.delta_clock
                     self.list_dic_exif_xmp[index]['Time Line'] = time_line_NIR
 
                 elif dic['File Name'].split(".")[1].lower() == "dng":
-                    dicVis = { }
+                    dicVis = {}
                     dicVis['Vis File Name'] = dic["File Name"]
                     dicVis['Vis Directory'] = dic['Directory']
                     dicVis['Vis Date/Time Original'] = dic['Date/Time Original']
@@ -672,9 +679,9 @@ class Dialog_synchro_clock(QDialog):
                 indexMinDt = None
                 for indexNir, dic in enumerate(self.list_dic_exif_xmp):
                     if dic['File Name'].split(".")[1].lower() == "raw":
-                        #  signe de l'écart :
-                        # si t_VIS < t_NIR <=> ecart < 0   l'image NIR a été prise après l'image VIS
-                        # si t_VIS > t_NIR <=> ecart > 0   l'image NIR a été prise avant l'image VIS
+                        #  gap sign :
+                        # if t_VIS < t_NIR <=> gap < 0   the NIR image was taken after the VIS image
+                        # if t_VIS > t_NIR <=> gap > 0   the NIR image was taken before the VIS image
                         t_VIS = float(dicVis['Vis Time Line'])
                         t_NIR = float(dic['Time Line'])
                         Dt = t_VIS - t_NIR
@@ -689,10 +696,10 @@ class Dialog_synchro_clock(QDialog):
                 self.Fly[indexVis]['Nir Time Line'] = round(self.list_dic_exif_xmp[indexMinDt]['Time Line'], 4)
                 self.Fly[indexVis]['Dt Vis-Nir'] = round(minDt, 3)
 
-                # Print pour TEST
+                # Print for TEST
                 if self.pref_screen.verbose:
-                    # fTimeLine = Uti.format_nombre(self.Fly[indexVis]['Vis Time Line'], decimal=2)
-                    # fDt = Uti.format_nombre(self.Fly[indexVis]['Dt Vis-Nir'], car="+")
+                    # fTimeLine = Uti.format_number(self.Fly[indexVis]['Vis Time Line'], decimal=2)
+                    # fDt = Uti.format_number(self.Fly[indexVis]['Dt Vis-Nir'], car="+")
                     # print(f"TEST  {self.Fly[indexVis]['Vis File Name']} |  {self.Fly[indexVis]['Nir File Name']} | {fTimeLine} s | {fDt} s")
                     pass
 
@@ -702,11 +709,11 @@ class Dialog_synchro_clock(QDialog):
 
     def geo_data(self):
         """
-        Complete les dictionnaire de points de prise de vue
-             > Coordonnées UTM
-             > Distance et cap au point suivant
-             > Cumul de distance
-             > Altitude géographique du terrain (par rapport au niveau de la mer via IGN)
+        Enriched the shooting point dictionary
+             > UTM coordinates
+             > Distance and heading to the next point
+             > Total distance
+             > Geographic altitude of the land (relative to sea level via IGN)
 
         :return:
         """
@@ -718,11 +725,11 @@ class Dialog_synchro_clock(QDialog):
             self.Fly[i]['Dist To Next Pt'], self.Fly[i]['Cape To Next Pt'] = Geo.segmentUTM(self.Fly[i]['Drone Latitude'], self.Fly[i]['Drone Longitude'], self.Fly[i + 1]['Drone Latitude'], self.Fly[i + 1]['Drone Longitude'])
         self.Fly[-1]['Dist To Next Pt'], self.Fly[-1]['Cape To Next Pt'] = 0, 0
 
-        cumul = 0
-        self.Fly[0]['Dist Cumul'] = cumul
+        cumulative_distance = 0
+        self.Fly[0]['Dist Cumul'] = cumulative_distance
         for i in range(1, len(self.Fly)):
-            cumul = cumul + self.Fly[i]['Dist To Next Pt']
-            self.Fly[i]['Dist Cumul'] = cumul
+            cumulative_distance += self.Fly[i]['Dist To Next Pt']
+            self.Fly[i]['Dist Cumul'] = cumulative_distance
 
         altitude = Geo.altitude_IGN([(self.Fly[i]['Drone Latitude'], self.Fly[i]['Drone Longitude']) for i in range(len(self.Fly))], bypass=False)
         altitudeTakeOff = self.altitude_take_off()
@@ -732,15 +739,15 @@ class Dialog_synchro_clock(QDialog):
             self.Fly[i]['Altitude Drone/Ground'] = self.Fly[i]['Altitude Drone/TakeOff'] + altitudeTakeOff - self.Fly[i]['Altitude Ground/Sea level']
 
 
-    def origine_date_VIS(self) -> datetime:
+    def origin_date_VIS(self) -> datetime:
         config_file = Path(self.folderMissionPath, 'config.json')
         if config_file.exists():
             with open(config_file, "r") as fi:
                 dic_config = json.load(fi)
-                origine_date_py = datetime.strptime(dic_config['Date Exif'], "%Y:%m:%d %H:%M:%S")
+                origin_date_py = datetime.strptime(dic_config['Date Exif'], "%Y:%m:%d %H:%M:%S")
         else:
-            origine_date_py = None
-        return origine_date_py
+            origin_date_py = None
+        return origin_date_py
 
 
     def altitude_take_off(self) -> float:
@@ -755,17 +762,17 @@ class Dialog_synchro_clock(QDialog):
 
 
     def cancel_clicked(self):
-        """Méthode appelée lorsque le bouton 'Cancel' est cliqué."""
+        """Method called when the 'Cancel' button is clicked."""
         try:
             self.close()
         except Exception as e:
-            print("Error in Calss Windows_2 cancel_clicked", e)
+            print("Error in Class Windows_2 cancel_clicked", e)
 
 
     def help_clicked(self):
-        """Méthode appelée lorsque le bouton 'Help' est cliqué."""
-        # Afficher un message d'aide
-        Uti.show_info_message("IRDrone", "En cours d'implémentation ...", "")
+        """Method called when the 'Help' button is clicked."""
+        # Displays a help message
+        Uti.show_info_message("IRDrone", "Currently being implemented ...", "")
         pass
 
 

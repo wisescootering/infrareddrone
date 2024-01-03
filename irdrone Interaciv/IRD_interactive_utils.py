@@ -767,9 +767,9 @@ def image_takeoff_available_test(dic_takeoff: dict, default_user_dir: Path):
 
 
 
-def format_nombre(nombre, decimal=3, car=" "):
-    format_string = f"{car}{{:.{decimal}f}}" if nombre >= 0 else f"{{:.{decimal}f}}"
-    return format_string.format(nombre)
+def format_number(number, decimal=3, car=" "):
+    format_string = f"{car}{{:.{decimal}f}}" if number >= 0 else f"{{:.{decimal}f}}"
+    return format_string.format(number)
 
 
 def gps_coordinate_to_float(gps_coordinate: str) -> float:

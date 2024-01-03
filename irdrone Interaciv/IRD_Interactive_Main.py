@@ -47,8 +47,7 @@ class Main_Window(QMainWindow):
         self.def_app_dir = self.pref_screen.default_app_dir
         self.def_user_dir = self.pref_screen.default_user_dir
 
-        # Définir la disposition et les widgets
-        # Créer le widget central
+        # Set layout and widgets.  Create the central widget
         #   Setting the top bar and window dimensions.
         self.setWindowTitle("IRdrone interactive v01")
         icon_path = os.path.join(self.pref_screen.default_app_dir, "Icon", "IRDrone.ico")
@@ -71,7 +70,7 @@ class Main_Window(QMainWindow):
         #  btn load_images
         self.btn_load_images = QPushButton("Step 2 : Choice of reference image set.", self)
         self.btn_load_images.setAutoDefault(False)
-        self.btn_load_images.setEnabled(True)   # (True) pour test  et (False) en prod !
+        self.btn_load_images.setEnabled(False)   # (True) pour test  et (False) en prod !
         self.btn_load_images.setStyleSheet("background-color: Gray; color: darkGray;")
         self.btn_load_images.clicked.connect(self.open_window_load_set_images)
         #  btn pre_process_images
@@ -182,6 +181,7 @@ class Main_Window(QMainWindow):
     #     Step 2 load set of VIS and NIR images of he mission.
     # ===================================================================================
 
+
     def open_window_load_set_images(self):
         """
         load set of VIS and NIR images of he mission.
@@ -213,6 +213,7 @@ class Main_Window(QMainWindow):
     #     camera attitudes( yaw, pitch roll).
     # ===================================================================================
 
+
     def on_pre_process_images(self):
         """
         preprocess_step 1  Extract and save Exif tags)
@@ -234,7 +235,7 @@ class Main_Window(QMainWindow):
         if validate:
             self.list_dic_exif_xmp: list[dict] = self.dialog_extract_exif.list_dic_exif_xmp
             self.folderMissionPath: Path = self.dialog_extract_exif.folderMissionPath
-            print(f"TEST  pour le vol {self.folderMissionPath} Extraction à construit {len(self.list_dic_exif_xmp)} dictionnaires exif/xmp")
+            print(f"TEST  for Fly {self.folderMissionPath} Extraction built {len(self.list_dic_exif_xmp)} dictionary exif/xmp")
             self.dialog_extract_exif.data_signal_from_dialog_extract_exif_to_main_window.disconnect()  # Disconnect the signal
         else:
             print("The user has not validated his entries.")
@@ -260,7 +261,7 @@ class Main_Window(QMainWindow):
         if validate:
             self.list_dic_exif_xmp = self.dialog_extract_exif.list_dic_exif_xmp
             # print(f"TEST  Main sortie dialog_synchro_clock \n {self.list_dic_exif_xmp[-1]}")
-            print(f"TEST  Le décalage des horloges est de : {self.dialog_synchro_clock.delta_horloge} s. \n FIN DU PREPROCESS")
+            print(f"TEST  The clock offset is : {self.dialog_synchro_clock.delta_clock} s. \n END PREPROCESS")
             self.dialog_synchro_clock.data_signal_from_dialog_synchro_clock_to_main_window.disconnect()  # Disconnect the signal
             self.dialog_synchro_clock.close()  # Close dialog_synchro_clock
         else:
@@ -273,29 +274,33 @@ class Main_Window(QMainWindow):
     #                   Button #4 click handlers
     #     Step 4 process images
     # ===================================================================================
+
+
     def on_process_images(self):
-        Uti.show_info_message("IRDrone", "En cours d'implémentation ...", "")
+        Uti.show_info_message("IRDrone", "Currently being implemented ...", "")
         pass
 
 
     # ===================================================================================
     #                   Button #5 click handlers
     # ===================================================================================
+
+
     def on_help(self):
-        Uti.show_info_message("IRDrone", "En cours d'implémentation ...", "")
+        Uti.show_info_message("IRDrone", "Currently being implemented ...", "")
         pass
 
 
 def main():
-    """Fonction principale pour exécuter l'application."""
+    """Main function to run the interactive application.."""
     app = QApplication(sys.argv)
     main_window = Main_Window()
-    # Vérifier si main_window est modale ou non
+    # Check if main_window is modal or not
     if main_window.isModal():
-        #print("TEST   main_window est une fenêtre modale.")
+        # print("TEST  main_window is a modal window.")
         pass
     else:
-        #print("TEST   main_window n'est pas une fenêtre modale.")
+        # print("TEST   main_window is not a modal window.")
         pass
     screen = Prefrence_Screen()
     Uti.center_on_screen(main_window, screen_Id=screen.defaultScreenID, screen_adjust=screen.screenAdjust, window_display_size=screen.windowDisplaySize)
