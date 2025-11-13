@@ -67,7 +67,7 @@ def get_EXIF_XMP(pth: Path, index, verbose: bool = False):
                 │   ├── exiftool/
                 │   │   └── exiftool.exe
                 │   └── ...
-                └── irdrone Interaciv/
+                └── irdrone Interactive/
                     └── IRD_Interactive_Exif_Xmp.py
 
     Définir le chemin relatif vers "exiftool.exe" en utilisant Path
@@ -75,13 +75,13 @@ def get_EXIF_XMP(pth: Path, index, verbose: bool = False):
     EXIFTOOLPATH = Path(__file__).parent.parent / "irdrone" / "exiftool" / "exiftool.exe"
 
     Ici  Path(__file__)  représente sur ma machine le chemin complet depuis lequel j'éxécute le code :
-    C:\Documents-Alain\Projet-IRdrone\Code_Python\irdrone\irdrone Interaciv\IRD_Interactive_Exif_Xmp.py
+    C:\Documents-Alain\Projet-IRdrone\Code_Python\irdrone\irdrone Interactive\IRD_Interactive_Exif_Xmp.py
     Ensuite il faut remonter de deux niveaux  DEPUIS LE FICHIER IRD_Interactive_Exif_Xmp.py
     pour atteindre irdrone (celui sous Code_Python)
     et ensuite on va descendre  de trois niveaux pour attteindre le fichier exe exiftool.exe
 
     Note: ATTENTION avec os.path le niveau du fichier est IMPLICITE et on remonterai d'un seul niveau.
-    La commande  osp.dirname(__file__)  part de irdrone Interaciv  et pas de IRD_Interactive_Exif_Xmp.py
+    La commande  osp.dirname(__file__)  part de irdrone Interactive  et pas de IRD_Interactive_Exif_Xmp.py
     On écrirait donc  (si  le signe ":" signifie remonte d'un niveau et   ":",":" de deux etc) :
 
     EXIFTOOLPATH = osp.join(osp.dirname(__file__), "::", "irdrone", "exiftool", "exiftool.exe")

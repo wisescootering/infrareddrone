@@ -6,8 +6,6 @@
 #   29/10/2023   V002
 # ---------------------------------------------------------------------------------
 
-
-
 import sys
 import os
 import os.path as osp
@@ -15,14 +13,11 @@ import json
 from datetime import date, time, datetime
 from pathlib import Path
 import numpy as np
-
 # -------------- PyQt6 Library ------------------------------------
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QMessageBox, QDialog, QFileDialog, QLabel, \
     QRadioButton, QLineEdit, QPushButton, QMessageBox, QProgressBar, QFrame
 from PyQt6.QtGui import QDoubleValidator, QPixmap, QColor, QIcon
 from PyQt6.QtCore import Qt, pyqtSignal, QRegularExpression
-
-
 # -------------- IRDrone Library ------------------------------------
 import IRD_interactive_utils as Uti
 import IRD_interactive_geo as Geo
@@ -467,7 +462,7 @@ class Dialog_synchro_clock(QDialog):
             return
         elif self.btn_rad1.isChecked():   # use of a manual value.
             self.manual_process()
-        print("TEST    self.delta_clock ", self.delta_clock, " s")
+        print("TEST 0030    self.delta_clock ", self.delta_clock, " s")
         # Enabled OK  button
         self.btn_OK_Sync_Next_Step.setStyleSheet("background-color: white; color: black;")
         self.btn_OK_Sync_Next_Step.setAutoDefault(True)
@@ -551,7 +546,7 @@ class Dialog_synchro_clock(QDialog):
             print("error in Dialog_synchro_clock ok_clicked: ", e)
 
 
-    def build_list_shooting_point(self) -> list[dict]:
+    def build_list_shooting_point(self, verbose=True) -> list[dict]:
         """
          Built a partial version of shoot point before calculating alignment angles.
          At this stage the information is stored in the Fly dictionary
@@ -576,7 +571,7 @@ class Dialog_synchro_clock(QDialog):
             self.Fly[index]['Fly Shooting Number'] = index
             self.tempo_1(index)
             pt.loadDicPointFly2Point(self.Fly[index])
-            if True: print(pt)  # "TEST"
+            if verbose: print(pt)  # "TEST"
             list_Pts.append(pt)
 
         return list_Pts
@@ -605,7 +600,7 @@ class Dialog_synchro_clock(QDialog):
 
 
     def save_shooting_point(self, list_Pts):
-        print("TEST   save_shooting_point .... Currently being implemented ")
+        print("TEST 0041   save_shooting_point .... Currently being implemented ")
 
 
     def time_line_img_NIR(self):

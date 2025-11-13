@@ -171,7 +171,8 @@ class Window_Load_TakeOff_Image(QDialog):
 
 
     def init_dic_takeoff_light(self):
-        """Initialise une version simplifiée du  dictionnaire self.dic_takeoff_light.
+        """
+        Initialise une version simplifiée du  dictionnaire self.dic_takeoff_light.
 
         """
         try:
@@ -223,8 +224,12 @@ class Window_Load_TakeOff_Image(QDialog):
 
 
     def load_takeoff_image(self):
-        # Ouvrir une boîte de dialogue pour sélectionner une image. Ici on n'admet uniquement des images au format DNG
-        # Elles doivent provenir de la caméra du drone qui capture des images dans le spectre visible.
+        """
+        Ouvrir une boîte de dialogue pour sélectionner une image.
+        Ici on n'admet uniquement des images au format DNG
+        Elles doivent provenir de la caméra du drone qui capture des images dans le spectre visible.
+        """
+
         directory = os.path.abspath('/')   # DD racine
         file_name, _ = QFileDialog.getOpenFileName(self, "Open Image", directory, "Images (*.dng)") # (*.png *.xpm *.jpg *.dng)")
 
@@ -258,15 +263,15 @@ class Window_Load_TakeOff_Image(QDialog):
                 latitude, longitude, self.altitude_DJI = Uti.convert_coordinates(latitude_exif, longitude_exif, altitude_exif)
                 self.progress_bar.setValue(45)
 
-                # Utilise API IGN (Institut Géographique National. France)  pour obtenir, en fonction des coordonnées GPS, l'altitude géographique.
+                # Utilise API IGN (Institut Géographique National. France) ou bien OpenTopoData (Monde)
+                # Renvoie en fonction des coordonnées GPS, l'altitude géographique.
                 # C'est le niveau du sol par rapport au niveau de la mer
                 self.dic_info_geo = Geo.extract_alti_IGN([(latitude, longitude)], bypass=False)
                 self.progress_bar.setValue(60)
                 # Utilise l'API Open Street Map pour obtenir les données géographiques (lieu-dit, ville, code postal, ...)
-                self.dic_info_geo = Geo.extract_geoTag(self.dic_info_geo )
+                self.dic_info_geo = Geo.extract_geoTag(self.dic_info_geo, bypass=False)
                 self.progress_bar.setValue(80)
                 # Mettre à jour le label d'information avec les données de localisation
-                # ... (formatez les données comme vous le souhaitez)
                 geo_data = f"Wpt: take-off \n" \
                            f"image: {file_name.lower()}\n" \
                            f"Coordonnées: {round(self.dic_info_geo.get('lat'),6)}°      {round(self.dic_info_geo.get('lon'),6)}°   Alti. {round(self.dic_info_geo.get('z'),3)} m  (above sea level)\n" \
@@ -314,10 +319,10 @@ class Window_Load_TakeOff_Image(QDialog):
                 self.dic_takeoff_light["GPS lon"] = f"{self.dic_info_geo['lon']}"
 
             self.dic_takeoff_light["GPS lon"] = str(self.dic_info_geo['lon'])
-            self.dic_takeoff_light["GPS alti"] = str(self.dic_info_geo['z'])
+            self.dic_takeoff_light["GPS alti"] = str(self.dic_info_geo['z'])  # altitude above sea level
             self.dic_takeoff_light["GPS coordinate"] = f"{self.dic_takeoff_light['GPS N-S']} {str(self.dic_info_geo['lat'])}° {self.dic_takeoff_light['GPS E-W']} {self.dic_info_geo['lon']}°"
 
-            self.dic_takeoff_light["GPS drone alti"] = self.altitude_DJI
+            self.dic_takeoff_light["GPS drone alti"] = self.altitude_DJI  # altitude above takeoff point
         except Exception as e:
             print("error 2 in load_takeoff_image ", e)
 
@@ -794,7 +799,7 @@ class Window_create_file_structure(QDialog):
             self.layout.addLayout(self.image_NIR_format_layout)
 
             # camera NIR part 4
-            self.image_NIR_filter_maker: str = "KOLARI VISION USA"
+            self.image_NIR_filter_maker: str = "KOLARI VISION USA"  # Optic Concept LP830
             self.image_NIR_filter_band: int = 810
 
             self.image_NIR_filter_label = QLabel("NIR Filter    maker | band in nm:")
@@ -814,8 +819,8 @@ class Window_create_file_structure(QDialog):
 
 
     def update_dic_takeoff(self):
-        """Initialise le dictionnaire self.dic_takeoff.
-
+        """
+        Initialise le dictionnaire self.dic_takeoff.
         First checks the validity of the data (date, time, GPS coordinates, etc.)
         """
 
@@ -914,9 +919,12 @@ class Window_create_file_structure(QDialog):
 
 
     def build_mission_folder_name(self):
+        """
+        Create mission folder
+        Convert date and time objects to strings
+        """
         try:
-            # Create mission folder
-            # Convert date and time objects to strings
+
             date_str = self.py_date.strftime('%Y%m%d')
             time_str = self.py_time.strftime('%H%M')
             if self.location_field.text():
@@ -931,8 +939,10 @@ class Window_create_file_structure(QDialog):
 
 
     def create_mission_folder(self):
-
-        # Create mission folder
+        """
+        Create mission folder
+        """
+        #
         directory = self.build_mission_folder_name()
         try:
             if not os.path.exists(directory):

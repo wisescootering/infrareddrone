@@ -5,10 +5,17 @@
 #   29/10/2023   V002
 # ---------------------------------------------------------------------------------
 
+import warnings
 
+# Supprime uniquement les warnings de dépréciation
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+import sys
+# print("Python utilisé :", sys.executable)
+# print("Chemins de recherche des modules :", sys.path)
 import os
 import os.path as osp
-import sys
+sys.path.append(osp.join(osp.dirname(__file__), ".."))
 from pathlib import Path
 # ------------------PyQt6 Library -----------------------------------
 from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout,  QWidget, QPushButton, QLabel, QFrame, QProgressBar
@@ -20,8 +27,6 @@ from IRD_Interactive_2 import LoadVisNirImagesDialog, choose_folder_mission
 from IRD_Interactive_3 import Dialog_extract_exif, Dialog_synchro_clock
 import IRD_interactive_utils as Uti
 from IRD_interactive_utils import Prefrence_Screen
-# -------------------- IRD Library -----------------------------------------------
-sys.path.append(osp.join(osp.dirname(__file__), '../utils'))
 
 
 
@@ -235,7 +240,7 @@ class Main_Window(QMainWindow):
         if validate:
             self.list_dic_exif_xmp: list[dict] = self.dialog_extract_exif.list_dic_exif_xmp
             self.folderMissionPath: Path = self.dialog_extract_exif.folderMissionPath
-            print(f"TEST  for Fly {self.folderMissionPath} Extraction built {len(self.list_dic_exif_xmp)} dictionary exif/xmp")
+            print(f"TEST 0020  for Fly {self.folderMissionPath} Extraction built {len(self.list_dic_exif_xmp)} dictionary exif/xmp")
             self.dialog_extract_exif.data_signal_from_dialog_extract_exif_to_main_window.disconnect()  # Disconnect the signal
         else:
             print("The user has not validated his entries.")
@@ -260,8 +265,8 @@ class Main_Window(QMainWindow):
         """
         if validate:
             self.list_dic_exif_xmp = self.dialog_extract_exif.list_dic_exif_xmp
-            # print(f"TEST  Main sortie dialog_synchro_clock \n {self.list_dic_exif_xmp[-1]}")
-            print(f"TEST  The clock offset is : {self.dialog_synchro_clock.delta_clock} s. \n END PREPROCESS")
+            # print(f"TEST 0009  Main sortie dialog_synchro_clock \n {self.list_dic_exif_xmp[-1]}")
+            print(f"TEST 0010 The clock offset is : {self.dialog_synchro_clock.delta_clock} s. \n END PREPROCESS")
             self.dialog_synchro_clock.data_signal_from_dialog_synchro_clock_to_main_window.disconnect()  # Disconnect the signal
             self.dialog_synchro_clock.close()  # Close dialog_synchro_clock
         else:
