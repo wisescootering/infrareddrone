@@ -12,7 +12,7 @@ import math
 import re
 import json
 import requests
-from irdrone.utils import Style
+from irdrone.irdrone.utils import Style
 import os
 
 
@@ -302,11 +302,14 @@ def altitude_trk(coordGPS, interpolation=0):
     return: altitude z/sol      dans l'ordre des données recues ou interpoles.        List
     return: latLongZGPS  [...,(lat, long,z), ...]  dans l'ordre des données recues ou interpoles.        List
 
-    interpol: nombre de wpt du chemi interpole.               Integer
+    interpol: nombre de wpt du chemin interpole.               Integer
                             Le chemin defini par la liste coord_GPS est interpole puis les altitudes
                             de tous les points sont renvoyees.
 
-    Utilise l'API IGN https://wxs.ign.fr/essentiels/alti/rest/elevation.json?
+    Utilise l'API IGN 
+    "https://data.geopf.fr/altimetrie/1.0/calcul/alti/rest/elevation.json"
+            f"?lon={lons}&lat={lats}&resource={resource}"
+            "&delimiter=|&indent=false&measures=false&zonly=false"
     """
     if not isinstance(coordGPS, list):
         raise TypeError('Les données doivent être des listes de tuples'
@@ -314,21 +317,22 @@ def altitude_trk(coordGPS, interpolation=0):
                         f' et non {type(coordGPS)}')
     altitude = []
     latLongZGPS = []
-    longitude_formate = ""
-    latitude_formate = ""
-    interpol = str(interpolation * len(coordGPS))
+    resource = "ign_rge_alti_par_territoires"
+    base_url = f"https://data.geopf.fr/altimetrie/1.0/calcul/alti/rest/elevation.json"
+    print(f'URL API IGN : {base_url}')
 
-    for donnee in coordGPS:
-        latitude_formate += str(donnee[0]) + '|'
-        longitude_formate += str(donnee[1]) + '|'
+    # Construire les chaînes de latitudes / longitudes (séparées par '|')
+    latitudes = "|".join(str(lat) for lat, lon in coordGPS)
+    longitudes = "|".join(str(lon) for lat, lon in coordGPS)
 
-    latitude_formate = re.sub(r'\|$', '', latitude_formate)
-    longitude_formate = re.sub(r'\|$', '', longitude_formate)
+    resource = "ign_rge_alti_par_territoires"
+    url_API_IGN = (
+        "https://data.geopf.fr/altimetrie/1.0/calcul/alti/rest/elevation.json"
+        f"?lon={longitudes}&lat={latitudes}&resource={resource}"
+        "&delimiter=|&indent=false&measures=false&zonly=false"
+    )
+    dico = json.loads(requests.get(url_API_IGN).text)
 
-    api_url = f"https://wxs.ign.fr/essentiels/alti/rest/elevationLine.json?" \
-              f"sampling={interpol}&lon={longitude_formate}&lat={latitude_formate} &indent=false"
-    print(f"https://wxs.ign.fr/essentiels/alti/rest/elevationLine.json?sampling={interpol}")
-    dico = json.loads(requests.get(api_url).text)
     for retour in dico['elevations']:
         altitude.append(retour['z'])
         latlongZ = (retour['lon'], retour['lat'], retour['z'])
@@ -343,59 +347,58 @@ def altitude_IGN(coordGPS, mute=True, bypass=False):
 
     return: altitude z/sol      dans l'ordre des données recues ou interpoles.        List
 
-    Utilise l'API IGN https://wxs.ign.fr/essentiels/alti/rest/elevation.json?
+    Utilise l'API du géoportail IGN     "https://data.geopf.fr/altimetrie/1.0/calcul/alti/rest/elevation.json"
+    Si un point hors de la zone couverte l'API renvoie z=-99999.00 ... qui sera remplacé par z=0.00
     """
     if bypass:
-        altitude = sealLevel(coordGPS, 0.)
+        altitude = sea_Level(coordGPS, 0.)
         return altitude
     if not isinstance(coordGPS, list):
         raise TypeError('Les données doivent être des listes de tuples'
                         ' (latitude  , longitude ) exprimés en degrés'
                         f' et non {type(coordGPS)}')
     altitude = []
-    longitude_formate = ""
-    latitude_formate = ""
-
-    for donnee in coordGPS:
-        latitude_formate += str(donnee[0]) + '|'
-        longitude_formate += str(donnee[1]) + '|'
-
-    latitude_formate = re.sub(r'\|$', '', latitude_formate)
-    longitude_formate = re.sub(r'\|$', '', longitude_formate)
+    resource = "ign_rge_alti_par_territoires"
+    base_url = f"https://data.geopf.fr/altimetrie/1.0/calcul/alti/rest/elevation.json"
+    # Construire les chaînes de latitudes / longitudes (séparées par '|')
+    latitudes = "|".join(str(lat) for lat, lon in coordGPS)
+    longitudes = "|".join(str(lon) for lat, lon in coordGPS)
 
     tries = 2
     for i in range(tries):
         try:
-            api_url = f"https://wxs.ign.fr/essentiels/alti/rest/elevation.json?" \
-                      f"lon={longitude_formate}&lat={latitude_formate}&zonly=true"
-            if not mute:
-                print(f"https://wxs.ign.fr/essentiels/alti/rest/elevation.json?")
+            url_API_IGN = (
+                "https://data.geopf.fr/altimetrie/1.0/calcul/alti/rest/elevation.json"
+                f"?lon={longitudes}&lat={latitudes}&resource={resource}"
+                "&delimiter=|&indent=false&measures=false&zonly=false"
+            )
 
-            dico = json.loads(requests.get(api_url).text)
-            if not isinstance(dico, dict):
-                altitude = sealLevel(coordGPS, 0.)
-            elif list(dico.keys())[0] == 'error':
-                altitude = sealLevel(coordGPS, 0.)
+            if not mute:
+                print(f"{base_url}")
+
+            response = requests.get(url_API_IGN)
+            response.raise_for_status()  # lève une exception HTTP si code != 200
+            dico = json.loads(response.text)
+
+            if not isinstance(dico, dict) or 'error' in dico:
+                altitude = sea_Level(coordGPS, 0.)
             else:
-                for retour in dico['elevations']:
-                    altitude.append(retour)
+                altitude = [retour for retour in dico['elevations']]
                 if min(altitude) < 0:
-                    altitude = sealLevel(coordGPS, 0.)
+                    altitude = sea_Level(coordGPS, 0.)
             return altitude
-        except:
+
+        except (requests.exceptions.RequestException, json.JSONDecodeError) as e:
             if i < tries - 1:
-                print(Style.YELLOW + 'Try again API IGN' + Style.RESET)
+                print(Style.YELLOW + f'Try again API IGN ({e})' + Style.RESET)
                 continue
             else:
-                print(Style.RED +
-                      'No response from web server',
-                      '\n Ground level set to zero.'
-                      + Style.RESET)
-                altitude = sealLevel(coordGPS, 0.)
+                print(Style.RED + 'No response from web server\nGround level set to zero.' + Style.RESET)
+                altitude = sea_Level(coordGPS, 0.)
                 return altitude
 
 
-def sealLevel(coordGPS, hlevel):
+def sea_Level(coordGPS, hlevel):
     altitude = []
     for i in range(len(coordGPS)):
         altitude.append(hlevel)
@@ -504,8 +507,8 @@ def writeGPX(listPts, dirNameVol, dateEtude, mute=True):
                               "<text>Garmin International</text>\n" \
                               "</link>\n" \
                               "<time>" + dateGpx + "</time>\n" \
-                                                   "<bounds maxlat=\"" + str(maxLat) + "\" maxlon=\"" + str(
-        minLat) + "\" minlat=\"" + str(maxLon) + "\" minlon=\"" + str(minLon) + "\" />\n" \
+                                                   "<bounds maxlat=\"" + str(maxLat) + "\" maxlon=\"" + str(minLat) \
+                 + "\" minlat=\"" + str(maxLon) + "\" minlon=\"" + str(minLon) + "\" />\n" \
                                                                                 "</metadata>\n" \
                                                                                 "<trk>\n" \
                                                                                 "<name>" + nameTrkGPS + "</name>\n" \
@@ -546,7 +549,7 @@ def formatCoordGPSforGpx(listPts):
                           </trkpt>'
             maxLat, minLat, maxLon, minLon
     """
-    coordGPSgpxLat, coordGPSgpxLon, coordGPSgpxAlt, pointTrk  = [], [], [], []
+    coordGPSgpxLat, coordGPSgpxLon, coordGPSgpxAlt, pointTrk = [], [], [], []
     for k in range(len(listPts)):
         lat = listPts[k].gpsLat
         long = listPts[k].gpsLon
@@ -565,13 +568,10 @@ def formatCoordGPSforGpx(listPts):
 
 def TakeOff(coordGPS_TakeOff, bypass=False):
     """
-
-    :param coordGPS_TakeOff:               (N DD.dddddd  E DD.dddddd)
-    :return: coordGPS, alti_TakeOff       (DD.ddddddd , DD.ddddddd) , float
+    :param coordGPS_TakeOff:              (N DD.dddddd  E DD.dddddd)
+    :return: coordGPS, alti_TakeOff       (  DD.ddddddd , DD.ddddddd) , float
     """
-
-    takeOff = []
-    takeOff.append((coordGPS_TakeOff.split()[1], coordGPS_TakeOff.split()[3]))
+    takeOff = [(coordGPS_TakeOff.split()[1], coordGPS_TakeOff.split()[3])]
     alti_TakeOff = altitude_IGN(takeOff, mute=True, bypass=bypass)
     coordGPS = (coordGPS_TakeOff.split()[1], coordGPS_TakeOff.split()[3], alti_TakeOff[0])
     print(Style.GREEN, 'Take Off  : %s   %s m' % (coordGPS_TakeOff, alti_TakeOff[0]), Style.RESET)

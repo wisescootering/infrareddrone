@@ -7,12 +7,12 @@
 
 import warnings
 
-# Supprime uniquement les warnings de dépréciation
+# Remove only deprecation warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 import sys
-# print("Python utilisé :", sys.executable)
-# print("Chemins de recherche des modules :", sys.path)
+# print("Python  :", sys.executable)
+# print("Path for modules :", sys.path)
 import os
 import os.path as osp
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
@@ -43,7 +43,31 @@ class Main_Window(QMainWindow):
         self.list_dic_exif_xmp: list[dict] = None
         self.list_summary: list[dict] = None
         self.pathImageTakeoff = None
+        self.image_display_size = (100, 100)
+        self.def_app_dir = None
+        self.def_user_dir = None
+        self.central_widget = QWidget()
+        self.main_layout = QVBoxLayout(self.central_widget)
+        self.btn_create_mission = None
+        self.btn_load_images = None
+        self.btn_pre_process_images = None
+        self.btn_process_images = None
+        self.btn_help = None
+        self.command_layout = None
+        self.image_label = QLabel(self)
+        self.empty_pixmap = QPixmap(100, 100)
+        self.progress_bar = QProgressBar(self)
+        self.dialog_load_takeoff_image = None
+        self.dialog_create_file_structure = None
+        self.dialog_extract_exif = None
+        self.folderMissionPath: Path = None
+        self.dialog_synchro_clock = None
+
+
+
+
         self.init_GUI()
+
 
 
     def init_GUI(self):
@@ -155,7 +179,9 @@ class Main_Window(QMainWindow):
         """
         self.dialog_create_file_structure = Window_create_file_structure(self, self.dic_takeoff_light)  # Instantiate Window_12
         try:
-            self.dialog_create_file_structure.data_signal_from_dialog_create_file_structure_to_main_window.connect(self.handle_data_from_dialog_create_file_structure)
+            self.dialog_create_file_structure.data_signal_from_dialog_create_file_structure_to_main_window.connect(
+                self.handle_data_from_dialog_create_file_structure
+            )
             self.dialog_create_file_structure.show()
         except Exception as e:
             print("Error in Main_Window open_window_create_file_structure:", e)
@@ -198,17 +224,41 @@ class Main_Window(QMainWindow):
         height = 500  # height of the window
 
         # ----------------------- Choice of mission file -------------------------------------------------
-        folderMissionPath, coherent_response = choose_folder_mission(self.dic_takeoff, self.pref_screen.default_user_dir, self.dialog_create_file_structure.AerialPhotoFolder, self.dialog_create_file_structure.SynchroFolder)
+        folderMissionPath, coherent_response = choose_folder_mission(
+            self.dic_takeoff,
+            self.pref_screen.default_user_dir,
+            self.dialog_create_file_structure.AerialPhotoFolder,
+            self.dialog_create_file_structure.SynchroFolder
+        )
         if not coherent_response: return()
         # ---------------- Loads the 5 reference “VIS” images --------------------------------------------
         if self.dic_takeoff is not None: self.pathImageTakeoff = self.dic_takeoff["File path take-off"]
-        dialog_VIS = LoadVisNirImagesDialog(width, height, "VIS", folderMission=folderMissionPath, path_image_takeoff=self.pathImageTakeoff)
+        dialog_VIS = LoadVisNirImagesDialog(width,
+                                            height,
+                                            "VIS",
+                                            folderMission=folderMissionPath,
+                                            path_image_takeoff=self.pathImageTakeoff)
+
         dialog_VIS.exec()
+        vis_timeline = getattr(dialog_VIS, "timeline", None)
         dialog_VIS.reset_flags()
         # ---------------- Loads the 5 reference “NIR” images --------------------------------------------
-        dialog_NIR = LoadVisNirImagesDialog(width, height, "NIR", folderMission=folderMissionPath)
+        dialog_NIR = LoadVisNirImagesDialog(width,
+                                            height,
+                                            "NIR",
+                                            folderMission=folderMissionPath)
         dialog_NIR.exec()
+        nir_timeline = getattr(dialog_NIR, "timeline", None)
         dialog_NIR.reset_flags()
+
+        # Merge timelines and save
+        vis_timeline = vis_timeline or {}
+        nir_timeline = nir_timeline or {}
+        outputTakeoffFolder = Path(folderMissionPath) / "FlightAnalytics"
+        outputTakeoffFolder.mkdir(parents=True, exist_ok=True)
+
+        out_file = Uti.save_time_line_json(outputTakeoffFolder, vis_timeline, nir_timeline)
+        print(f"✅ Timelines saved to {out_file}")
 
 
     # ===================================================================================

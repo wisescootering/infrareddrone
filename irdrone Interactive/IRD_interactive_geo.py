@@ -77,11 +77,10 @@ def extract_alti_IGN(coordinates: list[tuple[float, float]], interpolation: int 
 
 
     if 'elevations' in dico_coordinates_IGN and isinstance(dico_coordinates_IGN['elevations'], list) and len(dico_coordinates_IGN['elevations']) > 0:
-        # print(f'DEBUG 02  {dico_coordinates_IGN}')
         return dico_coordinates_IGN['elevations'][0]
     else:
         # Gérez le cas où 'elevations' n'est pas une liste ou est vide
-        print(f'DEBUG  \'elevations\' n\'est pas une liste ou est vide')
+        print(Uti.Style.YELLOW + f'⚠️  \'elevations\' n\'est pas une liste ou est vide' + Uti.Style.RESET)
         return {'elevations': {'lon': coordinates[0][1], 'lat': coordinates[0][0], 'z': 0., 'acc': 0.}}
 
 
@@ -194,18 +193,18 @@ def get_altitudes_IGN(points, pause=0.3, batch_size=100, max_tries: int = 3, res
                     break
                 elif response.status_code == 429:
                     retry = int(response.headers.get("retry-after", 5))
-                    print(f"⚠️ Too many IGN requests, waiting {retry}s...")
+                    print(Uti.Style.YELLOW + f"⚠️ Too many IGN requests, waiting {retry}s..." + Uti.Style.RESET)
                     time.sleep(retry)
                 elif response.status_code == 405:
-                    print(f"⚠️ Attempt {attempt+1}/{max_tries} failed. Invalid IGN URL:\n {url}")
+                    print(Uti.Style.YELLOW + f"⚠️ Attempt {attempt+1}/{max_tries} failed. Invalid IGN URL:\n {url}" + Uti.Style.RESET)
                 else:
-                    print(f"❌ HTTP Error IGN {response.status_code}: {response.text}")
+                    print(Uti.Style.RED + f"❌ HTTP Error IGN {response.status_code}: {response.text}" + Uti.Style.RESET)
             except requests.RequestException as e:
-                print(f"⚠️ Attempt {attempt+1}/{max_tries} failed (IGN): {e}")
+                print(Uti.Style.YELLOW + f"⚠️ Attempt {attempt+1}/{max_tries} failed (IGN): {e}" + Uti.Style.RESET)
                 time.sleep(2)
 
         if not success:
-            print(f"⚠ IGN unavailable for this batch, altitudes set to -99999.00")
+            print(Uti.Style.YELLOW + f"⚠ IGN unavailable for this batch, altitudes set to -99999.00" + Uti.Style.RESET)
             results.extend([
                 {"lat": lat, "lon": lon, "z": -99999.00, "acc": "IGN_error"}
                 for lat, lon in batch
@@ -281,15 +280,15 @@ def get_altitudes_OpenTopo(points, pause=0.3, batch_size=100, max_tries: int = 3
                         success = True
                         break
                     else:
-                        print("⚠️ OpenTopo response missing 'results'")
+                        print(Uti.Style.YELLOW + f"⚠️ OpenTopo response missing 'results'" + Uti.Style.RESET)
                 else:
-                    print(f"❌ HTTP Error OpenTopo {response.status_code}")
+                    print(Uti.Style.RED + f"❌ HTTP Error OpenTopo {response.status_code}" + Uti.Style.RESET)
             except requests.RequestException as e:
-                print(f"⚠️ Attempt {attempt+1}/{max_tries} failed (OpenTopo): {e}")
+                print(Uti.Style.YELLOW + f"⚠️ Attempt {attempt+1}/{max_tries} failed (OpenTopo): {e}" + Uti.Style.RESET)
                 time.sleep(2)
 
         if not success:
-            print("⚠ OpenTopo unavailable, altitudes set to 0 m")
+            print(Uti.Style.YELLOW + f"⚠  OpenTopo unavailable, altitudes set to 0 m" + Uti.Style.RESET)
             results.extend([
                 {"lat": lat, "lon": lon, "z": 0, "acc": "unavailable"}
                 for lat, lon in batch
@@ -300,7 +299,7 @@ def get_altitudes_OpenTopo(points, pause=0.3, batch_size=100, max_tries: int = 3
 
 
 # ------------------------------------------------------------
-# 3️⃣  Combined procedure: IGN → OpenTopo fallback
+#  Combined procedure: IGN → OpenTopo fallback
 # ------------------------------------------------------------
 def get_altitudes(coordinates, verbose=False, bypass=False):
     """
@@ -329,17 +328,17 @@ def get_altitudes(coordinates, verbose=False, bypass=False):
 
     if bypass:
         dico_coordinates_GPS = force_sea_Level(coordinates)
-        print("Ground level set to zero (bypass)")
+        print(Uti.Style.YELLOW + f"⚠    Ground level set to zero (bypass)" + Uti.Style.RESET)
         return dico_coordinates_GPS
 
     if verbose:
-        print("🌍 Step 1: querying IGN...")
+        print(Uti.Style.GREEN + "[INFO]  Querying IGN..." + Uti.Style.RESET)
     dico_coordinates_GPS = get_altitudes_IGN(coordinates)
 
     # Check if IGN completely failed
     if all(p["z"] == -99999.00 for p in dico_coordinates_GPS):
         if verbose:
-            print("⚠️ IGN unavailable. Switching completely to OpenTopoData...")
+            print(Uti.Style.YELLOW + f"⚠️ IGN unavailable. Switching completely to OpenTopoData..." + Uti.Style.RESET)
         dico_coordinates_GPS = get_altitudes_OpenTopo(coordinates)
         return dico_coordinates_GPS
 
@@ -347,7 +346,7 @@ def get_altitudes(coordinates, verbose=False, bypass=False):
     missing_points = [(p["lat"], p["lon"]) for p in dico_coordinates_GPS if p["z"] == -99999.00]
     if missing_points:
         if verbose:
-            print(f"⚠️ {len(missing_points)} points outside France detected. Querying OpenTopoData...")
+            print(Uti.Style.YELLOW + f"⚠  ️ {len(missing_points)} points outside France detected. Querying OpenTopoData..." + Uti.Style.RESET)
         topo_data = get_altitudes_OpenTopo(missing_points)
         topo_dict = {(p["lat"], p["lon"]): p for p in topo_data}
 
@@ -369,39 +368,56 @@ def extract_alti_IGN_From_API(coordinates: List[Tuple[float, float]], bypass: bo
     return dic_geo
 
 
-def altitude_IGN(coordGPS: list[float], interpolation=0, bypass=False):
+def altitude_IGN(
+    coordGPS: List[Tuple[float, float]],
+    interpolation: int = 0,
+    bypass: bool = False
+) -> List[float]:
     """
-    recupère la liste des altitudes géographiques (IGN) à partir d'une liste de coordonnées coordGPS
-    :param coordGPS:       liste de coordennées GPS [(lat,long),....]
-    :param interpolation   non utilisé
-    :param bypass:     si True extract_alti_IGN_From_API renvoie z=0. sans interroger l'API
-    :return: altitude
+    Retrieve altitudes (z/ground) from the IGN elevation API.
 
-    exemple :
+    Parameters
+    ----------
+    coordGPS : List[Tuple[float, float]]
+        List of GPS coordinates as (latitude, longitude) pairs.
+    interpolation : int, optional
+        Currently unused. Present for compatibility with older versions.
+    bypass : bool, optional
+        If True, the function extract_alti_IGN_From_API will return zero
+        altitudes without calling the remote API.
 
+    Returns
+    -------
+    List[float]
+        A list of altitudes in the same order as the input coordinates.
+
+    Example
+    -------
     coordGPS = [
-                (48.3904, -4.48607),    # Brest (France)
-                (41.9028, 12.4964),     # Rome (Italy, outside IGN)
-                (41.92723, 8.73462),    # Ajaccio (France, Corsica)
-                ]
-
-    dico_coordinates_IGN = {'elevations': [{'lon': -4.48607, 'lat': 48.3904, 'z': 47.38, 'acc': 'IGN'},
-                                          {'lon': 12.4964, 'lat': 41.9028, 'z': 59.0, 'acc': 'OpenTopoData'},
-                                          {'lon': 8.73462, 'lat': 41.92723, 'z': 30.73, 'acc': 'IGN'}
-                                         ]
-                           }
-    altitude = [47.38, 59.0, 30.73]
-
+    ...     (48.3904, -4.48607),    # Brest (France)
+    ...     (41.9028, 12.4964),     # Rome (Italy, outside IGN)
+    ...     (41.92723, 8.73462),    # Ajaccio (France, Corsica)
+    ... ]
+    altitude_IGN(coordGPS)
+    [47.38, 59.0, 30.73]
     """
-    altitude = []
-    dico_coordinates_IGN = extract_alti_IGN_From_API(coordGPS, verbose=False, bypass=bypass)
+    altitude: List[float] = []
+
+    # Query the API (or bypass mode)
+    dico_coordinates_IGN = extract_alti_IGN_From_API(
+        coordGPS,
+        verbose=False,
+        bypass=bypass
+    )
+
     try:
-        for pt_coord in dico_coordinates_IGN['elevations']:
-            altitude.append(pt_coord['z'])
+        for pt_coord in dico_coordinates_IGN.get("elevations", []):
+            altitude.append(float(pt_coord.get("z", 0.0)))
     except Exception as e:
-        print("error in altitude_trk ", e)
+        print("Error in altitude_IGN:", e)
 
     return altitude
+
 
 
 def force_sea_Level(coordinates, hlevel: float = 0.):
@@ -422,27 +438,41 @@ def extract_geoTag(dic_geo: dict[str, Any],
                    bypass_data: Optional[dict[str, Any]] = None
                    ) -> dict[str, Optional[Any]]:
     """
-    Enrichit un dictionnaire avec des informations géographiques via l'API Nominatim.
-    Effectue plusieurs tentatives en cas d'échec de connexion.
+    Enrich a GPS dictionary with geographical information using the
+    Nominatim reverse-geocoding API. Multiple retries are performed in
+    case of connection issues.
 
-    Paramètres
+    Parameters
     ----------
-    dic_geo : dict
-        Dictionnaire contenant au minimum les clés 'lat' et 'lon'.
-    max_retries : int, optionnel
-        Nombre maximal de tentatives en cas d'échec (défaut = 3).
-    verbose : bool, optionnel
-        Si True, affiche des informations de diagnostic.
+    dic_geo : Dict[str, Any]
+        Dictionary containing at least the keys 'lat' and 'lon'.
+        This dictionary is updated in place and also returned.
 
-    Retour
-    ------
-    dict
-        Le dictionnaire d'origine enrichi avec les clés :
+    max_retries : int, optional
+        Maximum number of retries in case of failure (default = 3).
+
+    verbose : bool, optional
+        If True, diagnostic messages are printed.
+
+    bypass : bool, optional
+        If True, no API calls are performed. The dictionary is filled
+        with simulated values or values from `bypass_data`.
+
+    bypass_data : Dict[str, Any], optional
+        Optional dictionary providing predefined values for bypass mode.
+
+    Returns
+    -------
+    Dict[str, Optional[Any]]
+        The updated input dictionary enriched with the keys:
         ['road', 'lieu_dit', 'ville', 'code_postal', 'dept', 'region', 'pays'].
-        Si la géolocalisation échoue, ces clés sont présentes mais valent None.
-        :type dic_geo:
+        If geolocation fails, these keys are present but set to None.
+
+    Notes
+    -----
+    - The function never raises exceptions; it falls back to None values.
+    - Works even if only approximate or partial address information is available.
     """
-    print(f'DEBUG extract geoTag   bypass = {bypass}')
     # Clés à toujours garantir dans le dictionnaire de sortie
     fields = ['road', 'lieu_dit', 'ville', 'code_postal', 'dept', 'region', 'pays']
     for f in fields:
@@ -451,7 +481,7 @@ def extract_geoTag(dic_geo: dict[str, Any],
     # Vérification des coordonnées
     if 'lat' not in dic_geo or 'lon' not in dic_geo:
         if verbose:
-            print("⚠️ Pas de coordonnées GPS valides dans dic_geo.")
+            print(Uti.Style.YELLOW + f"⚠️ Pas de coordonnées GPS valides dans dic_geo." + Uti.Style.RESET)
         return dic_geo
 
     lat, lon = dic_geo['lat'], dic_geo['lon']
@@ -459,7 +489,7 @@ def extract_geoTag(dic_geo: dict[str, Any],
     # Mode bypass : retourne des valeurs factices/simulées sans appeler l'API
     if bypass:
         if verbose:
-            print("ℹ️ bypass activé : pas d'appel réseau pour la géolocalisation.")
+            print(Uti.Style.YELLOW + f"⚠   ️ bypass activé : pas d'appel réseau pour la géolocalisation." + Uti.Style.RESET)
         if bypass_data:
             # On remplit uniquement les clés attendues depuis bypass_data
             for k in fields:
@@ -510,94 +540,31 @@ def extract_geoTag(dic_geo: dict[str, Any],
                 dic_geo['region'] = address.get('state')
                 dic_geo['pays'] = address.get('country')
 
-                if verbose:
-                    print(f"✅ Géolocalisation réussie (tentative {attempt}) : {dic_geo['ville'] or '?'}")
                 return dic_geo
 
             else:
                 if verbose:
-                    print(f"⚠️ Aucune donnée d'adresse renvoyée (tentative {attempt}).")
+                    print(Uti.Style.YELLOW + f"⚠️ No address data returned (attempt {attempt})." + Uti.Style.RESET)
 
         except (GeocoderTimedOut, GeocoderUnavailable) as e:
             if verbose:
-                print(f"⏳ Tentative {attempt}/{max_retries} : échec ({e}). Nouvelle tentative dans {attempt} s...")
-            time.sleep(attempt)  # pause progressive
+                if verbose:
+                    print(Uti.Style.YELLOW + f"⏳ Attempt {attempt}/{max_retries}: failure ({e}). "
+                                             f"Retrying in {attempt} s..." + Uti.Style.RESET)
+                time.sleep(attempt)  # pause progressive
 
         except Exception as e:
             if verbose:
-                print(f"❌ Erreur inattendue (tentative {attempt}) : {e}")
+                print(Uti.Style.RED + f"❌ Unexpected error (attempt {attempt}): {e}" + Uti.Style.RESET)
             time.sleep(attempt)
 
-    # Si toutes les tentatives échouent
-    if verbose:
-        print(f"🚫 Impossible d'obtenir la géolocalisation après {max_retries} tentatives.")
-    dic_geo.setdefault('road', dic_geo.get('road') or None)
-    dic_geo.setdefault('lieu_dit', dic_geo.get('lieu_dit') or None)
-    dic_geo.setdefault('ville', dic_geo.get('ville') or None)
-    dic_geo.setdefault('code_postal', dic_geo.get('code_postal') or None)
-    dic_geo.setdefault('dept', dic_geo.get('dept') or None)
-    dic_geo.setdefault('region', dic_geo.get('region') or None)
-    dic_geo.setdefault('pays', dic_geo.get('pays') or None)
+        # ------  IF ALL RETRIES FAILED
+        if verbose:
+            print(Uti.Style.YELLOW + f"⚠️ Unable to obtain geolocation after {max_retries} attempts." + Uti.Style.RESET)
+        for f in fields:
+            dic_geo[f] = dic_geo.get(f) or None
 
     return dic_geo
-
-
-
-def extract_geoTag_old(dic_geo: dict[str, any]) -> dict[str, Optional[any]]:
-    """
-    Enrich input dictionary with geolocation information using the Nominatim API.
-
-    Parameters:
-    - dic_geo (Dict[str, Any]): A dictionary containing at least 'lat' and 'lon' keys
-                                for latitude and longitude, respectively.
-
-    Returns:
-    - Dict[str, Optional[Any]]: The input dictionary enriched with additional keys for
-                                'road', 'lieu_dit', 'ville', 'code_postal', 'dept',
-                                'region', and 'pays'. If the geocoding API fails to
-                                provide some information, corresponding keys may be
-                                absent or set to None in the returned dictionary.
-
-    Note:
-    - The function uses the Nominatim API to reverse geocode 'lat' and 'lon' from the
-      input dictionary to extract address information in French ('fr').
-    - Extracted information is added to the input dictionary which is then returned.
-    - If the API fails to respond in time, an error message is printed and the
-      function proceeds. If no geocoding information can be retrieved, an error
-      message is printed and keys for address information are set to None in the
-      returned dictionary.
-    """
-    try:
-        try:
-            try:
-                geolocator = Nominatim(user_agent="IRdrone")
-                session = Session()
-                session.verify = True
-                geolocator.adapter.session = session
-                lat = dic_geo['lat']
-                lon = dic_geo['lon']
-
-                location = geolocator.reverse((lat, lon), language='fr')
-                print(f'{geolocator.api} OK timeout :{geolocator.timeout}')
-                address = location.raw['address']
-
-                dic_geo['road'] = address.get('road')
-                dic_geo['lieu_dit'] = address.get('hamlet') or address.get('farm') or address.get('isolated_dwelling') or address.get('locality') or address.get('city_block') or address.get('districr')
-                dic_geo['ville'] = address.get('village') or address.get('city') or address.get('municipality') or address.get('town')
-                dic_geo['code_postal'] = address.get('postcode')
-                dic_geo['dept'] = address.get('county')
-                dic_geo['region'] = address.get('state')
-                dic_geo['pays'] = address.get('country')
-
-                return dic_geo
-
-            except GeocoderTimedOut:
-                print(f"Geocoding service not responding for coordinates {dic_geo['lat']}, {dic_geo['lon']}. Merci de réessayer plus tard.")
-        except AttributeError as e:
-            print(f"No GPS coordinates for this point.")
-            dic_geo['road'], dic_geo['lieu_dit'], dic_geo['ville'], dic_geo['code_postal'], dic_geo['dept'], dic_geo['region'], dic_geo['pays'] = None, None, None, None, None, None, None
-    except Exception as e:
-        print("Erreur", e,)
 
 
 def dstUTM(lat1, lon1, lat2, lon2):
@@ -852,7 +819,7 @@ def printGPS(gpsLatitude, gpsLongitude, gpsAltitude):
     stringgpsLong = "%s %d° %d\' %.6f\" " % (gpsLongitude[0], gpsLongitude[1], gpsLongitude[2], gpsLongitude[3])
     stringgpsLat = "%s %d° %d\' %.6f\" " % (gpsLatitude[0], gpsLatitude[1], gpsLatitude[2], gpsLatitude[3])
     stringgpsAlt = "%.2f" % gpsAltitude
-    print("  Longitude :", stringgpsLong, " |  Latitude :", stringgpsLat, " | Altitude : ", stringgpsAlt, " m")
+    print(Uti.Style.GREEN + f"  Longitude : { stringgpsLong} |  Latitude : { stringgpsLat} | Altitude : { stringgpsAlt} m" + Uti.Style.RESET)
     return
 
 
@@ -866,7 +833,7 @@ def writeGPX(listPts, dirNameVol, dateEtude, mute=True):
         Construction d'un fichier gpx contenant le tracé du plan de vol
         Il y a au début une tres grosse étiquette !!
     """
-    print('------ Write Garmin .gpx file')
+    print(Uti.Style.GREEN + f'[INFO]  Write Garmin .gpx file' + Uti.Style.RESET)
     #  mise en forme de la date pour le format gpx Garmin
     if dateEtude.month < 10:
         monthGpx = str('0' + str(dateEtude.month))
@@ -942,7 +909,7 @@ def writeGPX(listPts, dirNameVol, dateEtude, mute=True):
 
     dirpath = '%s\\TrkGpx-%s-%s-%i.gpx' % (dirNameVol, dayGpx, monthGpx, dateEtude.year)
 
-    if not mute: print('Ecriture du fichier gpx %s' % dirpath)
+    if not mute: print(Uti.Style.GREEN + '[INFO]   Ecriture du fichier gpx %s' % dirpath)
     if not os.path.isdir(dirNameVol):
         os.mkdir(dirNameVol)
     with open(dirpath, "w") as fichier:
@@ -1007,7 +974,7 @@ def extract_geotag_AVR(dic_geo: dict[str, any]):
 
 
         except AttributeError as e:
-            print(f"Pas de coordonnées GPS pour ce point.")
+            print(Uti.Style.YELLOW + f"⚠     Pas de coordonnées GPS pour ce point." + Uti.Style.RESET)
             dic_geo['road'], dic_geo['lieu_dit'], dic_geo['ville'], dic_geo['code_postal'], dic_geo['dept'], dic_geo['region'], dic_geo['pays'] = None, None, None, None, None, None, None
 
     except Exception as e:

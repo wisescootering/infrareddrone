@@ -1055,6 +1055,91 @@ def interpolationCameraCenterVis(x, k, dt, timelapse_Vis):
 
     return DeltaCvis
 
+# ----------------------time line
+
+def build_time_line(fichiers, numeros, dates, deltas, time_line, cam_type="VIS"):
+    """
+    Construit la structure d'une timeline pour un cam_type (VIS ou NIR).
+    Retourne un dictionnaire { cam_type: [ dict_entry, ... ] }.
+    """
+    data = []
+    for i, f in enumerate(fichiers):
+        delta = float(deltas[i - 1]) if i > 0 and (i - 1) < len(deltas) else 0.0
+        if isinstance(dates[i], datetime):
+            date_str = dates[i].isoformat(timespec="seconds")
+        else:
+            date_str = str(dates[i])
+        data.append({
+            "img_path": str(f),
+            "num_img": int(numeros[i]),
+            "date_img": date_str,
+            "delta_img": round(delta, 6),
+            "time_line_relative": round(float(time_line[i]), 6)
+        })
+    return {cam_type: data}
+
+
+def save_time_line_json(output_dir, *timeline_dicts, out_name="time_line.json"):
+    """
+    Sauvegarde un fichier JSON qui fusionne plusieurs timelines.
+    timeline_dicts sont des dicts renvoyés par build_time_line.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    out_file = output_dir / out_name
+
+    merged = {}
+    for d in timeline_dicts:
+        if not isinstance(d, dict):
+            continue
+        merged.update(d)  # clé = cam_type (ex: "VIS") remplacera/ajoutera
+
+    with open(out_file, "w", encoding="utf-8") as fh:
+        json.dump(merged, fh, indent=4, ensure_ascii=False)
+
+    return out_file
+
+def safe_path(path):
+    try:
+        return Path(path).resolve().as_posix()
+    except Exception as e:
+        print(f"[safe_path] ⚠️ Invalid path {path} : {e}")
+        return str(path)
+
+
+def _format_duration(seconds: float) -> str:
+    """
+    Returns a human-readable string representing the duration.
+    - For durations longer than 5 minutes, display in minutes with one decimal.
+    - For shorter durations, display in seconds as an integer.
+    Parameters
+    ----------
+    seconds : float    Duration in seconds.
+    Returns
+    -------
+    str Formatted duration as a string, e.g. "3 s" or "5.2 min".
+    """
+    if seconds > 300:  # more than 5 minutes
+        return f"{seconds / 60:.1f} min"
+    else:
+        return f"{seconds:.0f} s"
+
+
+class Style:
+    """
+    Use for nice console line colors
+    """
+    BLACK = '\033[30m '
+    RED = '\033[31m '
+    GREEN = '\033[32m '
+    YELLOW = '\033[33m '
+    BLUE = '\033[34m '
+    MAGENTA = '\033[35m '
+    CYAN = '\033[36m '
+    WHITE = '\033[37m '
+    UNDERLINE = '\033[4m '
+    RESET = '\033[0m '
+
 
 
 

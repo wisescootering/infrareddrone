@@ -87,99 +87,150 @@ class LoadVisNirImagesDialog(QDialog):
     num_images = 5
     flags = [False] * num_images
 
-
-    def __init__(self, width: int, height: int, type_img: str,  folderMission: Path = None, path_image_takeoff: Path = None):
+    def __init__(self,
+                 width: int,
+                 height: int,
+                 type_img: str,
+                 folderMission: Optional[Path] = None,
+                 path_image_takeoff: Optional[Path] = None):
         super().__init__()
 
         if folderMission is None or not folderMission.exists():
-            raise ValueError(f"folderMission invalide : {folderMission}")
+            raise ValueError(f"Invalid folderMission: {folderMission}")
 
-        self.num_images = 5
-        self.pref_screen = Uti.Prefrence_Screen()
-        self.screen_width = width
-        self.screen_height = height
-        self.target_screen_index = self.pref_screen.defaultScreenID
-        self.screen_adjust = self.pref_screen.screenAdjust
-        self.window_display_size = self.pref_screen.windowDisplaySize
+        # ---- Basic GUI and screen parameters
+        self.num_images: int = 5
+        self.pref_screen: Uti.Prefrence_Screen = Uti.Prefrence_Screen()
+        self.screen_width: int = width
+        self.screen_height: int = height
+        self.target_screen_index: int = self.pref_screen.defaultScreenID
+        self.screen_adjust: float = self.pref_screen.screenAdjust
+        self.window_display_size: tuple[int, int] = self.pref_screen.windowDisplaySize
 
-        self.type_img = type_img
-        if self.type_img == "VIS" or self.type_img == "DNG":
+        # ---- Image type and extension
+        self.type_img: str = type_img
+        self.ext: str
+        if self.type_img in ("VIS", "DNG"):
             self.ext = "dng"
             self.type_img = "VIS"
-        elif self.type_img == "NIR" or self.type_img == "jpg":
+        elif self.type_img in ("NIR", "jpg"):
             self.ext = "jpg"
             self.type_img = "NIR"
         else:
             self.ext = "jpg"
 
-
-        self.currentUserDir = self.pref_screen.current_directory
-        self.user_dir = self.currentUserDir
-        self.new_user_dir = self.currentUserDir
-
-        if os.path.exists(folderMission):
-            self.folderMissionPath = folderMission
-        else:
-            print("error. Problem with: ", folderMission)
-
-        self.init_image_takeoff_available(path_image_takeoff)
-
-
-        # ---- lecture des données à transférer si elles existe déjà
-
-        verbose = True
-        self.image_0_available = False
-        self.image_first_sync_available = False
-        self.image_last_sync_available = False
-        self.image_first_fly_available = False
-        self.image_last_fly_available = False
-        self.outputTakeoffFolder = Path(self.folderMissionPath) / "FlightAnalytics" if self.folderMissionPath else None
+        # ---- Directories
+        self.currentUserDir: str = self.pref_screen.current_directory
+        self.user_dir: str = self.currentUserDir
+        self.new_user_dir: str = self.currentUserDir
+        self.folderMissionPath: Path = folderMission
+        self.outputTakeoffFolder: Path = Path(self.folderMissionPath) / "FlightAnalytics"
+        self.outputFlightAnalyticsFolder: Path = Path(self.folderMissionPath) / "FlightAnalytics"
         self.outputTakeoffFolder.mkdir(parents=True, exist_ok=True)
-        if self.outputTakeoffFolder:
+        self.outputFlightAnalyticsFolder.mkdir(parents=True, exist_ok=True)
+
+        # ---- Image availability flags
+        self.image_0_available: bool = False
+        self.image_first_sync_available: bool = False
+        self.image_last_sync_available: bool = False
+        self.image_first_fly_available: bool = False
+        self.image_last_fly_available: bool = False
+        self.flags: list[bool] = [False] * self.num_images
+
+        # ---- Placeholder for images
+        self.listVisRefPath: list[Optional[str]] = [None] * self.num_images
+        self.listNirRefPath: list[Optional[str]] = [None] * self.num_images
+        self.listImgRefPath: list[Optional[str]] = [None] * self.num_images
+        self.currentImgTyp: str = self.type_img
+        self.image_labels: list[QLabel] = [QLabel() for _ in range(self.num_images)]
+        self.image_name_labels: list[QLabel] = [QLabel() for _ in range(self.num_images)]
+        self.img_legend: list[str] = ["Take-off image:",
+                                      "First sync image.",
+                                      "Last sync image.",
+                                      "First fly image.",
+                                      "Last fly image."]
+
+        # ---- Command buttons
+        self.btn_command: list[QPushButton] = []
+        self.btn_load_all_images: Optional[QPushButton] = None
+        self.btn_validate_load_all_images: Optional[QPushButton] = None
+        self.btn_help: Optional[QPushButton] = None
+
+        # ---- GUI progress bar
+        self.progress_bar: Optional[QProgressBar] = None
+
+        # ---- Load previous transfer info if available
+        verbose = True
+        if self.outputFlightAnalyticsFolder:
             if self.type_img == "NIR":
-                self.info_nir_jpg = self.load_transfer_info(self.outputTakeoffFolder, "NIR", "jpg")
+                self.info_nir_jpg: Optional[dict] = self.load_transfer_info(self.outputFlightAnalyticsFolder, "NIR", "jpg")
                 if self.info_nir_jpg:
-                    if verbose:
-                        print(f"📂 Données NIR (jpg) rechargées : \n"
-                              f"  Dossier source sync: {self.info_nir_jpg['sync']['outputFolder']}\n"
-                              f"  Phase Sync : {len(self.info_nir_jpg['sync']['listCopiedImages'])} images\n"
-                              f"  Dossier source fly: {self.info_nir_jpg['fly']['outputFolder']}\n"
-                              f"  Phase Fly  : {len(self.info_nir_jpg['fly']['listCopiedImages'])} images\n"
-                              )
+                    self.image_0_available = True
+                    self.image_first_sync_available = True
+                    self.image_last_sync_available = True
+                    self.image_first_fly_available = True
+                    self.image_last_fly_available = True
+            elif self.type_img == "VIS":
+                self.info_vis_dng: Optional[dict] = self.load_transfer_info(self.outputFlightAnalyticsFolder, "VIS", "dng")
+                if self.info_vis_dng:
                     self.image_0_available = True
                     self.image_first_sync_available = True
                     self.image_last_sync_available = True
                     self.image_first_fly_available = True
                     self.image_last_fly_available = True
 
-                else:
-                    print("⚠️  Aucun fichier de transfert NIR jpg trouvé.")
-            elif self.type_img == "VIS":
-                self.info_vis_dng = self.load_transfer_info(self.outputTakeoffFolder, "VIS", "dng")
-                if self.info_vis_dng:
-                    if verbose:
-                        print(f"📂 Données VIS (dng) rechargées : \n"
-                              f"  Dossier source sync: {self.info_vis_dng['sync']['outputFolder']}\n"
-                              f"  Phase Sync : {len(self.info_vis_dng['sync']['listCopiedImages'])} images\n"
-                              f"  Dossier source fly: {self.info_vis_dng['fly']['outputFolder']}\n"
-                              f"  Phase Fly  : {len(self.info_vis_dng['fly']['listCopiedImages'])} images\n"
-                              )
-                    self.image_0_available = False
-                    self.image_first_sync_available = True
-                    print(f'DEBUG 410   self.image_first_sync_available = {self.image_first_sync_available}')
-                    self.image_last_sync_available = True
-                    self.image_first_fly_available = True
-                    self.image_last_fly_available = True
-                else:
-                    print("⚠️  Aucun fichier de transfert VIS dng trouvé.")
+        self.timeline: list[dict] = []
+        self.path_image_takeoff: Optional[Path] = path_image_takeoff   # Takeoff image path
+        self.image_takeoff_available: bool = False   # Takeoff image path
+        self.image_display_size: tuple[int, int] = (100, 100)  # Image display size (will be set in init_GUI)
+        self.empty_pixmap: Optional[QPixmap] = None  # Empty pixmap placeholder (will be set in init_GUI)
 
+
+        # ---- Initialize takeoff image availability
+        self.init_image_takeoff_available(path_image_takeoff)
+
+        # ---- Initialize GUI
         self.init_GUI()
 
-    def init_GUI(self):
+    def init_GUI(self) -> None:
+        """
+        Initialize the main GUI for loading mission images, setting up image placeholders,
+        captions, command buttons, and progress bar. Supports both VIS and NIR image types
+        and can pre-load reference images if available.
+
+        The GUI is structured in three main sections:
+        1. Top command bar with buttons to load individual reference images.
+        2. Middle image area displaying placeholders and captions for each reference image.
+        3. Bottom command bar with buttons to load all images, validate, or access help,
+           along with a progress bar.
+
+        Buttons are disabled initially and will be enabled when the required reference
+        images are loaded. Pre-existing loaded images are automatically displayed if the
+        interactive sequence has been run previously.
+
+        Attributes (from self)
+        ----------------------
+        screen_width : int
+        screen_height : int
+        num_images : int
+        type_img : str
+        image_labels : list[QLabel]
+        image_name_labels : list[QLabel]
+        btn_command : list[QPushButton]
+        btn_load_all_images : QPushButton
+        btn_validate_load_all_images : QPushButton
+        btn_help : QPushButton
+        progress_bar : QProgressBar
+
+    Returns
+    -------
+    None
+        """
+
         try:
 
             self.setStyleSheet("background-color: white; color: black;")
-            #   Setting the top command bar and window dimensions
+            # Setting the top command bar and window dimensions
             self.setWindowTitle(f"Load the {self.type_img} images of the mission")
             icon_path = os.path.join(self.pref_screen.default_app_dir, "Icon", "IRDrone.ico")
             if os.path.exists(icon_path):
@@ -193,9 +244,9 @@ class LoadVisNirImagesDialog(QDialog):
             self.listNirRefPath = [None] * self.num_images
             self.listImgRefPath = [None] * self.num_images
             self.currentImgTyp = self.type_img
-            # Creating locations for images
+            # Creating placeholders for images
             self.image_labels = [QLabel() for _ in range(self.num_images)]
-            # Creating locations for image captions.
+            # Creating placeholders for image captions
             self.img_legend = ["Take-off image:",
                                "First sync image.",
                                "Last sync image.",
@@ -207,16 +258,16 @@ class LoadVisNirImagesDialog(QDialog):
             btn_legend = ["Load first mission image.",
                           "Load first sync image.",
                           "Load last sync image.",
-                          "Load first image of fly.",
-                          "Load last image of fly."]
-            # Connection of buttons to actions
+                          "Load first fly image.",
+                          "Load last fly image."]
+            # Connecting buttons to actions
             button_width = int(0.9 * (self.screen_width // self.num_images))
             self.btn_command = [QPushButton(btn_legend[i]) for i in range(self.num_images)]
             for btn in self.btn_command:
                 btn.setFixedWidth(button_width)
                 btn.setStyleSheet("background-color: darkGray; color: black;")
 
-            # Button to load all the images in the mission once the reference images have been chosen.
+            # Button to load all mission images once reference images are chosen
             button_width = int(0.7 * (self.screen_width // self.num_images))
             self.btn_load_all_images = QPushButton("Unload all mission images")
             self.btn_load_all_images.setFixedWidth(button_width)
@@ -230,61 +281,58 @@ class LoadVisNirImagesDialog(QDialog):
             self.btn_validate_load_all_images.setEnabled(False)
             self.btn_validate_load_all_images.setStyleSheet("background-color: gray; color: darkGray;")
 
-            # Progress bar when loading all images.
+            # Progress bar when loading all images
             self.progress_bar = QProgressBar()
             self.progress_bar.setValue(0)
 
-            # Creating the layout of the main window.
-            layout = QVBoxLayout()     # layout principal
-            # top window for command bar
+            # Creating the layout of the main window
+            layout = QVBoxLayout()  # main layout
+            # top layout for command bar
             top_layout = QHBoxLayout()
             for btn in self.btn_command:
                 top_layout.addWidget(btn)
-            # middle window for images and their captions
-            middle_layout = QHBoxLayout()  # uses a vertical layout to stack labels
+            # middle layout for images and their captions
+            middle_layout = QHBoxLayout()  # uses vertical layouts for labels
             for label in self.image_name_labels:
                 middle_layout.addWidget(label)
 
-            # ---------------- Image area. Creating a neutral image -----------------
-            self.image_display_size = (int((self.screen_width-100)/self.num_images), int((self.screen_width-100)/self.num_images*3/4))  # image area size
-            # Create an empty pixmap of the desired size and adjust the size if necessary
-            self.empty_pixmap = QPixmap(* self.image_display_size)
-            self.empty_pixmap.fill(QColor(Qt.GlobalColor.gray))  # transparent, gray, darkYellow etc)
-            # Adjust the size if necessary
+            # ---------------- Image area: Creating a neutral placeholder image -----------------
+            self.image_display_size = (
+                int((self.screen_width - 100) / self.num_images),
+                int((self.screen_width - 100) / self.num_images * 3 / 4)
+            )  # image area size
+            # Create an empty pixmap of the desired size
+            self.empty_pixmap = QPixmap(*self.image_display_size)
+            self.empty_pixmap.fill(QColor(Qt.GlobalColor.gray))  # neutral gray
+            # Adjust size if necessary
             self.empty_pixmap.scaled(*self.image_display_size, Qt.AspectRatioMode.KeepAspectRatio)
-            #      Affiche l'image du Take-off (si elle est  disponible) comme première image.
-            #      Dans ce cas le dossier qui la contient sera le dossier par défaut pour rechercher les autres images.
+            # Display the take-off image (if available) as the first image
+            # This folder will be used as the default to search for other images
 
             # Creating a list to store pairs (image, QLabel)
             image_label_pairs = []
             for index, image_label in enumerate(self.image_labels):
                 image_label.setPixmap(self.empty_pixmap)
                 name_label = self.image_name_labels[index]
-                name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)  # Centers the QLabel text.
+                name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)  # center QLabel text
 
-                # Applies CSS styling to reduce spacing between image and text
+                # CSS styling to reduce spacing between image and caption
                 image_label.setStyleSheet("margin-bottom: 100px;")
                 image_label.setStyleSheet("margin-top: 30px;")
                 # Add each (image-QLabel) pair to the list
-                image_label_pairs.append((image_label, self.image_name_labels[index]))
+                image_label_pairs.append((image_label, name_label))
 
-            # Creating a list to store pairs (image, legend).
+            # Creating a list to store pairs (image, legend)
             middle_layout = QHBoxLayout()
-
             for image_label, name_label in zip(self.image_labels, self.image_name_labels):
-                # Creating a vertical layout for each pair (image, legend).
+                # Creating vertical layout for each pair (image, legend)
                 pair_layout = QVBoxLayout()
-
-                # Adds image and caption to vertical layout.
                 pair_layout.addWidget(image_label)
                 pair_layout.addWidget(name_label)
-
-                # Adds the vertical layout of the pair (image , legend) to the horizontal layout of the middle window.
+                # Add pair layout to middle horizontal layout
                 middle_layout.addLayout(pair_layout)
 
-
-
-            #  bottom window for "load mission images" command and progress bar.
+            # bottom layout for "load mission images" buttons and progress bar
             bottom_layout = QVBoxLayout()
             bottom_command = QHBoxLayout()
             bottom_command.addWidget(self.btn_load_all_images)
@@ -299,48 +347,53 @@ class LoadVisNirImagesDialog(QDialog):
 
             center_on_screen(self, self.target_screen_index, self.screen_adjust, self.window_display_size)
 
-            # Disables btn_*_load_all_images on startup. It will be activated when all five images are loaded.
+            # Disable btn_load_all_images at startup. Will be enabled when all five reference images are loaded
             self.btn_load_all_images.setEnabled(False)
             self.btn_load_all_images.setStyleSheet("background-color: darkBlue; color: gray;")
 
-            # Chargement des images si séquence interactive déjà faite une fois
-            print(f'DEBUG 420 self.type_img = {self.type_img}')
+            # Load images if interactive sequence was already completed once
             if self.type_img == "VIS":
-                if self.image_takeoff_available:
+                print(f'DEBUG 02  self.image_0_available ={self.image_0_available}')
+                print(f'DEBUG 03  self.image_takeoff_available ={self.image_takeoff_available}')
+                if self.image_0_available:
+                    print(Uti.Style.GREEN + '[INFO] Loading takeoff image' + Uti.Style.RESET)
+                    self.open_sync_and_fly_image_VIS_or_NIR(self.type_img, self.ext, 0)
+                elif self.image_takeoff_available:
                     self.open_takeoff_image(self.path_image_takeoff)
+
                 if self.image_first_sync_available:
-                    print(f'BEBUG 102   chargement first image sync')
+                    print(Uti.Style.GREEN + '[INFO] Loading first sync image' + Uti.Style.RESET)
                     self.open_sync_and_fly_image_VIS_or_NIR(self.type_img, self.ext, 1)
                 if self.image_last_sync_available:
-                    print(f'BEBUG 103   chargement last image sync VIS')
+                    print(Uti.Style.GREEN + '[INFO] Loading last sync image VIS' + Uti.Style.RESET)
                     self.open_sync_and_fly_image_VIS_or_NIR(self.type_img, self.ext, 2)
                 if self.image_first_fly_available:
-                    print(f'BEBUG 104   chargement first image fly VIS')
+                    print(Uti.Style.GREEN + '[INFO] Loading first fly image VIS' + Uti.Style.RESET)
                     self.open_sync_and_fly_image_VIS_or_NIR(self.type_img, self.ext, 3)
                 if self.image_last_fly_available:
-                    print(f'BEBUG 105   chargement last image fly VIS')
+                    print(Uti.Style.GREEN + '[INFO] Loading last fly image VIS' + Uti.Style.RESET)
                     self.open_sync_and_fly_image_VIS_or_NIR(self.type_img, self.ext, 4)
+
                 if all(self.flags):
                     self.btn_load_all_images.setEnabled(True)
                     self.btn_load_all_images.setStyleSheet("background-color: darkBlue; color: white;")
+
             elif self.type_img == "NIR":
                 if self.image_0_available:
-                    print(f'BEBUG 201   chargement image NIR 0')
+                    print(Uti.Style.GREEN + '[INFO] Loading takeoff image' + Uti.Style.RESET)
+                    self.open_sync_and_fly_image_VIS_or_NIR(self.type_img, self.ext, 0)
                 if self.image_first_sync_available:
-                    print(f'BEBUG 202   chargement first image sync NIR')
+                    print(Uti.Style.GREEN + '[INFO] Loading first sync image NIR' + Uti.Style.RESET)
                     self.open_sync_and_fly_image_VIS_or_NIR(self.type_img, self.ext, 1)
                 if self.image_last_sync_available:
-                    print(f'BEBUG 203   chargement last image sync NIR')
+                    print(Uti.Style.GREEN + '[INFO] Loading last sync image NIR' + Uti.Style.RESET)
                     self.open_sync_and_fly_image_VIS_or_NIR(self.type_img, self.ext, 2)
                 if self.image_first_fly_available:
-                    print(f'BEBUG 204   chargement first image fly NIR')
+                    print(Uti.Style.GREEN + '[INFO] Loading first fly image NIR' + Uti.Style.RESET)
                     self.open_sync_and_fly_image_VIS_or_NIR(self.type_img, self.ext, 3)
                 if self.image_last_fly_available:
-                    print(f'BEBUG 205   chargement last image fly NIR')
+                    print(Uti.Style.GREEN + '[INFO] Loading last fly image NIR' + Uti.Style.RESET)
                     self.open_sync_and_fly_image_VIS_or_NIR(self.type_img, self.ext, 4)
-
-
-
 
             # Setting button actions
             for index, btn in enumerate(self.btn_command):
@@ -350,8 +403,9 @@ class LoadVisNirImagesDialog(QDialog):
             self.btn_help.clicked.connect(self.on_help)
             self.btn_help.setStyleSheet("background-color: green; color: white;")
             self.setLayout(layout)
+
         except Exception as e:
-            print("error in step2  init_GUI :", e)
+            print("Error in step2 init_GUI:", e)
 
 
     @classmethod
@@ -432,8 +486,6 @@ class LoadVisNirImagesDialog(QDialog):
             #      procedure called by the button .btn_load_all_images which is in the window opened by
             #      load_Vis_Nir_images.LoadVisNirImagesDialog(... ,EXT, ... ) where EXT in {"NIR", "VIS"}.
             #      This procedure is therefore automatically in the right context.
-            print(f'DEBUG 700  os.path.basename(self.listImgRefPath[1]) = {os.path.basename(self.listImgRefPath[1])}')
-            print(f'DEBUG 701  os.path.basename(self.listImgRefPath[2]) = {os.path.basename(self.listImgRefPath[2])}')
 
             idMinSync = int(os.path.splitext(os.path.basename(self.listImgRefPath[1]))[0].split("_")[-1])
             idMaxSync = int(os.path.splitext(os.path.basename(self.listImgRefPath[2]))[0].split("_")[-1])
@@ -446,12 +498,11 @@ class LoadVisNirImagesDialog(QDialog):
             idMinFly = int(os.path.splitext(os.path.basename(self.listImgRefPath[3]))[0].split("_")[-1])
             idMaxFly = int(os.path.splitext(os.path.basename(self.listImgRefPath[4]))[0].split("_")[-1])
 
-            idMinTakeoff = int(os.path.splitext(os.path.basename(self.listImgRefPath[0]))[0].split("_")[-1])
-            idMaxTakeoff = idMinTakeoff
-
+            idTakeoff = int(os.path.splitext(os.path.basename(self.listImgRefPath[0]))[0].split("_")[-1])
 
             outputFlyFolder = os.path.join(outputFolder, "AerialPhotography")
             outputTakeoffFolder = os.path.join(outputFolder, "FlightAnalytics")
+            outputFlightAnalyticsFolder = os.path.join(outputFolder, "FlightAnalytics")
             if not os.path.isdir(outputFlyFolder):
                 # print("The destination folder ", outputFlyFolder, " of the images does not exist!")
                 Uti.show_error_message(f"The destination folder {outputFlyFolder} for the images does not exist!\n"
@@ -478,109 +529,40 @@ class LoadVisNirImagesDialog(QDialog):
                                 "Be patient ;-) ",
                                 QMessageBox.Icon.Information)
 
+
             if self.currentImgTyp == "NIR":
+                # -----------------------------------------------------------------------------------
+                #                               NIR
+                # -----------------------------------------------------------------------------------
 
-                # ----------  calcul de la time line NIR
-                print(f'TEST 0061  calcul time line NIR  en developpement ....')
-                print(f'TEST 0062  inputFolder : {inputFolder}  pour images NIR')
-                dates_NIR, numeros_NIR, deltas_NIR, time_line_NIR, fichiers_img_NIR = \
-                    self.time_line_analyser_images(inputFolder, img_Typ=self.currentImgTyp, extension=".RAW", verbose=False)
-                self.save_time_line_json(
-                    fichiers=fichiers_img_NIR,
-                    numeros=numeros_NIR,
-                    dates=dates_NIR,
-                    deltas=deltas_NIR,
-                    time_line=time_line_NIR,
-                    output_dir=outputTakeoffFolder,
-                    cam_type=self.currentImgTyp
+                # ----------  build time line NIR
+                self.timeline = self.time_line_analyser_images(inputFolder, img_Typ=self.currentImgTyp, extension=".RAW", verbose=False)
+
+                # ----------  transfer of NIR images of the tkoff, Sync and Fly phase (jpg & raw) ----------------
+                self.process_image_transfer(
+                    inputFolder, ["jpg", "raw"],
+                    outputSyncFolder, outputFlyFolder, outputFlightAnalyticsFolder,
+                    idTakeoff, idMinSync,  idMaxSync, idMinFly, idMaxFly, offset=[0, -1],
+                    progressSync=[(0, 10), (0, 30)],
+                    progressFly=[(10, 100), (30, 100)]
                 )
 
-                # ----------  transfer of NIR images of the Sync and Fly phase (jpg) ----------------
-                listInputImages = self.create_list_image_in_input_folder(inputFolder, "jpg")
-                listSyncImages = self.load_inputFolder_2_outputFolder(inputFolder, listInputImages, outputSyncFolder, idMinSync, idMaxSync, 0, 10)
-                listFlyImages = self.load_inputFolder_2_outputFolder(inputFolder, listInputImages, outputFlyFolder, idMinFly, idMaxFly, 10, 30)
-                self.save_transfer_info(
-                    output_folder=outputTakeoffFolder,
-                    input_folder=inputFolder,
-                    cam_type=self.currentImgTyp,
-                    img_type="jpg",
-                    sync_data={
-                        "outputFolder": outputSyncFolder,
-                        "idMin": idMinSync,
-                        "idMax": idMaxSync,
-                        "listCopiedImages": listSyncImages,
-                    },
-                    fly_data={
-                        "outputFolder": outputFlyFolder,
-                        "idMin": idMinFly,
-                        "idMax": idMaxFly,
-                        "listCopiedImages": listFlyImages
-                    }
-                )
-                # ----------  transfer of NIR images of the Sync and Fly phase (raw) ----------------
-                listInputImages = self.create_list_image_in_input_folder(inputFolder, "raw")
-                listSyncImages = self.load_inputFolder_2_outputFolder(inputFolder, listInputImages, outputSyncFolder, idMinSync - 1, idMaxSync - 1, 30, 60)
-                listFlyImages = self.load_inputFolder_2_outputFolder(inputFolder, listInputImages, outputFlyFolder, idMinFly - 1, idMaxFly - 1, 60, 100)
-                self.save_transfer_info(
-                    output_folder=outputTakeoffFolder,
-                    input_folder=inputFolder,
-                    cam_type=self.currentImgTyp,
-                    img_type="raw",
-                    sync_data={
-                        "outputFolder": outputSyncFolder,
-                        "idMin": idMinSync,
-                        "idMax": idMaxSync,
-                        "listCopiedImages": listSyncImages,
-                    },
-                    fly_data={
-                        "outputFolder": outputFlyFolder,
-                        "idMin": idMinFly,
-                        "idMax": idMaxFly,
-                        "listCopiedImages": listFlyImages
-                    }
-                )
             elif self.currentImgTyp == "VIS":
-                # ----------  calcul de la time line NIR
-                print(f'TEST 0070  calcul time line VIS  en developpement ....')
-                dates_VIS, numeros_VIS, deltas_VIS, time_line_VIS, fichiers_img_VIS = \
-                    self.time_line_analyser_images(inputFolder, img_Typ=self.currentImgTyp, extension=".DNG", verbose=False)
-                self.save_time_line_json(
-                    fichiers=fichiers_img_VIS,
-                    numeros=numeros_VIS,
-                    dates=dates_VIS,
-                    deltas=deltas_VIS,
-                    time_line=time_line_VIS,
-                    output_dir=outputTakeoffFolder,
-                    cam_type=self.currentImgTyp
-                )
-                # ----------   transfer of VIS images of the Sync  phase (dng) ----------------
-                listInputImages = self.create_list_image_in_input_folder(inputFolder, "dng")
-                listSyncImages = self.load_inputFolder_2_outputFolder(inputFolder, listInputImages, outputSyncFolder, idMinSync, idMaxSync, 0, 30)
-                # ----------   transfer of VIS images of the Fly  phase (dng)----------------
-                listFlyImages = self.load_inputFolder_2_outputFolder(inputFolder, listInputImages, outputFlyFolder, idMinFly, idMaxFly, 30, 98)
-                self.save_transfer_info(
-                    output_folder=outputTakeoffFolder,
-                    input_folder=inputFolder,
-                    cam_type=self.currentImgTyp,
-                    img_type="dng",
-                    sync_data={
-                        "outputFolder": outputSyncFolder,
-                        "idMin": idMinSync,
-                        "idMax": idMaxSync,
-                        "listCopiedImages": listSyncImages,
-                    },
-                    fly_data={
-                        "outputFolder": outputFlyFolder,
-                        "idMin": idMinFly,
-                        "idMax": idMaxFly,
-                        "listCopiedImages": listFlyImages
-                    }
-                )
+                # -----------------------------------------------------------------------------------
+                #                               VIS
+                # -----------------------------------------------------------------------------------
 
-                # ----------   transfer of VIS images of the take-off (dng)----------------
-                self.load_inputFolder_2_outputFolder(inputFolder, listInputImages, outputTakeoffFolder, idMinTakeoff, idMaxTakeoff, 98, 100)
+                # ----------  build time line NIR
+                self.timeline = self.time_line_analyser_images(inputFolder, img_Typ=self.currentImgTyp, extension=".DNG", verbose=False)
 
-            self.progress_bar.setValue(100)
+                # ----------   transfer of VIS images of the tkoff, Sync  phase (dng) ----------------
+                self.process_image_transfer(
+                    inputFolder, "dng",
+                    outputSyncFolder, outputFlyFolder, outputFlightAnalyticsFolder,
+                    idTakeoff, idMinSync, idMaxSync, idMinFly, idMaxFly,
+                    progressSync=(0, 30),
+                    progressFly=(30, 100)
+                )
 
             # print("All images have been transferred successfully.")
             Uti.show_info_message("IRDrone", f"Your {(max((idMaxFly - idMinFly),0) + max((idMaxSync - idMinSync),0))}  images have been transferred \n from directory {inputFolder}  of the camera SD card \n to the mission directory {outputFlyFolder}.",
@@ -588,102 +570,130 @@ class LoadVisNirImagesDialog(QDialog):
             self.btn_validate_load_all_images.setEnabled(True)
             self.btn_validate_load_all_images.setStyleSheet("background-color: gray; color: white;")
 
+            # Optionnel : fermer le dialogue automatiquement (si tu veux)
+            # self.accept()
+
+            return getattr(self, "timeline", None)
 
         except Exception as e:
             print("error in on_load_all_images  :", e)
+            return None
 
 
-    def extract_files_images(self, inputFolder, extension=".tif", verbose=False):
+    @staticmethod
+    def extract_files_images(
+            inputFolder: Union[str, Path],
+            extension: str = ".tif",
+            verbose: bool = False
+    ) -> List[Path]:
         """
-        retourne la liste des images d'un type donné présentes dans un dossier
+        Returns a list of image files of a given type present in a folder.
 
-        Paramètres
+        Parameters
         ----------
-        base_dir : Path ou str
-            Chemin de base
-        folder_name : str
-            Nom du sous-dossier à examiner
-        extension : str
-            Extension des fichiers à traiter (par défaut ".tif").
-            Valeurs admises : .raw, .tif, .jpg, .jpeg, .png (insensible à la casse).
-        return:
-        ----------
-        fichiers : liste des chemins des images
+        inputFolder : str or Path
+            Base folder to scan.
+        extension : str, optional
+            Extension of files to process (default ".tif").
+            Supported values: .dng, .raw, .tif, .jpg, .jpeg, .png (case-insensitive).
+        verbose : bool, optional
+            If True, prints the number of files found (default False).
+
+        Returns
+        -------
+        list[Path]
+            Sorted list of file paths matching the extension.
         """
-        # Normaliser l'extension (insensible à la casse, toujours avec un point)
+        # Normalize extension (case-insensitive, ensure it starts with a dot)
         extension = extension.lower()
         if not extension.startswith("."):
             extension = "." + extension
 
-        extensions_valides = [".dng", ".raw", ".tif", ".jpg", ".jpeg", ".png"]
-        if extension not in extensions_valides:
-            raise ValueError(f"Extension '{extension}' non supportée. "
-                             f"Choisir parmi {extensions_valides}")
+        valid_extensions = [".dng", ".raw", ".tif", ".jpg", ".jpeg", ".png"]
+        if extension not in valid_extensions:
+            raise ValueError(f"Extension '{extension}' not supported. Choose from {valid_extensions}.")
 
-        # Chemin du dossier à explorer
+        # Folder path to scan
         folder_path = Path(inputFolder)
 
-        # Liste des fichiers avec extension correspondante, insensible à la casse
-        fichiers = sorted([f for f in folder_path.iterdir()
-                           if f.suffix.lower() == extension])
+        # List files with matching extension (case-insensitive)
+        files = sorted([f for f in folder_path.iterdir() if f.suffix.lower() == extension])
 
-        if verbose: print(f"🔍 {len(fichiers)} fichiers {extension.upper()} trouvés")
+        if verbose:
+            print(Uti.Style.GREEN + f"🔍 {len(files)} files {extension.upper()} found" + Uti.Style.RESET)
 
-        return fichiers
+        return files
 
 
-    def time_line_analyser_images(self, inputFolder, img_Typ=None, extension=".tif", verbose=False):
+    def time_line_analyser_images(
+            self,
+            inputFolder: Union[Path, str],
+            img_Typ: Optional[str] = None,
+            extension: str = ".tif",
+            verbose: bool = False
+    ) -> Dict:
         """
-        Analyse les fichiers d'un dossier :
-          - extrait la date et l'heure du nom de fichier
-          - extrait le numéro de prise de vue (XXX)
-          - calcule les écarts de temps entre images successives
-          - vérifie la régularité des intervalles de temps
-          - estime la période nominale (méthode médiane, mode, filtrage outliers)
-          - affiche les éventuels "sauts" détectés
-          - tolérance de filtrage calculée automatiquement (1% de la médiane)
+        Analyze image files in a folder:
+          - extract the date and time from the filename
+          - extract the shot number (XXX)
+          - compute time differences between consecutive images
+          - check the regularity of time intervals
+          - estimate the nominal period (median, mode, outlier filtering)
+          - display any detected "jumps"
+          - adaptive filtering tolerance automatically computed (1% of median)
+
+        Parameters
+        ----------
+        inputFolder : Path | str
+            Path to the folder containing the image files.
+        img_Typ : str | None, optional
+            Image type, "VIS" or "NIR", by default None.
+        extension : str, optional
+            File extension to filter images, by default ".tif".
+        verbose : bool, optional
+            If True, prints detailed information during analysis, by default False.
+
+        Returns
+        -------
+        dict
+            Dictionary containing files, numbers, dates, deltas, time_line, and camera type.
         """
 
         fichiers = self.extract_files_images(inputFolder, extension=extension)
 
-        dates = []
-        numeros = []
+        dates: list[datetime] = []
+        numeros: list[int] = []
 
         if img_Typ == "NIR":
             for f in fichiers:
                 stem = f.stem
                 try:
-                    # Pour le calcul du temps on ne tient pas compte de l'année.
-                    # En effet pour la SJCam M20 si la batterie est démontée la date par défaut est celle de sa construction (par exemple année 2019)
-                    # Si l'opérateur n'a pas réinitialisé la date alors ladifférence avec la date de la mission peut être de plusieurs années ( 7 ans en 2026)
-                    # Cela va conduire à manipler inutilement des très grand nombre.
-                    # Toutefois cela pourrait présenter une difficulté dans le cas d'images réalisées à cheval sur deux années
-                    # ce qui est toutefois très improbable !
-                    # Il est hautement souhaitable de mettre la caméra SJCam à l'heure  (pas besoin d'être précis à la seconde!)
+                    # For time calculation, the year is ignored.
+                    # On some cameras (e.g., SJCam M20), if the battery is removed,
+                    # the default date can be the camera manufacturing date !
                     annee, reste = stem.split("_", 1)
                     moisjour, heuresec, numero = reste.split("_")
 
                     dt = datetime.strptime(f"{annee}{moisjour}{heuresec}", "%Y%m%d%H%M%S")
                     if verbose:
-                        print(f'image {extension} N° : {numero} | time {heuresec}')
+                        print(Uti.Style.GREEN + f'image {extension} N° : {numero} | time {heuresec}' + Uti.Style.RESET)
 
                     dates.append(dt)
                     numeros.append(int(numero))
                 except Exception as e:
-                    print(f"⚠️ Nom de fichier ignoré ({stem}): {e}")
-
+                    print(Uti.Style.YELLOW + f"⚠️ Filename ignored ({stem}): {e}" + Uti.Style.RESET)
 
         elif img_Typ == "VIS":
             for f in fichiers:
                 stem = f.stem
                 file_path = Path(f)
-                # extraction du numero de la prise de vue
+                # extract the shot number
                 match = re.search(r'(\d+)$', stem)
                 if match:
                     numero = int(match.group(1))
                 else:
-                    print("Numéro de prise non trouvé")
-                # extraction de la date de la prise de vue
+                    print("Shot number not found")
+                # extract capture date
                 dt = self.extract_dng_capture_date(file_path)
                 dates.append(dt)
                 numeros.append(int(numero))
@@ -691,176 +701,422 @@ class LoadVisNirImagesDialog(QDialog):
                     print(f'image {extension} N° : {numero} | time {dt}')
 
         else:
-            print(f"⚠️ type invalide ({img_Typ}): {e}")
+            print(Uti.Style.YELLOW + f"⚠️ Invalid image type ({img_Typ}). (must be VIS or NIR)" + Uti.Style.RESET)
 
         dates = np.array(dates)
         numeros = np.array(numeros)
 
         if len(dates) > 1:
             deltas = np.diff([d.timestamp() for d in dates])
-            if verbose: print(deltas)
+            if verbose:
+                print(deltas)
         else:
             deltas = np.array([])
 
         if len(deltas) == 0:
-            print("⚠️ Pas assez d'images pour calculer des intervalles.")
-            return dates, numeros, deltas
+            print(Uti.Style.YELLOW + f"⚠️ Not enough images to compute intervals." + Uti.Style.RESET)
+            return {"dates": dates, "numeros": numeros, "deltas": deltas}
 
-        print(f"🔍 {len(dates)} fichiers {extension.upper()} trouvés")
-        # --- Durée totale de la séquence ---
-        duree_totale = (dates[-1] - dates[0]).total_seconds()
-        print(f"⏱️ Durée totale de la séquence : {duree_totale:.3f} s "
-              f"({str(dates[-1] - dates[0])})")
+        print(Uti.Style.GREEN + f"🔍 {len(dates)} {extension.upper()} files found" + Uti.Style.RESET)
 
-        # --- Méthode 1 : Médiane ---
+        # --- Total sequence duration ---
+        total_duration = (dates[-1] - dates[0]).total_seconds()
+        print(f"⏱️ Total sequence duration : {total_duration:.3f} s ({str(dates[-1] - dates[0])})")
+
+        # --- Method 1: Median ---
         periode_mediane = np.median(deltas)
-        # print(f"📌 Période estimée (médiane) : {periode_mediane:.3f} s")
 
-        # --- Méthode 2 : Mode ---
+        # --- Method 2: Mode ---
         counts = Counter(np.round(deltas, 3))
         periode_mode, freq = counts.most_common(1)[0]
-        # print(f"📌 Période estimée (mode)    : {periode_mode:.3f} s "
-        #      f"(fréquence: {freq}/{len(deltas)})")
 
-        # --- Tolérance adaptative pour filtrage ---
-        tol = max(0.001, 0.01 * periode_mediane)  # 1% de la période, minimum 1 ms
-
-        # --- Méthode 3 : Filtrage outliers ---
-        ecarts_corrects = deltas[np.abs(deltas - periode_mediane) < tol]
-        if len(ecarts_corrects) > 0:
-            periode_filtre = np.mean(ecarts_corrects)
-            # print(f"📌 Période estimée (filtrée): {periode_filtre:.3f} s "
-            #       f"(tolérance {tol:.3f} s)")
+        # --- Method 3: Outlier filtering ---
+        tol = max(0.001, 0.01 * periode_mediane)  # 1% of median, min 1 ms
+        filtered_deltas = deltas[np.abs(deltas - periode_mediane) < tol]
+        if len(filtered_deltas) > 0:
+            periode_filtre = np.mean(filtered_deltas)
         else:
             periode_filtre = periode_mediane
-            print("⚠️ Aucun intervalle dans la tolérance définie pour le filtrage.")
+            print(Uti.Style.YELLOW + f"⚠️ No intervals within defined tolerance for filtering." + Uti.Style.RESET)
 
-        # --- Meilleure estimation du time-lapse ---
+        # --- Best time-lapse estimate ---
         estims = np.array([periode_mediane, periode_mode, periode_filtre])
         periode_time_lapse = np.median(estims)
-        print(f"📌 Meilleure estimation du time-lapse : {periode_time_lapse:.3f} s")
-        # --- Détection des sauts ---
-        sauts = []
+        print(Uti.Style.GREEN + f"📌 best_timelapse_estimate : {periode_time_lapse:.3f} s" + Uti.Style.RESET)
+
+        # --- Jump detection ---
+        sauts: list[tuple[int, int, float]] = []
         for i, d in enumerate(deltas):
             if not np.isclose(d, periode_mediane, atol=tol):
-                sauts.append((i, i + 1, d))  # on garde juste les indices
-        # --- Période réelle d'enregistrement en tenant compte des sauts ---
-        periode_reelle = self.vraie_periode_enregistrement(dates, sauts, periode_time_lapse)
+                sauts.append((i, i + 1, d))
 
-        if sauts:
-            print(f"⚠️ {len(sauts)}  Sauts détectés :")
-            for idx1, idx2, delta in sauts:
-                f1 = fichiers[idx1]
-                f2 = fichiers[idx2]
-                print(f"   - Entre fichier {f1} et fichier {f2} : {delta:.3f} s")
-        else:
-            print(f"✅️ {len(sauts)}  Aucun saut détecté :")
+        # --- True recording period accounting for detected jumps ---
+        true_record_period = self.true_recording_period(dates, sauts, periode_time_lapse)
 
-        # --- Construction de la timeline réelle ---
-        def construire_time_line(dates, sauts, periode_reelle, numeros, verbose=False):
-            """
-            Construit un vecteur des temps réels écoulés depuis la première image,
-            en tenant compte des vrais sauts et de la période réelle.
-            Si verbose=True, affiche la timeline image par image avec indication des sauts.
-            """
-            n = len(dates)
-            if n == 0:
-                return np.array([])
+        # --- Construct the actual timeline ---
+        time_line = self.buid_time_line(dates, sauts, true_record_period, numeros, fichiers, verbose=False)
 
-            time_line = np.zeros(n, dtype=float)
-            # dictionnaire pour accès rapide aux deltas des sauts
-            dict_sauts = {i: d for (i, _, d) in sauts}
+        # --- Overall summary ---
+        print(f"🕒 Timeline computed: {time_line[-1]:.3f} s up to the last image (n={len(time_line)})")
 
-            if verbose:
-                print("\n--- Timeline réelle (ajustée) ---")
-                print(f"image raw N° : {numeros[0]:03d} | time_line {time_line[0]:.3f} s")
+        dic_timeline = self.build_time_line_dictionnary(
+            fichiers=fichiers,
+            numeros=numeros,
+            dates=dates,
+            deltas=deltas,
+            time_line=time_line,
+            cam_type=self.currentImgTyp
+        )
 
-            for i in range(1, n):
-                # Par défaut : avance normale
-                delta = periode_reelle
-                saut_txt = ""
-
-                # Si un saut est signalé pour l'intervalle précédent
-                if (i - 1) in dict_sauts:
-                    d_saut = dict_sauts[i - 1]
-                    ratio = d_saut / periode_reelle
-
-                    # Cas 1 : vrai saut → multiple entier (±0.49 s de marge)
-                    if np.isclose(ratio, round(ratio), atol=0.49 / periode_reelle):
-                        delta = d_saut
-                        saut_txt = f" | saut {d_saut:.3f} s)"
-                        # saut_txt = f" | saut {d_saut:.3f} s (x{ratio:.1f})"
-                    # Cas 2 : saut faible (< 2x période) → ignoré (artefact EXIF)
-                    elif d_saut < 2 * periode_reelle:
-                        # delta reste = periode_reelle
-                        saut_txt = f" | saut ignoré ({d_saut:.3f} s)"
-                    else:
-                        # saut anormal, on le garde mais on le signale
-                        delta = d_saut
-                        saut_txt = f" | saut anormal {d_saut:.3f} s"
-
-                # incrément de la timeline
-                time_line[i] = time_line[i - 1] + delta
-
-                if verbose:
-                    print(f"image raw N° : {numeros[i]:03d} | time_line {time_line[i]:.3f} s{saut_txt}")
-
-            if verbose:
-                print("---------------------------------\n")
-
-            return time_line
-
-        time_line = construire_time_line(dates, sauts, periode_reelle, numeros, verbose=True)
-
-        # Résumé global
-        print(f"🕒 Timeline calculée : {time_line[-1]:.3f} s jusqu'à la dernière image "
-              f"(n={len(time_line)})")
-
-        return dates, numeros, deltas, time_line, fichiers
+        return dic_timeline
 
 
-    def save_transfer_info(self,
-            output_folder,
-            input_folder,
-            cam_type,
-            img_type,
-            sync_data=None,
-            fly_data=None,
-            ):
+    @staticmethod
+    def buid_time_line(dates: list[float],
+                       sauts: list[tuple[int, int, float]],
+                       periode_reelle: float,
+                       numeros: list[int],
+                       fichiers: list[Path],
+                       verbose: bool = False
+                       ) -> np.ndarray:
         """
-        Sauvegarde les informations de transfert (phases Sync et Fly) dans un fichier JSON unique.
+        Construct a vector of actual elapsed times since the first image,
+        taking into account real jumps, apparent jumps (EXIF artifacts), and abnormal jumps.
+        If verbose=True, display the timeline image by image with the type of jump.
+
+        Parameters
+        ----------
+        dates : list[float]
+            List of timestamps (raw image acquisition times).
+        sauts : list[tuple[int, int, float]]
+            List of detected jumps as tuples (index1, index2, delta_time).
+        periode_reelle : float
+            Nominal real period between images.
+        numeros : list[int]
+            List of raw image numbers for display purposes.
+        verbose : bool, optional
+            If True, prints detailed timeline information, by default False.
+
+        Returns
+        -------
+        np.ndarray
+            Array of adjusted timeline values in seconds.
+        """
+
+        n = len(dates)
+        if n == 0:
+            return np.array([])
+
+        time_line = np.zeros(n, dtype=float)
+
+        # --- 1) Classify jumps ---
+        classified_jumps: list[tuple[int, int, float, str]] = []  # (idx1, idx2, delta, type)
+        dict_sauts: dict[int, float] = {}
+
+        for idx1, idx2, d_saut in sauts:
+            ratio = d_saut / periode_reelle
+
+            # Case 1: real jump (integer multiple of period)
+            if np.isclose(ratio, round(ratio), atol=0.49 / periode_reelle):
+                type_saut = "real"
+                dict_sauts[idx1] = d_saut
+
+            # Case 2: apparent jump (EXIF artifact)
+            elif d_saut < 2 * periode_reelle:
+                type_saut = "apparent"
+                # not added to dict_sauts because ignored
+
+            # Case 3: abnormal jump
+            else:
+                type_saut = "abnormal"
+                dict_sauts[idx1] = d_saut
+
+            classified_jumps.append((idx1, idx2, d_saut, type_saut))
+
+        # --- 2) Display jumps (only now that type is known) ---
+        if classified_jumps:
+            print(Uti.Style.YELLOW + f"⚠️ {len(classified_jumps)} jumps detected :" + Uti.Style.RESET)
+            for idx1, idx2, delta, type_saut in classified_jumps:
+                if type_saut == "real":
+                    label = "real jump"
+                    color = Uti.Style.YELLOW
+                elif type_saut == "apparent":
+                    label = "apparent jump"
+                    color = Uti.Style.GREEN
+                else:
+                    label = "abnormal jump"
+                    color = Uti.Style.RED
+
+                print(
+                    color
+                    + f"   - Between {Path(fichiers[idx1]).name} and {Path(fichiers[idx2]).name} : {delta:.3f} s → {label}"
+                    + Uti.Style.RESET
+                )
+        else:
+            print(Uti.Style.GREEN + "✅ No jumps detected" + Uti.Style.RESET)
+
+        # --- 3) Construct adjusted timeline ---
+        if verbose:
+            print("\n--- Adjusted real timeline ---")
+            print(f"raw image N° : {numeros[0]:03d} | time_line {time_line[0]:.3f} s")
+
+        for i in range(1, n):
+            delta = periode_reelle  # default value
+            saut_txt = ""
+
+            if (i - 1) in dict_sauts:
+                d_saut = dict_sauts[i - 1]
+                ratio = d_saut / periode_reelle
+
+                # Same classification as above
+                if np.isclose(ratio, round(ratio), atol=0.49 / periode_reelle):
+                    delta = d_saut
+                    saut_txt = f" | real jump {d_saut:.3f} s"
+                elif d_saut < 2 * periode_reelle:
+                    saut_txt = f" | apparent jump ({d_saut:.3f} s)"
+                else:
+                    delta = d_saut
+                    saut_txt = f" | abnormal jump {d_saut:.3f} s"
+
+            time_line[i] = time_line[i - 1] + delta
+
+            if verbose:
+                print(f"raw image N° : {numeros[i]:03d} | time_line {time_line[i]:.3f} s{saut_txt}")
+
+        if verbose:
+            print("---------------------------------\n")
+
+        return time_line
+
+
+
+    def process_image_transfer(
+            self,
+            inputFolder: Union[str, Path],
+            img_types: Union[str, List[str]],
+            outputSyncFolder: Union[str, Path],
+            outputFlyFolder: Union[str, Path],
+            outputFlightAnalyticsFolder: Union[str, Path],
+            idTkoff: int,
+            idMinSync: int,
+            idMaxSync: int,
+            idMinFly: int,
+            idMaxFly: int,
+            offset: Union[int, List[int]] = 0,
+            progressSync: Union[Tuple[int, int], List[Tuple[int, int]]] = (0, 30),
+            progressFly: Union[Tuple[int, int], List[Tuple[int, int]]] = (30, 96),
+    ) -> None:
+        """
+        Process and transfer images for one or multiple file extensions.
+        Handles Takeoff, Sync and Fly phases, applies index offsets per extension,
+        and generates one JSON summary file *per extension*.
+
+        Parameters
+        ----------
+        inputFolder : Path or str
+            Folder containing the original input images.
+
+        img_types : str or list[str]
+            Image extension(s) to process, e.g. "jpg", "raw", or ["jpg", "raw"].
+            Each extension is processed independently and results in a separate JSON file.
+
+        outputSyncFolder : Path
+            Destination folder for Sync-phase images.
+
+        outputFlyFolder : Path
+            Destination folder for Fly-phase images.
+
+        outputFlightAnalyticsFolder : Path
+            Destination folder for the Takeoff image and JSON export.
+
+        idTkoff : int
+            Base index of the Takeoff image (before offset correction).
+
+        idMinSync, idMaxSync : int
+            Base index range for Sync-phase images (before applying offsets).
+
+        idMinFly, idMaxFly : int
+            Base index range for Fly-phase images (before applying offsets).
+
+        offset : int or list[int], optional
+            Index shift applied to each extension.
+            Example: offset=[0, -1] for ["jpg", "raw"] if RAW numbering is shifted.
+            If a single integer is given, it is applied to all extensions.
+            Default is 0.
+
+        progressSync, progressFly : tuple(int,int) or list[tuple], optional
+            Progress-bar ranges. A single tuple applies to all extensions.
+            Otherwise, provide one range per extension.
+
+        Returns
+        -------
+        None
+        """
+
+        # Normalize to Path
+        inputFolder = Path(inputFolder)
+
+        # Normalize img_types → list[str]
+        if isinstance(img_types, str):
+            img_types = [img_types]
+        else:
+            img_types = list(img_types)
+
+        n = len(img_types)
+
+        # Normalize offset
+        if isinstance(offset, int):
+            offset = [offset] * n
+        elif isinstance(offset, list):
+            if len(offset) != n:
+                raise ValueError("offset list must have same length as img_types")
+        else:
+            raise TypeError("offset must be int or list[int]")
+
+        # Normalize progress ranges
+        def normalize_progress(val):
+            if isinstance(val, list) and isinstance(val[0], tuple):
+                return val
+            return [tuple(val)] * n
+
+        progressSync = normalize_progress(progressSync)
+        progressFly = normalize_progress(progressFly)
+
+        # ----------------------------------------------------------
+        # Loop on extensions → generate one JSON per extension
+        # ----------------------------------------------------------
+        for i, ext in enumerate(img_types):
+            # Apply per-extension offset
+            idTk = idTkoff + offset[i]
+            idMinS = idMinSync + offset[i]
+            idMaxS = idMaxSync + offset[i]
+            idMinF = idMinFly + offset[i]
+            idMaxF = idMaxFly + offset[i]
+
+            sync_prog = progressSync[i]
+            fly_prog = progressFly[i]
+
+            # List of images with this extension
+            listInputImages = self.create_list_image_in_input_folder(inputFolder, ext)
+
+            # --- Takeoff (one image)
+            takeOff_list = self.load_inputFolder_2_outputFolder(
+                inputFolder, listInputImages,
+                outputFlightAnalyticsFolder,
+                idTk, idTk,
+                *sync_prog
+            )
+
+            # --- Sync phase
+            sync_list = self.load_inputFolder_2_outputFolder(
+                inputFolder, listInputImages,
+                outputSyncFolder,
+                idMinS, idMaxS,
+                *sync_prog
+            )
+
+            # --- Fly phase
+            fly_list = self.load_inputFolder_2_outputFolder(
+                inputFolder, listInputImages,
+                outputFlyFolder,
+                idMinF, idMaxF,
+                *fly_prog
+            )
+
+            # --- JSON creation (one per extension)
+            self.save_transfer_info(
+                output_folder=outputFlightAnalyticsFolder,
+                input_folder=inputFolder,
+                cam_type=self.currentImgTyp,
+                img_type=ext,  # IMPORTANT: single extension
+                tkoff_data={
+                    "outputFolder": str(outputFlightAnalyticsFolder),
+                    "idMin": idTk,
+                    "idMax": idTk,
+                    "listCopiedImages": takeOff_list,
+                },
+                sync_data={
+                    "outputFolder": str(outputSyncFolder),
+                    "idMin": idMinS,
+                    "idMax": idMaxS,
+                    "listCopiedImages": sync_list,
+                },
+                fly_data={
+                    "outputFolder": str(outputFlyFolder),
+                    "idMin": idMinF,
+                    "idMax": idMaxF,
+                    "listCopiedImages": fly_list,
+                }
+            )
+
+        # Final global progress
+        self.progress_bar.setValue(100)
+
+
+    @staticmethod
+    def save_transfer_info(
+            output_folder: Union[str, Path],
+            input_folder: Union[str, Path],
+            cam_type: str,
+            img_type: str,
+            tkoff_data: Optional[Dict] = None,
+            sync_data: Optional[Dict] = None,
+            fly_data: Optional[Dict] = None,
+    ) -> Path:
+        """
+        Save transfer information (Sync and Fly phases) into a single JSON file.
 
         Parameters
         ----------
         output_folder : str | Path
-            Dossier dans lequel sera créé le fichier JSON.
+            Folder where the JSON file will be created.
         input_folder : str | Path
-            Dossier source d'entrée.
+            Source input folder.
         cam_type : str
-            Type de caméra (ex: "VIS" ou "NIR").
+            Camera type (e.g., "VIS" or "NIR").
         img_type : str
-            Type d'image (ex: "jpg", "raw", "dng").
-        sync_data : dict | None
-            Données de la phase Sync :
+            Image type (e.g., "jpg", "raw", "dng").
+        tkoff_data : dict | None, optional
+            Data for the take-off phase:
                 {"outputFolder": ..., "idMin": ..., "idMax": ..., "listCopiedImages": [...]}
-        fly_data : dict | None
-            Données de la phase Fly :
+        sync_data : dict | None, optional
+            Data for the Sync phase:
                 {"outputFolder": ..., "idMin": ..., "idMax": ..., "listCopiedImages": [...]}
+        fly_data : dict | None, optional
+            Data for the Fly phase:
+                {"outputFolder": ..., "idMin": ..., "idMax": ..., "listCopiedImages": [...]}
+
+        Returns
+        -------
+        Path
+            Path to the saved JSON file.
         """
 
+        # Ensure output folder exists
         output_folder = Path(output_folder)
         output_folder.mkdir(parents=True, exist_ok=True)
 
-        # Nom du fichier avec type caméra et type image
+        # JSON file name including camera and image type
         json_name = f"transfer_info_{cam_type}_{img_type}.json"
         json_path = output_folder / json_name
 
+        # Base data
         data = {
             "cam_type": cam_type,
             "img_type": img_type,
             "inputFolder": str(input_folder),
         }
 
+        # take-off data
+        if tkoff_data:
+            data["tkoff"] = {
+                "outputFolder": str(tkoff_data.get("outputFolder", "")),
+                "idMin": int(tkoff_data.get("idMin", -1)),
+                "idMax": int(tkoff_data.get("idMax", -1)),
+                "listCopiedImages": list(map(str, tkoff_data.get("listCopiedImages", []))),
+            }
+
+        # Sync phase data
         if sync_data:
             data["sync"] = {
                 "outputFolder": str(sync_data.get("outputFolder", "")),
@@ -869,6 +1125,7 @@ class LoadVisNirImagesDialog(QDialog):
                 "listCopiedImages": list(map(str, sync_data.get("listCopiedImages", []))),
             }
 
+        # Fly phase data
         if fly_data:
             data["fly"] = {
                 "outputFolder": str(fly_data.get("outputFolder", "")),
@@ -877,84 +1134,106 @@ class LoadVisNirImagesDialog(QDialog):
                 "listCopiedImages": list(map(str, fly_data.get("listCopiedImages", []))),
             }
 
+        # Write JSON file
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
 
-        print(f"[INFO] Fichier JSON sauvegardé : {json_path}")
+        print(Uti.Style.GREEN + f"[INFO] JSON file saved: {json_path}" + Uti.Style.RESET)
         return json_path
 
 
-    def load_transfer_info(self, output_folder, cam_type, img_type):
+    @staticmethod
+    def load_transfer_info(
+            output_folder: Union[str, Path],
+            cam_type: str,
+            img_type: str
+    ) -> Optional[Dict]:
+
         """
-        Recharge les informations de transfert (Sync/Fly) sauvegardées dans un fichier JSON.
+        Load transfer information (Sync/Fly) previously saved in a JSON file.
 
         Parameters
         ----------
         output_folder : str | Path
-            Dossier contenant le fichier JSON sauvegardé.
+            Folder containing the saved JSON file.
         cam_type : str
-            Type de caméra ("VIS" ou "NIR").
+            Camera type ("VIS" or "NIR").
         img_type : str
-            Type d'image ("jpg", "raw", "dng").
+            Image type ("jpg", "raw", "dng").
 
         Returns
         -------
-        dict
-            Un dictionnaire contenant toutes les informations lues :
+        dict | None
+            A dictionary containing all loaded information:
             {
                 "cam_type": ...,
                 "img_type": ...,
                 "inputFolder": ...,
+                "tkoff": { "outputFolder": ..., "idMin": ..., "idMax": ..., "listCopiedImages": [...] },
                 "sync": { "outputFolder": ..., "idMin": ..., "idMax": ..., "listCopiedImages": [...] },
                 "fly":  { "outputFolder": ..., "idMin": ..., "idMax": ..., "listCopiedImages": [...] }
             }
 
-            Retourne None si le fichier JSON n'existe pas ou s'il est invalide.
+            Returns None if the JSON file does not exist or is invalid.
         """
+
+        # Construct full path to the JSON file
         output_folder = Path(output_folder)
         json_path = output_folder / f"transfer_info_{cam_type}_{img_type}.json"
 
+        # Check if the JSON file exists
         if not json_path.exists():
-            print(f"[WARN] Fichier JSON introuvable : {json_path}")
+            print(Uti.Style.YELLOW + f"[WARN] JSON file not found: {json_path}. Creating an empty JSON file." + Uti.Style.RESET)
+            # Crée un fichier JSON vide
+            json_path.parent.mkdir(parents=True, exist_ok=True)  # s'assure que le dossier existe
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump({}, f, indent=4)
             return None
 
         try:
+            # Load JSON data
             with open(json_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            print(f"[INFO] Fichier JSON chargé : {json_path}")
+
+            print(Uti.Style.GREEN + f"[INFO] JSON file loaded: {json_path}" + Uti.Style.RESET)
             return data
+
         except Exception as e:
-            print(f"[ERREUR] Impossible de lire {json_path} : {e}")
+            print(Uti.Style.RED + f"[ERROR] Failed to read {json_path}: {e}" + Uti.Style.RESET)
             return None
 
-
-    def save_time_line_json(self,
-                            fichiers, numeros, dates, deltas, time_line,
-                            output_dir, cam_type="VIS"
-                            ):
+    @staticmethod
+    def build_time_line_dictionnary(
+            fichiers: List[Path],
+            numeros: List[int],
+            dates: List[Union[datetime, str]],
+            deltas: np.ndarray,
+            time_line: np.ndarray,
+            cam_type: str = "VIS"
+    ) -> Dict[str, List[Dict[str, Union[float, int, str]]]]:
         """
-        Sauvegarde la timeline d'une séquence sous forme de fichier JSON.
+        Build a dictionary containing the timeline of an image sequence
+        for a given camera type (VIS, NIR, etc.).
 
-        Chaque entrée correspond à une image et contient :
-            - img_path : chemin complet de l'image
-            - num_img  : numéro de la prise de vue
-            - date_img : date au format ISO
-            - delta_img: intervalle de temps depuis l'image précédente (s)
-            - time_line_relative: temps cumulé depuis la première image (s)
+        Returns a dictionary in the form:
+            { cam_type: [ {img_path, num_img, date_img, delta_img, time_line_relative}, ... ] }
+
+        Each entry corresponds to an image and contains:
+            - img_path : full path of the image
+            - num_img  : image capture number
+            - date_img : date in ISO format
+            - delta_img: interval since previous image (s)
+            - time_line_relative: cumulative time since first image (s)
         """
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
 
-        out_file = output_dir / f"time_line_{cam_type}.json"
+        data: List[Dict[str, Union[float, int, str]]] = []
 
-        data = []
         for i, f in enumerate(fichiers):
-            # delta pour la première image = 0
-            delta = float(deltas[i - 1]) if i > 0 and i - 1 < len(deltas) else 0.0
+            delta: float = float(deltas[i - 1]) if i > 0 and i - 1 < len(deltas) else 0.0
 
-            # conversion de la date en format lisible JSON
+            # Format the date as ISO string if datetime, else use string directly
             if isinstance(dates[i], datetime):
-                date_str = dates[i].isoformat(timespec="seconds")
+                date_str: str = dates[i].isoformat(timespec="seconds")
             else:
                 date_str = str(dates[i])
 
@@ -966,71 +1245,133 @@ class LoadVisNirImagesDialog(QDialog):
                 "time_line_relative": round(float(time_line[i]), 6)
             })
 
-        with open(out_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
+        return {cam_type: data}
 
-        print(f"💾 Fichier JSON sauvegardé : {out_file}")
+    @staticmethod
+    def save_time_line_json(
+            output_dir: Union[str, Path],
+            *timeline_dicts: Dict[str, List[Dict]]
+    ) -> Path:
+        """
+        Save multiple timelines (VIS, NIR, etc.) into a single JSON file.
+
+        Example of usage:
+            save_time_line_json(output_dir, vis_timeline, nir_timeline)
+
+        The final JSON file will have the structure:
+        {
+            "VIS": [ ... ],
+            "NIR": [ ... ]
+        }
+        """
+
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        out_file: Path = output_dir / "time_line.json"
+
+        # Merge all timeline dictionaries by camera key
+        merged: dict[str, list[dict]] = {}
+        for d in timeline_dicts:
+            merged.update(d)
+
+        with open(out_file, "w", encoding="utf-8") as f:
+            json.dump(merged, f, indent=4, ensure_ascii=False)
+
+        print(Uti.Style.GREEN + f"💾 JSON file saved: {out_file}" + Uti.Style.RESET)
         return out_file
 
 
-    def extract_dng_capture_date(self, file_path: Path, verbose: bool = False) -> Optional[datetime]:
+    @staticmethod
+    def extract_dng_capture_date(file_path: Path, verbose: bool = False) -> Optional[datetime]:
         """
-        Extrait la date de capture d'un fichier DNG DJI via les tags EXIF (DateTimeOriginal).
+        Extracts the capture date of a DJI DNG file using EXIF tags (DateTimeOriginal).
 
-        Retourne un datetime ou None si non trouvée.
+        Returns a datetime object or None if the tag is not found.
         """
         try:
             with open(file_path, 'rb') as f:
                 tags = exifread.process_file(f, details=False, stop_tag="EXIF DateTimeOriginal")
                 date_tag = tags.get('EXIF DateTimeOriginal')
                 if date_tag:
-                    # format attendu : '2025:09:30 12:34:56'
+                    # Expected format: 'YYYY:MM:DD HH:MM:SS'
                     dt = datetime.strptime(str(date_tag), '%Y:%m:%d %H:%M:%S')
-                    if verbose: print(f'date de prise de vue  {dt}')
+                    if verbose:
+                        print(f"Capture date: {dt}")
                     return dt
                 else:
-                    print(f"⚠️ DateTimeOriginal non trouvée dans {file_path.name}")
+                    print(Uti.Style.YELLOW + f"⚠️ DateTimeOriginal not found in {file_path.name}" + Uti.Style.RESET)
                     return None
         except Exception as e:
-            print(f"❌ Erreur lors de l'extraction EXIF de {file_path.name} : {e}")
+            print(f"❌ Error extracting EXIF from {file_path.name}: {e}")
             return None
 
 
-    def vraie_periode_enregistrement(self, dates, sauts, periode_time_lapse):
+    @staticmethod
+    def true_recording_period(
+            dates: list[datetime],
+            sauts: list[tuple[int, int, float]],
+            periode_time_lapse: float
+    ) -> float:
         """
-         --- Période réelle d'enregistrement en tenant compte des sauts ---
-         """
-        n_intervalles = len(dates) - 1
-        if n_intervalles > 0:
-            if sauts:
-                delta_sauts = np.array([d for (_, _, d) in sauts])
-                mean_saut = np.mean(delta_sauts)
-                # test si mean_saut est multiple de la période estimée
-                if np.isclose(mean_saut / periode_time_lapse, round(mean_saut / periode_time_lapse), atol=0.01):
-                    # les sauts sont des multiples exacts → période réelle = période estimée
-                    periode_reelle = periode_time_lapse
-                    print(f"📌 Période réelle d'enregistrement (hors sauts) : {periode_reelle:.3f} s")
-                else:
-                    # période réelle = durée totale / nombre d'intervalles
-                    periode_reelle = (dates[-1] - dates[0]).total_seconds() / n_intervalles
-                    print(f"📌 Période réelle d'enregistrement : {periode_reelle:.3f} s")
+        Computes the true recording period of an image sequence, taking into account detected jumps.
+
+        Logic:
+        - If jumps are present, compute the mean jump duration.
+        - If the mean jump is an exact multiple of the estimated time-lapse period,
+          the jumps are considered "real" (i.e., intentional or consistent with the capture rate),
+          and the true recording period is set to the estimated time-lapse period.
+        - Otherwise, or if no jumps are detected, the true recording period is calculated
+          as the total elapsed time divided by the number of intervals (dates - 1),
+          which accounts for possible small timing variations or EXIF artifacts ("apparent" jumps).
+
+        Parameters
+        ----------
+        dates : list[datetime]
+            List of capture times for each image in the sequence.
+        sauts : list[tuple[int, int, float]]
+            List of detected jumps as tuples (index1, index2, delta_time).
+            These can be "real", "apparent", or "abnormal".
+        periode_time_lapse : float
+            Estimated nominal period between consecutive images (s).
+
+        Returns
+        -------
+        float
+            The true recording period in seconds.
+        """
+        n_intervals = len(dates) - 1
+        if n_intervals <= 0:
+            return 0.0
+
+        if sauts:
+            delta_jumps = np.array([d for (_, _, d) in sauts])
+            mean_jump = np.mean(delta_jumps)
+
+            # Check if the mean jump is a multiple of the estimated period
+            if np.isclose(mean_jump / periode_time_lapse, round(mean_jump / periode_time_lapse), atol=0.01):
+                # Jumps are exact multiples → true period = estimated period
+                true_record_period = periode_time_lapse
+                print(Uti.Style.GREEN + f"📌 true_recording_period (excluding jumps): {true_record_period:.3f} s" + Uti.Style.RESET)
             else:
-                # pas de sauts → période réelle = durée totale / nombre d'intervalles
-                periode_reelle = (dates[-1] - dates[0]).total_seconds() / n_intervalles
-                print(f"📌 Période réelle d'enregistrement : {periode_reelle:.3f} s")
-
-        return periode_reelle
-
-
-    def _format_duree(seconds: float) -> str:
-        """Retourne une chaîne lisible en secondes ou minutes selon la durée."""
-        if seconds > 300:  # plus de 5 minutes
-            return f"{seconds / 60:.1f} min"
+                # True period = total duration / number of intervals
+                true_record_period = (dates[-1] - dates[0]).total_seconds() / n_intervals
+                print(Uti.Style.GREEN + f"📌 true_recording_period: {true_record_period:.3f} s" + Uti.Style.RESET)
         else:
-            return f"{seconds:.0f} s"
+            # No jumps → true period = total duration / number of intervals
+            true_record_period = (dates[-1] - dates[0]).total_seconds() / n_intervals
+            print(Uti.Style.GREEN + f"📌 true_recording_period: {true_record_period:.3f} s" + Uti.Style.RESET)
+
+        return true_record_period
 
 
-    def load_inputFolder_2_outputFolder(self, inputFolder: str, listInputImages: List[str], outputFolder: str, id_min: int, id_max: int, pgsbar0: int, pgrbar1: int) -> None:
+    def load_inputFolder_2_outputFolder(self,
+                                        inputFolder: str,
+                                        listInputImages: List[str],
+                                        outputFolder: str,
+                                        id_min: int,
+                                        id_max: int,
+                                        pgsbar0: int,
+                                        pgrbar1: int) -> List[str]:
         """
         Load images from the input folder to the output folder based on specified criteria.
 
@@ -1059,7 +1400,8 @@ class LoadVisNirImagesDialog(QDialog):
         return listFileName
 
 
-    def create_list_image_in_input_folder(self, input_folder: Union[str, str], ext: str) -> Optional[List[str]]:
+    @staticmethod
+    def create_list_image_in_input_folder(input_folder: Union[str, str], ext: str) -> Optional[List[str]]:
         """
         Create a list of image file names with a specific extension in the given input folder.
 
@@ -1082,7 +1424,8 @@ class LoadVisNirImagesDialog(QDialog):
         return listInputImages
 
 
-    def extract_num_image(self, imgPath: str) -> Tuple[int, str]:
+    @staticmethod
+    def extract_num_image(imgPath: str) -> Tuple[int, str]:
         """
         Extract the frame index and frame name from an image path.
 
@@ -1101,7 +1444,8 @@ class LoadVisNirImagesDialog(QDialog):
         return frame_index, frame_name
 
 
-    def copy_images(self, inputDir: str, imgName: str, outputDir: str) -> Optional[str]:
+    @staticmethod
+    def copy_images(inputDir: str, imgName: str, outputDir: str) -> Optional[str]:
         """
         Copy an image file from the input directory to the output directory.
 
@@ -1143,7 +1487,7 @@ class LoadVisNirImagesDialog(QDialog):
         try:
             self.image_takeoff_available = False    # Initialize as False
             # Check if the image type is "VIS" or "DNG"
-            if self.type_img in {"VIS", "DNG"}:
+            if self.type_img in {"VIS", "DNG", "dng", "Dng", "vis", "Vis"}:
                 self.ext = "DNG"
                 # Check if the path to the takeoff image is provided and it exists
 
@@ -1152,16 +1496,16 @@ class LoadVisNirImagesDialog(QDialog):
                 # if path_image_takeoff is not None:
                 #    if os.path.exists(path_image_takeoff):
                 # ---------------------------------------------------
-
+                print(f'DEBUG 01     path_image_takeoff = {path_image_takeoff}')
+                print(f'DEBUG 010     os.path.exists(path_image_takeoff = {os.path.exists(path_image_takeoff)}')
                 if path_image_takeoff is not None and os.path.exists(path_image_takeoff):
                     self.path_image_takeoff = path_image_takeoff
                     self.image_takeoff_available = True
+                    self.image_0_available = True
+                    print(f'DEBUG 011     self.image_takeoff_available = {self.image_takeoff_available}')
         except Exception as e:
             print("error   in init_image_takeoff_available", e)
 
-    def safe_path(self, path):
-        return Path(path).resolve().as_posix()
-    
 
     def open_takeoff_image(self, path_image_takeoff: Path) -> None:
         """
@@ -1181,9 +1525,8 @@ class LoadVisNirImagesDialog(QDialog):
         """
         try:
             file_path = path_image_takeoff
-            file_path = self.safe_path(file_path)
+            file_path = Uti.safe_path(file_path)
             if file_path:
-                print(f'DEBUG 500  première image VIS (takeoff) {file_path}')
                 self.flags[0] = True
                 self.new_user_dir = os.path.dirname(file_path)
                 self.user_dir = os.path.dirname(file_path)
@@ -1199,9 +1542,7 @@ class LoadVisNirImagesDialog(QDialog):
                 self.image_name_labels[0].setStyleSheet("color: darkBlue;")
 
                 self.listImgRefPath[0] = file_path
-                print(f'DEBUG 600   self.listImgRefPath[0] = {self.listImgRefPath[0]}')
                 self.listVisRefPath[0] = file_path
-                print(f'DEBUG 601   self.listVisRefPath[0] = {self.listVisRefPath[0]}')
 
             # Updated class flags with new values. New window position if moved
             self.currentUserDir = self.new_user_dir
@@ -1211,70 +1552,79 @@ class LoadVisNirImagesDialog(QDialog):
         except Exception as e:
             print("error in open_takeoff_image : ", e)
 
+
     def open_sync_and_fly_image_VIS_or_NIR(self, type_img: str, typ_ext: str, index: int) -> None:
         """
         Open and display a synchronization or flight image (VIS), given its type and index.
 
         If typ_ext is 'dng', uses rawpy for RAW decoding; otherwise uses QPixmap directly.
+
+        This method attempts to open an image from a specified path, processes it,
+        and displays it on the user interface. It also sets various attributes and
+        updates the UI components accordingly. If the image file is successfully processed
+        and displayed, relevant path attributes are updated, and UI components are adjusted
+        to reflect the loaded image.
         """
         try:
-            # --- Sélection du bloc et de l’image à ouvrir ---
-            if index == 1:
-                key_1, index_img = 'sync', 0
-            elif index == 2:
-                key_1, index_img = 'sync', -1
-            elif index == 3:
-                key_1, index_img = 'fly', 0
-            elif index == 4:
-                key_1, index_img = 'fly', -1
-            else:
-                raise ValueError(f"Index invalide : {index}")
+            # --- Select block and image to open ---
+            index_map = {
+                0: ("tkoff", 0),
+                1: ("sync", 0),
+                2: ("sync", -1),
+                3: ("fly", 0),
+                4: ("fly", -1)
+            }
 
-            # --- Construction du chemin complet ---
+            try:
+                key_1, index_img = index_map[index]
+            except KeyError:
+                raise ValueError(f"Invalid index: {index}")
+
+            # --- Construct full paths ---
             if typ_ext.lower() == "dng":
                 file_path = Path(self.info_vis_dng[key_1]['outputFolder']) / self.info_vis_dng[key_1]['listCopiedImages'][index_img]
-                file_path = self.safe_path(file_path)
+                file_path = Uti.safe_path(file_path)
                 input_file_path = Path(self.info_vis_dng['inputFolder']) / self.info_vis_dng[key_1]['listCopiedImages'][index_img]
-                input_file_path = self.safe_path(input_file_path)
+                input_file_path = Uti.safe_path(input_file_path)
             elif typ_ext.lower() == "jpg":
                 file_path = Path(self.info_nir_jpg[key_1]['outputFolder']) / self.info_nir_jpg[key_1]['listCopiedImages'][index_img]
-                file_path = self.safe_path(file_path)
+                file_path = Uti.safe_path(file_path)
                 input_file_path = Path(self.info_nir_jpg['inputFolder']) / self.info_nir_jpg[key_1]['listCopiedImages'][index_img]
-                input_file_path = self.safe_path(input_file_path)
+                input_file_path = Uti.safe_path(input_file_path)
             else:
-                raise ValueError(f"type extension invalide: {typ_ext.lower()}")
+                raise ValueError(f"Invalid file extension: {typ_ext.lower()}")
 
             if not file_path:
-                raise FileNotFoundError(f"Fichier introuvable : {file_path}")
+                raise FileNotFoundError(f"File not found: {file_path}")
 
-            # --- Chargement selon le type d’image ---
+            # --- Load image according to its type ---
             typ_ext = typ_ext.lower()
             if typ_ext == "dng":
-                # Utilisation de rawpy pour les fichiers RAW
+                # Use rawpy for RAW files
                 with rawpy.imread(file_path) as raw:
                     rgb = raw.postprocess()
                     image = QImage(rgb.data, rgb.shape[1], rgb.shape[0], rgb.strides[0], QImage.Format.Format_RGB888)
                     pixmap = QPixmap.fromImage(image)
             else:
-                # Utilisation directe pour JPG, PNG, etc.
+                # Direct load for JPG, PNG, etc.
                 pixmap = QPixmap(str(file_path))
                 if pixmap.isNull():
-                    raise ValueError(f"Impossible de charger l'image : {file_path}")
+                    raise ValueError(f"Unable to load image: {file_path}")
 
-            # --- Mise à l’échelle et affichage ---
+            # --- Scale and display ---
             pixmap = pixmap.scaled(*self.image_display_size, Qt.AspectRatioMode.KeepAspectRatio)
             self.image_labels[index].setPixmap(pixmap)
 
-            # --- Infos et légende ---
+            # --- Filename and legend information ---
             filename, file_extension = os.path.splitext(os.path.basename(file_path))
             self.image_name_labels[index].setText(f"{self.img_legend[0]}  : \n {filename}  {file_extension}")
             self.image_name_labels[index].setStyleSheet("color: darkBlue;")
 
-            # --- Mémorisation des chemins d'entrée/sortie ---
+            # --- Store input/output paths ---
             self.listImgRefPath[index] = input_file_path
             self.listVisRefPath[index] = input_file_path
 
-            # --- Mise à jour des flags et de l’interface ---
+            # --- Update flags and UI ---
             self.flags[index] = True
             self.new_user_dir = os.path.dirname(file_path)
             self.user_dir = os.path.dirname(file_path)
@@ -1286,68 +1636,6 @@ class LoadVisNirImagesDialog(QDialog):
 
         except Exception as e:
             print("error in open_sync_and_fly_image_VIS_or_NIR:", e)
-            
-            
-
-    def open_sync_and_fly_image_VIS_or_NIR_old(self, type_img: str, typ_ext: str, index: int) -> None:
-        """
-        Open and display a first_synchro image VIS  given its path.
-
-        This method attempts to open an image from a specified path, processes it,
-        and displays it on the user interface. It also sets various attributes and
-        updates the UI components accordingly. If the image file is successfully processed
-        and displayed, relevant path attributes are updated, and UI components are adjusted
-        to reflect the loaded image.
-        """
-        try:
-            if index == 1:
-                key_1 = 'sync'
-                index_img = 0
-            elif index == 2:
-                key_1 = 'sync'
-                index_img = -1
-            elif index == 3:
-                key_1 = 'fly'
-                index_img = 0
-            elif index == 4:
-                key_1 = 'fly'
-                index_img = -1
-                
-                                
-            file_path = Path(self.info_vis_dng[key_1]['outputFolder']) / self.info_vis_dng[ key_1]['listCopiedImages'][index_img]
-            file_path = self.safe_path(file_path)
-            if not file_path or not file_path.exists():
-                raise FileNotFoundError(f"Fichier introuvable : {file_path}")
-
-            # --- Chargement selon le type d’image ---
-            typ_ext = typ_ext.lower()
-            if file_path:
-                self.flags[index] = True
-                self.new_user_dir = os.path.dirname(file_path)
-                self.user_dir = os.path.dirname(file_path)
-                # Use rawpy library to open DNG files
-                with rawpy.imread(file_path) as raw:
-                    rgb = raw.postprocess()
-                    pixmap = QPixmap.fromImage(
-                        QImage(rgb.data, rgb.shape[1], rgb.shape[0], rgb.strides[0], QImage.Format.Format_RGB888))
-                pixmap = pixmap.scaled(* self.image_display_size, Qt.AspectRatioMode.KeepAspectRatio)
-                self.image_labels[index].setPixmap(pixmap)
-                filename, file_extension = os.path.splitext(os.path.basename(file_path))
-                self.image_name_labels[index].setText(f"{self.img_legend[0]}  : \n {filename}  {file_extension}")
-                self.image_name_labels[index].setStyleSheet("color: darkBlue;")
-                input_file_path = Path(self.info_vis_dng['inputFolder']) / self.info_vis_dng[ key_1]['listCopiedImages'][index_img]
-                input_file_path = self.safe_path(input_file_path)
-                self.listImgRefPath[index] = input_file_path
-                self.listVisRefPath[index] = input_file_path
-
-            # Updated class flags with new values. New window position if moved
-            self.currentUserDir = self.new_user_dir
-            if all(elem is True for elem in self.flags):
-                self.btn_load_all_images.setEnabled(True)
-                self.btn_load_all_images.setStyleSheet("background-color: darkBlue; color: white;")
-        except Exception as e:
-            print("error in open_sync_and_fly_image_VIS_or_NIR : ", e)
-
 
 
     def open_image(self, numBtn: int, image_label: QLabel, image_name_label: QLabel, image_type: str):
@@ -1372,10 +1660,8 @@ class LoadVisNirImagesDialog(QDialog):
             flags[numBtn] = self.open_and_display_image(numBtn, image_label, image_name_label, image_type)
             # Updated class flags with new values. New window position if moved
             self.flags[numBtn] = flags[numBtn]
-
             self.currentUserDir = self.new_user_dir
-
-            if all(LoadVisNirImagesDialog.flags):
+            if all(self.flags):
                 self.btn_load_all_images.setEnabled(True)
                 self.btn_load_all_images.setStyleSheet("background-color: darkBlue; color: white;")
         except Exception as e:
@@ -1442,7 +1728,8 @@ class LoadVisNirImagesDialog(QDialog):
             print("error in open_and_display_image ; ", e)
 
 
-    def on_help(self) -> None:
+    @staticmethod
+    def on_help() -> None:
         """
         """
         try:
@@ -1475,15 +1762,10 @@ class LoadVisNirImagesDialog(QDialog):
                 inputFolder != os.path.dirname(self.listImgRefPath[4])):
 
             consistency_choice = False
-
-            if inputFolder != os.path.dirname(self.listImgRefPath[1]):
-                message = f"{message} | first image of Sync \n"
-            if inputFolder != os.path.dirname(self.listImgRefPath[2]):
-                message = f"{message} | last image of Sync \n"
-            if inputFolder != os.path.dirname(self.listImgRefPath[3]):
-                message = f"{message} | first image of Fly  \n"
-            if inputFolder != os.path.dirname(self.listImgRefPath[4]):
-                message = f"{message} | last image of Fly \n"
+            labels = ["first image of Sync", "last image of Sync", "first image of Fly", "last image of Fly"]
+            for idx, label in zip(range(1, 5), labels):
+                if inputFolder != os.path.dirname(self.listImgRefPath[idx]):
+                    message += f" | {label} \n"
         else:
             consistency_choice = True
 
@@ -1494,57 +1776,89 @@ class LoadVisNirImagesDialog(QDialog):
         return consistency_choice
 
 
-def choose_folder_mission(dic_takeoff, pref_screen_default_user_dir, AerialPhotoFolder, SynchroFolder):
-    image_takeoff_available, path_image_takeoff = Uti.image_takeoff_available_test(dic_takeoff, pref_screen_default_user_dir)
+
+def choose_folder_mission(
+    dic_takeoff: dict,
+    pref_screen_default_user_dir: str,
+    AerialPhotoFolder: str,
+    SynchroFolder: str
+) -> Tuple[Path, bool]:
+    """
+    Choose the mission folder for IRDrone images.
+
+    This function checks whether a takeoff image is available. If yes, it uses
+    the folder indicated in dic_takeoff['File path mission'] and checks its consistency.
+    Otherwise, it prompts the user to select a mission folder manually via a dialog.
+
+    Parameters
+    ----------
+    dic_takeoff : dict
+        Dictionary containing takeoff information including the mission file path.
+    pref_screen_default_user_dir : str
+        Default directory to open for folder selection dialog.
+    AerialPhotoFolder : str
+        Name of the folder to store aerial photos.
+    SynchroFolder : str
+        Name of the folder to store synchronization images.
+
+    Returns
+    -------
+    Tuple[Path, bool]
+        folderMissionPath: Path object pointing to the selected mission folder
+        coherent_response: Boolean indicating if the folder name is consistent
+    """
     try:
+        image_takeoff_available, path_image_takeoff = Uti.image_takeoff_available_test(dic_takeoff, pref_screen_default_user_dir)
+
         if image_takeoff_available:
-            # construction du nom du dossier de la mission
+            # --- Construct the mission folder path ---
             folderMissionPath = Path(dic_takeoff['File path mission'])
             coherent_response = Uti.folder_name_consistency_analysis(folderMissionPath)
+
             if coherent_response:
-                Uti.show_info_message("IRDrone", f"Your images will be transferred to the  mission folder : \n {folderMissionPath}",
-                                      f"They will be distributed between the folders {AerialPhotoFolder} and {SynchroFolder}")
+                Uti.show_info_message(
+                    "IRDrone",
+                    f"Your images will be transferred to the mission folder:\n{folderMissionPath}",
+                    f"They will be distributed between the folders {AerialPhotoFolder} and {SynchroFolder}"
+                )
             else:
                 coherent_response = False
+
             return folderMissionPath, coherent_response
+
         else:
-            Uti.show_warning_OK_Cancel_message("IRDrone", "Choose the mission folder.", "It is of the form : \n FLY_Year Month Day_hour minute_[Place]", QMessageBox.Icon.Information)
+            # --- Ask user to choose a mission folder ---
+            Uti.show_warning_OK_Cancel_message(
+                "IRDrone",
+                "Choose the mission folder.",
+                "It should follow the format: FLY_YearMonthDay_hourminute_[Place]",
+                QMessageBox.Icon.Information
+            )
             try:
                 folderMissionPath = Path(QFileDialog.getExistingDirectory('Select Mission Folder', pref_screen_default_user_dir))
+
                 if folderMissionPath.exists() and folderMissionPath != pref_screen_default_user_dir:
                     coherent_response = Uti.folder_name_consistency_analysis(folderMissionPath)
                     if not coherent_response:
-                        Uti.show_warning_OK_Cancel_message("IRDrone", f"You have chosen the folder : \n{folderMissionPath} \nwhich is not a Mission IRDrone folder.",
-                                                           " Choose a compatible folder ( name FLY_YYYYMMDD_hhmm_<free text> ).\n or create a mission \n Use the <Create a New Mission> command.")
+                        Uti.show_warning_OK_Cancel_message(
+                            "IRDrone",
+                            f"You have chosen the folder:\n{folderMissionPath}\nwhich is not a Mission IRDrone folder.",
+                            "Choose a compatible folder (name FLY_YYYYMMDD_hhmm_<free text>) or create a new mission using the <Create a New Mission> command."
+                        )
                 else:
-                    Uti.show_warning_OK_Cancel_message("IRDrone", f"You have chosen the folder : \n {folderMissionPath} \n",
-                                                       " Your choice of folder is not recognized in IRDrone\n Choose a compatible folder ( name FLY_YYYYMMDD_hhmm_[Optional text] ).")
+                    Uti.show_warning_OK_Cancel_message(
+                        "IRDrone",
+                        f"You have chosen the folder:\n{folderMissionPath}\n",
+                        "Your choice of folder is not recognized in IRDrone.\nChoose a compatible folder (name FLY_YYYYMMDD_hhmm_[Optional text])."
+                    )
                     coherent_response = False
 
                 return folderMissionPath, coherent_response
+
             except Exception as e:
-                print("error 1   in choose_folder_mission :", e)
+                print("Error 1 in choose_folder_mission:", e)
+
     except Exception as e:
-        print("error 2   in choose_folder_mission :", e)
+        print("Error 2 in choose_folder_mission:", e)
 
 
-if __name__ == '__main__':
-    pref_screen = Uti.Prefrence_Screen()
-    default_app_dir = pref_screen.default_app_dir
-    default_user_dir = pref_screen.default_user_dir
-    # setting to manage multiple screens
-    screen_ID = pref_screen.defaultScreenID  # DEFAULT_SCREEN_ID = 1  Set to 0 for screen 1, 1 for screen 2, and so on
-    screen_adjust = pref_screen.screenAdjust  # SCREEN_ADJUST = [0, 40]   # 40 for taskbar and
-    window_display_size = pref_screen.windowDisplaySize  # WINDOW_DISPLAY_SIZE = (800, 600)
-    VERBOSE = True
-
-    app = QApplication(sys.argv)  # initializes the Qt application loop (ESSENTIAL!)
-
-    main_win_1 = LoadVisNirImagesDialog(900, 600, 'VIS',  os.path.join(os.path.abspath('/'), "Air-Mission", "FLY-20220125-1159-Blassac"))
-    Uti.center_on_screen(main_win_1, screen_ID, screen_adjust, window_display_size)
-    Uti.show(main_win_1)  # Uses the utils_interactiv module function to display the window
-    main_win_2 = LoadVisNirImagesDialog(900, 550, 'NIR', os.path.join(os.path.abspath('/'), "Air-Mission", "FLY-20220125-1159-Blassac"))
-    Uti.center_on_screen(main_win_2, screen_ID, [20, 40], (750, 550))
-    Uti.show(main_win_2)  # Uses the utils_interactiv module function to display the window
-
-    sys.exit(app.exec())
