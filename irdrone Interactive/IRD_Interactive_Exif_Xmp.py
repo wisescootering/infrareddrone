@@ -11,7 +11,7 @@ import json
 from datetime import datetime, date
 import time
 # -------------- IRDrone Library ------------------------------------
-import IRD_interactive_utils as Uti
+# import IRD_interactive_utils as Uti
 
 
 

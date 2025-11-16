@@ -62,10 +62,6 @@ class Main_Window(QMainWindow):
         self.dialog_extract_exif = None
         self.folderMissionPath: Path = None
         self.dialog_synchro_clock = None
-
-
-
-
         self.init_GUI()
 
 

@@ -161,6 +161,8 @@ class LoadVisNirImagesDialog(QDialog):
 
         # ---- Load previous transfer info if available
         verbose = True
+
+        '''
         if self.outputFlightAnalyticsFolder:
             if self.type_img == "NIR":
                 self.info_nir_jpg: Optional[dict] = self.load_transfer_info(self.outputFlightAnalyticsFolder, "NIR", "jpg")
@@ -178,6 +180,18 @@ class LoadVisNirImagesDialog(QDialog):
                     self.image_last_sync_available = True
                     self.image_first_fly_available = True
                     self.image_last_fly_available = True
+        '''
+        if self.outputFlightAnalyticsFolder:
+            if self.type_img == "NIR":
+                self.info_nir_jpg = self.load_transfer_info(self.outputFlightAnalyticsFolder, "NIR", "jpg")
+                if self.info_nir_jpg:
+                    self._set_image_flags_from_info(self.info_nir_jpg)
+
+            elif self.type_img == "VIS":
+                self.info_vis_dng = self.load_transfer_info(self.outputFlightAnalyticsFolder, "VIS", "dng")
+                if self.info_vis_dng:
+                    self._set_image_flags_from_info(self.info_vis_dng)
+
 
         self.timeline: list[dict] = []
         self.path_image_takeoff: Optional[Path] = path_image_takeoff   # Takeoff image path
@@ -353,8 +367,6 @@ class LoadVisNirImagesDialog(QDialog):
 
             # Load images if interactive sequence was already completed once
             if self.type_img == "VIS":
-                print(f'DEBUG 02  self.image_0_available ={self.image_0_available}')
-                print(f'DEBUG 03  self.image_takeoff_available ={self.image_takeoff_available}')
                 if self.image_0_available:
                     print(Uti.Style.GREEN + '[INFO] Loading takeoff image' + Uti.Style.RESET)
                     self.open_sync_and_fly_image_VIS_or_NIR(self.type_img, self.ext, 0)
@@ -1146,7 +1158,8 @@ class LoadVisNirImagesDialog(QDialog):
     def load_transfer_info(
             output_folder: Union[str, Path],
             cam_type: str,
-            img_type: str
+            img_type: str,
+            verbose: bool = False
     ) -> Optional[Dict]:
 
         """
@@ -1183,7 +1196,7 @@ class LoadVisNirImagesDialog(QDialog):
 
         # Check if the JSON file exists
         if not json_path.exists():
-            print(Uti.Style.YELLOW + f"[WARN] JSON file not found: {json_path}. Creating an empty JSON file." + Uti.Style.RESET)
+            if verbose : print(Uti.Style.YELLOW + f"[WARN] JSON file not found: {json_path}. Creating an empty JSON file." + Uti.Style.RESET)
             # Crée un fichier JSON vide
             json_path.parent.mkdir(parents=True, exist_ok=True)  # s'assure que le dossier existe
             with open(json_path, "w", encoding="utf-8") as f:
@@ -1496,13 +1509,10 @@ class LoadVisNirImagesDialog(QDialog):
                 # if path_image_takeoff is not None:
                 #    if os.path.exists(path_image_takeoff):
                 # ---------------------------------------------------
-                print(f'DEBUG 01     path_image_takeoff = {path_image_takeoff}')
-                print(f'DEBUG 010     os.path.exists(path_image_takeoff = {os.path.exists(path_image_takeoff)}')
                 if path_image_takeoff is not None and os.path.exists(path_image_takeoff):
                     self.path_image_takeoff = path_image_takeoff
                     self.image_takeoff_available = True
                     self.image_0_available = True
-                    print(f'DEBUG 011     self.image_takeoff_available = {self.image_takeoff_available}')
         except Exception as e:
             print("error   in init_image_takeoff_available", e)
 
@@ -1775,8 +1785,132 @@ class LoadVisNirImagesDialog(QDialog):
 
         return consistency_choice
 
+    @staticmethod
+    def _dict_has_keys( d: dict, keys: list[str]) -> bool:
+        """ Vérifie que le dictionnaire contient toutes les clés requises. """
+        if not isinstance(d, dict):
+            return False
+        for k in keys:
+            if k not in d:
+                print(f"DEBUG: clé manquante : '{k}'")
+                return False
+            if d[k] in (None, ""):
+                print(f"DEBUG: valeur vide pour '{k}'")
+                return False
+        return True
 
+    @staticmethod
+    def _validate_takeoff_paths(info: dict) -> bool:
+        """ Vérifie l'existence des chemins source et destination. """
+        try:
+            src = Path(info["File path take-off"])
+            dst_full = Path(info["path mission image take-off"])
+        except Exception as exc:
+            print(f"DEBUG: cannot build Path: {exc}")
+            return False
 
+        if not src.exists() or not src.is_file():
+            print(f"DEBUG: fichier source inexistant : {src}")
+            return False
+
+        if not dst_full.parent.exists():
+            print(f"DEBUG: dossier destination inexistant : {dst_full.parent}")
+            return False
+
+        return True
+
+    def _set_image_flags_from_info(self, info: dict) -> None:
+        """
+        Analyse la structure d'un dictionnaire transfer_info_* (NIR ou VIS)
+        et active/désactive les drapeaux :
+
+            - image_0_available
+            - image_first_sync_available
+            - image_last_sync_available
+            - image_first_fly_available
+            - image_last_fly_available
+
+        selon les règles définies pour les sections :
+            tkoff, sync, fly.
+        """
+
+        # ----------------------------------------------------------------------
+        # Initialisation : tout à False
+        # ----------------------------------------------------------------------
+        self.image_0_available = False
+        self.image_first_sync_available = False
+        self.image_last_sync_available = False
+        self.image_first_fly_available = False
+        self.image_last_fly_available = False
+
+        # Un helper local pour vérifier la structure
+        def _validate_section(sec: dict) -> Optional[list]:
+            """
+            Vérifie qu'une section contient :
+                - outputFolder
+                - listCopiedImages (liste)
+            Renvoie cette dernière si OK, sinon None.
+            """
+            if not isinstance(sec, dict):
+                return None
+
+            if "outputFolder" not in sec:
+                return None
+            if "listCopiedImages" not in sec:
+                return None
+
+            lst = sec["listCopiedImages"]
+            if not isinstance(lst, list):
+                return None
+
+            return lst
+
+        # ----------------------------------------------------------------------
+        # 1) TAKEOFF  ("tkoff")
+        # ----------------------------------------------------------------------
+        tkoff = info.get("tkoff")
+        lst = _validate_section(tkoff)
+        if lst is not None and len(lst) == 1:
+            self.image_0_available = True
+        else:
+            self.image_0_available = False
+
+        # ----------------------------------------------------------------------
+        # 2) SYNCHRO ("sync")
+        # ----------------------------------------------------------------------
+        sync = info.get("sync")
+        lst = _validate_section(sync)
+        if lst is not None:
+            if len(lst) >= 2:
+                self.image_first_sync_available = True
+                self.image_last_sync_available = True
+            elif len(lst) == 1:
+                self.image_first_sync_available = True
+                self.image_last_sync_available = False
+            else:
+                # lst == [] ou None
+                self.image_first_sync_available = False
+                self.image_last_sync_available = False
+
+        # ----------------------------------------------------------------------
+        # 3) FLY ("fly")
+        # ----------------------------------------------------------------------
+        fly = info.get("fly")
+        lst = _validate_section(fly)
+        if lst is not None:
+            if len(lst) >= 2:
+                self.image_first_fly_available = True
+                self.image_last_fly_available = True
+            elif len(lst) == 1:
+                self.image_first_fly_available = True
+                self.image_last_fly_available = False
+            else:
+                self.image_first_fly_available = False
+                self.image_last_fly_available = False
+
+# ================================================================================
+#              modules hors des class
+# ================================================================================
 def choose_folder_mission(
     dic_takeoff: dict,
     pref_screen_default_user_dir: str,

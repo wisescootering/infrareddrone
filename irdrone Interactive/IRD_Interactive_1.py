@@ -12,6 +12,7 @@ import shutil
 import json
 from datetime import date, time, datetime
 from typing import Any, Dict, Optional, Tuple, List, Union
+from pathlib import Path
 
 # -------------------- Image Library ------------------------------
 import rawpy
@@ -38,12 +39,17 @@ class Window_Load_TakeOff_Image(QDialog):
 
     def __init__(self, parent):
         super().__init__(parent)
-        self.prefScreen = Uti.Prefrence_Screen()    # Initializing screen preferences
-        self.initGUI()                              # Initializing the GUI
-        self.setLayout(self.main_layout)
-        self.dic_takeoff_light = dict()
-        self.dic_info_geo = dict()
+        self.dic_takeoff_light: dict = dict()
+        self.dic_info_geo: dict = dict()
         self.init_dic_takeoff_light()
+        self.path_image_takeoff: Optional[Path] = None
+        self.dirname_image_takeoff: str =None
+        self.name_image_takeoff: str = None
+        self.ext_image_takeoff: str = None
+
+        self.prefScreen = Uti.Prefrence_Screen()  # Initializing screen preferences
+        self.initGUI()  # Initializing the GUI
+        self.setLayout(self.main_layout)
 
 
     def initGUI(self):
@@ -177,6 +183,8 @@ class Window_Load_TakeOff_Image(QDialog):
         """
         try:
             self.dic_takeoff_light = {
+                "File path mission": None,
+                "File path take-off": None,
                 "File path": "C:/",
                 "Maker": "Nimbus",
                 "Model": "Old",
@@ -192,7 +200,13 @@ class Window_Load_TakeOff_Image(QDialog):
                 "GPS E-W": "E",
                 "GPS lon":  2.294481,
                 "GPS alti": 33.5,
-                "GPS drone alti": 330
+                "GPS drone alti": 330,
+                "AerialPhotography folder": "AerialPhotography",
+                "FlightAnalytics folder": "FlightAnalytics",
+                "ImgIRdrone folder": "ImgIRdrone",
+                "Synchro folder": "Synchro",
+                "ODM folder": "mapping_MULTI",
+                "cameras folder": "cameras"
             }
             #print( "TEST   sortie de   init_dic_takeoff       self.dic_takeoff_light  :", self.dic_takeoff_light)
         except Exception as e:
@@ -227,15 +241,18 @@ class Window_Load_TakeOff_Image(QDialog):
         """
         Ouvrir une boîte de dialogue pour sélectionner une image.
         Ici on n'admet uniquement des images au format DNG
-        Elles doivent provenir de la caméra du drone qui capture des images dans le spectre visible.
+        Elles doivent provenir de la caméra du drone qui capture des images dans le spectre VISIBLE (VIS).
         """
 
         directory = os.path.abspath('/')   # DD racine
         file_name, _ = QFileDialog.getOpenFileName(self, "Open Image", directory, "Images (*.dng)") # (*.png *.xpm *.jpg *.dng)")
 
-
         try:
             if file_name:
+                self.path_image_takeoff = Path(Uti.safe_path(file_name))
+                self.name_image_takeoff = os.path.basename(self.path_image_takeoff)
+                self.dirname_image_takeoff = str(self.path_image_takeoff.parent)
+                self.ext_image_takeoff = self.path_image_takeoff.suffix
                 self.dic_takeoff_light["File path"] = file_name
                 if file_name.lower().endswith(".dng"):
                     # Charger une image DNG avec rawpy. Attention cette étape est longue ...
@@ -288,6 +305,7 @@ class Window_Load_TakeOff_Image(QDialog):
                 self.btn_NextStep.setEnabled(True)
                 self.btn_NextStep.setStyleSheet("background-color: darkGray; color:Black;")
                 self.progress_bar.setValue(100)
+
             else:
                 return
 
@@ -326,6 +344,9 @@ class Window_Load_TakeOff_Image(QDialog):
         except Exception as e:
             print("error 2 in load_takeoff_image ", e)
 
+        self.dic_takeoff_light["name image take-off"] = self.name_image_takeoff
+        self.dic_takeoff_light["ext image take-off"] = self.ext_image_takeoff
+
         return
 
 
@@ -357,10 +378,15 @@ class Window_create_file_structure(QDialog):
             ├── ImgIRdrone/
             ├── mapping_MULTI/
             └── cameras/
-            │       └── camera_IRdrone.json
             ├── FlightAnalytics/
             │       └── HYPERLAPSE_0001.dng      ( first image at the  take-off)
-            └── config.json                      ( mission parameters )
+            │       └── config.json              ( mission parameters )
+            │       └── transfer_info_VIS_dng.json (dans une version minimale)
+            └──
+
+
+            A ce stade on a pas └── cameras/
+                                │       └── camera_IRdrone.json
 
 
     """
@@ -451,6 +477,8 @@ class Window_create_file_structure(QDialog):
             self.update_dic_takeoff()
             self.validate_answer = True
             self.create_mission_folder()
+            self.update_image_takeoff()
+            self.update_transfert_info_VIS_dng_json()
             self.data_signal_from_dialog_create_file_structure_to_main_window.emit(self.validate_answer, self.dic_takeoff)
             self.close()
         except Exception as e:
@@ -817,6 +845,171 @@ class Window_create_file_structure(QDialog):
         except Exception as e:
             print("error --init-- camera NIR", e)
 
+    def update_image_takeoff(self, verbose:bool = False) -> None:
+        """
+        Copies the take-off image to the exact destination path provided
+        in dic_takeoff["path mission image take-off"].
+
+        The method checks:
+          - that the source file exists,
+          - that the destination directory exists,
+        and performs the copy. Raises RuntimeError on failure.
+
+        Returns
+        -------
+        None
+        """
+        # Retrieve paths (string → Path)
+        src_path = Path(self.dic_takeoff["File path take-off"])
+        dst_path = Path(self.dic_takeoff["path mission image take-off"])  # full path incl. filename
+
+        if verbose: print(Uti.Style.GREEN + f"Sauvegarde de l'image du takeoff : {src_path}\n  → vers : {dst_path}" + Uti.Style.RESET)
+
+        # --- Sanity checks ------------------------------------------------------
+        if not src_path.exists():
+            raise RuntimeError(Uti.Style.YELLOW + f"Le fichier source n'existe pas : {src_path}" + Uti.Style.RESET)
+
+        if not src_path.is_file():
+            raise RuntimeError(Uti.Style.YELLOW + f"Le chemin source n'est pas un fichier : {src_path}" + Uti.Style.RESET)
+
+        dst_dir = dst_path.parent
+        if not dst_dir.exists():
+            raise RuntimeError(Uti.Style.YELLOW + f"Le dossier de destination n'existe pas : {dst_dir}" + Uti.Style.RESET)
+
+        if not dst_dir.is_dir():
+            raise RuntimeError(Uti.Style.YELLOW + f"Le chemin parent de destination n'est pas un dossier : {dst_dir}" + Uti.Style.RESET)
+
+        # --- Effective copy -----------------------------------------------------
+        try:
+            shutil.copy2(src_path, dst_path)
+            if verbose : print(Uti.Style.GREEN + f"Image du take off copiée avec succès vers : {dst_path}" + Uti.Style.RESET)
+        except Exception as exc:
+            raise RuntimeError(f"Erreur pendant la copie : {exc}") from exc
+
+
+    def update_transfert_info_VIS_dng_json(self, verbose: bool = False) -> None:
+        """
+        Initialise ou met à jour le fichier transfer_info_VIS_dng.json
+        dans <missionFolder>/FlightAnalytics.
+
+        Le fichier existant n'est réécrit que si les valeurs importantes
+        ont réellement changé.
+        """
+
+        import json
+        from pathlib import Path
+
+        # ----------------------------------------------------------
+        # Vérifications préalables minimales
+        # ----------------------------------------------------------
+        required_keys = ["File path mission"]
+        for key in required_keys:
+            if key not in self.dic_takeoff:
+                print(f"DEBUG: Clé manquante dans dic_takeoff : {key}")
+                return
+
+        if "name image take-off" not in self.dic_takeoff_light:
+            print("[DEBUG]: clé 'name image take-off' absente dans dic_takeoff_light")
+            return
+
+        # ----------------------------------------------------------
+        # Construction du dictionnaire nouveau (MÀJ potentielle)
+        # ----------------------------------------------------------
+        dic_light = {
+            "cam_type": "VIS",
+            "img_type": "dng",
+            "inputFolder": str(Path(self.dic_takeoff_light["File path"]).parent),
+
+            "tkoff": {
+                "outputFolder": str(Path(self.missionFolder) / "FlightAnalytics"),
+                "idMin": 1,
+                "idMax": 1,
+                "listCopiedImages": [
+                    self.dic_takeoff_light["name image take-off"]
+                ]
+            },
+
+            "sync": {
+                "outputFolder": str(Path(self.missionFolder) / "Synchro")
+            },
+
+            "fly": {
+                "outputFolder": str(Path(self.missionFolder) / "AerialPhotography")
+            }
+        }
+
+        # ----------------------------------------------------------
+        # Chemin du fichier JSON cible
+        # ----------------------------------------------------------
+        folder_fa = Path(self.missionFolder) / "FlightAnalytics"
+        json_file = folder_fa / "transfer_info_VIS_dng.json"
+        folder_fa.mkdir(parents=True, exist_ok=True)
+
+        # ----------------------------------------------------------
+        # Si le fichier existe, charger et comparer
+        # ----------------------------------------------------------
+        if json_file.exists():
+            try:
+                with open(json_file, "r", encoding="utf-8") as f:
+                    old_dic = json.load(f)
+            except Exception as exc:
+                if verbose: print(Uti.style.YELLOW + f"ERREUR: Impossible de lire {json_file}\n{exc}"  + Uti.Style.RESET)
+                old_dic = None
+
+            if isinstance(old_dic, dict):
+
+                # ------------------------------------------------------
+                # Comparaison sélective
+                # ------------------------------------------------------
+
+                def same_value(key: str) -> bool:
+                    """Compare les clés de haut niveau (str -> Any)"""
+                    return old_dic.get(key) == dic_light.get(key)
+
+                def same_output_folder(key: str) -> bool:
+                    """Compare uniquement la sous-clé outputFolder."""
+                    old = old_dic.get(key, {})
+                    new = dic_light.get(key, {})
+                    return isinstance(old, dict) and isinstance(new, dict) \
+                           and old.get("outputFolder") == new.get("outputFolder")
+
+                all_same = True
+
+                # Comparaison complète sur cam_type / img_type / inputFolder
+                for key in ["cam_type", "img_type", "inputFolder"]:
+                    if not same_value(key):
+                        all_same = False
+                        break
+
+                # Comparaison complète pour tkoff
+                if all_same and (old_dic.get("tkoff") != dic_light.get("tkoff")):
+                    all_same = False
+
+                # Comparaison SEULEMENT outputFolder pour sync / fly
+                if all_same and not same_output_folder("sync"):
+                    all_same = False
+
+                if all_same and not same_output_folder("fly"):
+                    all_same = False
+
+                if all_same:
+                    if verbose:print("DEBUG: Aucun changement détecté → fichier conservé tel quel.")
+                    return
+
+                print(Uti.Style.YELLOW + "DEBUG: Modifications détectées → réécriture du fichier JSON." + Uti.Style.RESET)
+
+        # ----------------------------------------------------------
+        # Écriture du fichier (nouveau ou mise à jour)
+        # ----------------------------------------------------------
+        try:
+            with open(json_file, "w", encoding="utf-8") as f:
+                json.dump(dic_light, f, indent=4, ensure_ascii=False)
+
+            if verbose: print(f"DEBUG: Fichier écrit/mis à jour : {json_file}")
+
+        except Exception as exc:
+            print(f"ERREUR: Impossible d'écrire le fichier JSON : {json_file}\n{exc}")
+
 
     def update_dic_takeoff(self):
         """
@@ -827,10 +1020,17 @@ class Window_create_file_structure(QDialog):
         self.fields_consistency_analysis()
         self.missionFolder = self.build_mission_folder_name()
         try:
+            path_mission_image_takeoff = str(Uti.safe_path(Path(self.missionFolder) /
+                                                           "FlightAnalytics"/
+                                                           self.dic_takeoff_light["name image take-off"]
+                                                           ))
 
             self.dic_takeoff = {
                 "File path mission": self.missionFolder,
                 "File path take-off": self.dic_takeoff_light["File path"],
+                "name image take-off": self.dic_takeoff_light["name image take-off"],
+                "ext image take-off": self.dic_takeoff_light["ext image take-off"],
+                "path mission image take-off": str(Path(self.missionFolder) / "FlightAnalytics" / self.dic_takeoff_light["name image take-off"]),
                 "Body serial number": self.dic_takeoff_light["Body serial number"],
                 "Date Exif": f"{Uti.datePy2dateJson(self.py_date)} {Uti.timePy2timeJson(self.py_time)}",
                 "Date": Uti.datePy2dateJson(self.py_date),
@@ -973,7 +1173,7 @@ class Window_create_file_structure(QDialog):
 
         try:
             # Save to JSON file
-            with open(os.path.join(directory, "config.json"), "w") as file:
+            with open(Path(directory) / "FlightAnalytics" / "config.json", "w") as file:
                 json.dump(self.dic_takeoff, file, ensure_ascii=False, indent=4)
 
             txt_Date = str(self.py_date_time.year) + str(self.py_date_time.month) + str(self.py_date_time.day)
