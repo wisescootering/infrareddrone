@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 
 def date_from_path_sjcam(img_pth):
     year, month_date, hours , _ = osp.basename(img_pth).split("_")
-    converted_date =  datetime(year=int(year), month=int(month_date[:2]), day=int(month_date[2:]),
+    converted_date = datetime(year=int(year), month=int(month_date[:2]), day=int(month_date[2:]),
                                hour=int(hours[:2]), minute=int(hours[2:4]),  second=int(hours[4:]))
     return  converted_date
 
@@ -59,4 +59,4 @@ def synchronize_data(
 
 
 if __name__ == '__main__':
-    sync_pairs = synchronize_data(folder = r"D:\FLY-20210906-Blassac-05ms\AerialPhotography", replace_dji=(".DNG", "_PL4_DIST.tif"))
+    sync_pairs = synchronize_data(folder=r"D:\FLY-20210906-Blassac-05ms\AerialPhotography", replace_dji=(".DNG", "_PL4_DIST.tif"))

@@ -15,7 +15,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
 import utils.utils_IRdrone as IRd
-from irdrone.utils import Style
+from irdrone.irdrone.utils import Style
 import traceback
 
 

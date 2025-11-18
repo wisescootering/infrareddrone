@@ -6,8 +6,8 @@ import utils.utils_IRdrone as IRd
 import config
 import cv2
 import numpy as np
-import irdrone.utils as ut
-import irdrone.process as pr
+import irdrone.irdrone.utils as ut
+import irdrone.irdrone.process as pr
 try:
     from aruco_helper import aruco_detection
 except:
@@ -19,7 +19,7 @@ import copy
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 from scipy.optimize import minimize
-from irdrone.utils import Style
+from irdrone.irdrone.utils import Style
 import argparse
 import traceback
 import logging

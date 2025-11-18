@@ -766,7 +766,6 @@ def image_takeoff_available_test(dic_takeoff: dict, default_user_dir: Path):
         print("error   in image_takeoff_available", e)
 
 
-
 def format_number(number, decimal=3, car=" "):
     format_string = f"{car}{{:.{decimal}f}}" if number >= 0 else f"{{:.{decimal}f}}"
     return format_string.format(number)

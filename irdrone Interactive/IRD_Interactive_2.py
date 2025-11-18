@@ -162,25 +162,6 @@ class LoadVisNirImagesDialog(QDialog):
         # ---- Load previous transfer info if available
         verbose = True
 
-        '''
-        if self.outputFlightAnalyticsFolder:
-            if self.type_img == "NIR":
-                self.info_nir_jpg: Optional[dict] = self.load_transfer_info(self.outputFlightAnalyticsFolder, "NIR", "jpg")
-                if self.info_nir_jpg:
-                    self.image_0_available = True
-                    self.image_first_sync_available = True
-                    self.image_last_sync_available = True
-                    self.image_first_fly_available = True
-                    self.image_last_fly_available = True
-            elif self.type_img == "VIS":
-                self.info_vis_dng: Optional[dict] = self.load_transfer_info(self.outputFlightAnalyticsFolder, "VIS", "dng")
-                if self.info_vis_dng:
-                    self.image_0_available = True
-                    self.image_first_sync_available = True
-                    self.image_last_sync_available = True
-                    self.image_first_fly_available = True
-                    self.image_last_fly_available = True
-        '''
         if self.outputFlightAnalyticsFolder:
             if self.type_img == "NIR":
                 self.info_nir_jpg = self.load_transfer_info(self.outputFlightAnalyticsFolder, "NIR", "jpg")

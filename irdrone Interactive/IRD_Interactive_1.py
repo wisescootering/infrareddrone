@@ -283,7 +283,7 @@ class Window_Load_TakeOff_Image(QDialog):
                 # Utilise API IGN (Institut Géographique National. France) ou bien OpenTopoData (Monde)
                 # Renvoie en fonction des coordonnées GPS, l'altitude géographique.
                 # C'est le niveau du sol par rapport au niveau de la mer
-                self.dic_info_geo = Geo.extract_alti_IGN([(latitude, longitude)], bypass=False)
+                self.dic_info_geo = Geo.extract_alti_IGN([(latitude, longitude)], bypass=False)[0]
                 self.progress_bar.setValue(60)
                 # Utilise l'API Open Street Map pour obtenir les données géographiques (lieu-dit, ville, code postal, ...)
                 self.dic_info_geo = Geo.extract_geoTag(self.dic_info_geo, bypass=False)

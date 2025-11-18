@@ -24,7 +24,17 @@ ARUCO_DICT = {
     "DICT_APRILTAG_36h10": cv2.aruco.DICT_APRILTAG_36h10,
     "DICT_APRILTAG_36h11": cv2.aruco.DICT_APRILTAG_36h11
 }
-ARUCO_SELECT = cv2.aruco.Dictionary_get(ARUCO_DICT["DICT_4X4_50"])
+# depreciated    ARUCO_SELECT = cv2.aruco.Dictionary_get(ARUCO_DICT["DICT_4X4_50"])
+def get_aruco_dict(dict_name="DICT_4X4_50", verbose=False):
+    """Retourne le dictionnaire ArUco compatible avec toutes les versions OpenCV."""
+    try:
+        if verbose:
+            print(f"Dictionnaire ArUco {dict_name} chargé ✅")
+        return cv2.aruco.getPredefinedDictionary(ARUCO_DICT[dict_name])
+
+    except AttributeError:
+        return cv2.aruco.Dictionary_get(ARUCO_DICT[dict_name])
+ARUCO_SELECT = get_aruco_dict("DICT_4X4_50")
 
 
 def aruco_detection(image, arucoDict=ARUCO_SELECT, show=False, debug_fig=None, title=""):

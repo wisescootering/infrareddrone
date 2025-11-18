@@ -12,13 +12,12 @@ version 1.3  2022-09-27 19:37:00
 
 
 
-
-import json
-import logging
+import sys
 import os
 import os.path as osp
+import json
+import logging
 import pickle
-import sys
 from copy import copy, deepcopy
 from pathlib import Path
 
@@ -34,23 +33,24 @@ import datetime
 from datetime import timedelta
 from operator import itemgetter
 
-
 import numpy as np
 import openpyxl
 from openpyxl import Workbook
 
-sys.path.append(osp.join(osp.dirname(__file__), ".."))
 from typing import List, Optional
 
 import config as cf
-import irdrone.process as pr
-import irdrone.utils as ut
+sys.path.append(osp.join(osp.dirname(__file__), '..'))
+import irdrone.irdrone.utils as ut
+import irdrone.irdrone.process as pr
+from irdrone.irdrone.utils import Style
+
 import utils.angles_analyzis as analys
 import utils.utils_GPS as uGPS
 import utils.utils_odm as odm
 import utils.utils_IRdrone_Class as shpt
 #from utils.utils_IRdrone_Class import ShootPoint
-from irdrone.utils import Style
+
 
 
 
@@ -176,7 +176,7 @@ def extractFlightPlan(dirPlanVol, mute=True):
     > Images list of Drone and IR cameras
 
     :param dirPlanVol:  path of Fligth Plan in  a Excel
-                 mute: affiche des informatios si True  (utile en phase debug)
+                 mute: affiche des informations si True  (utile en phase debug)
     :return: (planVol,imgListDrone,deltaTimeDrone,timeLapseDrone,imgListIR,deltaTimeIR,timeLapseIR,
     dirNameIRdrone,coordGPS_TakeOff,altiTakeOff)   )
     """

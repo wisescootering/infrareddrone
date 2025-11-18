@@ -33,57 +33,6 @@ import IRD_interactive_utils as Uti
 # =          Utilities for  GPS          =
 # ========================================
 
-def data_sig(coordinates: tuple[float, float]) -> Optional[dict[str, any]]:
-    """
-    Retrieve geographic and geocoding information for given coordinates.
-
-    Parameters:
-    - coordinates (Tuple[float, float]): A tuple containing latitude and longitude.
-
-    Returns:
-    - Optional[Dict[str, Any]]: A dictionary containing geographic and geocoding information, or
-      None if an error occurs or if information cannot be retrieved.
-
-    Note:
-    - The function uses two helper functions, extract_alti_IGN and extract_geoTag, to retrieve
-      geographic altitude from the IGN API and geocoding information from the OpenStreetMap API,
-      respectively.
-    - Retrieved information is stored in the dictionary dic_geo, which is returned.
-    - If an error occurs, an error message is printed and the function returns None.
-    """
-    dic_geo = []
-    try:
-        dic_geo = extract_alti_IGN(coordinates)   # extracts the geographic altitude of the location (IGN API)
-        extract_geoTag(dic_geo, bypass=True)                   # extracts geocoding data (OpenStreetMap API)
-
-    except Exception as e:
-        print("error", e)
-
-    return dic_geo
-
-
-def extract_alti_IGN(coordinates: list[tuple[float, float]], interpolation: int = 0, bypass=False) -> dict[str, list[dict]]:
-    """
-    Calculate the altitude of a single or list of points based on its GPS latitude and longitude coordinates.
-    Use get_altitudes module which takes a list of coordinates as input
-
-    :param coordinates:  [(latitude, longitude)]    a list of tuples containing a single element here.
-    :param interpolation:
-    :return:
-    """
-
-    lat_lon_alti = get_altitudes(coordinates, verbose=True, bypass=False)
-    dico_coordinates_IGN = {'elevations': lat_lon_alti}
-
-
-    if 'elevations' in dico_coordinates_IGN and isinstance(dico_coordinates_IGN['elevations'], list) and len(dico_coordinates_IGN['elevations']) > 0:
-        return dico_coordinates_IGN['elevations'][0]
-    else:
-        # Gérez le cas où 'elevations' n'est pas une liste ou est vide
-        print(Uti.Style.YELLOW + f'⚠️  \'elevations\' n\'est pas une liste ou est vide' + Uti.Style.RESET)
-        return {'elevations': {'lon': coordinates[0][1], 'lat': coordinates[0][0], 'z': 0., 'acc': 0.}}
-
-
 # =============================================================
 # Altitude Retrieval Module
 # =============================================================
@@ -123,6 +72,127 @@ def extract_alti_IGN(coordinates: list[tuple[float, float]], interpolation: int 
 #                           }
 #
 #  =============================================================
+
+
+def data_sig(coordinates: tuple[float, float]) -> Optional[dict[str, any]]:
+    """
+    Retrieve geographic and geocoding information for given coordinates.
+
+    Parameters:
+    - coordinates (Tuple[float, float]): A tuple containing latitude and longitude.
+
+    Returns:
+    - Optional[Dict[str, Any]]: A dictionary containing geographic and geocoding information, or
+      None if an error occurs or if information cannot be retrieved.
+
+    Note:
+    - The function uses two helper functions, extract_alti_IGN and extract_geoTag, to retrieve
+      geographic altitude from the IGN API and geocoding information from the OpenStreetMap API,
+      respectively.
+    - Retrieved information is stored in the dictionary dic_geo, which is returned.
+    - If an error occurs, an error message is printed and the function returns None.
+    """
+    dic_geo = []
+    try:
+        dic_geo = extract_alti_IGN(coordinates)   # extracts the geographic altitude of the location (IGN API)
+        extract_geoTag(dic_geo, bypass=True)                   # extracts geocoding data (OpenStreetMap API)
+
+    except Exception as e:
+        print("error", e)
+
+    return dic_geo
+
+
+def extract_alti_IGN(coordinates: list[tuple[float, float]], interpolation: int = 0, verbose=False, bypass=False) -> dict[str, list[dict]]:
+    """
+    Calculate the altitude of a single or list of points based on its GPS latitude and longitude coordinates.
+    Use get_altitudes module which takes a list of coordinates as input
+
+    :param coordinates:  [(latitude, longitude)]    a list of tuples containing a single element here.
+    :param interpolation:
+    :return:
+    """
+
+    lat_lon_alti = get_altitudes(coordinates, verbose=verbose, bypass=False)
+    dico_coordinates_IGN = {'elevations': lat_lon_alti}
+
+
+    if 'elevations' in dico_coordinates_IGN and isinstance(dico_coordinates_IGN['elevations'], list) and len(dico_coordinates_IGN['elevations']) > 0:
+        return dico_coordinates_IGN['elevations']
+    else:
+        # Gérez le cas où 'elevations' n'est pas une liste ou est vide
+        print(Uti.Style.YELLOW + f'⚠️  \'elevations\' n\'est pas une liste ou est vide' + Uti.Style.RESET)
+        return {'elevations': {'lon': coordinates[0][1], 'lat': coordinates[0][0], 'z': 0., 'acc': 0.}}
+
+
+
+# ------------------------------------------------------------
+#  Combined procedure: IGN → OpenTopo fallback
+# ------------------------------------------------------------
+def get_altitudes(coordinates, verbose=False, bypass=False):
+    """
+    Combined elevation retrieval using IGN (France) first, then OpenTopoData fallback.
+
+    Parameters
+    ----------
+    coordinates : list[tuple[float, float]]
+        List of (latitude, longitude) coordinates.
+    verbose : bool, optional
+        If True, prints step-by-step progress information.
+
+    Returns
+    -------
+    list[dict]
+        Final list of latitude, longitude,  altitude and acc data for all points, combining both sources as needed.
+        {'lat': float, 'lon': float, 'z': float, 'acc': string }
+
+    Behavior
+    --------
+    1. Query IGN API for all points.
+    2. If IGN completely fails → switch to OpenTopoData for all points.
+    3. If some points have z = -99999.00 (outside France) → requery those with OpenTopoData.
+    4. If OpenTopoData also fails → set z = 0 and acc = 'unavailable'.
+    """
+
+    if bypass:
+        dico_coordinates_GPS = force_sea_Level(coordinates)
+        print(Uti.Style.YELLOW + f"⚠    Ground level set to zero (bypass)" + Uti.Style.RESET)
+        return dico_coordinates_GPS
+
+    if verbose:
+        print(Uti.Style.GREEN + "[INFO]  Querying IGN..." + Uti.Style.RESET)
+    dico_coordinates_GPS = get_altitudes_IGN(coordinates)
+
+    # Check if IGN completely failed
+    if all(p["z"] == -99999.00 for p in dico_coordinates_GPS):
+        if verbose:
+            print(Uti.Style.YELLOW + f"⚠️ IGN unavailable. Switching completely to OpenTopoData..." + Uti.Style.RESET)
+        dico_coordinates_GPS = get_altitudes_OpenTopo(coordinates)
+        return dico_coordinates_GPS
+
+    # Points with z = -99999 (outside France)
+    missing_points = [(p["lat"], p["lon"]) for p in dico_coordinates_GPS if p["z"] == -99999.00]
+    if missing_points:
+        if verbose:
+            print(Uti.Style.YELLOW + f"⚠  ️ {len(missing_points)} points outside France detected. Querying OpenTopoData..." + Uti.Style.RESET)
+        topo_data = get_altitudes_OpenTopo(missing_points)
+        topo_dict = {(p["lat"], p["lon"]): p for p in topo_data}
+
+        # Replace missing points only
+        for p in dico_coordinates_GPS:
+            if p["z"] == -99999.00:
+                key = (p["lat"], p["lon"])
+                if key in topo_dict:
+                    p.update(topo_dict[key])
+                else:
+                    p.update({"z": 0, "acc": "unavailable"})
+
+    if verbose:
+        print(Uti.Style.GREEN + "[INFO]  Querying IGN OK" + Uti.Style.RESET)
+
+    return dico_coordinates_GPS
+
+
 
 # ------------------------------------------------------------
 # 1️⃣  IGN API
@@ -298,68 +368,6 @@ def get_altitudes_OpenTopo(points, pause=0.3, batch_size=100, max_tries: int = 3
     return results
 
 
-# ------------------------------------------------------------
-#  Combined procedure: IGN → OpenTopo fallback
-# ------------------------------------------------------------
-def get_altitudes(coordinates, verbose=False, bypass=False):
-    """
-    Combined elevation retrieval using IGN (France) first, then OpenTopoData fallback.
-
-    Parameters
-    ----------
-    coordinates : list[tuple[float, float]]
-        List of (latitude, longitude) coordinates.
-    verbose : bool, optional
-        If True, prints step-by-step progress information.
-
-    Returns
-    -------
-    list[dict]
-        Final list of latitude, longitude,  altitude and acc data for all points, combining both sources as needed.
-        {'lat': float, 'lon': float, 'z': float, 'acc': string }
-
-    Behavior
-    --------
-    1. Query IGN API for all points.
-    2. If IGN completely fails → switch to OpenTopoData for all points.
-    3. If some points have z = -99999.00 (outside France) → requery those with OpenTopoData.
-    4. If OpenTopoData also fails → set z = 0 and acc = 'unavailable'.
-    """
-
-    if bypass:
-        dico_coordinates_GPS = force_sea_Level(coordinates)
-        print(Uti.Style.YELLOW + f"⚠    Ground level set to zero (bypass)" + Uti.Style.RESET)
-        return dico_coordinates_GPS
-
-    if verbose:
-        print(Uti.Style.GREEN + "[INFO]  Querying IGN..." + Uti.Style.RESET)
-    dico_coordinates_GPS = get_altitudes_IGN(coordinates)
-
-    # Check if IGN completely failed
-    if all(p["z"] == -99999.00 for p in dico_coordinates_GPS):
-        if verbose:
-            print(Uti.Style.YELLOW + f"⚠️ IGN unavailable. Switching completely to OpenTopoData..." + Uti.Style.RESET)
-        dico_coordinates_GPS = get_altitudes_OpenTopo(coordinates)
-        return dico_coordinates_GPS
-
-    # Points with z = -99999 (outside France)
-    missing_points = [(p["lat"], p["lon"]) for p in dico_coordinates_GPS if p["z"] == -99999.00]
-    if missing_points:
-        if verbose:
-            print(Uti.Style.YELLOW + f"⚠  ️ {len(missing_points)} points outside France detected. Querying OpenTopoData..." + Uti.Style.RESET)
-        topo_data = get_altitudes_OpenTopo(missing_points)
-        topo_dict = {(p["lat"], p["lon"]): p for p in topo_data}
-
-        # Replace missing points only
-        for p in dico_coordinates_GPS:
-            if p["z"] == -99999.00:
-                key = (p["lat"], p["lon"])
-                if key in topo_dict:
-                    p.update(topo_dict[key])
-                else:
-                    p.update({"z": 0, "acc": "unavailable"})
-
-    return dico_coordinates_GPS
 
 
 def extract_alti_IGN_From_API(coordinates: List[Tuple[float, float]], bypass: bool = False, verbose: bool = False) -> Optional[Dict[str, Optional[float]]]:
