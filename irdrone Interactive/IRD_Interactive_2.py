@@ -661,9 +661,12 @@ class LoadVisNirImagesDialog(QDialog):
             for f in fichiers:
                 stem = f.stem
                 try:
-                    # For time calculation, the year is ignored.
-                    # On some cameras (e.g., SJCam M20), if the battery is removed,
-                    # the default date can be the camera manufacturing date !
+                    # The filename contains a full timestamp (YYYY_MMDD_HHMMSS).
+                    # Note: on some cameras (e.g., SJCam M20), if the battery is removed,
+                    # the internal clock may reset to the factory date, resulting in an incorrect date.
+                    # However, this has no impact on the relative timeline, since time differences
+                    # are computed with respect to the first image of the mission. Only the relative
+                    # intervals matter, not the absolute date.
                     annee, reste = stem.split("_", 1)
                     moisjour, heuresec, numero = reste.split("_")
 
@@ -747,7 +750,7 @@ class LoadVisNirImagesDialog(QDialog):
         true_record_period = self.true_recording_period(dates, sauts, periode_time_lapse)
 
         # --- Construct the actual timeline ---
-        time_line = self.buid_time_line(dates, sauts, true_record_period, numeros, fichiers, verbose=False)
+        time_line = self.build_time_line(dates, sauts, true_record_period, numeros, fichiers, verbose=False)
 
         # --- Overall summary ---
         print(f"🕒 Timeline computed: {time_line[-1]:.3f} s up to the last image (n={len(time_line)})")
@@ -765,7 +768,7 @@ class LoadVisNirImagesDialog(QDialog):
 
 
     @staticmethod
-    def buid_time_line(dates: list[float],
+    def build_time_line(dates: list[float],
                        sauts: list[tuple[int, int, float]],
                        periode_reelle: float,
                        numeros: list[int],

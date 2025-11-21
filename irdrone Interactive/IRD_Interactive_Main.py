@@ -286,7 +286,7 @@ class Main_Window(QMainWindow):
         if validate:
             self.list_dic_exif_xmp: list[dict] = self.dialog_extract_exif.list_dic_exif_xmp
             self.folderMissionPath: Path = self.dialog_extract_exif.folderMissionPath
-            print(f"TEST 0020  for Fly {self.folderMissionPath} Extraction built {len(self.list_dic_exif_xmp)} dictionary exif/xmp")
+            # print(f"TEST 0020  for Fly {self.folderMissionPath} Extraction built {len(self.list_dic_exif_xmp)} dictionary exif/xmp")
             self.dialog_extract_exif.data_signal_from_dialog_extract_exif_to_main_window.disconnect()  # Disconnect the signal
         else:
             print("The user has not validated his entries.")

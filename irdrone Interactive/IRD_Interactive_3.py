@@ -13,6 +13,7 @@ import json
 from datetime import date, time, datetime
 from pathlib import Path
 import numpy as np
+from typing import List, Tuple, Optional, Dict, Any
 # -------------- PyQt6 Library ------------------------------------
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QMessageBox, QDialog, QFileDialog, QLabel, \
     QRadioButton, QLineEdit, QPushButton, QMessageBox, QProgressBar, QFrame
@@ -38,13 +39,31 @@ class Dialog_extract_exif(QDialog):
 
     def __init__(self, dic_takeoff: dict):
         super().__init__()
-        self.pref_screen = Uti.Prefrence_Screen()  # Initializing screen preferences
-        self.init_GUI()  # Initializing the GUI
-        self.setLayout(self.main_layout)
-        self.dic_takeoff = dic_takeoff
-        self.list_dic_exif_xmp = []
-        self.folderMissionPath = None
 
+        # Preferences
+
+        self.pref_screen: Uti.Prefrence_Screen = Uti.Prefrence_Screen()
+
+        # Display parameters
+        self.image_display_size: tuple[int, int] = (0, 0)
+
+        # Mission data
+        self.gps_info_takeoff = None
+        self.dic_takeoff: dict = dic_takeoff
+        self.dic_gps_info_takeoff = None
+        self.dic_relative_time_line: dict = {}
+        self.list_dic_exif_xmp: list = []
+        self.folderMissionPath: Optional[Path] = None
+        self.coherent_answer: bool = True
+
+        self.central_widget = QWidget()
+        self.btn_preprocess_step1 = None
+        self.btn_cancel = None
+        self.btn_Help = None
+        self.progress_bar = None
+        self.image_label = None
+        self.init_GUI()
+        self.setLayout(self.main_layout)
 
 
     def init_GUI(self):
@@ -65,7 +84,6 @@ class Dialog_extract_exif(QDialog):
         #  Setting the window dimensions.
         # Create the central widget
         self.setGeometry(0, 0, width, height)
-        self.central_widget = QWidget()
         self.main_layout = QVBoxLayout(self.central_widget)
         # Create the tre zones (and sub layouts for zone 3) and add them to the main layout
         zone1_layout = QHBoxLayout()
@@ -130,35 +148,6 @@ class Dialog_extract_exif(QDialog):
         # Screen management.
         Uti.center_on_screen(self, screen_Id=1)
 
-    '''
-    def effective_recording_step_VIS(self, list_time_VIS: list[int, datetime]) -> datetime:
-        """
-        Calculation of the effective recording step of VIS images (it is a little greater than 2s announced by DJI)
-        This calculation takes into account all images (from the first photographed at takeoff to the last photo of the mission)
-        The absolute origin of the VIS timeline is in the config file
-        :return: dt_time_VIS
-        """
-        #  Marking the last VIS shot
-        data_array = np.array(list_time_VIS)
-        index_of_latest = np.argmax(data_array[:, 1])
-        num_shoot_end = int(data_array[index_of_latest, 0])
-        time_shoot_end = datetime.strptime(data_array[index_of_latest, 1], "%Y:%m:%d %H:%M:%S")
-        #  Real time interval between two VIS shots
-        dt_time_VIS = (time_shoot_end - self.origin_date_VIS()).total_seconds() / (num_shoot_end - 1)
-        print(f"TEST  dt_time_VIS = {dt_time_VIS} s")
-        return dt_time_VIS
-
-
-    def origin_date_VIS(self) -> datetime:
-        config_file = Path(self.folderMissionPath, 'FlightAnalytics', 'config.json')
-        if config_file.exists():
-            with open(config_file, "r") as fi:
-                dic_config = json.load(fi)
-                origin_date_py = datetime.strptime(dic_config['Date Exif'], "%Y:%m:%d %H:%M:%S")
-        else:
-            origin_date_py = None
-        return origin_date_py
-    '''
 
     def cancel_clicked(self):
         """Method called when the 'Cancel' button is clicked."""
@@ -175,92 +164,288 @@ class Dialog_extract_exif(QDialog):
         pass
 
 
-    def extract_from_folder_mission(self):
+    def extract_from_folder_mission(self, verbose: bool = False) -> None:
+        """
+        Extract EXIF/XMP and mission data from the mission folder.
+
+        This method detects whether a valid takeoff image and mission folder
+        are already known. If not, it asks the user to choose a mission folder.
+        Once the folder is validated, EXIF data is extracted from multiple subfolders.
+
+        Parameters
+        ----------
+        verbose : bool, optional
+            If True, prints detailed processing information. Default is False.
+        """
+
         try:
-            image_takeoff_available, path_image_mission = Uti.image_takeoff_available_test(self.dic_takeoff, self.pref_screen.default_user_dir)
-            print(f'DEBUG 01 extract_from_folder_mission image_takeoff_available, path_image_mission {image_takeoff_available, path_image_mission}')
+            # 1) Check if takeoff image and mission folder are known automatically
+            image_takeoff_available, path_image_mission = Uti.image_takeoff_available_test(
+                self.dic_takeoff,
+                self.pref_screen.default_user_dir
+            )
 
             if image_takeoff_available:
-                print(f'DEBUG 01 extract_from_folder_mission  self.dic_takeoff {self.dic_takeoff}')
-                # search for the mission file
-                self.folderMissionPath = Path(self.dic_takeoff['File path mission'])
+                self.folderMissionPath = Path(self.dic_takeoff["File path mission"])
                 self.coherent_answer = Uti.folder_name_consistency_analysis(self.folderMissionPath)
+
                 self.extract_exif_from_images_folder(["AerialPhotography", "Synchro", "FlightAnalytics"])
                 self.placeholder_method_dialog_extract_exif_2_32()
+
             else:
                 try:
-                    self.folderMissionPath = Path(QFileDialog.getExistingDirectory(self, 'Select Mission Folder', self.pref_screen.default_user_dir))
+                    folder = QFileDialog.getExistingDirectory(
+                        self,
+                        "Select Mission Folder",
+                        self.pref_screen.default_user_dir
+                    )
+                    self.folderMissionPath = Path(folder)
+
                     if self.folderMissionPath.exists() and self.folderMissionPath != self.pref_screen.default_user_dir:
+
                         self.coherent_answer = Uti.folder_name_consistency_analysis(self.folderMissionPath)
+
                         if self.coherent_answer:
-                            print(f"TEST  the mission exists and it is in the location : {self.folderMissionPath}")
+                            if verbose:
+                                print(
+                                    Uti.Style.GREEN
+                                    + f"The mission exists and is located at: {self.folderMissionPath}"
+                                    + Uti.Style.RESET
+                                )
                             self.extract_exif_from_images_folder(["AerialPhotography", "Synchro", "FlightAnalytics"])
                             self.placeholder_method_dialog_extract_exif_2_32()
+
                         else:
-                            Uti.show_warning_OK_Cancel_message("IRDrone", f"You have chosen the folder : \n{self.folderMissionPath} \nwhich is not a Mission IRDrone folder.",
-                                               " Choose a compatible folder ( name FLY_YYYYMMDD_hhmm_<free text> ).\n or create a mission \n Use the <Create a New Mission> command.")
+                            Uti.show_warning_OK_Cancel_message(
+                                "IRDrone",
+                                f"You selected the folder:\n{self.folderMissionPath}\n"
+                                "which is NOT a valid IRDrone mission folder.",
+                                " Choose a compatible folder (name FLY_YYYYMMDD_hhmm_<free text>)\n"
+                                " or create a mission using the <Create a New Mission> command."
+                            )
+
                     else:
-                        Uti.show_warning_OK_Cancel_message("IRDrone", f"You have chosen the folder : \n {self.folderMissionPath} \n",
-                                                           " Your choice of folder is not recognized in IRDrone\n Choose a compatible folder ( name FLY_YYYYMMDD_hhmm_[Optional text] ).")
+                        Uti.show_warning_OK_Cancel_message(
+                            "IRDrone",
+                            f"You selected the folder:\n{self.folderMissionPath}\n",
+                            "This folder is not recognized by IRDrone.\n"
+                            "Choose a compatible folder named FLY_YYYYMMDD_hhmm_[Optional text]."
+                        )
                         self.coherent_answer = False
+
                 except Exception as e:
-                    print("error 1   in Class Dialog_extract_exif     extract_from_folder_mission :", e)
+                    print("error 1 in Class Dialog_extract_exif → extract_from_folder_mission:", e)
+
             if not self.coherent_answer:
                 self.extract_from_folder_mission()
+
         except Exception as e:
-            print("error 2   in Class Dialog_extract_exif   extract_from_folder_mission :", e)
+            print("error 2 in Class Dialog_extract_exif → extract_from_folder_mission:", e)
 
 
     def extract_exif_from_images_folder(self, list_folder: list[str]) -> object:
+
         try:
+            self.load_relative_time_line()  # → chargement automatique des time_line relatives calculées phase 2
             # récupération de l'altitude du  point de takeoff par rapport au niveau de la mer (above sea level)
             self.gps_info_takeoff = self.takeoff_info_GPS()
             self.progress_bar.setValue(5)
+
             for index, folder in enumerate(list_folder):
                 if not self.coherent_answer:
                     self.cancel_clicked()
                 self.progress_bar.setValue(100/len(list_folder))
-                print(f'DEBUG 1001  dossier  {folder}')
                 # Writing exif /xmp (enriched) data for the image folder
                 folder_path = Path(self.folderMissionPath, folder)
                 # 1) Create a list of all .dng, .jpg and .RAW files present in the folder
                 list_path_image = [file for file in folder_path.glob('*') if file.suffix.lower() in ['.dng', '.jpg', '.raw']]
-                print(f'DEBUG 1000  list_path_image {list_path_image}')
                 # 2) Construction of a list of dictionaries of standard Exif / xmp data.
-                self.list_dic_exif_xmp = self.get_EXIF_XMP_from_images_folder(list_path_image, verbose=True)
-                print(f'DEBUG 1001  self.get_EXIF_XMP_from_images_folder  fin')
+                utilise_cache = True
+                if utilise_cache: print(Uti.Style.CYAN + f'Use cached exif file before enrichment of classic Exif data' + Uti.Style.RESET)
+                self.list_dic_exif_xmp = self.get_EXIF_XMP_from_images_folder(list_path_image, utilise_cache=utilise_cache, verbose=False)
                 # 3) # Enrichment of classic Exif data. (shot number, alt from sea level, relative time line ...)
-                # 3.1)  altitudes
                 self.dic_gps_info_takeoff = self.takeoff_info_GPS()
                 self.true_alti_for_exif("dng")
+                self.relative_shoot_num()
+                self.relative_time_line()
+
                 # 4) Writing Exif dictionaries to files (one for each image)
                 self.writing_exif_data_to_exif_files(list_path_image, self.list_dic_exif_xmp)
             self.progress_bar.setValue(100)
+            print(Uti.Style.GREEN + f'[INFO] Writing and enrichment of EXIF files completed' + Uti.Style.RESET)
+
         except Exception as e:
             print("error   in Class Dialog_extract_exif     extract_exif_from_images_folder  ", e)
 
 
-    def takeoff_info_GPS(self):
+    def relative_shoot_num(self, verbose: bool = False) -> None:
+
+        try:
+            for idx_exif, dic in enumerate(self.list_dic_exif_xmp):
+                # Skip entries that are NOT image metadata
+                if "File Name" not in dic:
+                    print(Uti.Style.YELLOW + f"⚠️ Skipping entry without 'File Name'::  {dic.keys()} " + Uti.Style.RESET)
+                    continue
+                ext = dic["File Name"].split(".")[-1].lower()
+                if ext == "raw":
+                    shootNum, shootDate = Uti.extract_date_RAW_SJCam(dic["File Name"])
+                    self.list_dic_exif_xmp[idx_exif]["NIR shootNum"] = shootNum
+                    self.list_dic_exif_xmp[idx_exif]["Date/Time Original"] = Uti.datetimePy2datetimeJson(shootDate)
+                elif ext == "jpg":
+                    shootNum, shootDate = Uti.extract_date_RAW_SJCam(dic["File Name"])
+                    self.list_dic_exif_xmp[idx_exif]["NIR shootNum"] = shootNum
+                elif ext == "dng":
+                    shootNum = Uti.extract_num_DNG_DJI(dic["File Name"])
+                    self.list_dic_exif_xmp[idx_exif]["VIS shootNum"] = shootNum
+
+            if verbose: print(Uti.Style.GREEN + "Relative shoot number added successfully" + Uti.Style.RESET)
+        except Exception as e:
+            print("error in Class Dialog_extract_exif    relative_shoot_num  ", e)
+            self.list_dic_exif_xmp[idx_exif]["shootNum"] = -999
+
+
+    def relative_time_line(self, verbose: bool = False) -> None:
+        try:
+            for idx_exif, dic in enumerate(self.list_dic_exif_xmp):
+                # Skip entries that are NOT image metadata
+                if "File Name" not in dic:
+                    print(Uti.Style.YELLOW + f"⚠️ Skipping entry without 'File Name'::  {dic.keys()} " + Uti.Style.RESET)
+                    continue
+                ext = dic["File Name"].split(".")[-1].lower()
+                if ext == "raw":
+                    relative_time_line = self.extract_relative_time_line(dic["File Name"], "NIR", ext)
+                    self.list_dic_exif_xmp[idx_exif]["relative time line"] = relative_time_line
+                elif ext == "jpg":
+                    relative_time_line = self.extract_relative_time_line(dic["File Name"], "NIR", ext)
+                    self.list_dic_exif_xmp[idx_exif]["relative time line"] = relative_time_line
+                elif ext == "dng":
+                    relative_time_line = self.extract_relative_time_line(dic["File Name"], "VIS", ext)
+                    self.list_dic_exif_xmp[idx_exif]["relative time line"] = relative_time_line
+            if verbose: print(Uti.Style.GREEN + "Relative shoot number added successfully" + Uti.Style.RESET)
+        except Exception as e:
+            print("error in Class Dialog_extract_exif    load_relative_time_line  ", e)
+            self.list_dic_exif_xmp[idx_exif]["relative time line"] = -999
+
+
+    def extract_relative_time_line(self, file_name: str, type_img: str, ext: str) -> float:
+        """
+        Return the relative time line for a given image file.
+        Handles VIS/dng, NIR/raw, and NIR/jpg (special case).
+
+        Parameters:
+            file_name : str
+                The name of the image file (with extension).
+            type_img : str
+                Either 'VIS' or 'NIR'.
+            ext : str
+                Extension of the file ('dng', 'raw', 'jpg').
+
+        Returns:
+            float : relative time line
+        """
+        file_stem = Path(file_name).stem  # file name without extension
+
+        # Default value if not found
+        relative_time_line = 999.0
+
+        if type_img not in self.dic_relative_time_line:
+            print(f"⚠️ extract_relative_time_line: type_img '{type_img}' not in dic_relative_time_line")
+            return relative_time_line
+
+        img_list = self.dic_relative_time_line[type_img]
+
+        if ext.lower() in ["dng", "raw"]:
+            # Look for exact match in the stem of img_path
+            for dic in img_list:
+                if Path(dic["img_path"]).stem == file_stem:
+                    relative_time_line = dic.get("time_line_relative", 999.0)
+                    break
+
+        elif ext.lower() == "jpg" and type_img == "NIR":
+            # Special case: NIR/jpg → find the RAW image with num_img = JPG num_img - 1
+            try:
+                jpg_num = int(file_stem.split("_")[-1])
+            except Exception as e:
+                print(f"⚠️ extract_relative_time_line: cannot extract num_img from '{file_name}' : {e}")
+                return relative_time_line
+
+            for dic in img_list:
+                if dic.get("num_img") == jpg_num - 1:
+                    relative_time_line = dic.get("time_line_relative", 999.0)
+                    break
+
+        else:
+            print(f"⚠️ extract_relative_time_line: file '{file_name}' with ext '{ext}' not handled")
+
+        return relative_time_line
+
+
+    def load_relative_time_line(self):
+        """
+        Load the relative timeline JSON file into self.dic_relative_time_line.
+        """
+
+        json_path = Path(self.folderMissionPath) / "FlightAnalytics" / "time_line.json"
+
+        if not json_path.exists():
+            print(f"⚠️ Timeline file not found: {json_path}")
+            self.dic_relative_time_line = {}
+            return
+
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                self.dic_relative_time_line = json.load(f)
+            print(Uti.Style.GREEN + "✔️ Relative timeline loaded successfully." + Uti.Style.RESET)
+
+        except Exception as e:
+            print(Uti.Style.RED + f"❌ Error loading timeline file: {e}" + Uti.Style.RESET)
+            self.dic_relative_time_line = {}
+
+
+    def takeoff_info_GPS(self) -> Optional[Dict[str, Any]]:
+        """
+        Extract GPS takeoff information from the mission configuration file.
+
+        Returns
+        -------
+        Optional[Dict[str, Any]]
+            A dictionary containing:
+                - "GPS N-S": North/South indicator
+                - "GPS lat": Latitude value
+                - "GPS E-W": East/West indicator
+                - "GPS lon": Longitude value
+                - "GPS alti": Altitude above ground
+            Returns None if the file is missing, unreadable, or contains invalid JSON.
+
+        Notes
+        -----
+        The method attempts to read the config.json file first using UTF-8 encoding.
+        If UTF-8 decoding fails, it retries using Latin-1.
+        """
+
         try:
             json_path = Path(self.folderMissionPath) / "FlightAnalytics" / "config.json"
-            # Lecture du fichier config.json contenant les information sur le point de takeoff
-            print(f'DEBUG takeoff_info_GPS  json_path {json_path}')
+
+            # Load config.json containing takeoff GPS information
             try:
                 with open(json_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
+
             except UnicodeDecodeError:
-                print("⚠️ UTF-8 invalide, tentative avec Latin-1…")
+                print("⚠️ Invalid UTF-8, retrying using Latin-1…")
                 with open(json_path, "r", encoding="latin-1") as f:
                     data = json.load(f)
+
             except FileNotFoundError:
-                print(Uti.Style.RED + f"❌ Fichier introuvable : {json_path}" + Uti.Style.RESET)
-                return None
-            except json.JSONDecodeError:
-                print(Uti.Style.RED + f"❌ Erreur : fichier JSON invalide : {json_path}" + Uti.Style.RESET)
+                print(Uti.Style.RED + f"❌ File not found: {json_path}" + Uti.Style.RESET)
                 return None
 
-            # Récupération des données GPS
-            gps_info_takeoff = {
+            except json.JSONDecodeError:
+                print(Uti.Style.RED + f"❌ Error: invalid JSON file: {json_path}" + Uti.Style.RESET)
+                return None
+
+            # Extract takeoff GPS data
+            gps_info_takeoff: Dict[str, Any] = {
                 "GPS N-S": data.get("GPS N-S"),
                 "GPS lat": data.get("GPS lat"),
                 "GPS E-W": data.get("GPS E-W"),
@@ -271,48 +456,93 @@ class Dialog_extract_exif(QDialog):
             return gps_info_takeoff
 
         except Exception as e:
-            print("error   in Class Dialog_extract_exif     takeoff_info_GPS  ", e)
+            print("Error in Class Dialog_extract_exif → takeoff_info_GPS:", e)
+            return None
 
-    def true_alti_for_exif(self, img_type):
-        print("DEBUG  alti_exif")
+
+    def true_alti_for_exif(self, img_type: str, verbose: bool = False) -> None:
+        """
+        Compute and inject true altitude information into EXIF/XMP dictionaries
+        for all images matching the given file type.
+
+        Parameters
+        ----------
+        img_type : str
+            File type used to filter images (e.g., "jpeg", "raf", "raw").
+        verbose : bool, optional
+            If True, prints processing details. Default is False.
+
+        Notes
+        -----
+        This method performs the following steps:
+            1. Find all indices of EXIF/XMP dictionaries whose "File Type" matches `img_type`.
+            2. Build a list of (latitude, longitude) pairs in the *exact* same order.
+            3. Query the IGN API once for all coordinates (through `Geo.extract_alti_IGN`).
+            4. Inject ground altitude and compute:
+                  - altitude above takeoff
+                  - altitude above ground
+                  - altitude above sea level
+            5. Update each corresponding EXIF/XMP dictionary in-place.
+
+        Raises
+        ------
+        Any exception is caught and logged, and no exception is propagated.
+        """
 
         try:
-            # 1) On récupère les indices des images correspondantes
-            indices = [
+            # 1) Retrieve indices of relevant images
+            indices: List[int] = [
                 i for i, d in enumerate(self.list_dic_exif_xmp)
                 if d.get("File Type", "").lower() == img_type
             ]
 
-            # 2) On construit list_coordinates en suivant EXACTEMENT le même ordre
-            list_coordinates = []
+            # 2) Build coordinate list in the exact same order
+            list_coordinates: List[Tuple[float, float]] = []
             for i in indices:
                 dic = self.list_dic_exif_xmp[i]
                 lat = Uti.gps_coordinate_to_float(dic["GPS Latitude"])
                 lon = Uti.gps_coordinate_to_float(dic["GPS Longitude"])
-                z_relatif_takeoff = float(dic["Relative Altitude"].strip())
                 list_coordinates.append((lat, lon))
+                (dic["UTM x"], dic["UTM y"], dic["UTM zone"]) = Geo.geo2UTM(lat, lon)
 
-            # 3) Un seul appel à l'API IGN
-            list_dic_coordinates = Geo.extract_alti_IGN(list_coordinates, verbose=True, bypass=False)
-            print(f"DEBUG alti_exif list_dic_coordinates {list_dic_coordinates}")
+            # 3) Single API call to IGN for all coordinates
+            list_dic_coordinates: List[Dict[str, Any]] = Geo.extract_alti_IGN(
+                list_coordinates,
+                verbose=verbose,
+                bypass=False
+            )
 
-            # 4) On injecte les données IGN dans les bons dic_exif
+            # 4) Inject computed altitude data into corresponding EXIF dictionaries
             for idx_exif, ign_coord in zip(indices, list_dic_coordinates):
-                alti_ground = ign_coord['z']
-                alti_drone_above_takeoff = float(self.list_dic_exif_xmp[idx_exif]["Relative Altitude"].strip())
-                alti_drone_above_sea_level = alti_drone_above_takeoff + self.dic_gps_info_takeoff['GPS alti']
-                alti_drone_above_ground =  alti_drone_above_sea_level - alti_ground
-                self.list_dic_exif_xmp[idx_exif]["ground altitude"] = alti_ground
-                self.list_dic_exif_xmp[idx_exif]["altitude above takeoff"] = alti_drone_above_takeoff
-                self.list_dic_exif_xmp[idx_exif]["altitude above ground"] = alti_drone_above_ground
-                self.list_dic_exif_xmp[idx_exif]["altitude above sea level"] = alti_drone_above_sea_level
+                alti_ground: float = ign_coord["z"]
+                alti_drone_above_takeoff: float = float(
+                    self.list_dic_exif_xmp[idx_exif]["Relative Altitude"].strip()
+                )
+                alti_drone_above_sea_level: float = (
+                        alti_drone_above_takeoff + self.dic_gps_info_takeoff["GPS alti"]
+                )
 
-            print("DEBUG alti_exif ign_coord added successfully")
+                # altitude above ground = sea level altitude - ground altitude
+                alti_drone_above_ground: float = (
+                        alti_drone_above_sea_level - alti_ground
+                )
+
+                # Store in EXIF/XMP dictionary
+                dic_exif = self.list_dic_exif_xmp[idx_exif]
+                dic_exif["ground altitude"] = alti_ground
+                dic_exif["altitude above takeoff"] = alti_drone_above_takeoff
+                dic_exif["altitude above ground"] = alti_drone_above_ground
+                dic_exif["altitude above sea level"] = alti_drone_above_sea_level
+
+
+            if verbose:
+                print(Uti.Style.GREEN + "IGN altitude successfully injected." + Uti.Style.RESET)
 
         except Exception as e:
-            print("error in Class Dialog_extract_exif true_alti_for_exif:", e)
+            print("Error in Class Dialog_extract_exif → true_alti_for_exif:", e)
 
-    def get_EXIF_XMP_from_images_folder(self, list_pth: list[Path], verbose: bool = False) -> list[dict]:
+
+    def get_EXIF_XMP_from_images_folder(self, list_pth: list[Path], utilise_cache=False,  verbose: bool = False) -> list[dict]:
         """
         Writing Exif and Xmp data from a list of images.
         Each image is processed individually by the get_EXIF_XMP procedure which
@@ -337,13 +567,12 @@ class Dialog_extract_exif(QDialog):
                 progressBarValue = round(100 * index / (len(list_pth) - 1), 1)
                 self.progress_bar.setValue(progressBarValue)
                 #  Extracting original Exif data
-                # print(f'DEBUG IRD3_0002 index pth  {index, pth}')
-                dic = ExifXmp.get_EXIF_XMP(pth, index, verbose=verbose)
-                # print('DEBUG IRD3_0003 ', dic)
+                dic = ExifXmp.get_EXIF_XMP(pth, index, utilise_cache=utilise_cache, verbose=verbose)
                 list_dic.append(dic)
             return list_dic
         except Exception as e:
             print("error in Class Dialog_extract_exif    get_EXIF_XMP_from_images_folder  ", e)
+
 
     @staticmethod
     def writing_exif_data_to_exif_files(list_pth: list[Path], list_dic: list[dict]):
@@ -668,6 +897,8 @@ class Dialog_synchro_clock(QDialog):
             self.Fly: list[dict[str, any]] = []
 
             for index, dic in enumerate(self.list_dic_exif_xmp):
+                if "File Name" not in dic:
+                    print("DEBUG ⚠️ Missing 'File Name' in Synchro:", dic.keys())
                 if dic['File Name'].split(".")[1].lower() == "raw":
                     date_time_temp: datetime = Uti.datetimeJson2datetimePy(dic['Date/Time Original'])
                     time_line_NIR: float = (date_time_temp - origin_date_py).total_seconds() - self.delta_clock

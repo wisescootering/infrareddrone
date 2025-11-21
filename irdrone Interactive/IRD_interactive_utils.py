@@ -1098,6 +1098,7 @@ def save_time_line_json(output_dir, *timeline_dicts, out_name="time_line.json"):
 
     return out_file
 
+
 def safe_path(path):
     try:
         return Path(path).resolve().as_posix()

@@ -194,7 +194,7 @@ class Window_Load_TakeOff_Image(QDialog):
                 "Time": f"12:00:00",
                 "Location": "Paris",
                 "Description": "Eiffel tower",
-                "GPS coordinate": f"N 48.858370° E 2.294481°",
+                "GPS coordinate": f"N 48.858370 E 2.294481",
                 "GPS N-S": "N",
                 "GPS lat": 48.858370,
                 "GPS E-W": "E",
@@ -291,7 +291,7 @@ class Window_Load_TakeOff_Image(QDialog):
                 # Mettre à jour le label d'information avec les données de localisation
                 geo_data = f"Wpt: take-off \n" \
                            f"image: {file_name.lower()}\n" \
-                           f"Coordonnées: {round(self.dic_info_geo.get('lat'),6)}°      {round(self.dic_info_geo.get('lon'),6)}°   Alti. {round(self.dic_info_geo.get('z'),3)} m  (above sea level)\n" \
+                           f"Coordonnées: {round(self.dic_info_geo.get('lat'),6)}      {round(self.dic_info_geo.get('lon'),6)}   Alti. {round(self.dic_info_geo.get('z'),3)} m  (above sea level)\n" \
                            f"Date: {date_time_excif}  \n" \
                            f"Lieu-dit: {self.dic_info_geo.get('lieu_dit')}    {self.dic_info_geo.get('road') if self.dic_info_geo.get('road') is not None else ''}\n"\
                            f"Commune: {self.dic_info_geo.get('ville')}    {self.dic_info_geo.get('code_postal')}     {self.dic_info_geo.get('dept')} \n" \
@@ -338,7 +338,7 @@ class Window_Load_TakeOff_Image(QDialog):
 
             self.dic_takeoff_light["GPS lon"] = str(self.dic_info_geo['lon'])
             self.dic_takeoff_light["GPS alti"] = str(self.dic_info_geo['z'])  # altitude above sea level
-            self.dic_takeoff_light["GPS coordinate"] = f"{self.dic_takeoff_light['GPS N-S']} {str(self.dic_info_geo['lat'])}° {self.dic_takeoff_light['GPS E-W']} {self.dic_info_geo['lon']}°"
+            self.dic_takeoff_light["GPS coordinate"] = f"{self.dic_takeoff_light['GPS N-S']} {str(self.dic_info_geo['lat'])} {self.dic_takeoff_light['GPS E-W']} {self.dic_info_geo['lon']}"
 
             self.dic_takeoff_light["GPS drone alti"] = self.altitude_DJI  # altitude above takeoff point
         except Exception as e:
@@ -1037,7 +1037,7 @@ class Window_create_file_structure(QDialog):
                 "Time": Uti.timePy2timeJson(self.py_time),
                 "Location": self.location_field.text(),
                 "Description": self.description_field.text(),
-                "GPS coordinate": f"{self.GPS_NS} {str(self.GPS_lat)}° {self.GPS_EW} {str(self.GPS_lon)}°",
+                "GPS coordinate": f"{self.GPS_NS} {str(self.GPS_lat)} {self.GPS_EW} {str(self.GPS_lon)}",
                 "GPS N-S": self.GPS_NS,
                 "GPS lat": float(self.GPS_lat),
                 "GPS E-W": self.GPS_EW,

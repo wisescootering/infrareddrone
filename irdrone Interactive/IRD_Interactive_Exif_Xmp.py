@@ -11,11 +11,11 @@ import json
 from datetime import datetime, date
 import time
 # -------------- IRDrone Library ------------------------------------
-# import IRD_interactive_utils as Uti
+import IRD_interactive_utils as Uti
 
 
 
-def get_EXIF_XMP(pth: Path, index, verbose: bool = False):
+def get_EXIF_XMP(pth: Path, index, utilise_cache=False, verbose: bool = False):
     """
     Extract gimbal and drone information from the XMP data
     and classical EXIF tags  of a specified image file
@@ -97,19 +97,18 @@ def get_EXIF_XMP(pth: Path, index, verbose: bool = False):
         return
 
     exif_file = pth.with_suffix(".exif")
-    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    # ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠
     #  Utilisation du cache neutralisée (par la présence de False)
     #  Sinon le fichier exif déjà stocké est lu directement
     #  ...
     #  Attention en phase de test si les données inscrites dans le fichier .exif sont modifiée par ailleurs mettre False
     #  Dans une version définitive du code ou pour gagner du temps si le .exif est figé  mettre True !
-    #
-    utilise_cache = True
+
     if exif_file.exists() and utilise_cache:
         with open(exif_file, "r") as fi:
             dic = json.load(fi)
-    #
-    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+    # ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠ ⚠
     else:
         cmd = [EXIFTOOLPATH, pth]
         p = subprocess.run(cmd,  capture_output=True, text=True)
@@ -127,6 +126,9 @@ def get_EXIF_XMP(pth: Path, index, verbose: bool = False):
             elif "Error" in li:
                 if verbose: print("dev |", li)
                 pass
+            elif ":" not in li:
+                if verbose: print("dev |", li)
+                continue
             elif "Degree" in li:
                 key = li.split(" Degree")[0]
                 val = float(li.split(": ")[1])
@@ -140,9 +142,73 @@ def get_EXIF_XMP(pth: Path, index, verbose: bool = False):
                     if verbose: print("dev |", li)
                     dic[key] = val
                 except Exception as e:
-                    if verbose: print(" problème sur la ligne    :",    li, "   ", e)
+                    if verbose: print(Uti.Style.YELLOW + f"⚠️ Ligne ignorée (mauvais format) : {li}     {e}" + Uti.Style.RESET)
                     pass
 
     return dic
 
 
+
+
+def get_EXIF_XMP_new_mais_bug(pth: Path, index=None, verbose: bool = False):
+    """
+    Nouvelle version utilisant 'exiftool -j' qui renvoie du JSON propre.
+
+    Retourne un dictionnaire EXIF/XMP complet, parfaitement formaté.
+    """
+
+    EXIFTOOLPATH = Path(__file__).parent.parent / "irdrone" / "exiftool" / "exiftool.exe"
+
+    if not EXIFTOOLPATH.exists():
+        print(f"❌ ERROR – exiftool.exe not found at {EXIFTOOLPATH}")
+        return {}
+
+    # Chemin du cache
+    exif_file = pth.with_suffix(".exif")
+
+    # ----------- OPTION : UTILISATION DU CACHE -------------------
+    utilise_cache = False  # mettre True si tu veux activer le cache
+
+    if utilise_cache and exif_file.exists():
+        try:
+            if verbose:
+                print(f"📄 Lecture cache : {exif_file}")
+            with open(exif_file, "r") as fi:
+                return json.load(fi)
+        except Exception as e:
+            print(f"⚠️ Erreur lecture cache → recalcul : {e}")
+
+    # ----------- EXTRACTION EXIF via exiftool -j -------------------
+    cmd = [str(EXIFTOOLPATH), "-j", str(pth)]
+
+    p = subprocess.run(cmd, capture_output=True, text=True)
+
+    if p.returncode != 0:
+        print("❌ Erreur exiftool :", p.stderr)
+        return {}
+
+    try:
+        data = json.loads(p.stdout)
+
+        if not data:
+            print("⚠️ Aucune donnée JSON retournée")
+            return {}
+
+        dic = data[0]  # exiftool -j renvoie une liste
+
+        if verbose:
+            print(f"✔ JSON EXIF obtenu ({len(dic)} champs)")
+
+    except Exception as e:
+        print("❌ Erreur parsing JSON:", e)
+        return {}
+
+    # ----------- SAUVEGARDE DU CACHE -------------------
+    if utilise_cache:
+        try:
+            with open(exif_file, "w") as fi:
+                json.dump(dic, fi, indent=2)
+        except Exception as e:
+            print(f"⚠️ Impossible d’écrire cache : {e}")
+
+    return dic
