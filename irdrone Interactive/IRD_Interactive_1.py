@@ -43,9 +43,11 @@ class Window_Load_TakeOff_Image(QDialog):
         self.dic_info_geo: dict = dict()
         self.init_dic_takeoff_light()
         self.path_image_takeoff: Optional[Path] = None
-        self.dirname_image_takeoff: str =None
+        self.dirname_image_takeoff: str = None
         self.name_image_takeoff: str = None
-        self.ext_image_takeoff: str = None
+        self.suffix_image_takeoff: str = None
+        self.default_app_dir = os.path.join("C:/", "Program Files", "IRdrone")
+        self.default_user_dir = os.path.join("C:/", "Air-Mission")
 
         self.prefScreen = Uti.Prefrence_Screen()  # Initializing screen preferences
         self.initGUI()  # Initializing the GUI
@@ -77,8 +79,6 @@ class Window_Load_TakeOff_Image(QDialog):
 
             self.setStyleSheet("background-color: white; color: black;")
             self.setWindowTitle("Choose the image taken by the drone during takeoff.")
-            self.default_app_dir= os.path.join("C:/", "Program Files", "IRdrone") 
-            self.default_user_dir = os.path.join("C:/", "Air-Mission")
             icon_path = os.path.join(self.default_app_dir, "Icon", "IRDrone.ico")
             if os.path.exists(icon_path):
                 icon = QIcon(icon_path)
@@ -113,9 +113,9 @@ class Window_Load_TakeOff_Image(QDialog):
         # Area 2  Image area.
 
         # ----------------  Creating a neutral image -----------------
-        width =  self.prefScreen.windowDisplaySize[1]    #int(600)
+        width = self.prefScreen.windowDisplaySize[1]
         num_images = 1
-        #print("TEST dim Ecran   l x H :", int((width - 100) / num_images), int((width - 100) / num_images * 3 / 4))
+        # print("TEST dim Ecran   l x H :", int((width - 100) / num_images), int((width - 100) / num_images * 3 / 4))
         self.image_display_size = (int((width - 100) / num_images), int((width - 100) / num_images * 3 / 4))  # image area size
         # Create an empty pixmap of the desired size and adjust the size if necessary
         self.empty_pixmap = QPixmap(int((width - 100) / num_images), int((width - 100) / num_images * 3 / 4))
@@ -208,12 +208,13 @@ class Window_Load_TakeOff_Image(QDialog):
                 "ODM folder": "mapping_MULTI",
                 "cameras folder": "cameras"
             }
-            #print( "TEST   sortie de   init_dic_takeoff       self.dic_takeoff_light  :", self.dic_takeoff_light)
+            # print( "TEST   sortie de   init_dic_takeoff       self.dic_takeoff_light  :", self.dic_takeoff_light)
         except Exception as e:
             print('error in init_dic_takeoff', e)
 
 
-    def placeholder_method(self):
+    @staticmethod
+    def placeholder_method():
         """
         Dummy (empty) method for connecting the "Next Step" button.
         The "real" connection is in the open_window_11 method of the Main_Window class of the main module.
@@ -245,14 +246,14 @@ class Window_Load_TakeOff_Image(QDialog):
         """
 
         directory = os.path.abspath('/')   # DD racine
-        file_name, _ = QFileDialog.getOpenFileName(self, "Open Image", directory, "Images (*.dng)") # (*.png *.xpm *.jpg *.dng)")
+        file_name, _ = QFileDialog.getOpenFileName(self, "Open Image", directory, "Images (*.dng)")  # (*.png *.xpm *.jpg *.dng)")
 
         try:
             if file_name:
                 self.path_image_takeoff = Path(Uti.safe_path(file_name))
                 self.name_image_takeoff = os.path.basename(self.path_image_takeoff)
                 self.dirname_image_takeoff = str(self.path_image_takeoff.parent)
-                self.ext_image_takeoff = self.path_image_takeoff.suffix
+                self.suffix_image_takeoff = self.path_image_takeoff.suffix
                 self.dic_takeoff_light["File path"] = file_name
                 if file_name.lower().endswith(".dng"):
                     # Charger une image DNG avec rawpy. Attention cette étape est longue ...
@@ -329,7 +330,7 @@ class Window_Load_TakeOff_Image(QDialog):
             else:
                 self.dic_takeoff_light["GPS E-W"] = "W"
             self.dic_takeoff_light["GPS lat"] = self.dic_info_geo['lat']
-            if self.dic_info_geo['lon'] <10:
+            if self.dic_info_geo['lon'] < 10:
                 self.dic_takeoff_light["GPS lon"] = f"00{self.dic_info_geo['lon']}"
             elif 10 <= self.dic_info_geo['lon'] < 10:
                 self.dic_takeoff_light["GPS lon"] = f"0{self.dic_info_geo['lon']}"
@@ -345,7 +346,7 @@ class Window_Load_TakeOff_Image(QDialog):
             print("error 2 in load_takeoff_image ", e)
 
         self.dic_takeoff_light["name image take-off"] = self.name_image_takeoff
-        self.dic_takeoff_light["ext image take-off"] = self.ext_image_takeoff
+        self.dic_takeoff_light["suffix image take-off"] = self.suffix_image_takeoff
 
         return
 
@@ -845,7 +846,7 @@ class Window_create_file_structure(QDialog):
         except Exception as e:
             print("error --init-- camera NIR", e)
 
-    def update_image_takeoff(self, verbose:bool = False) -> None:
+    def update_image_takeoff(self, verbose: bool = False) -> None:
         """
         Copies the take-off image to the exact destination path provided
         in dic_takeoff["path mission image take-off"].
@@ -882,7 +883,7 @@ class Window_create_file_structure(QDialog):
         # --- Effective copy -----------------------------------------------------
         try:
             shutil.copy2(src_path, dst_path)
-            if verbose : print(Uti.Style.GREEN + f"Image du take off copiée avec succès vers : {dst_path}" + Uti.Style.RESET)
+            if verbose: print(Uti.Style.GREEN + f"Image du take off copiée avec succès vers : {dst_path}" + Uti.Style.RESET)
         except Exception as exc:
             raise RuntimeError(f"Erreur pendant la copie : {exc}") from exc
 
@@ -895,9 +896,6 @@ class Window_create_file_structure(QDialog):
         Le fichier existant n'est réécrit que si les valeurs importantes
         ont réellement changé.
         """
-
-        import json
-        from pathlib import Path
 
         # ----------------------------------------------------------
         # Vérifications préalables minimales
@@ -916,8 +914,8 @@ class Window_create_file_structure(QDialog):
         # Construction du dictionnaire nouveau (MÀJ potentielle)
         # ----------------------------------------------------------
         dic_light = {
-            "cam_type": "VIS",
-            "img_type": "dng",
+            "spectral_band": "VIS",
+            "img_suffix": "dng",
             "inputFolder": str(Path(self.dic_takeoff_light["File path"]).parent),
 
             "tkoff": {
@@ -953,7 +951,7 @@ class Window_create_file_structure(QDialog):
                 with open(json_file, "r", encoding="utf-8") as f:
                     old_dic = json.load(f)
             except Exception as exc:
-                if verbose: print(Uti.style.YELLOW + f"ERREUR: Impossible de lire {json_file}\n{exc}"  + Uti.Style.RESET)
+                if verbose: print(Uti.style.YELLOW + f"ERREUR: Impossible de lire {json_file}\n{exc}" + Uti.Style.RESET)
                 old_dic = None
 
             if isinstance(old_dic, dict):
@@ -975,25 +973,29 @@ class Window_create_file_structure(QDialog):
 
                 all_same = True
 
-                # Comparaison complète sur cam_type / img_type / inputFolder
-                for key in ["cam_type", "img_type", "inputFolder"]:
+                # Comparaison complète sur spectral_band / img_suffix / inputFolder
+                for key in ["spectral_band", "img_suffix", "inputFolder"]:
                     if not same_value(key):
+                        print(f'DEBUG  2000  update_transfert_info_VIS_dng_json    key = {key} same_value(key)= {same_value(key)}')
                         all_same = False
                         break
 
                 # Comparaison complète pour tkoff
                 if all_same and (old_dic.get("tkoff") != dic_light.get("tkoff")):
+                    print(f'DEBUG  2001  update_transfert_info_VIS_dng_json    old_dic.get("tkoff") !=  dic_light.get("tkoff")')
                     all_same = False
 
                 # Comparaison SEULEMENT outputFolder pour sync / fly
                 if all_same and not same_output_folder("sync"):
+                    print(f'DEBUG  2005  update_transfert_info_VIS_dng_json   ... all_same and not same_output_folder("sync")')
                     all_same = False
 
                 if all_same and not same_output_folder("fly"):
+                    print(f'DEBUG  2006  update_transfert_info_VIS_dng_json   ... all_same and not same_output_folder("fly")')
                     all_same = False
 
                 if all_same:
-                    if verbose:print("DEBUG: Aucun changement détecté → fichier conservé tel quel.")
+                    if verbose: print("DEBUG: Aucun changement détecté → fichier conservé tel quel.")
                     return
 
                 print(Uti.Style.YELLOW + "DEBUG: Modifications détectées → réécriture du fichier JSON." + Uti.Style.RESET)
@@ -1021,7 +1023,7 @@ class Window_create_file_structure(QDialog):
         self.missionFolder = self.build_mission_folder_name()
         try:
             path_mission_image_takeoff = str(Uti.safe_path(Path(self.missionFolder) /
-                                                           "FlightAnalytics"/
+                                                           "FlightAnalytics" /
                                                            self.dic_takeoff_light["name image take-off"]
                                                            ))
 
@@ -1029,7 +1031,7 @@ class Window_create_file_structure(QDialog):
                 "File path mission": self.missionFolder,
                 "File path take-off": self.dic_takeoff_light["File path"],
                 "name image take-off": self.dic_takeoff_light["name image take-off"],
-                "ext image take-off": self.dic_takeoff_light["ext image take-off"],
+                "suffix image take-off": self.dic_takeoff_light["suffix image take-off"],
                 "path mission image take-off": str(Path(self.missionFolder) / "FlightAnalytics" / self.dic_takeoff_light["name image take-off"]),
                 "Body serial number": self.dic_takeoff_light["Body serial number"],
                 "Date Exif": f"{Uti.datePy2dateJson(self.py_date)} {Uti.timePy2timeJson(self.py_time)}",
@@ -1138,97 +1140,75 @@ class Window_create_file_structure(QDialog):
             print("error in build_mission_folder_name :", e)
 
 
+
     def create_mission_folder(self):
         """
-        Create mission folder
+        Create the mission folder structure (only creates missing folders,
+        never overwrites existing ones).
         """
-        #
-        directory = self.build_mission_folder_name()
-        try:
-            if not os.path.exists(directory):
-                os.makedirs(directory)
-                os.makedirs(os.path.join(directory, self.AerialPhotoFolder))
-                os.makedirs(os.path.join(directory, self.AnalyticFolder))
-                os.makedirs(os.path.join(directory, self.ImgIRdroneFolder))
-                os.makedirs(os.path.join(directory, self.SynchroFolder))
-                os.makedirs(os.path.join(directory, self.MappingFolder))
-                os.makedirs(os.path.join(directory, self.CameraFolder))
+        base_dir = Path(self.build_mission_folder_name())
 
-                try:
-                    change_ico = True
-                    dir_ico = os.path.join(self.pref.default_app_dir, "Icon")
-                    if change_ico:
-                        self.change_icon(directory, os.path.join(dir_ico, "IRdrone_appli.ico"))
-                        self.change_icon(os.path.join(directory, self.AerialPhotoFolder), os.path.join(dir_ico, "AerialPhoto.ico"))
-                        self.change_icon(os.path.join(directory, self.AnalyticFolder), os.path.join(dir_ico, "FlyAnalytic.ico"))
-                        self.change_icon(os.path.join(directory, self.ImgIRdroneFolder), os.path.join(dir_ico, "ImgIRdrone.ico"))
-                        self.change_icon(os.path.join(directory, self.SynchroFolder), os.path.join(dir_ico, "synchro.ico"))
-                        self.change_icon(os.path.join(directory, self.MappingFolder), os.path.join(dir_ico, "mapping_MULTI.ico"))
-                        self.change_icon(os.path.join(directory, self.CameraFolder), os.path.join(dir_ico, "camera.ico"))
-                except Exception as e:
-                    print("error. in create_mission_folder   change icon :", e)
-                    pass
+        # List of subfolders to create inside the mission folder
+        subfolders = [
+            self.AerialPhotoFolder,
+            self.AnalyticFolder,
+            self.ImgIRdroneFolder,
+            self.SynchroFolder,
+            self.MappingFolder,
+            self.CameraFolder,
+        ]
+
+        try:
+            # Create base directory + subfolders
+            for sf in subfolders:
+                (base_dir / sf).mkdir(parents=True, exist_ok=True)
+
+            # Optional: change folder icons
+            try:
+                change_icon = True
+                icon_dir = Path(self.pref.default_app_dir) / "Icon"
+
+                if change_icon:
+                    Uti.change_icon(base_dir, icon_dir / "IRdrone_appli.ico")
+                    Uti.change_icon(base_dir / self.AerialPhotoFolder, icon_dir / "AerialPhoto.ico")
+                    Uti.change_icon(base_dir / self.AnalyticFolder, icon_dir / "FlyAnalytic.ico")
+                    Uti.change_icon(base_dir / self.ImgIRdroneFolder, icon_dir / "ImgIRdrone.ico")
+                    Uti.change_icon(base_dir / self.SynchroFolder, icon_dir / "synchro.ico")
+                    Uti.change_icon(base_dir / self.MappingFolder, icon_dir / "mapping_MULTI.ico")
+                    Uti.change_icon(base_dir / self.CameraFolder, icon_dir / "camera.ico")
+
+            except Exception as e:
+                print("Error in create_mission_folder (icon change):", e)
+
         except Exception as e:
-            print("error. in create_mission_folder   creating folder tree :", e)
+            print("Error in create_mission_folder (creating folder tree):", e)
 
+        # --- Save configuration JSON ---
         try:
-            # Save to JSON file
-            with open(Path(directory) / "FlightAnalytics" / "config.json", "w") as file:
-                json.dump(self.dic_takeoff, file, ensure_ascii=False, indent=4)
+            config_path = base_dir / "FlightAnalytics" / "config.json"
+            config_path.parent.mkdir(parents=True, exist_ok=True)
 
-            txt_Date = str(self.py_date_time.year) + str(self.py_date_time.month) + str(self.py_date_time.day)
-            txt_Time = str(self.py_date_time.hour) + str(self.py_date_time.minute)
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(self.dic_takeoff, f, ensure_ascii=False, indent=4)
+
+            # Build the message for the user
+            txt_date = f"{self.py_date_time.year}{self.py_date_time.month}{self.py_date_time.day}"
+            txt_time = f"{self.py_date_time.hour}{self.py_date_time.minute}"
             txt_comment = str(self.dic_takeoff['Location'])
-            Uti.show_info_message("IRDrone", "Mission has been successfully created, ", 
-                                  f"in the folder :   \n"
-                                  f"FLY_{txt_Date}_{txt_Time}_{txt_comment}")
 
-            self.accept()  # Close the form    alternative   self.close()
+            Uti.show_info_message(
+                "IRDrone",
+                "Mission has been successfully created,",
+                f"in the folder:\nFLY_{txt_date}_{txt_time}_{txt_comment}"
+            )
+
+            self.accept()  # Close the form
+
         except Exception as e:
-            print("error  in create_mission_folder   save JSON  :", e)
+            print("Error in create_mission_folder (saving JSON):", e)
 
 
-    def change_icon(self, folder_path, file_path):
-        if not folder_path:  # choice of the target folder whose icon will be changed
-            print("No folder selected or operation canceled.")
-            exit()
-        if not os.path.exists(folder_path):
-            print("folder ", folder_path, " not exist.")
-            exit()
-        try:  # Checking if the folder is editable
-            temp_file = os.path.join(folder_path, 'temp.txt')
-            with open(temp_file, 'w') as f:
-                f.write('test')
-            os.remove(temp_file)
-        except PermissionError:
-            print("The selected folder cannot be edited.")
-            exit()
 
-        try:
-            if not file_path:  # Checking the path to the ico file
-                print("No .ico file selected or operation canceled.")
-                exit()
-            if not os.path.exists(file_path):
-                print("file icon ", file_path, " not exist.")
-                exit()
-        except Exception as e:
-            print("error icon file : ", e)
 
-        # Copies the desktop.ini file from a temporary location
-        desktop_ini_path = os.path.join(folder_path, 'desktop.ini')
 
-        # Creates a desktop.ini file with the custom icon in a temporary location
-        temp_desktop_ini_path = os.path.join(os.path.expanduser("~"), 'temp_desktop.ini')
-        with open(temp_desktop_ini_path, 'w') as desktop_ini:
-            desktop_ini.write('[.ShellClassInfo]\n')
-            desktop_ini.write('IconResource={},0\n'.format(file_path))
 
-        # Copy file from temporary location to target folder
-        shutil.copy(temp_desktop_ini_path, desktop_ini_path)
-
-        # Mark the folder as system for the custom icon to be used
-        os.system(f'attrib +s "{folder_path}"')
-
-        # print(f"Folder icon {folder_name} has been successfully replaced.")
-
-        return

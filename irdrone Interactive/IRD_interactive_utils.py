@@ -10,9 +10,10 @@ import os
 import os.path as osp
 import sys
 import json
+import shutil
 from datetime import datetime, date
 import time
-from typing import Optional, Union
+from typing import Optional, Union, Tuple, Iterable
 from pathlib import Path
 from fractions import Fraction
 import re
@@ -221,32 +222,47 @@ def timeJson2timePy(json_str: str) -> time:
     return datetime.strptime(json_str, '%H:%M:%S').time()
 
 
+
 def extract_date_RAW_SJCam(fileName: str) -> tuple:
     """
     Extract shooting number and shooting date from a RAW or JPG file name.
 
-    :param fileName: The file name with extension.
+    :param fileName: The file name with suffix.
     :type fileName: str
     :return: A tuple containing the shooting number (int) and shooting date (datetime).
     """
-    # Check if the file extension is RAW or JPG (case-insensitive)
-    if fileName.split(".")[1].lower() in ["raw", "jpg"]:
-        if fileName.split(".")[1].lower() == "raw":
-            # Calculate shooting number for RAW files
-            shootingNumber = int(int(fileName[17:20]) / 2 + 0.5)
-        else:
-            # Calculate shooting number for JPG files
-            shootingNumber = int(int(fileName[17:20]) / 2)
-        # Extract year, month, day, hour, minute, and second from the file name
-        year = int(fileName[0:4])
-        month = int(fileName[5:7])
-        day = int(fileName[7:9])
-        hour = int(fileName[10:12])
-        minute = int(fileName[12:14])
-        second = int(fileName[14:16])
-        # Create a datetime object for the shooting date
-        shootingDate = datetime(year, month, day, hour, minute, second)
-        # Return the shooting number and shooting date as a tuple
+    prefix, index, suffix = parse_filename(fileName, allowed_suffix=["raw", "jpg"])
+    shootingNumber, shootingDate = -9999, None
+    try:
+        if suffix:
+            if suffix.lower() == "raw":
+                if index:
+                    shootingNumber = int((index + 1) / 2)
+                else:
+                    print(Style.RED + f'Error {fileName} incompatible' + Style.RESET)
+
+            elif suffix.lower() == "jpg":
+                if index:
+                    shootingNumber = int(index / 2)
+                else:
+                    print(Style.RED + f'Error {fileName} incompatible' + Style.RESET)
+            else:
+                shootingNumber = int(index)
+
+            # Extract year, month, day, hour, minute, and second from the file name
+            year = int(prefix[0:4])
+            month = int(prefix[5:7])
+            day = int(prefix[7:9])
+            hour = int(prefix[10:12])
+            minute = int(prefix[12:14])
+            second = int(prefix[14:16])
+            # Create a datetime object for the shooting date
+            shootingDate = datetime(year, month, day, hour, minute, second)
+            # print(f'[DEBUG 001 shootingNumber {shootingNumber} ...  prefix, index, suffix  { prefix, index, suffix}')
+            return shootingNumber, shootingDate
+
+    except Exception as e:
+        print(Style.RED + f'error in extract_date_RAW_SJCam   {fileName} incompatible.   {e}' + Style.RESET)
         return shootingNumber, shootingDate
 
 
@@ -254,18 +270,72 @@ def extract_num_DNG_DJI(fileName: str) -> tuple:
     """
     Extract shooting number and shooting date from a DNG file name.
 
-    :param fileName: The file name with extension.
+    :param fileName: The file name with suffix.
     :type fileName: str
     :return: A tuple containing the shooting number (int) and shooting date (datetime).
     """
-    # Check if the file extension is DNG (case-insensitive)
+    prefix, index, suffix = parse_filename(fileName, allowed_suffix=["dng"])
+    shootingNumber = -9999
+    try:
+        if suffix:
+            if suffix.lower() == "dng":
+                if index:
+                    shootingNumber = int(index)
+                else:
+                    print(Style.RED + f'Error {fileName} incompatible' + Style.RESET)
+            # print(f'[DEBUG 002 shootingNumber {shootingNumber} ...  prefix, index, suffix  {prefix, index, suffix}')
+            return shootingNumber
+
+    except Exception as e:
+        print(Style.RED + f'error in extract_num_DNG_DJI   {fileName} incompatible.   {e}' + Style.RESET)
+        return -9999
+
+
+
     if fileName.split(".")[1].lower() in ["dng"]:
         temp = fileName.split(".")[0].split("_")[1]
         shootingNumber = int(temp)
         return shootingNumber
 
-    # Return None values if the file extension is not RAW or JPG
+    # Return None values if the file suffix is not RAW or JPG
     return None, None
+
+
+
+def parse_filename(file_name: str, allowed_suffix: Optional[Iterable[str]] = None) -> Tuple[Optional[str], Optional[int], Optional[str]]:
+    """
+    Extract:
+        - prefix (string before the last "_<digits>")
+        - index (integer)
+        - suffix (lowercase)
+
+    Validates the suffix if allowed_suffix is provided.
+
+    Returns:
+        (prefix, index, suffix)
+        If pattern does not match → index = None, prefix = None
+        If suffix not allowed → suffix = None
+    """
+    p = Path(file_name)
+    base = p.name
+    img_suffix = p.suffix[1:].lower() if p.suffix else None  # suffix without "."
+
+    # --- Validate suffix if whitelist provided ---
+    if allowed_suffix is not None:
+        allowed = {e.lower() for e in allowed_suffix}
+        if img_suffix not in allowed:
+            img_suffix = None  # suffix invalid
+
+    # --- Extract prefix and number ---
+    # Pattern: (prefix)_(digits).suffix
+    match = re.search(r"^(.*)_(\d+)\.[^.]+$", base)
+    if not match:
+        return None, None, img_suffix
+
+    prefix = match.group(1)
+    index = int(match.group(2))
+
+    return prefix, index, img_suffix
 
 
 def show(widget):
@@ -372,7 +442,7 @@ def extract_exif(file_path: str) -> tuple[Optional[float], Optional[float], Opti
     - It extracts and returns the geographical coordinates (latitude, longitude, altitude), the date and time of
       the image capture, and information about the camera (maker, model, and id_camera) from the EXIF metadata.
     - Different methods are used to extract EXIF data from DNG and JPEG files due to their different formats.
-    - The altitude returned from JPEG files may be relative to the take-off point of the drone.
+    - The altitude returned from DNG files may be relative to the take-off point of the drone.
     """
     latitude = longitude = altitude = date_time = None
     maker = model = id_camera = None
@@ -658,7 +728,7 @@ def display_dictionary_EXIF_jpg(exif_dict: dict[str, any], tag_type=None, indent
                     else:
                         value_print = value  # Conservez la représentation binaire brute
                 except UnicodeDecodeError:
-                        value_print = value  # Conservez la représentation binaire brute
+                    value_print = value  # Conservez la représentation binaire brute
             if verbose: print(f"{indentation}{readable_key}: {value_print}")
             dic_exif_utf[readable_key] = value
 
@@ -666,12 +736,14 @@ def display_dictionary_EXIF_jpg(exif_dict: dict[str, any], tag_type=None, indent
 
 
 def get_filesystem_metadata(image_path: str) -> dict:
-    metadata = {}
-    metadata["FileName"] = os.path.basename(image_path)
-    metadata["FileSize"] = os.path.getsize(image_path)
-    metadata["FileCreationDate"] = time.ctime(os.path.getctime(image_path))
-    metadata["FileLastModifiedDate"] = time.ctime(os.path.getmtime(image_path))
-    return metadata
+    p = Path(image_path)
+
+    return {
+        "FileName": p.name,
+        "FileSize": p.stat().st_size,
+        "FileCreationDate": time.ctime(p.stat().st_ctime),
+        "FileLastModifiedDate": time.ctime(p.stat().st_mtime),
+    }
 
 
 def bytes2utf(value):
@@ -887,7 +959,8 @@ def theoreticalIrToVi(listPts, timelapse_Vis, offset=None):
             theoreticalYaw[i] = theoreticalYaw[i] + offset[0]
             theoreticalPitch[i] = theoreticalPitch[i] + offset[1]
             theoreticalRoll[i] = theoreticalRoll[i] + offset[2]
-        except:
+        except Exception as e:
+            print("Error in theoreticalIrToVi:", e)
             pass
         listPts[i].yawIR2VI = theoreticalYaw[i]
         listPts[i].pitchIR2VI = theoreticalPitch[i]
@@ -986,7 +1059,7 @@ def interpolParabolicAngle(listPts, angle, i, timelapse_Vis):
         else:
             alpha, dt = interpolLinearAngle(listPts, angle, i, timelapse_Vis)
 
-    except:
+    except (IndexError, ValueError):
         alpha, dt = interpolLinearAngle(listPts, angle, i, timelapse_Vis)
 
     return alpha, dt
@@ -1049,17 +1122,17 @@ def interpolationCameraCenterVis(x, k, dt, timelapse_Vis):
                 DeltaCvis = (x[k - 1] - x[k - 2]) + x[k - 2] * (dt / timelapse_Vis)
             else:
                 DeltaCvis = x[k - 1] * (dt / timelapse_Vis)
-    except:
+    except (IndexError, ValueError):
         DeltaCvis = 0
 
     return DeltaCvis
 
 # ----------------------time line
 
-def build_time_line(fichiers, numeros, dates, deltas, time_line, cam_type="VIS"):
+def build_time_line(fichiers, numeros, dates, deltas, time_line, spectral_band="VIS"):
     """
-    Construit la structure d'une timeline pour un cam_type (VIS ou NIR).
-    Retourne un dictionnaire { cam_type: [ dict_entry, ... ] }.
+    Construit la structure d'une timeline pour un spectral_band (VIS ou NIR).
+    Retourne un dictionnaire { spectral_band: [ dict_entry, ... ] }.
     """
     data = []
     for i, f in enumerate(fichiers):
@@ -1073,9 +1146,9 @@ def build_time_line(fichiers, numeros, dates, deltas, time_line, cam_type="VIS")
             "num_img": int(numeros[i]),
             "date_img": date_str,
             "delta_img": round(delta, 6),
-            "time_line_relative": round(float(time_line[i]), 6)
+            "relative_timeline": round(float(time_line[i]), 6)
         })
-    return {cam_type: data}
+    return {spectral_band: data}
 
 
 def save_time_line_json(output_dir, *timeline_dicts, out_name="time_line.json"):
@@ -1091,7 +1164,7 @@ def save_time_line_json(output_dir, *timeline_dicts, out_name="time_line.json"):
     for d in timeline_dicts:
         if not isinstance(d, dict):
             continue
-        merged.update(d)  # clé = cam_type (ex: "VIS") remplacera/ajoutera
+        merged.update(d)  # clé = spectral_band (ex: "VIS") remplacera/ajoutera
 
     with open(out_file, "w", encoding="utf-8") as fh:
         json.dump(merged, fh, indent=4, ensure_ascii=False)
@@ -1123,6 +1196,162 @@ def _format_duration(seconds: float) -> str:
         return f"{seconds / 60:.1f} min"
     else:
         return f"{seconds:.0f} s"
+
+
+def choose_folder_mission(
+    dic_takeoff: dict,
+    pref_screen_default_user_dir: str,
+    AerialPhotoFolder: str,
+    SynchroFolder: str
+) -> Tuple[Path, bool]:
+    """
+    Choose the mission folder for IRDrone images.
+
+    This function checks whether a takeoff image is available. If yes, it uses
+    the folder indicated in dic_takeoff['File path mission'] and checks its consistency.
+    Otherwise, it prompts the user to select a mission folder manually via a dialog.
+
+    Parameters
+    ----------
+    dic_takeoff : dict
+        Dictionary containing takeoff information including the mission file path.
+    pref_screen_default_user_dir : str
+        Default directory to open for folder selection dialog.
+    AerialPhotoFolder : str
+        Name of the folder to store aerial photos.
+    SynchroFolder : str
+        Name of the folder to store synchronization images.
+
+    Returns
+    -------
+    Tuple[Path, bool]
+        folderMissionPath: Path object pointing to the selected mission folder
+        coherent_response: Boolean indicating if the folder name is consistent
+    """
+    try:
+        image_takeoff_available, path_image_takeoff = image_takeoff_available_test(dic_takeoff, pref_screen_default_user_dir)
+
+        if image_takeoff_available:
+            # --- Construct the mission folder path ---
+            folderMissionPath = Path(dic_takeoff['File path mission'])
+            coherent_response = folder_name_consistency_analysis(folderMissionPath)
+
+            if coherent_response:
+                show_info_message(
+                    "IRDrone",
+                    f"Your images will be transferred to the mission folder:\n{folderMissionPath}",
+                    f"They will be distributed between the folders {AerialPhotoFolder} and {SynchroFolder}"
+                )
+            else:
+                coherent_response = False
+
+            return folderMissionPath, coherent_response
+
+        else:
+            # --- Ask user to choose a mission folder ---
+            show_warning_OK_Cancel_message(
+                "IRDrone",
+                "Choose the mission folder.",
+                "It should follow the format: FLY_YearMonthDay_hourminute_[Place]",
+                QMessageBox.Icon.Information
+            )
+            try:
+                folderMissionPath = Path(QFileDialog.getExistingDirectory('Select Mission Folder', pref_screen_default_user_dir))
+
+                if folderMissionPath.exists() and folderMissionPath != pref_screen_default_user_dir:
+                    coherent_response = folder_name_consistency_analysis(folderMissionPath)
+                    if not coherent_response:
+                        show_warning_OK_Cancel_message(
+                            "IRDrone",
+                            f"You have chosen the folder:\n{folderMissionPath}\nwhich is not a Mission IRDrone folder.",
+                            "Choose a compatible folder (name FLY_YYYYMMDD_hhmm_<free text>) or create a new mission using the <Create a New Mission> command."
+                        )
+                else:
+                    show_warning_OK_Cancel_message(
+                        "IRDrone",
+                        f"You have chosen the folder:\n{folderMissionPath}\n",
+                        "Your choice of folder is not recognized in IRDrone.\nChoose a compatible folder (name FLY_YYYYMMDD_hhmm_[Optional text])."
+                    )
+                    coherent_response = False
+
+                return folderMissionPath, coherent_response
+
+            except Exception as e:
+                print("Error 1 in choose_folder_mission:", e)
+
+    except Exception as e:
+        print("Error 2 in choose_folder_mission:", e)
+
+
+def copy_images(inputDir: str, imgName: str, outputDir: str) -> Optional[str]:
+    """
+    Copy an image file from the input directory to the output directory.
+
+    Parameters:
+    - inputDir (str): The directory from which the image file will be copied.
+    - imgName (str): The name of the image file to be copied.
+    - outputDir (str): The directory to which the image file will be copied.
+
+    Returns:
+    - str: A message indicating the result of the copy operation.
+    """
+    source = os.path.join(inputDir, imgName)     # Constructs the full path of the source file
+    # Check if the source file exists
+    if not os.path.isfile(source):
+        return "The source file does not exist."
+    # Check if the destination folder exists, create it if not
+    if not os.path.isdir(outputDir):
+        os.makedirs(outputDir)
+    destination = os.path.join(outputDir, imgName)   # Construct the full path of the destination file
+    shutil.copy(source, destination)    # Copy file
+    return f"File {imgName} was successfully copied from {inputDir} to {outputDir}."
+
+
+def change_icon(folder_path, file_path):
+    if not folder_path:  # choice of the target folder whose icon will be changed
+        print("No folder selected or operation canceled.")
+        exit()
+    if not os.path.exists(folder_path):
+        print("folder ", folder_path, " not exist.")
+        exit()
+    try:  # Checking if the folder is editable
+        temp_file = os.path.join(folder_path, 'temp.txt')
+        with open(temp_file, 'w') as f:
+            f.write('test')
+        os.remove(temp_file)
+    except PermissionError:
+        print("The selected folder cannot be edited.")
+        exit()
+
+    try:
+        if not file_path:  # Checking the path to the ico file
+            print("No .ico file selected or operation canceled.")
+            exit()
+        if not os.path.exists(file_path):
+            print("file icon ", file_path, " not exist.")
+            exit()
+    except Exception as e:
+        print("error icon file : ", e)
+
+    # Copies the desktop.ini file from a temporary location
+    desktop_ini_path = os.path.join(folder_path, 'desktop.ini')
+
+    # Creates a desktop.ini file with the custom icon in a temporary location
+    temp_desktop_ini_path = os.path.join(os.path.expanduser("~"), 'temp_desktop.ini')
+    with open(temp_desktop_ini_path, 'w') as desktop_ini:
+        desktop_ini.write('[.ShellClassInfo]\n')
+        desktop_ini.write('IconResource={},0\n'.format(file_path))
+
+    # Copy file from temporary location to target folder
+    shutil.copy(temp_desktop_ini_path, desktop_ini_path)
+
+    # Mark the folder as system for the custom icon to be used
+    os.system(f'attrib +s "{folder_path}"')
+
+    # print(f"Folder icon {folder_name} has been successfully replaced.")
+
+    return
+
 
 
 class Style:

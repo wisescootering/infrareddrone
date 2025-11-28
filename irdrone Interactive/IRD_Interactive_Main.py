@@ -23,7 +23,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap, QColor, QIcon
 # -------------- IRDrone Library ------------------------------------
 from IRD_Interactive_1 import Window_Load_TakeOff_Image, Window_create_file_structure
-from IRD_Interactive_2 import LoadVisNirImagesDialog, choose_folder_mission
+from IRD_Interactive_2 import LoadVisNirImagesDialog
 from IRD_Interactive_3 import Dialog_extract_exif, Dialog_synchro_clock
 import IRD_interactive_utils as Uti
 from IRD_interactive_utils import Prefrence_Screen
@@ -192,6 +192,7 @@ class Main_Window(QMainWindow):
         """
         if validate:
             self.dic_takeoff = dic_takeoff
+            print(f'DEBUG 1  handle_data_from_dialog_create_file_structure     dic_takeoff {dic_takeoff}')
             self.dialog_create_file_structure.data_signal_from_dialog_create_file_structure_to_main_window.disconnect()  # Disconnect the signal
             self.dialog_create_file_structure.close()  # Close dialog_create_file_structure
             self.btn_load_images.setAutoDefault(True)
@@ -220,7 +221,9 @@ class Main_Window(QMainWindow):
         height = 500  # height of the window
 
         # ----------------------- Choice of mission file -------------------------------------------------
-        folderMissionPath, coherent_response = choose_folder_mission(
+        print(f'DEBUG 2  open_window_load_set_images     ---------- Choice of mission file ------------')
+        print(f'DEBUG 2b  open_window_load_set_images     dic_takeoff {self.dic_takeoff}')
+        folderMissionPath, coherent_response = Uti.choose_folder_mission(
             self.dic_takeoff,
             self.pref_screen.default_user_dir,
             self.dialog_create_file_structure.AerialPhotoFolder,
@@ -228,7 +231,7 @@ class Main_Window(QMainWindow):
         )
         if not coherent_response: return()
         # ---------------- Loads the 5 reference “VIS” images --------------------------------------------
-        if self.dic_takeoff is not None: self.pathImageTakeoff = self.dic_takeoff["File path take-off"]
+        if self.dic_takeoff is not None: self.pathImageTakeoff = self.dic_takeoff["path mission image take-off"]
         dialog_VIS = LoadVisNirImagesDialog(width,
                                             height,
                                             "VIS",

@@ -37,7 +37,7 @@ from IRD_interactive_utils import center_on_screen
 
 """
       This code allows you to choose the reference images for a mission and then distribute the different images in the
-     mission files. For each category of images (VIS taken by the drone camera and NIR taken by the on-board IR camera) 
+     mission files. For each category of images/spectral band (VIS taken by the drone camera and NIR taken by the on-board IR camera) 
      the user must choose 5 reference images:
          > Take-off image.       In general for the DJI drone this will be the first image recorded HYPERLAPSE_0001.
                                 For the on-board NIR camera we can visually choose the image which is "closest" to
@@ -90,7 +90,7 @@ class LoadVisNirImagesDialog(QDialog):
     def __init__(self,
                  width: int,
                  height: int,
-                 type_img: str,
+                 spectral_band: str,
                  folderMission: Optional[Path] = None,
                  path_image_takeoff: Optional[Path] = None):
         super().__init__()
@@ -107,17 +107,17 @@ class LoadVisNirImagesDialog(QDialog):
         self.screen_adjust: float = self.pref_screen.screenAdjust
         self.window_display_size: tuple[int, int] = self.pref_screen.windowDisplaySize
 
-        # ---- Image type and extension
-        self.type_img: str = type_img
-        self.ext: str
-        if self.type_img in ("VIS", "DNG"):
-            self.ext = "dng"
-            self.type_img = "VIS"
-        elif self.type_img in ("NIR", "jpg"):
-            self.ext = "jpg"
-            self.type_img = "NIR"
+        # ---- spectral_band and image suffix
+        self.spectral_band: str = spectral_band
+        self.img_suffix: str
+        if self.spectral_band.lower() in ("vis", "visible", "vi"):
+            self.img_suffix = "dng"
+            self.spectral_band = "VIS"
+        elif self.spectral_band.lower() in ("nir", "ir", "near infrared"):
+            self.img_suffix = "jpg"
+            self.spectral_band = "NIR"
         else:
-            self.ext = "jpg"
+            self.img_suffix = "jpg"
 
         # ---- Directories
         self.currentUserDir: str = self.pref_screen.current_directory
@@ -141,7 +141,7 @@ class LoadVisNirImagesDialog(QDialog):
         self.listVisRefPath: list[Optional[str]] = [None] * self.num_images
         self.listNirRefPath: list[Optional[str]] = [None] * self.num_images
         self.listImgRefPath: list[Optional[str]] = [None] * self.num_images
-        self.currentImgTyp: str = self.type_img
+        self.currentSpectralBand: str = self.spectral_band
         self.image_labels: list[QLabel] = [QLabel() for _ in range(self.num_images)]
         self.image_name_labels: list[QLabel] = [QLabel() for _ in range(self.num_images)]
         self.img_legend: list[str] = ["Take-off image:",
@@ -163,16 +163,16 @@ class LoadVisNirImagesDialog(QDialog):
         verbose = True
 
         if self.outputFlightAnalyticsFolder:
-            if self.type_img == "NIR":
+            print(f'DEBUG 01   class LoadVisNirImagesDialog(QDialog)  def __init__ ')
+            if self.spectral_band == "VIS":
+                self.info_vis_dng = self.load_transfer_info(self.outputFlightAnalyticsFolder, "VIS", "dng")
+                if self.info_vis_dng:
+                    print(f'DEBUG 02   class LoadVisNirImagesDialog(QDialog)  def __init__   self.info_vis_dng {self.info_vis_dng}')
+                    self._set_image_flags_from_info(self.info_vis_dng)
+            elif self.spectral_band == "NIR":
                 self.info_nir_jpg = self.load_transfer_info(self.outputFlightAnalyticsFolder, "NIR", "jpg")
                 if self.info_nir_jpg:
                     self._set_image_flags_from_info(self.info_nir_jpg)
-
-            elif self.type_img == "VIS":
-                self.info_vis_dng = self.load_transfer_info(self.outputFlightAnalyticsFolder, "VIS", "dng")
-                if self.info_vis_dng:
-                    self._set_image_flags_from_info(self.info_vis_dng)
-
 
         self.timeline: list[dict] = []
         self.path_image_takeoff: Optional[Path] = path_image_takeoff   # Takeoff image path
@@ -182,10 +182,11 @@ class LoadVisNirImagesDialog(QDialog):
 
 
         # ---- Initialize takeoff image availability
-        self.init_image_takeoff_available(path_image_takeoff)
+        rep = self.init_image_takeoff_available(path_image_takeoff)
 
         # ---- Initialize GUI
         self.init_GUI()
+
 
     def init_GUI(self) -> None:
         """
@@ -208,7 +209,7 @@ class LoadVisNirImagesDialog(QDialog):
         screen_width : int
         screen_height : int
         num_images : int
-        type_img : str
+        spectral_band : str
         image_labels : list[QLabel]
         image_name_labels : list[QLabel]
         btn_command : list[QPushButton]
@@ -221,12 +222,13 @@ class LoadVisNirImagesDialog(QDialog):
     -------
     None
         """
+        print(f'DEBUG 0001   init_GUI   début')
 
         try:
 
             self.setStyleSheet("background-color: white; color: black;")
             # Setting the top command bar and window dimensions
-            self.setWindowTitle(f"Load the {self.type_img} images of the mission")
+            self.setWindowTitle(f"Load the {self.spectral_band} images of the mission")
             icon_path = os.path.join(self.pref_screen.default_app_dir, "Icon", "IRDrone.ico")
             if os.path.exists(icon_path):
                 icon = QIcon(icon_path)
@@ -238,7 +240,7 @@ class LoadVisNirImagesDialog(QDialog):
             self.listVisRefPath = [None] * self.num_images
             self.listNirRefPath = [None] * self.num_images
             self.listImgRefPath = [None] * self.num_images
-            self.currentImgTyp = self.type_img
+            self.currentSpectralBand = self.spectral_band
             # Creating placeholders for images
             self.image_labels = [QLabel() for _ in range(self.num_images)]
             # Creating placeholders for image captions
@@ -347,50 +349,50 @@ class LoadVisNirImagesDialog(QDialog):
             self.btn_load_all_images.setStyleSheet("background-color: darkBlue; color: gray;")
 
             # Load images if interactive sequence was already completed once
-            if self.type_img == "VIS":
+            if self.spectral_band == "VIS":
                 if self.image_0_available:
                     print(Uti.Style.GREEN + '[INFO] Loading takeoff image' + Uti.Style.RESET)
-                    self.open_sync_and_fly_image_VIS_or_NIR(self.type_img, self.ext, 0)
+                    self.open_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 0)
                 elif self.image_takeoff_available:
                     self.open_takeoff_image(self.path_image_takeoff)
 
                 if self.image_first_sync_available:
                     print(Uti.Style.GREEN + '[INFO] Loading first sync image' + Uti.Style.RESET)
-                    self.open_sync_and_fly_image_VIS_or_NIR(self.type_img, self.ext, 1)
+                    self.open_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 1)
                 if self.image_last_sync_available:
                     print(Uti.Style.GREEN + '[INFO] Loading last sync image VIS' + Uti.Style.RESET)
-                    self.open_sync_and_fly_image_VIS_or_NIR(self.type_img, self.ext, 2)
+                    self.open_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 2)
                 if self.image_first_fly_available:
                     print(Uti.Style.GREEN + '[INFO] Loading first fly image VIS' + Uti.Style.RESET)
-                    self.open_sync_and_fly_image_VIS_or_NIR(self.type_img, self.ext, 3)
+                    self.open_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 3)
                 if self.image_last_fly_available:
                     print(Uti.Style.GREEN + '[INFO] Loading last fly image VIS' + Uti.Style.RESET)
-                    self.open_sync_and_fly_image_VIS_or_NIR(self.type_img, self.ext, 4)
+                    self.open_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 4)
 
                 if all(self.flags):
                     self.btn_load_all_images.setEnabled(True)
                     self.btn_load_all_images.setStyleSheet("background-color: darkBlue; color: white;")
 
-            elif self.type_img == "NIR":
+            elif self.spectral_band == "NIR":
                 if self.image_0_available:
                     print(Uti.Style.GREEN + '[INFO] Loading takeoff image' + Uti.Style.RESET)
-                    self.open_sync_and_fly_image_VIS_or_NIR(self.type_img, self.ext, 0)
+                    self.open_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 0)
                 if self.image_first_sync_available:
                     print(Uti.Style.GREEN + '[INFO] Loading first sync image NIR' + Uti.Style.RESET)
-                    self.open_sync_and_fly_image_VIS_or_NIR(self.type_img, self.ext, 1)
+                    self.open_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 1)
                 if self.image_last_sync_available:
                     print(Uti.Style.GREEN + '[INFO] Loading last sync image NIR' + Uti.Style.RESET)
-                    self.open_sync_and_fly_image_VIS_or_NIR(self.type_img, self.ext, 2)
+                    self.open_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 2)
                 if self.image_first_fly_available:
                     print(Uti.Style.GREEN + '[INFO] Loading first fly image NIR' + Uti.Style.RESET)
-                    self.open_sync_and_fly_image_VIS_or_NIR(self.type_img, self.ext, 3)
+                    self.open_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 3)
                 if self.image_last_fly_available:
                     print(Uti.Style.GREEN + '[INFO] Loading last fly image NIR' + Uti.Style.RESET)
-                    self.open_sync_and_fly_image_VIS_or_NIR(self.type_img, self.ext, 4)
+                    self.open_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 4)
 
             # Setting button actions
             for index, btn in enumerate(self.btn_command):
-                btn.clicked.connect(partial(self.open_image, index, self.image_labels[index], self.image_name_labels[index], self.ext))
+                btn.clicked.connect(partial(self.open_image, index, self.image_labels[index], self.image_name_labels[index], self.img_suffix))
             self.btn_load_all_images.clicked.connect(self.on_load_all_images)
             self.btn_validate_load_all_images.clicked.connect(self.on_validate_load_all_images)
             self.btn_help.clicked.connect(self.on_help)
@@ -452,8 +454,8 @@ class LoadVisNirImagesDialog(QDialog):
 
           > For the SJCam M20 camera embedded under the DJI drone and which takes images in
           the near infrared ("NIR") spectrum, we have two types of images:
-           - Les images jpeg (format jpg)
-           - les images raw  (format RAW).
+           - jpeg images  (jpg format )
+           - raw images (RAW format ).
           This double recording is automatic as soon as you record RAW images on the SJCam M20.
           The RAW format does not meet ADOBE standards.
           The EXIF data must therefore be found in the associated jpeg image.
@@ -467,6 +469,7 @@ class LoadVisNirImagesDialog(QDialog):
         try:
             # ---------------- destination folders -----------------------------------------------------------
             outputFolder = self.folderMissionPath
+            print(f'DEBUG 0001  on_load_all_images.   bande spectrale {self.currentSpectralBand}     outputFolder {outputFolder}')
 
             # ---------------------- number of the first and last images to transfer
             # Note:  Here we use the listImgRefPath table which contains the 5 reference images:
@@ -475,18 +478,10 @@ class LoadVisNirImagesDialog(QDialog):
             #      - listImgRefPath[2]= last image for synchro
             #      - listImgRefPath[3]= first image for fly
             #      - listImgRefPath[4]= last image for fly
-            #      They correspond to the correct type of image (NIR or VIS) because we are in the "on_load_all_images"
+            #      They correspond to the correct spectral band of image (NIR or VIS) because we are in the "on_load_all_images"
             #      procedure called by the button .btn_load_all_images which is in the window opened by
             #      load_Vis_Nir_images.LoadVisNirImagesDialog(... ,EXT, ... ) where EXT in {"NIR", "VIS"}.
             #      This procedure is therefore automatically in the right context.
-
-            idMinSync = int(os.path.splitext(os.path.basename(self.listImgRefPath[1]))[0].split("_")[-1])
-            idMaxSync = int(os.path.splitext(os.path.basename(self.listImgRefPath[2]))[0].split("_")[-1])
-            outputSyncFolder = os.path.join(outputFolder, "Synchro")
-            if not os.path.isdir(outputSyncFolder):
-                # print("The destination folder ", outputSyncFolder, " of the images does not exist!")
-                Uti.show_error_message(f"The destination folder {outputSyncFolder} for the images does not exist!\n"
-                                       f"Check that you have already created the mission.")
 
             idMinFly = int(os.path.splitext(os.path.basename(self.listImgRefPath[3]))[0].split("_")[-1])
             idMaxFly = int(os.path.splitext(os.path.basename(self.listImgRefPath[4]))[0].split("_")[-1])
@@ -502,10 +497,22 @@ class LoadVisNirImagesDialog(QDialog):
                                        f"Check that you have already created the mission.")
                 return
 
+
+            idMinSync = int(os.path.splitext(os.path.basename(self.listImgRefPath[1]))[0].split("_")[-1])
+            idMaxSync = int(os.path.splitext(os.path.basename(self.listImgRefPath[2]))[0].split("_")[-1])
+            outputSyncFolder = os.path.join(outputFolder, "Synchro")
+            if not os.path.isdir(outputSyncFolder):
+                # print("The destination folder ", outputSyncFolder, " of the images does not exist!")
+                Uti.show_error_message(f"The destination folder {outputSyncFolder} for the images does not exist!\n"
+                                       f"Check that you have already created the mission.")
+                return
+
+
             # --------------------- Entry folder  --------------------------------------
             #  Normally these are the DCIM files on the SD card of the drone and the NIR camera
 
             inputFolder = os.path.dirname(self.listImgRefPath[0])
+            print(f'DEBUG 0002  on_load_all_images.  bande spectrale {self.currentSpectralBand} inputFolder {outputFolder}')
 
             if not os.path.isdir(inputFolder):
                 # print("The image input folder ", inputFolder, " does not exist.")
@@ -522,40 +529,38 @@ class LoadVisNirImagesDialog(QDialog):
                                 "Be patient ;-) ",
                                 QMessageBox.Icon.Information)
 
+            if self.currentSpectralBand == "VIS":
+                # -----------------------------------------------------------------------------------
+                #                               VIS
+                # -----------------------------------------------------------------------------------
 
-            if self.currentImgTyp == "NIR":
+                # ----------  build time line VIS
+                self.timeline = self.time_line_analyser_images(inputFolder, spectral_band=self.currentSpectralBand, img_suffix=".DNG", verbose=False)
+
+                # ----------   transfer of VIS images of the tkoff,  Sync  and Fly phase (dng) ----------------
+                self.process_image_transfer(inputFolder,
+                                            "dng",
+                                            outputSyncFolder, outputFlyFolder, outputFlightAnalyticsFolder,
+                                            idTakeoff, idMinSync, idMaxSync, idMinFly, idMaxFly,
+                                            progressSync=(0, 30), progressFly=(30, 100),
+                                            )
+
+            elif self.currentSpectralBand == "NIR":
                 # -----------------------------------------------------------------------------------
                 #                               NIR
                 # -----------------------------------------------------------------------------------
 
                 # ----------  build time line NIR
-                self.timeline = self.time_line_analyser_images(inputFolder, img_Typ=self.currentImgTyp, extension=".RAW", verbose=False)
+                self.timeline = self.time_line_analyser_images(inputFolder, spectral_band=self.currentSpectralBand, img_suffix=".RAW", verbose=False)
 
                 # ----------  transfer of NIR images of the tkoff, Sync and Fly phase (jpg & raw) ----------------
-                self.process_image_transfer(
-                    inputFolder, ["jpg", "raw"],
-                    outputSyncFolder, outputFlyFolder, outputFlightAnalyticsFolder,
-                    idTakeoff, idMinSync,  idMaxSync, idMinFly, idMaxFly, offset=[0, -1],
-                    progressSync=[(0, 10), (0, 30)],
-                    progressFly=[(10, 100), (30, 100)]
-                )
+                self.process_image_transfer(inputFolder,
+                                            ["jpg", "raw"],
+                                            outputSyncFolder, outputFlyFolder, outputFlightAnalyticsFolder,
+                                            idTakeoff, idMinSync,  idMaxSync, idMinFly, idMaxFly, offset=[0, -1],
+                                            progressSync=[(0, 10), (0, 30)],progressFly=[(10, 100), (30, 100)],
+                                            )
 
-            elif self.currentImgTyp == "VIS":
-                # -----------------------------------------------------------------------------------
-                #                               VIS
-                # -----------------------------------------------------------------------------------
-
-                # ----------  build time line NIR
-                self.timeline = self.time_line_analyser_images(inputFolder, img_Typ=self.currentImgTyp, extension=".DNG", verbose=False)
-
-                # ----------   transfer of VIS images of the tkoff, Sync  phase (dng) ----------------
-                self.process_image_transfer(
-                    inputFolder, "dng",
-                    outputSyncFolder, outputFlyFolder, outputFlightAnalyticsFolder,
-                    idTakeoff, idMinSync, idMaxSync, idMinFly, idMaxFly,
-                    progressSync=(0, 30),
-                    progressFly=(30, 100)
-                )
 
             # print("All images have been transferred successfully.")
             Uti.show_info_message("IRDrone", f"Your {(max((idMaxFly - idMinFly),0) + max((idMaxSync - idMinSync),0))}  images have been transferred \n from directory {inputFolder}  of the camera SD card \n to the mission directory {outputFlyFolder}.",
@@ -563,7 +568,7 @@ class LoadVisNirImagesDialog(QDialog):
             self.btn_validate_load_all_images.setEnabled(True)
             self.btn_validate_load_all_images.setStyleSheet("background-color: gray; color: white;")
 
-            # Optionnel : fermer le dialogue automatiquement (si tu veux)
+            # Optionnel : fermer le dialogue automatiquement
             # self.accept()
 
             return getattr(self, "timeline", None)
@@ -576,7 +581,7 @@ class LoadVisNirImagesDialog(QDialog):
     @staticmethod
     def extract_files_images(
             inputFolder: Union[str, Path],
-            extension: str = ".tif",
+            img_suffix: str = ".tif",
             verbose: bool = False
     ) -> List[Path]:
         """
@@ -586,8 +591,8 @@ class LoadVisNirImagesDialog(QDialog):
         ----------
         inputFolder : str or Path
             Base folder to scan.
-        extension : str, optional
-            Extension of files to process (default ".tif").
+        img_suffix : str, optional
+            img_suffix of files to process (default ".tif").
             Supported values: .dng, .raw, .tif, .jpg, .jpeg, .png (case-insensitive).
         verbose : bool, optional
             If True, prints the number of files found (default False).
@@ -595,25 +600,25 @@ class LoadVisNirImagesDialog(QDialog):
         Returns
         -------
         list[Path]
-            Sorted list of file paths matching the extension.
+            Sorted list of file paths matching the img_suffix.
         """
-        # Normalize extension (case-insensitive, ensure it starts with a dot)
-        extension = extension.lower()
-        if not extension.startswith("."):
-            extension = "." + extension
+        # Normalize img_suffix (case-insensitive, ensure it starts with a dot)
+        img_suffix = img_suffix.lower()
+        if not img_suffix.startswith("."):
+            img_suffix = "." + img_suffix
 
-        valid_extensions = [".dng", ".raw", ".tif", ".jpg", ".jpeg", ".png"]
-        if extension not in valid_extensions:
-            raise ValueError(f"Extension '{extension}' not supported. Choose from {valid_extensions}.")
+        valid_img_suffix = [".dng", ".raw", ".tif", ".jpg", ".jpeg", ".png"]
+        if img_suffix not in valid_img_suffix:
+            raise ValueError(f"img_suffix '{img_suffix}' not supported. Choose from {valid_img_suffix}.")
 
         # Folder path to scan
         folder_path = Path(inputFolder)
 
-        # List files with matching extension (case-insensitive)
-        files = sorted([f for f in folder_path.iterdir() if f.suffix.lower() == extension])
+        # List files with matching img_suffix (case-insensitive)
+        files = sorted([f for f in folder_path.iterdir() if f.suffix.lower() == img_suffix])
 
         if verbose:
-            print(Uti.Style.GREEN + f"🔍 {len(files)} files {extension.upper()} found" + Uti.Style.RESET)
+            print(Uti.Style.GREEN + f"🔍 {len(files)} files {img_suffix.upper()} found" + Uti.Style.RESET)
 
         return files
 
@@ -621,8 +626,8 @@ class LoadVisNirImagesDialog(QDialog):
     def time_line_analyser_images(
             self,
             inputFolder: Union[Path, str],
-            img_Typ: Optional[str] = None,
-            extension: str = ".tif",
+            spectral_band: Optional[str] = None,
+            img_suffix: str = ".tif",
             verbose: bool = False
     ) -> Dict:
         """
@@ -639,10 +644,10 @@ class LoadVisNirImagesDialog(QDialog):
         ----------
         inputFolder : Path | str
             Path to the folder containing the image files.
-        img_Typ : str | None, optional
+        spectral_band : str | None, optional
             Image type, "VIS" or "NIR", by default None.
-        extension : str, optional
-            File extension to filter images, by default ".tif".
+        img_suffix : str, optional
+            File img_suffix to filter images, by default ".tif".
         verbose : bool, optional
             If True, prints detailed information during analysis, by default False.
 
@@ -652,12 +657,13 @@ class LoadVisNirImagesDialog(QDialog):
             Dictionary containing files, numbers, dates, deltas, time_line, and camera type.
         """
 
-        fichiers = self.extract_files_images(inputFolder, extension=extension)
+        fichiers = self.extract_files_images(inputFolder, img_suffix=img_suffix)
 
         dates: list[datetime] = []
         numeros: list[int] = []
+        shootings: list[int] = []
 
-        if img_Typ == "NIR":
+        if spectral_band == "NIR":
             for f in fichiers:
                 stem = f.stem
                 try:
@@ -672,14 +678,16 @@ class LoadVisNirImagesDialog(QDialog):
 
                     dt = datetime.strptime(f"{annee}{moisjour}{heuresec}", "%Y%m%d%H%M%S")
                     if verbose:
-                        print(Uti.Style.GREEN + f'image {extension} N° : {numero} | time {heuresec}' + Uti.Style.RESET)
+                        print(Uti.Style.GREEN + f'image {img_suffix} N° : {numero} | time {heuresec}' + Uti.Style.RESET)
 
                     dates.append(dt)
+                    shoot_num = int((int(numero) + 1) / 2)
                     numeros.append(int(numero))
+                    shootings.append(int(shoot_num))
                 except Exception as e:
                     print(Uti.Style.YELLOW + f"⚠️ Filename ignored ({stem}): {e}" + Uti.Style.RESET)
 
-        elif img_Typ == "VIS":
+        elif spectral_band == "VIS":
             for f in fichiers:
                 stem = f.stem
                 file_path = Path(f)
@@ -693,11 +701,12 @@ class LoadVisNirImagesDialog(QDialog):
                 dt = self.extract_dng_capture_date(file_path)
                 dates.append(dt)
                 numeros.append(int(numero))
+                shootings.append(int(numero))
                 if verbose:
-                    print(f'image {extension} N° : {numero} | time {dt}')
+                    print(f'image {img_suffix} N° : {numero} | time {dt}')
 
         else:
-            print(Uti.Style.YELLOW + f"⚠️ Invalid image type ({img_Typ}). (must be VIS or NIR)" + Uti.Style.RESET)
+            print(Uti.Style.YELLOW + f"⚠️ Invalid spectral band ({spectral_band}). (must be VIS or NIR)" + Uti.Style.RESET)
 
         dates = np.array(dates)
         numeros = np.array(numeros)
@@ -713,7 +722,7 @@ class LoadVisNirImagesDialog(QDialog):
             print(Uti.Style.YELLOW + f"⚠️ Not enough images to compute intervals." + Uti.Style.RESET)
             return {"dates": dates, "numeros": numeros, "deltas": deltas}
 
-        print(Uti.Style.GREEN + f"🔍 {len(dates)} {extension.upper()} files found" + Uti.Style.RESET)
+        print(Uti.Style.GREEN + f"🔍 {len(dates)} {img_suffix.upper()} files found" + Uti.Style.RESET)
 
         # --- Total sequence duration ---
         total_duration = (dates[-1] - dates[0]).total_seconds()
@@ -758,10 +767,11 @@ class LoadVisNirImagesDialog(QDialog):
         dic_timeline = self.build_time_line_dictionnary(
             fichiers=fichiers,
             numeros=numeros,
+            shootings=shootings,
             dates=dates,
             deltas=deltas,
             time_line=time_line,
-            cam_type=self.currentImgTyp
+            spectral_band=self.currentSpectralBand
         )
 
         return dic_timeline
@@ -769,12 +779,12 @@ class LoadVisNirImagesDialog(QDialog):
 
     @staticmethod
     def build_time_line(dates: list[float],
-                       sauts: list[tuple[int, int, float]],
-                       periode_reelle: float,
-                       numeros: list[int],
-                       fichiers: list[Path],
-                       verbose: bool = False
-                       ) -> np.ndarray:
+                        sauts: list[tuple[int, int, float]],
+                        periode_reelle: float,
+                        numeros: list[int],
+                        fichiers: list[Path],
+                        verbose: bool = False
+                        ) -> np.ndarray:
         """
         Construct a vector of actual elapsed times since the first image,
         taking into account real jumps, apparent jumps (EXIF artifacts), and abnormal jumps.
@@ -889,7 +899,7 @@ class LoadVisNirImagesDialog(QDialog):
     def process_image_transfer(
             self,
             inputFolder: Union[str, Path],
-            img_types: Union[str, List[str]],
+            list_img_suffix: Union[str, List[str]],
             outputSyncFolder: Union[str, Path],
             outputFlyFolder: Union[str, Path],
             outputFlightAnalyticsFolder: Union[str, Path],
@@ -903,18 +913,19 @@ class LoadVisNirImagesDialog(QDialog):
             progressFly: Union[Tuple[int, int], List[Tuple[int, int]]] = (30, 96),
     ) -> None:
         """
-        Process and transfer images for one or multiple file extensions.
-        Handles Takeoff, Sync and Fly phases, applies index offsets per extension,
-        and generates one JSON summary file *per extension*.
+        Process and transfer images for one or multiple file suffix (dng, raw, jpg, tiff ...)
+        and a self.currentSpectralBand  (VIS or NIR)
+        Handles Takeoff, Sync and Fly phases, applies index offsets per suffix,
+        and generates one JSON summary file *per suffix*.
 
         Parameters
         ----------
         inputFolder : Path or str
             Folder containing the original input images.
 
-        img_types : str or list[str]
-            Image extension(s) to process, e.g. "jpg", "raw", or ["jpg", "raw"].
-            Each extension is processed independently and results in a separate JSON file.
+        list_img_suffix : str or list[str]
+            Image suffix(s) to process, e.g. "jpg", "raw", or ["jpg", "raw"].
+            Each suffix is processed independently and results in a separate JSON file.
 
         outputSyncFolder : Path
             Destination folder for Sync-phase images.
@@ -935,14 +946,14 @@ class LoadVisNirImagesDialog(QDialog):
             Base index range for Fly-phase images (before applying offsets).
 
         offset : int or list[int], optional
-            Index shift applied to each extension.
+            Index shift applied to each suffix.
             Example: offset=[0, -1] for ["jpg", "raw"] if RAW numbering is shifted.
-            If a single integer is given, it is applied to all extensions.
+            If a single integer is given, it is applied to all suffix.
             Default is 0.
 
         progressSync, progressFly : tuple(int,int) or list[tuple], optional
-            Progress-bar ranges. A single tuple applies to all extensions.
-            Otherwise, provide one range per extension.
+            Progress-bar ranges. A single tuple applies to all suffix.
+            Otherwise, provide one range per suffix.
 
         Returns
         -------
@@ -952,20 +963,20 @@ class LoadVisNirImagesDialog(QDialog):
         # Normalize to Path
         inputFolder = Path(inputFolder)
 
-        # Normalize img_types → list[str]
-        if isinstance(img_types, str):
-            img_types = [img_types]
+        # Normalize list_img_suffix → list[str]
+        if isinstance(list_img_suffix, str):
+            list_img_suffix = [list_img_suffix]
         else:
-            img_types = list(img_types)
+            list_img_suffix = list(list_img_suffix)
 
-        n = len(img_types)
+        n = len(list_img_suffix)
 
         # Normalize offset
         if isinstance(offset, int):
             offset = [offset] * n
         elif isinstance(offset, list):
             if len(offset) != n:
-                raise ValueError("offset list must have same length as img_types")
+                raise ValueError("offset list must have same length as list_img_suffix")
         else:
             raise TypeError("offset must be int or list[int]")
 
@@ -979,10 +990,10 @@ class LoadVisNirImagesDialog(QDialog):
         progressFly = normalize_progress(progressFly)
 
         # ----------------------------------------------------------
-        # Loop on extensions → generate one JSON per extension
+        # Loop on suffix → generate one JSON per suffix
         # ----------------------------------------------------------
-        for i, ext in enumerate(img_types):
-            # Apply per-extension offset
+        for i, suffix in enumerate(list_img_suffix):
+            # Apply per-suffix offset
             idTk = idTkoff + offset[i]
             idMinS = idMinSync + offset[i]
             idMaxS = idMaxSync + offset[i]
@@ -992,8 +1003,8 @@ class LoadVisNirImagesDialog(QDialog):
             sync_prog = progressSync[i]
             fly_prog = progressFly[i]
 
-            # List of images with this extension
-            listInputImages = self.create_list_image_in_input_folder(inputFolder, ext)
+            # List of images with this suffix
+            listInputImages = self.create_list_image_in_input_folder(inputFolder, suffix)
 
             # --- Takeoff (one image)
             takeOff_list = self.load_inputFolder_2_outputFolder(
@@ -1019,12 +1030,12 @@ class LoadVisNirImagesDialog(QDialog):
                 *fly_prog
             )
 
-            # --- JSON creation (one per extension)
+            # --- JSON creation (one per suffix)
             self.save_transfer_info(
                 output_folder=outputFlightAnalyticsFolder,
                 input_folder=inputFolder,
-                cam_type=self.currentImgTyp,
-                img_type=ext,  # IMPORTANT: single extension
+                spectral_band=self.currentSpectralBand,
+                img_suffix=suffix,  # IMPORTANT: single suffix
                 tkoff_data={
                     "outputFolder": str(outputFlightAnalyticsFolder),
                     "idMin": idTk,
@@ -1053,8 +1064,8 @@ class LoadVisNirImagesDialog(QDialog):
     def save_transfer_info(
             output_folder: Union[str, Path],
             input_folder: Union[str, Path],
-            cam_type: str,
-            img_type: str,
+            spectral_band: str,
+            img_suffix: str,
             tkoff_data: Optional[Dict] = None,
             sync_data: Optional[Dict] = None,
             fly_data: Optional[Dict] = None,
@@ -1068,9 +1079,11 @@ class LoadVisNirImagesDialog(QDialog):
             Folder where the JSON file will be created.
         input_folder : str | Path
             Source input folder.
-        cam_type : str
-            Camera type (e.g., "VIS" or "NIR").
-        img_type : str
+        spectral_band : str
+            Spectral_band , e.g.,
+            VIS" wavelength range: [400, 700] nm
+            NIR" wavelength range: [700, 1100]nm.
+        img_suffix : str
             Image type (e.g., "jpg", "raw", "dng").
         tkoff_data : dict | None, optional
             Data for the take-off phase:
@@ -1092,14 +1105,14 @@ class LoadVisNirImagesDialog(QDialog):
         output_folder = Path(output_folder)
         output_folder.mkdir(parents=True, exist_ok=True)
 
-        # JSON file name including camera and image type
-        json_name = f"transfer_info_{cam_type}_{img_type}.json"
+        # JSON file name including spectral band and image type (suffix)
+        json_name = f"transfer_info_{spectral_band}_{img_suffix}.json"
         json_path = output_folder / json_name
 
         # Base data
         data = {
-            "cam_type": cam_type,
-            "img_type": img_type,
+            "spectral_band": spectral_band,
+            "img_suffix": img_suffix,
             "inputFolder": str(input_folder),
         }
 
@@ -1141,8 +1154,8 @@ class LoadVisNirImagesDialog(QDialog):
     @staticmethod
     def load_transfer_info(
             output_folder: Union[str, Path],
-            cam_type: str,
-            img_type: str,
+            spectral_band: str,
+            img_suffix: str,
             verbose: bool = False
     ) -> Optional[Dict]:
 
@@ -1153,9 +1166,9 @@ class LoadVisNirImagesDialog(QDialog):
         ----------
         output_folder : str | Path
             Folder containing the saved JSON file.
-        cam_type : str
-            Camera type ("VIS" or "NIR").
-        img_type : str
+        spectral_band : str
+             ("VIS" or "NIR").
+        img_suffix : str
             Image type ("jpg", "raw", "dng").
 
         Returns
@@ -1163,8 +1176,8 @@ class LoadVisNirImagesDialog(QDialog):
         dict | None
             A dictionary containing all loaded information:
             {
-                "cam_type": ...,
-                "img_type": ...,
+                "spectral_band": ...,
+                "img_suffix": ...,
                 "inputFolder": ...,
                 "tkoff": { "outputFolder": ..., "idMin": ..., "idMax": ..., "listCopiedImages": [...] },
                 "sync": { "outputFolder": ..., "idMin": ..., "idMax": ..., "listCopiedImages": [...] },
@@ -1176,11 +1189,11 @@ class LoadVisNirImagesDialog(QDialog):
 
         # Construct full path to the JSON file
         output_folder = Path(output_folder)
-        json_path = output_folder / f"transfer_info_{cam_type}_{img_type}.json"
+        json_path = output_folder / f"transfer_info_{spectral_band}_{img_suffix}.json"
 
         # Check if the JSON file exists
         if not json_path.exists():
-            if verbose : print(Uti.Style.YELLOW + f"[WARN] JSON file not found: {json_path}. Creating an empty JSON file." + Uti.Style.RESET)
+            if verbose: print(Uti.Style.YELLOW + f"[WARN] JSON file not found: {json_path}. Creating an empty JSON file." + Uti.Style.RESET)
             # Crée un fichier JSON vide
             json_path.parent.mkdir(parents=True, exist_ok=True)  # s'assure que le dossier existe
             with open(json_path, "w", encoding="utf-8") as f:
@@ -1203,31 +1216,40 @@ class LoadVisNirImagesDialog(QDialog):
     def build_time_line_dictionnary(
             fichiers: List[Path],
             numeros: List[int],
+            shootings: List[int],
             dates: List[Union[datetime, str]],
             deltas: np.ndarray,
             time_line: np.ndarray,
-            cam_type: str = "VIS"
+            spectral_band: str = "VIS"
     ) -> Dict[str, List[Dict[str, Union[float, int, str]]]]:
         """
         Build a dictionary containing the timeline of an image sequence
-        for a given camera type (VIS, NIR, etc.).
+        for a given spectral band (VIS, NIR, etc.).
 
         Returns a dictionary in the form:
-            { cam_type: [ {img_path, num_img, date_img, delta_img, time_line_relative}, ... ] }
+            { spectral_band: [ {img_path, num_img, date_img, delta_img, relative_timeline}, ... ] }
 
         Each entry corresponds to an image and contains:
             - img_path : full path of the image
             - num_img  : image capture number
             - date_img : date in ISO format
             - delta_img: interval since previous image (s)
-            - time_line_relative: cumulative time since first image (s)
+            - relative_timeline: cumulative time since first image (s)
+
+        rem:  if f = C:\ ....\folder_name\hyperlapse.DNG
+            Path(f).parent =  C:\ ....\folder_name
+            Path(f).parent.name = folder_name
+            Path(f).name  = "hyperlapse.DNG"
+            Path(f).stem  = "hyperlapse"
+            Path(f).suffix  = ".DNG"
+            Path(f).suffix[1:] = "DNG"
+
         """
 
         data: List[Dict[str, Union[float, int, str]]] = []
 
         for i, f in enumerate(fichiers):
-            delta: float = float(deltas[i - 1]) if i > 0 and i - 1 < len(deltas) else 0.0
-
+            delta: float = float(time_line[i]) - float(time_line[i-1]) if i > 0 and i - 1 < len(deltas) else 0.0
             # Format the date as ISO string if datetime, else use string directly
             if isinstance(dates[i], datetime):
                 date_str: str = dates[i].isoformat(timespec="seconds")
@@ -1236,13 +1258,17 @@ class LoadVisNirImagesDialog(QDialog):
 
             data.append({
                 "img_path": str(f),
+                "original_file_name": Path(f).name,
+                "IRD_file_name": f"{spectral_band}_{numeros[i]:03d}.{Path(f).suffix[1:]}",
                 "num_img": int(numeros[i]),
+                "relative_shooting_number": int(shootings[i]),
                 "date_img": date_str,
                 "delta_img": round(delta, 6),
-                "time_line_relative": round(float(time_line[i]), 6)
+                "relative_timeline": round(float(time_line[i]), 6)
             })
 
-        return {cam_type: data}
+        return {spectral_band: data}
+
 
     @staticmethod
     def save_time_line_json(
@@ -1266,7 +1292,7 @@ class LoadVisNirImagesDialog(QDialog):
         output_dir.mkdir(parents=True, exist_ok=True)
         out_file: Path = output_dir / "time_line.json"
 
-        # Merge all timeline dictionaries by camera key
+        # Merge all timeline dictionaries by spectral band key
         merged: dict[str, list[dict]] = {}
         for d in timeline_dicts:
             merged.update(d)
@@ -1384,12 +1410,14 @@ class LoadVisNirImagesDialog(QDialog):
         Returns:
         None
         """
+        print(f'DEBUG 3000 load_inputFolder_2_outputFolder    debut pour  {self.currentSpectralBand}')
         listFileName = []
-        for imgFileName in listInputImages:   # imgFileName   name + extension
+        for imgFileName in listInputImages:   # imgFileName   name + img_suffix
             num_img, name_img = self.extract_num_image(imgFileName)
             if id_min <= num_img <= id_max:
                 listFileName.append(imgFileName)
-                self.copy_images(inputFolder, imgFileName, outputFolder)
+                print(f'DEBUG 3001 avant   copy_images   {imgFileName}  de {inputFolder}  vers {outputFolder}')
+                Uti.copy_images(inputFolder, imgFileName, outputFolder)
                 self.progress_bar.setValue(pgsbar0 + int((pgrbar1-pgsbar0)*(len(listFileName) / (id_max + 1 - id_min))))
 
         #  end of loading images associated with the imgTyp type in the mission files
@@ -1398,16 +1426,16 @@ class LoadVisNirImagesDialog(QDialog):
 
 
     @staticmethod
-    def create_list_image_in_input_folder(input_folder: Union[str, str], ext: str) -> Optional[List[str]]:
+    def create_list_image_in_input_folder(input_folder: Union[str, str], suffix: str) -> Optional[List[str]]:
         """
-        Create a list of image file names with a specific extension in the given input folder.
+        Create a list of image file names with a specific img_suffix in the given input folder.
 
         Parameters:
         - input_folder (Union[str, str]): The folder from which image file names will be listed.
-        - ext (str): The file extension to filter image files.
+        - suffix (str): The file img_suffix to filter image files.
 
         Returns:
-        - List[str]: A list of image file names with the specified extension.
+        - List[str]: A list of image file names with the specified img_suffix.
           Returns None if the input_folder is not a directory.
         """
 
@@ -1416,8 +1444,8 @@ class LoadVisNirImagesDialog(QDialog):
             return None
         # List all files in folder
         files = os.listdir(input_folder)
-        # Filter the list to keep only .ext type files
-        listInputImages = [f for f in files if f.lower().endswith('.' + ext)]
+        # Filter the list to keep only .suffix type files
+        listInputImages = [f for f in files if f.lower().endswith('.' + suffix)]
         return listInputImages
 
 
@@ -1441,32 +1469,8 @@ class LoadVisNirImagesDialog(QDialog):
         return frame_index, frame_name
 
 
-    @staticmethod
-    def copy_images(inputDir: str, imgName: str, outputDir: str) -> Optional[str]:
-        """
-        Copy an image file from the input directory to the output directory.
 
-        Parameters:
-        - inputDir (str): The directory from which the image file will be copied.
-        - imgName (str): The name of the image file to be copied.
-        - outputDir (str): The directory to which the image file will be copied.
-
-        Returns:
-        - str: A message indicating the result of the copy operation.
-        """
-        source = os.path.join(inputDir, imgName)     # Constructs the full path of the source file
-        # Check if the source file exists
-        if not os.path.isfile(source):
-            return "The source file does not exist."
-        # Check if the destination folder exists, create it if not
-        if not os.path.isdir(outputDir):
-            os.makedirs(outputDir)
-        destination = os.path.join(outputDir, imgName)   # Construct the full path of the destination file
-        shutil.copy(source, destination)    # Copy file
-        return f"File {imgName} was successfully copied from {inputDir} to {outputDir}."
-
-
-    def init_image_takeoff_available(self, path_image_takeoff: str) -> None:
+    def init_image_takeoff_available(self, path_image_takeoff: str) -> bool:
         """
         Initialize the availability of a takeoff image based on the provided path and image type.
 
@@ -1481,24 +1485,31 @@ class LoadVisNirImagesDialog(QDialog):
         Returns:
         None
         """
+        image_takeoff_available = False
         try:
+            print(f'DEBUG init_image_takeoff_available ....')
             self.image_takeoff_available = False    # Initialize as False
             # Check if the image type is "VIS" or "DNG"
-            if self.type_img in {"VIS", "DNG", "dng", "Dng", "vis", "Vis"}:
-                self.ext = "DNG"
-                # Check if the path to the takeoff image is provided and it exists
+            print(f'DEBUG init_image_takeoff_available self.spectral_band {self.spectral_band}')
+            if self.spectral_band.lower() in {"vis", "visible", "vi"}:
+                self.img_suffix = "DNG"
 
                 # ---------------------------------------------------
                 # Test if the takeoff point image is available..
                 # if path_image_takeoff is not None:
                 #    if os.path.exists(path_image_takeoff):
                 # ---------------------------------------------------
+                print(f'DEBUG init_image_takeoff_available path_image_takeoff {path_image_takeoff}')
                 if path_image_takeoff is not None and os.path.exists(path_image_takeoff):
                     self.path_image_takeoff = path_image_takeoff
                     self.image_takeoff_available = True
+                    image_takeoff_available = True
                     self.image_0_available = True
+                    print(f'DEBUG init_image_takeoff_available self.image_takeoff_available {self.image_takeoff_available}')
+
         except Exception as e:
             print("error   in init_image_takeoff_available", e)
+        return image_takeoff_available
 
 
     def open_takeoff_image(self, path_image_takeoff: Path) -> None:
@@ -1531,8 +1542,8 @@ class LoadVisNirImagesDialog(QDialog):
                         QImage(rgb.data, rgb.shape[1], rgb.shape[0], rgb.strides[0], QImage.Format.Format_RGB888))
                 pixmap = pixmap.scaled(* self.image_display_size, Qt.AspectRatioMode.KeepAspectRatio)
                 self.image_labels[0].setPixmap(pixmap)
-                filename, file_extension = os.path.splitext(os.path.basename(file_path))
-                self.image_name_labels[0].setText(f"{self.img_legend[0]}  : \n {filename}  {file_extension}")
+                filename, file_suffix = os.path.splitext(os.path.basename(file_path))
+                self.image_name_labels[0].setText(f"{self.img_legend[0]}  : \n {filename}  {file_suffix}")
                 self.image_name_labels[0].setStyleSheet("color: darkBlue;")
 
                 self.listImgRefPath[0] = file_path
@@ -1547,11 +1558,11 @@ class LoadVisNirImagesDialog(QDialog):
             print("error in open_takeoff_image : ", e)
 
 
-    def open_sync_and_fly_image_VIS_or_NIR(self, type_img: str, typ_ext: str, index: int) -> None:
+    def open_sync_and_fly_image_VIS_or_NIR(self, spectral_band: str, img_suffix: str, index: int) -> None:
         """
         Open and display a synchronization or flight image (VIS), given its type and index.
 
-        If typ_ext is 'dng', uses rawpy for RAW decoding; otherwise uses QPixmap directly.
+        If img_suffix is 'dng', uses rawpy for RAW decoding; otherwise uses QPixmap directly.
 
         This method attempts to open an image from a specified path, processes it,
         and displays it on the user interface. It also sets various attributes and
@@ -1575,25 +1586,25 @@ class LoadVisNirImagesDialog(QDialog):
                 raise ValueError(f"Invalid index: {index}")
 
             # --- Construct full paths ---
-            if typ_ext.lower() == "dng":
+            if img_suffix.lower() == "dng":
                 file_path = Path(self.info_vis_dng[key_1]['outputFolder']) / self.info_vis_dng[key_1]['listCopiedImages'][index_img]
                 file_path = Uti.safe_path(file_path)
                 input_file_path = Path(self.info_vis_dng['inputFolder']) / self.info_vis_dng[key_1]['listCopiedImages'][index_img]
                 input_file_path = Uti.safe_path(input_file_path)
-            elif typ_ext.lower() == "jpg":
+            elif img_suffix.lower() == "jpg":
                 file_path = Path(self.info_nir_jpg[key_1]['outputFolder']) / self.info_nir_jpg[key_1]['listCopiedImages'][index_img]
                 file_path = Uti.safe_path(file_path)
                 input_file_path = Path(self.info_nir_jpg['inputFolder']) / self.info_nir_jpg[key_1]['listCopiedImages'][index_img]
                 input_file_path = Uti.safe_path(input_file_path)
             else:
-                raise ValueError(f"Invalid file extension: {typ_ext.lower()}")
+                raise ValueError(f"Invalid file suffix: {img_suffix.lower()}")
 
             if not file_path:
                 raise FileNotFoundError(f"File not found: {file_path}")
 
             # --- Load image according to its type ---
-            typ_ext = typ_ext.lower()
-            if typ_ext == "dng":
+            img_suffix = img_suffix.lower()
+            if img_suffix == "dng":
                 # Use rawpy for RAW files
                 with rawpy.imread(file_path) as raw:
                     rgb = raw.postprocess()
@@ -1610,8 +1621,8 @@ class LoadVisNirImagesDialog(QDialog):
             self.image_labels[index].setPixmap(pixmap)
 
             # --- Filename and legend information ---
-            filename, file_extension = os.path.splitext(os.path.basename(file_path))
-            self.image_name_labels[index].setText(f"{self.img_legend[0]}  : \n {filename}  {file_extension}")
+            filename, file_suffix = os.path.splitext(os.path.basename(file_path))
+            self.image_name_labels[index].setText(f"{self.img_legend[0]}  : \n {filename}  {file_suffix}")
             self.image_name_labels[index].setStyleSheet("color: darkBlue;")
 
             # --- Store input/output paths ---
@@ -1706,8 +1717,8 @@ class LoadVisNirImagesDialog(QDialog):
                     return flag
                 pixmap = pixmap.scaled(image_label.size(), Qt.AspectRatioMode.KeepAspectRatio)
                 image_label.setPixmap(pixmap)
-                filename, file_extension = os.path.splitext(os.path.basename(file_path))
-                image_name_label.setText(f"{self.img_legend[numBtn]}  : \n {filename}  {file_extension}")
+                filename, file_suffix = os.path.splitext(os.path.basename(file_path))
+                image_name_label.setText(f"{self.img_legend[numBtn]}  : \n {filename}  {file_suffix}")
                 image_name_label.setStyleSheet("color: darkBlue;")
                 self.listImgRefPath[numBtn] = file_path
                 if image_type == "DNG":
@@ -1770,7 +1781,7 @@ class LoadVisNirImagesDialog(QDialog):
         return consistency_choice
 
     @staticmethod
-    def _dict_has_keys( d: dict, keys: list[str]) -> bool:
+    def _dict_has_keys(d: dict, keys: list[str]) -> bool:
         """ Vérifie que le dictionnaire contient toutes les clés requises. """
         if not isinstance(d, dict):
             return False
@@ -1895,7 +1906,7 @@ class LoadVisNirImagesDialog(QDialog):
 # ================================================================================
 #              modules hors des class
 # ================================================================================
-def choose_folder_mission(
+def choose_folder_mission_old(
     dic_takeoff: dict,
     pref_screen_default_user_dir: str,
     AerialPhotoFolder: str,
@@ -1974,9 +1985,9 @@ def choose_folder_mission(
                 return folderMissionPath, coherent_response
 
             except Exception as e:
-                print("Error 1 in choose_folder_mission:", e)
+                print("Error 1 in choose_folder_mission_old:", e)
 
     except Exception as e:
-        print("Error 2 in choose_folder_mission:", e)
+        print("Error 2 in choose_folder_mission_old:", e)
 
 

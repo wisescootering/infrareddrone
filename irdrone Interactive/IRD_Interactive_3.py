@@ -323,7 +323,7 @@ class Dialog_extract_exif(QDialog):
                     self.list_dic_exif_xmp[idx_exif]["relative time line"] = relative_time_line
             if verbose: print(Uti.Style.GREEN + "Relative shoot number added successfully" + Uti.Style.RESET)
         except Exception as e:
-            print("error in Class Dialog_extract_exif    load_relative_time_line  ", e)
+            print("error in Class Dialog_extract_exif    relative_time_line  ", e)
             self.list_dic_exif_xmp[idx_exif]["relative time line"] = -999
 
 
@@ -358,7 +358,7 @@ class Dialog_extract_exif(QDialog):
             # Look for exact match in the stem of img_path
             for dic in img_list:
                 if Path(dic["img_path"]).stem == file_stem:
-                    relative_time_line = dic.get("time_line_relative", 999.0)
+                    relative_time_line = dic.get("relative_timeline", 999.0)
                     break
 
         elif ext.lower() == "jpg" and type_img == "NIR":
@@ -371,7 +371,7 @@ class Dialog_extract_exif(QDialog):
 
             for dic in img_list:
                 if dic.get("num_img") == jpg_num - 1:
-                    relative_time_line = dic.get("time_line_relative", 999.0)
+                    relative_time_line = dic.get("relative_timeline", 999.0)
                     break
 
         else:
@@ -529,10 +529,10 @@ class Dialog_extract_exif(QDialog):
 
                 # Store in EXIF/XMP dictionary
                 dic_exif = self.list_dic_exif_xmp[idx_exif]
-                dic_exif["ground altitude"] = alti_ground
-                dic_exif["altitude above takeoff"] = alti_drone_above_takeoff
-                dic_exif["altitude above ground"] = alti_drone_above_ground
-                dic_exif["altitude above sea level"] = alti_drone_above_sea_level
+                dic_exif["ground altitude"] = round(alti_ground, 3)
+                dic_exif["altitude above takeoff"] = round(alti_drone_above_takeoff, 3)
+                dic_exif["altitude above ground"] = round(alti_drone_above_ground, 3)
+                dic_exif["altitude above sea level"] = round(alti_drone_above_sea_level, 3)
 
 
             if verbose:
