@@ -13,6 +13,7 @@ import json
 from datetime import date, time, datetime
 from typing import Any, Dict, Optional, Tuple, List, Union
 from pathlib import Path
+import time
 
 # -------------------- Image Library ------------------------------
 import rawpy
@@ -21,12 +22,142 @@ import imageio
 from PyQt6.QtWidgets import QFileDialog, QWidget,  QLineEdit, QFrame,  QPushButton,\
                             QProgressBar, QHBoxLayout,  QVBoxLayout, QLabel, QMessageBox, QDialog
 from PyQt6.QtGui import QPixmap, QImage, QColor, QIcon, QRegularExpressionValidator
+from PyQt6 import QtCore
 from PyQt6.QtCore import Qt, pyqtSignal, QRegularExpression
 
 # -------------- IRDrone Library ------------------------------------
 import IRD_interactive_utils as Uti
 import IRD_interactive_geo as Geo
 from IRD_interactive_utils import Prefrence_Screen
+
+
+
+# --------------------------------------------------------------------------------------------
+#
+#     Class pour utilisation du parallélisme avec des fenêtres interactives
+#
+# --------------------------------------------------------------------------------------------
+
+
+class WorkerExif(QtCore.QObject):
+    """
+    Minimal Worker to simulate EXIF reading on files in a folder.
+    Compatible with PyQt6 / Python 3.9.
+
+    Signals:
+        progress (int): percentage 0-100
+        finished (dict): mapping filename -> metadata-dict (simulated)
+        error (str): error message
+    """
+    progress = QtCore.pyqtSignal(int)
+    finished = QtCore.pyqtSignal(dict, str)
+    error = QtCore.pyqtSignal(str)
+
+    def __init__(self, folder_to_scan: str, msg: str):
+        super().__init__()
+        self.folder_to_scan = Path(folder_to_scan)
+        self.msg = msg
+
+    def run(self) -> None:
+        """
+        Simulate scanning .dng files and extracting EXIF.
+        Replace the body with real exiftool calls when ready.
+        """
+        try:
+            files = list(self.folder_to_scan.glob("*.dng"))
+            n = len(files) if files else 0
+
+            fake_data: Dict[str, Any] = {}
+
+            for i, f in enumerate(files):
+                # simulate a small delay per file (replace by real EXIF read)
+                time.sleep(0.05)
+
+                # fill fake metadata — replace with real parsed values later
+                fake_data[f.name] = {
+                    "yaw": 0.0,
+                    "pitch": 0.0,
+                    "roll": 0.0,
+                }
+
+                # emit progress (guard against division by zero)
+                if n > 0:
+                    self.progress.emit(int(100 * (i + 1) / n))
+
+            # finished: send the dict (may be empty)
+            self.finished.emit(fake_data, self.msg)
+
+        except Exception as ex:
+            # emit an error string (do not raise in a thread)
+            self.error.emit(str(ex))
+
+
+
+class WorkerTransfert(QtCore.QObject):
+    """
+    Worker class to transfer and rename VIS images from input directory
+    to output directory in a separate thread, emitting progress updates
+    and a finished signal when done.
+
+    Signals:
+        progress (int): Emits the progress percentage (0-100).
+        finished (str): Emits a completion message when the transfer is finished.
+    """
+
+    progress: QtCore.pyqtSignal = QtCore.pyqtSignal(int)
+    finished: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
+    error = pyqtSignal(str)
+
+    def __init__(self, input_dir: Union[str, Path], output_dir: Union[str, Path]):
+        """
+        Initialize the worker.
+
+        Args:
+            input_dir (str | Path): Path to the folder containing source images.
+            output_dir (str | Path): Path to the destination folder.
+            msg (str): Message to emit upon completion.
+        """
+        super().__init__()
+        self.input_dir: Path = Path(input_dir)
+        self.output_dir: Path = Path(output_dir)
+        self.exif_data = {}
+
+    def run(self) -> None:
+        """
+        Run the transfer process.
+
+        Reads all DNG files in the input directory, renames them according
+        to the VIS naming convention, copies them to the output directory,
+        and emits progress updates. Emits finished signal at the end, even
+        if an error occurs.
+        """
+        try:
+            list_file = Uti.list_files_with_suffix("dng", self.input_dir)
+            n = len(list_file)
+
+            for index, file in enumerate(list_file):
+                input_img_name: str = Path(file).name
+                output_img_name: str = Uti.rename_file_VIS(input_img_name)
+
+                Uti.copy_and_rename_images(
+                    self.input_dir,
+                    input_img_name,
+                    self.output_dir,
+                    output_img_name,
+                    verbose=False,
+                )
+
+                # Emit progress percentage
+                self.progress.emit(int(100 * (index + 1) / n))
+
+            # Emit finished signal
+            self.finished.emit("OK")
+
+        except Exception as e:
+            print("Error in WorkerTransfert.run:", e)
+            self.finished.emit(f"Error during transfer: {e}")
+
+
 
 # --------------------------------------------------------------------------------------------
 #
@@ -39,18 +170,36 @@ class Window_Load_TakeOff_Image(QDialog):
 
     def __init__(self, parent):
         super().__init__(parent)
+        self.image_label = None  # declare (placeholder)
+        self.main_layout = None  # idem if needed
+        self.central_widget = None
+        self.btn_load_image = None
+        self.btn_NextStep = None,
+        self.btnPreviousStep = None
+        self.progress_bar = None
+        self.image_display_size = None
+        self.empty_pixmap = None
+        self.layout = None
+
+        self.info_Geo_label = None
         self.dic_takeoff_light: dict = dict()
         self.dic_info_geo: dict = dict()
         self.init_dic_takeoff_light()
+        self.altitude_DJI: float = 0.0
+        self.Date_Exif = None
+        self.py_date_time = None
+
         self.path_image_takeoff: Optional[Path] = None
         self.dirname_image_takeoff: str = None
         self.name_image_takeoff: str = None
         self.suffix_image_takeoff: str = None
+
         self.default_app_dir = os.path.join("C:/", "Program Files", "IRdrone")
         self.default_user_dir = os.path.join("C:/", "Air-Mission")
 
         self.prefScreen = Uti.Prefrence_Screen()  # Initializing screen preferences
-        self.initGUI()  # Initializing the GUI
+
+        self.initGUI()  # Initializing the GUI  Using attributes previously created
         self.setLayout(self.main_layout)
 
 
@@ -345,9 +494,15 @@ class Window_Load_TakeOff_Image(QDialog):
         except Exception as e:
             print("error 2 in load_takeoff_image ", e)
 
-        self.dic_takeoff_light["name image take-off"] = self.name_image_takeoff
-        self.dic_takeoff_light["suffix image take-off"] = self.suffix_image_takeoff
 
+        try:
+            self.dic_takeoff_light["original name image take-off"] = self.name_image_takeoff
+            num = int(Path(self.name_image_takeoff).stem.split("_")[-1])
+            suffix = self.suffix_image_takeoff[1:]  # example "DNG"
+            self.dic_takeoff_light["name image take-off"] = f"VIS_{num:04d}.{suffix}"
+            self.dic_takeoff_light["suffix image take-off"] = suffix
+        except Exception as e:
+            print("error 3 in load_takeoff_image ", e)
         return
 
 
@@ -375,6 +530,8 @@ class Window_create_file_structure(QDialog):
         └── FLY-YYYYMMDD-hhmm-<txt>/
             │
             ├── AerialPhotography/
+            │       └── VIS/
+            │       └── NIR/
             ├── Synchro/
             ├── ImgIRdrone/
             ├── mapping_MULTI/
@@ -399,9 +556,96 @@ class Window_create_file_structure(QDialog):
         super().__init__(parent)
         # -----------Name of folders to store mission images. ----------------
 
+        self.transfert_thread = None
+        self.transfert_worker = None
+        self.exif_thread = None
+        self.exif_worker = None
+        self.worker = None
+        self.output_dir = None
+
         self.pref = Prefrence_Screen()
+        self.layout = None
+        self.zone_121 = None
+        self.zone_122 = None
+        self.zone_122_layout = None
+        self.btn_1221 = None
+        self.btn_1222 = None
+        self.time_layout = None
+        self.location_label = None
+        self.location_field = None
+        self.location_layout = None
+
+        self.validate_answer = True
+        self.date_layout = None
+        self.time_label = None
+        self.time_field = None
+
+        self.GPS_label = None
+        self.GPS_NS_lat: str = None
+        self.GPS_lat: float = None
+        self.GPS_lat_field = None
+        self.GPS_NS = None
+        self.GPS_EW = None
+        self.GPS_lon = None
+        self.GPS_lon_field = None
+        self.GPS_alti = None
+        self.GPS_layout = None
+        self.description_label = None
+        self.description_field = None
+        self.description_layout = None
+        self.pilot_Name = "Alain"
+        self.pilot_ID = None
+        self.pilot_Name_field = None
+        self.pilot_layout = None
+        self.pilot_ID_field = None
+        self.pilot_label = None
+
+        self.camera_VIS_ID_field = None
+        self.camera_VIS_maker_field = None
+        self.camera_VIS_tlapse_field = None
+        self.camera_VIS_layout = None
+        self.camera_VIS_t_layout = None
+        self.camera_VIS_t_label = None
+        self.camera_VIS_label = None
+        self.camera_VIS_deltatime_field = None
+        self.camera_VIS_deltatime = None
+        self.camera_VIS_timelaspe = None
+        self.camera_VIS_maker = None
+        self.camera_VIS_ID = None
+
+        self.camera_NIR_ID_field = None
+        self.camera_NIR_maker_field = None
+        self.camera_NIR_tlapse_field = None
+        self.camera_NIR_layout = None
+        self.camera_NIR_t_layout = None
+        self.camera_NIR_t_label = None
+        self.camera_NIR_label = None
+        self.camera_NIR_deltatime_field = None
+        self.camera_NIR_deltatime = None
+        self.camera_NIR_timelaspe = None
+        self.camera_NIR_maker = None
+        self.camera_NIR_ID = None
+
+        self.image_VIS_format = None
+        self.image_VIS_format_label = None
+        self.image_VIS_format_field = None
+        self.image_VIS_format_layout = None
+
+        self.image_NIR_format = None
+        self.image_NIR_format_label = None
+        self.image_NIR_format_field = None
+        self.image_NIR_format_layout = None
+        self.image_NIR_filter_layout = None
+        self.image_NIR_filter_maker = None
+        self.image_NIR_filter_maker_field = None
+        self.image_NIR_filter_band = None
+        self.image_NIR_filter_band_field = None
+        self.image_NIR_filter_label = None
+
 
         self.AerialPhotoFolder: str = self.pref.AerialPhotoFolder  # folder of images taken by VIS and NIR cameras
+        self.AerialPhotoFolder_VIS: str = self.pref.AerialPhotoFolder_VIS  # folder of images taken by VIS and NIR cameras
+        self.AerialPhotoFolder_NIR: str = self.pref.AerialPhotoFolder_NIR  # folder of images taken by VIS and NIR cameras
         self.AnalyticFolder: str = self.pref.AnalyticFolder  # technical folder containing information on the mission
         self.ImgIRdroneFolder: str = self.pref.ImgIRdroneFolder  # folder of images processed by IRDrone
         self.SynchroFolder: str = self.pref.SynchroFolder  # folder for images from the camera synchronization phase
@@ -410,91 +654,137 @@ class Window_create_file_structure(QDialog):
         self.missionFolder: str = self.pref.directory
 
         self.dic_takeoff_light: dict = dic_takeoff_light
+        self.dic_takeoff: dict[str, Any] = {}
+        self.date_label = None
+        self.date_field = None
 
         self.py_date_time = datetime.strptime(self.dic_takeoff_light['Date Exif'], "%Y:%m:%d %H:%M:%S")
         self.py_date = self.py_date_time.date()
         self.py_time = self.py_date_time.time()
 
+        self.progress_bar = None
+
         self.initGUI()
 
 
-    def initGUI(self):
+    def initGUI(self) -> None:
         """
-                 Definition of the user interface
-        :return:
-        """
+        Initialize the graphical user interface (GUI) for the mission creation dialog.
 
+        Sets up the window title, geometry, main layouts, action buttons, progress bar,
+        and initial input fields. Connects signals to their corresponding slots.
+        """
+        # Set window title
         self.setWindowTitle("Create a mission")
 
-        # Layouts
-        self.layout = QVBoxLayout(self)
-        width: int = 700   # Main window width
-        height: int = 500  # Main window height
+        # Main vertical layout
+        self.layout: QVBoxLayout = QVBoxLayout(self)
+
+        # Set window size
+        width: int = 700
+        height: int = 500
         self.setGeometry(0, 0, width, height)
 
-        # ---------------- init field of takeoff point -------------
+        # Initialize input fields for takeoff point
         self.init_fields()
         self.update_dic_takeoff()
 
-        self.zone_121 = QWidget()
+        # Zone 121: Placeholder widget (can hold dynamic content)
+        self.zone_121: QWidget = QWidget()
         self.layout.addWidget(self.zone_121)
 
-        self.zone_122 = QWidget()
+        # Zone 122: Buttons and progress bar
+        self.zone_122: QWidget = QWidget()
         self.layout.addWidget(self.zone_122)
 
-        self.btn_1221 = QPushButton("Validate create mission.")
+        # Action buttons
+        self.btn_1221: QPushButton = QPushButton("Validate create mission.")
         self.btn_1221.setStyleSheet("background-color: darkGray; color: black;")
-        self.btn_1222 = QPushButton("<< previous step")
+        self.btn_1222: QPushButton = QPushButton("<< previous step")
         self.btn_1222.setStyleSheet("background-color: darkGray; color: black;")
 
-        self.zone_122.layout = QHBoxLayout()
-        self.zone_122.layout.addWidget(self.btn_1222)
-        self.zone_122.layout.addWidget(self.btn_1221)
-        self.zone_122.setLayout(self.zone_122.layout)
+        # Horizontal layout for buttons
+        self.zone_122_layout = QHBoxLayout()
+        self.zone_122_layout.addWidget(self.btn_1222)
+        self.zone_122_layout.addWidget(self.btn_1221)
+        self.zone_122.setLayout(self.zone_122_layout)
 
+        # Connect buttons to slots
         self.btn_1221.clicked.connect(self.ok_clicked)
         self.btn_1222.clicked.connect(self.cancel_clicked)
 
+        # Progress bar setup
+        self.progress_bar: QProgressBar = QProgressBar(self)
+        self.progress_bar.setStyleSheet("QProgressBar { color: white; }")
+        self.progress_bar.setValue(0)
+        self.zone_122_layout.addWidget(self.progress_bar)
+
+        # Set initial focus sequence for UI fields
         self.focus_sequence()
+
+        # Center window on the specified screen
         Uti.center_on_screen(self, screen_Id=1)
+
+        # Set overall style
         self.setStyleSheet("background-color: white; color: black;")
 
+    def ok_clicked(self) -> None:
+        """
+        Slot called when the 'OK' button is clicked.
 
-    def ok_clicked(self):
-        """Method called when the 'OK' button is clicked.
+        1. Updates the takeoff dictionary with any user-modified fields.
+        2. Creates the main mission folder and its subfolder structure:
+           AerialPhotography, FlightAnalytics, ImgIRdrone, Synchro, mapping_MULTI, cameras.
+        3. Saves mission metadata to a JSON file.
+        4. Launches a background thread to transfer and rename VIS images,
+           updating the progress bar in real-time.
+        5. Sends the completed data back to the main window via a signal.
 
-        Updating dictionary data based on changes made by the user in free fields.
-
-        Creates the main mission folder (FLY_date_time_place) and the folder structure in the main folder
-         >AerialPhotography, FlightAnalytics, ImgIRdrone, Synchro, mapping_MULTI, cameras
-
-         Save the dictionary in a json file placed in the main folder.
-
-        Sends data ( validate_answer & self.dic_takeoff ) to Main_Window of Interactive_Main
-        To do this, use the emission of a signal (data_signal.emit() )
-
+        Notes on threading:
+            The image transfer can be time-consuming and may involve parallelized
+            operations internally (e.g., copying many large DNG files). If this
+            method were run in the main GUI thread, the Qt event loop would be
+            blocked, preventing the progress bar from updating and freezing the user interface.
+            To avoid this, a separate QThread is used, and the WorkerTransfert
+            object is moved to that thread. Progress updates and the final
+            completion signal are emitted via Qt signals, which safely update
+            the GUI from the main thread.
         """
         try:
+            # Update the takeoff dictionary with current field values
             self.update_dic_takeoff()
-            self.validate_answer = True
+            # Create mission folder and subfolders if they do not exist
             self.create_mission_folder()
+            # Update takeoff image metadata
             self.update_image_takeoff()
             self.update_transfert_info_VIS_dng_json()
-            self.data_signal_from_dialog_create_file_structure_to_main_window.emit(self.validate_answer, self.dic_takeoff)
-            self.close()
+
+            # Determine source and destination directories for VIS images
+            input_path: Optional[str] = self.dic_takeoff.get("File path take-off", None)
+            input_dir: Path = Path(input_path).parent
+            output_dir: Path = Path(self.dic_takeoff["File path mission"]) / "AerialPhotography" / "VIS"
+            # store output_dir for use by EXIF worker later
+            self.output_dir = output_dir
+
+            self.start_transfer_worker(input_dir, output_dir)
+            # Start the EXIF worker that will parse the files in self.output_dir
+            self.start_exif_worker(output_dir)
+
         except Exception as e:
-            print("error in Window_create_file_structure ok_clicked: ", e)
+            print("Error in Window_create_file_structure.ok_clicked:", e)
 
 
-    def cancel_clicked(self):
-        """Méthode appelée lorsque le bouton 'Cancel' est cliqué."""
+    def cancel_clicked(self) -> None:
+        """
+        Slot called when the 'Cancel' button is clicked.
+        Closes the current dialog window.
+        """
         try:
             self.close()
         except Exception as e:
-            print("error in Window_create_file_structure  cancel_clicked  ", e)
+            print("Error in Window_create_file_structure.cancel_clicked:", e)
 
-
-    def focus_sequence(self):
+    def focus_sequence(self) -> None:
         try:
             self.date_field.returnPressed.connect(self.time_field.setFocus)
             self.time_field.returnPressed.connect(self.location_field.setFocus)
@@ -527,8 +817,7 @@ class Window_create_file_structure(QDialog):
         except Exception as e:
             print("error __init__  Sequence of focuses ", e)
 
-
-    def init_fields(self):
+    def init_fields(self) -> None:
         """
         Initializes takeoff point data fields.
         The Date, Time, GPS coordinates and Location fields are pre-populated.
@@ -536,7 +825,17 @@ class Window_create_file_structure(QDialog):
         These fields cannot be modified by the user (setReadOnly(True),
         with the exception of the location field (setReadOnly(False).
         """
-        # ---------------- date field-------------------------------
+        self._init_date_mission()
+        self._init_time_mission()
+        self._init_location()
+        self._init_GPS()
+        self._init_description()
+        self._init_pilot()
+        self._init_VIS_camera()
+        self._init_NIR_camera()
+        self._init_NIR_filter()
+
+    def _init_date_mission(self):
         try:
             self.date_label = QLabel("Date:")
             self.date_field = QLineEdit(self)
@@ -559,15 +858,14 @@ class Window_create_file_structure(QDialog):
             self.date_field.setStyleSheet("background-color: gray; color: white;")
             self.date_field.setReadOnly(True)
 
-
             self.date_layout = QHBoxLayout()
             self.date_layout.addWidget(self.date_label)
             self.date_layout.addWidget(self.date_field)
             self.layout.addLayout(self.date_layout)
         except Exception as e:
-            print("error in init_fields   date field : ", e)
+            print("error in _init_date_mission : ", e)
 
-        # ---------------- time  field  -------------------------------
+    def _init_time_mission(self):
         try:
             self.time_label = QLabel("Hour:")
             self.time_field = QLineEdit(self)
@@ -597,9 +895,9 @@ class Window_create_file_structure(QDialog):
             self.time_layout.addWidget(self.time_field)
             self.layout.addLayout(self.time_layout)
         except Exception as e:
-            print("error in init_fields   time field : ", e)
+            print("error _init_time_mission : ", e)
 
-        # ------------------- Location field -------------------------
+    def _init_location(self):
         try:
             self.location_label = QLabel("Location :")
             self.location_field = QLineEdit(self)
@@ -613,121 +911,124 @@ class Window_create_file_structure(QDialog):
                 "font-style: italic;"
             )
             self.location_field.setReadOnly(False)
+            self.location_layout = QHBoxLayout()
+            self.location_layout.addWidget(self.location_label)
+            self.location_layout.addWidget(self.location_field)
+            self.layout.addLayout(self.location_layout)
         except Exception as e:
-            print("error in init_fields   Location field : ", e)
+            print("error _init_location : ", e)
 
-        self.location_layout = QHBoxLayout()
-        self.location_layout.addWidget(self.location_label)
-        self.location_layout.addWidget(self.location_field)
-        self.layout.addLayout(self.location_layout)
-
-
-        # ----------------  GPS field -------------------------------
-
-        self.GPS_label = QLabel("GPS:")
-        # Formatting GPS coordinates
-        self.GPS_NS_lat: str = None
-        self.GPS_lat: float = None
-        self.GPS_lat_field = QLineEdit(self)
-        GPS_lat_pattern = QRegularExpression(r"^[NS] \d{2}\.\d{5}$")
-        GPS_lat_validator = QRegularExpressionValidator(GPS_lat_pattern, self)
-        self.GPS_lat_field.setValidator(GPS_lat_validator)
-        self.GPS_lat_field.setText("N ")
-        self.GPS_lat_field.setInputMask(">A 99.99999;_")  # "A" will allow entry of any letter compatible with [NS] GPS_lat_pattern
-        self.GPS_lat_field.setPlaceholderText("N  00.00000")
-        self.GPS_lat_field.setText(f"E 48.858370 ")
-        self.GPS_lat_field.setStyleSheet("background-color: gray; color: white;")
-        self.GPS_lat_field.setReadOnly(True)
-
+    def _init_GPS(self):
         try:
-            lat_takeoff = f"{self.dic_takeoff_light['GPS N-S']} {str(self.dic_takeoff_light['GPS lat'])}"
-            self.GPS_lat_field.setText(lat_takeoff)
-        except Exception as e:
-            print("error in init_fields   GPS field  : ", e)
+            self.GPS_label = QLabel("GPS:")
+            # Formatting GPS coordinates
+            self.GPS_NS_lat: str = None
+            self.GPS_lat: float = None
+            self.GPS_lat_field = QLineEdit(self)
+            GPS_lat_pattern = QRegularExpression(r"^[NS] \d{2}\.\d{5}$")
+            GPS_lat_validator = QRegularExpressionValidator(GPS_lat_pattern, self)
+            self.GPS_lat_field.setValidator(GPS_lat_validator)
+            self.GPS_lat_field.setText("N ")
+            self.GPS_lat_field.setInputMask(">A 99.99999;_")  # "A" will allow entry of any letter compatible with [NS] GPS_lat_pattern
+            self.GPS_lat_field.setPlaceholderText("N  00.00000")
+            self.GPS_lat_field.setText(f"E 48.858370 ")
+            self.GPS_lat_field.setStyleSheet("background-color: gray; color: white;")
+            self.GPS_lat_field.setReadOnly(True)
 
-        self.GPS_NS: str = None
-        self.GPS_EW: str = None
-        self.GPS_lon: float = None
-        self.GPS_lon_field = QLineEdit(self)
-        GPS_lon_pattern = QRegularExpression(r"^[EW] \d{3}\.\d{5}$")
-        GPS_lon_validator = QRegularExpressionValidator(GPS_lon_pattern, self)
-        self.GPS_lon_field.setValidator(GPS_lon_validator)
-        self.GPS_lon_field.setText("E ")
-        self.GPS_lon_field.setInputMask(">A 999.99999;_")
-        self.GPS_lon_field.setPlaceholderText("E 000.00000")
-        self.GPS_lon_field.setText(f"E 2.294481 ")
-        self.GPS_lon_field.setStyleSheet("background-color: gray; color: white;")
-        self.GPS_lon_field.setReadOnly(True)
+            try:
+                lat_takeoff = f"{self.dic_takeoff_light['GPS N-S']} {str(self.dic_takeoff_light['GPS lat'])}"
+                self.GPS_lat_field.setText(lat_takeoff)
+            except Exception as e:
+                print("error in init_fields   GPS field  : ", e)
+
+            self.GPS_NS: str = None
+            self.GPS_EW: str = None
+            self.GPS_lon: float = None
+            self.GPS_lon_field = QLineEdit(self)
+            GPS_lon_pattern = QRegularExpression(r"^[EW] \d{3}\.\d{5}$")
+            GPS_lon_validator = QRegularExpressionValidator(GPS_lon_pattern, self)
+            self.GPS_lon_field.setValidator(GPS_lon_validator)
+            self.GPS_lon_field.setText("E ")
+            self.GPS_lon_field.setInputMask(">A 999.99999;_")
+            self.GPS_lon_field.setPlaceholderText("E 000.00000")
+            self.GPS_lon_field.setText(f"E 2.294481 ")
+            self.GPS_lon_field.setStyleSheet("background-color: gray; color: white;")
+            self.GPS_lon_field.setReadOnly(True)
+            try:
+                if float(self.dic_takeoff_light['GPS lon']) < 10:
+                    str_longitude = f"00{str(self.dic_takeoff_light['GPS lon'])}"
+                elif 10 <= float(self.dic_takeoff_light['GPS lon']) < 100:
+                    str_longitude = f"0{str(self.dic_takeoff_light['GPS lon'])}"
+                else:
+                    str_longitude = f"{str(self.dic_takeoff_light['GPS lon'])}"
+
+                lon_takeoff = f"{self.dic_takeoff_light['GPS E-W']} {str_longitude}"
+                self.GPS_lon_field.setText(lon_takeoff)
+            except Exception as e:
+                print("error in init_fields   GPS field  : ", e)
+
+            self.GPS_alti = str(self.dic_takeoff_light['GPS alti'])
+
+            self.GPS_layout = QHBoxLayout()
+            self.GPS_layout.addWidget(self.GPS_label)
+            self.GPS_layout.addWidget(self.GPS_lat_field)
+            self.GPS_layout.addWidget(self.GPS_lon_field)
+            self.layout.addLayout(self.GPS_layout)
+        except Exception as e:
+            print("error _init_GPS : ", e)
+
+    def _init_description(self):
         try:
-            if float(self.dic_takeoff_light['GPS lon']) < 10:
-                str_longitude = f"00{str(self.dic_takeoff_light['GPS lon'])}"
-            elif 10 <= float(self.dic_takeoff_light['GPS lon']) < 100:
-                str_longitude = f"0{str(self.dic_takeoff_light['GPS lon'])}"
-            else:
-                str_longitude = f"{str(self.dic_takeoff_light['GPS lon'])}"
+            self.description_label = QLabel("Short description :")
+            self.description_field = QLineEdit(self)
 
-            lon_takeoff = f"{self.dic_takeoff_light['GPS E-W']} {str_longitude}"
-            self.GPS_lon_field.setText(lon_takeoff)
+            self.description_layout = QHBoxLayout()
+            self.description_layout.addWidget(self.description_label)
+            self.description_layout.addWidget(self.description_field)
+            self.layout.addLayout(self.description_layout)
+            self.description_field.setText("Phase de test")
+            self.description_field.setStyleSheet(
+                "background-color: white; "
+                "color: black; "
+                "font-family: 'Comic Sans MS'; "
+                "font-size: 12pt; "
+                "font-weight: bold; "
+                "font-style: italic;"
+            )
+            self.description_field.setReadOnly(False)
         except Exception as e:
-            print("error in init_fields   GPS field  : ", e)
+            print("error _init_description : ", e)
 
-        self.GPS_alti = str(self.dic_takeoff_light['GPS alti'])
+    def _init_pilot(self):
+        try:
+            self.pilot_Name: str = "Florine"
+            self.pilot_ID: str = "FRA-RP-0000001957"
 
-        self.GPS_layout = QHBoxLayout()
-        self.GPS_layout.addWidget(self.GPS_label)
-        self.GPS_layout.addWidget(self.GPS_lat_field)
-        self.GPS_layout.addWidget(self.GPS_lon_field)
-        self.layout.addLayout(self.GPS_layout)
+            self.pilot_label = QLabel("Pilot:")
+            self.pilot_Name_field = QLineEdit(self)
+            self.pilot_Name_field.setText(self.pilot_Name)
+            self.pilot_Name_field.setStyleSheet(
+                "background-color: white; "
+                "color: black; "
+                "font-family: 'Comic Sans MS'; "
+                "font-size: 12pt; "
+                "font-weight: bold; "
+                "font-style: italic;"
+            )
+            self.pilot_Name_field.setReadOnly(False)
 
+            self.pilot_ID_field = QLineEdit(self)
+            self.pilot_ID_field.setText(self.pilot_ID)
 
-        # ------------------- Description --------------------------------
-        self.description_label = QLabel("Short description :")
-        self.description_field = QLineEdit(self)
+            self.pilot_layout = QHBoxLayout()
+            self.pilot_layout.addWidget(self.pilot_label)
+            self.pilot_layout.addWidget(self.pilot_Name_field)
+            self.pilot_layout.addWidget(self.pilot_ID_field)
+            self.layout.addLayout(self.pilot_layout)
+        except Exception as e:
+            print("error _init_pilot : ", e)
 
-        self.description_layout = QHBoxLayout()
-        self.description_layout.addWidget(self.description_label)
-        self.description_layout.addWidget(self.description_field)
-        self.layout.addLayout(self.description_layout)
-        self.description_field.setText("Phase de test")
-        self.description_field.setStyleSheet(
-            "background-color: white; "
-            "color: black; "
-            "font-family: 'Comic Sans MS'; "
-            "font-size: 12pt; "
-            "font-weight: bold; "
-            "font-style: italic;"
-        )
-        self.description_field.setReadOnly(False)
-
-
-        # ------------- Pilot imput --------------------------------------
-        self.pilot_Name: str = "Florine"
-        self.pilot_ID: str = "FRA-RP-0000001957"
-
-        self.pilot_label = QLabel("Pilot:")
-        self.pilot_Name_field = QLineEdit(self)
-        self.pilot_Name_field.setText(self.pilot_Name)
-        self.pilot_Name_field.setStyleSheet(
-            "background-color: white; "
-            "color: black; "
-            "font-family: 'Comic Sans MS'; "
-            "font-size: 12pt; "
-            "font-weight: bold; "
-            "font-style: italic;"
-        )
-        self.pilot_Name_field.setReadOnly(False)
-
-        self.pilot_ID_field = QLineEdit(self)
-        self.pilot_ID_field.setText(self.pilot_ID)
-
-        self.pilot_layout = QHBoxLayout()
-        self.pilot_layout.addWidget(self.pilot_label)
-        self.pilot_layout.addWidget(self.pilot_Name_field)
-        self.pilot_layout.addWidget(self.pilot_ID_field)
-        self.layout.addLayout(self.pilot_layout)
-
-        # ------------- VIS camera input ---------------------------------
-
+    def _init_VIS_camera(self):
         try:
             # camera VIS part 1
             self.camera_VIS_maker: str = self.dic_takeoff_light["Maker"]
@@ -777,12 +1078,10 @@ class Window_create_file_structure(QDialog):
             self.image_VIS_format_layout.addWidget(self.image_VIS_format_label)
             self.image_VIS_format_layout.addWidget(self.image_VIS_format_field)
             self.layout.addLayout(self.image_VIS_format_layout)
-
         except Exception as e:
-            print("error --init-- camera Vis", e)
+            print("error _init_VIS_camera : ", e)
 
-        # ------------- NIR camera input ---------------------------------------
-
+    def _init_NIR_camera(self):
         try:
             # camera NIR part 1
             self.camera_NIR_maker: str = "SJCam"
@@ -800,9 +1099,19 @@ class Window_create_file_structure(QDialog):
             self.camera_NIR_layout.addWidget(self.camera_NIR_ID_field)
             self.layout.addLayout(self.camera_NIR_layout)
 
+            # camera NIR part 3
+            self.image_NIR_format: str = "RAW"
+            self.image_NIR_format_label = QLabel("Image NIR format:")
+            self.image_NIR_format_field = QLineEdit(self)
+            self.image_NIR_format_field.setText(self.image_NIR_format)
+
+            self.image_NIR_format_layout = QHBoxLayout()
+            self.image_NIR_format_layout.addWidget(self.image_NIR_format_label)
+            self.image_NIR_format_layout.addWidget(self.image_NIR_format_field)
+            self.layout.addLayout(self.image_NIR_format_layout)
             # camera NIR part 2
-            self.camera_NIR_timelaspe: int = 3           # in second
-            self.camera_NIR_deltatime: float = 3894.91     # in second
+            self.camera_NIR_timelaspe: int = 3  # in second
+            self.camera_NIR_deltatime: float = 3894.91  # in second
 
             self.camera_NIR_t_label = QLabel("       timelapse in s | delta time in s:")
             self.camera_NIR_tlapse_field = QLineEdit(self)
@@ -815,19 +1124,12 @@ class Window_create_file_structure(QDialog):
             self.camera_NIR_t_layout.addWidget(self.camera_NIR_tlapse_field)
             self.camera_NIR_t_layout.addWidget(self.camera_NIR_deltatime_field)
             self.layout.addLayout(self.camera_NIR_t_layout)
+        except Exception as e:
+            print("error _init_NIR_camera : ", e)
 
-            # camera NIR part 3
-            self.image_NIR_format: str = "RAW"
-            self.image_NIR_format_label = QLabel("Image NIR format:")
-            self.image_NIR_format_field = QLineEdit(self)
-            self.image_NIR_format_field.setText(self.image_NIR_format)
-
-            self.image_NIR_format_layout = QHBoxLayout()
-            self.image_NIR_format_layout.addWidget(self.image_NIR_format_label)
-            self.image_NIR_format_layout.addWidget(self.image_NIR_format_field)
-            self.layout.addLayout(self.image_NIR_format_layout)
-
-            # camera NIR part 4
+    def _init_NIR_filter(self):
+        try:
+            # camera NIR part 4 (filter)
             self.image_NIR_filter_maker: str = "KOLARI VISION USA"  # Optic Concept LP830
             self.image_NIR_filter_band: int = 810
 
@@ -842,9 +1144,9 @@ class Window_create_file_structure(QDialog):
             self.image_NIR_filter_layout.addWidget(self.image_NIR_filter_maker_field)
             self.image_NIR_filter_layout.addWidget(self.image_NIR_filter_band_field)
             self.layout.addLayout(self.image_NIR_filter_layout)
-
         except Exception as e:
-            print("error --init-- camera NIR", e)
+            print("error _init_NIR_filter : ", e)
+
 
     def update_image_takeoff(self, verbose: bool = False) -> None:
         """
@@ -920,6 +1222,7 @@ class Window_create_file_structure(QDialog):
 
             "tkoff": {
                 "outputFolder": str(Path(self.missionFolder) / "FlightAnalytics"),
+                "original name": self.dic_takeoff_light["original name image take-off"],
                 "idMin": 1,
                 "idMax": 1,
                 "listCopiedImages": [
@@ -976,7 +1279,6 @@ class Window_create_file_structure(QDialog):
                 # Comparaison complète sur spectral_band / img_suffix / inputFolder
                 for key in ["spectral_band", "img_suffix", "inputFolder"]:
                     if not same_value(key):
-                        print(f'DEBUG  2000  update_transfert_info_VIS_dng_json    key = {key} same_value(key)= {same_value(key)}')
                         all_same = False
                         break
 
@@ -987,11 +1289,9 @@ class Window_create_file_structure(QDialog):
 
                 # Comparaison SEULEMENT outputFolder pour sync / fly
                 if all_same and not same_output_folder("sync"):
-                    print(f'DEBUG  2005  update_transfert_info_VIS_dng_json   ... all_same and not same_output_folder("sync")')
                     all_same = False
 
                 if all_same and not same_output_folder("fly"):
-                    print(f'DEBUG  2006  update_transfert_info_VIS_dng_json   ... all_same and not same_output_folder("fly")')
                     all_same = False
 
                 if all_same:
@@ -1029,7 +1329,8 @@ class Window_create_file_structure(QDialog):
 
             self.dic_takeoff = {
                 "File path mission": self.missionFolder,
-                "File path take-off": self.dic_takeoff_light["File path"],
+                "File path take-off": self.dic_takeoff_light["File path"],  # original file path of the take-off image
+                "original name image take-off": self.dic_takeoff_light["original name image take-off"],
                 "name image take-off": self.dic_takeoff_light["name image take-off"],
                 "suffix image take-off": self.dic_takeoff_light["suffix image take-off"],
                 "path mission image take-off": str(Path(self.missionFolder) / "FlightAnalytics" / self.dic_takeoff_light["name image take-off"]),
@@ -1057,7 +1358,7 @@ class Window_create_file_structure(QDialog):
                 "camera NIR ID": self.camera_NIR_ID_field.text(),
                 "camera NIR timelapse": int(self.camera_NIR_tlapse_field.text()),
                 "camera NIR deltatime": float(self.camera_NIR_deltatime_field.text()),
-                "img NIR ext": self.image_NIR_format_field.text(),
+                "original img NIR ext": self.image_NIR_format_field.text(),
                 "camera NIR filter maker": self.image_NIR_filter_maker_field.text(),
                 "camera NIR filter band": int(self.image_NIR_filter_band_field.text()),
                 "synchro": "Synchro/synchro.npy",
@@ -1073,6 +1374,9 @@ class Window_create_file_structure(QDialog):
                 "ODM folder": self.MappingFolder,
                 "cameras folder": self.CameraFolder
             }
+
+            # print(f'DEBUG  update_dic_takeoff  original name image take-off {self.dic_takeoff_light["original name image take-off"]}')
+            # print(f'DEBUG  update_dic_takeoff  name image take-off {self.dic_takeoff_light["name image take-off"]}')
         except Exception as e:
             print('error in update_dic_takeoff ', e)
 
@@ -1140,7 +1444,6 @@ class Window_create_file_structure(QDialog):
             print("error in build_mission_folder_name :", e)
 
 
-
     def create_mission_folder(self):
         """
         Create the mission folder structure (only creates missing folders,
@@ -1156,6 +1459,8 @@ class Window_create_file_structure(QDialog):
             self.SynchroFolder,
             self.MappingFolder,
             self.CameraFolder,
+            self.AerialPhotoFolder_VIS,
+            self.AerialPhotoFolder_NIR,
         ]
 
         try:
@@ -1196,16 +1501,152 @@ class Window_create_file_structure(QDialog):
             txt_time = f"{self.py_date_time.hour}{self.py_date_time.minute}"
             txt_comment = str(self.dic_takeoff['Location'])
 
-            Uti.show_info_message(
-                "IRDrone",
-                "Mission has been successfully created,",
-                f"in the folder:\nFLY_{txt_date}_{txt_time}_{txt_comment}"
-            )
-
-            self.accept()  # Close the form
-
         except Exception as e:
             print("Error in create_mission_folder (saving JSON):", e)
+
+
+    def start_transfer_worker(self, input_dir: Union[str, Path], output_dir: Union[str, Path], msg: str = "") -> None:
+        """
+        Create and start the TRANSFERT worker in a separate QThread.
+        The worker will emit progress and finished(str) when done.
+
+        Args:
+            input_dir (str | Path): folder containing source images
+            output_dir (str | Path): destination folder
+            msg (str): optional message to emit when finished
+        """
+        # Guard: ensure folders exist
+        if not input_dir or not output_dir:
+            print("[ERROR] Input or output folder not set — cannot start transfer worker.")
+            return
+
+        # Create thread + worker
+        self.transfert_thread = QtCore.QThread()
+        self.transfert_worker = WorkerTransfert(input_dir, output_dir)
+
+        # Move worker to its thread
+        self.transfert_worker.moveToThread(self.transfert_thread)
+
+        # Connect signals
+        self.transfert_thread.started.connect(self.transfert_worker.run)
+        self.transfert_worker.progress.connect(self.update_progress_transfer)
+        self.transfert_worker.finished.connect(self.on_transfer_finished)
+        self.transfert_worker.error.connect(self.on_transfer_error)
+
+        # Cleanup once finished
+        self.transfert_worker.finished.connect(self.transfert_thread.quit)
+        self.transfert_worker.finished.connect(self.transfert_worker.deleteLater)
+        self.transfert_thread.finished.connect(self.transfert_thread.deleteLater)
+
+        # Reset progress bar for this stage
+        self.progress_bar.setValue(0)
+
+        # Start the thread
+        self.transfert_thread.start()
+
+
+    def update_progress_transfer(self, value: int) -> None:
+        """Update progress bar"""
+        # Here we reuse the same progress bar; you can create a second one later.
+        self.progress_bar.setValue(value)
+
+
+    def on_transfer_finished(self) -> None:
+        """
+        Called when WorkerTransfert finished. Do NOT close the dialog here.
+        Show a short info and then start the EXIF worker to parse files already copied.
+        """
+        txt_date: str = f"{self.py_date_time.year}{self.py_date_time.month}{self.py_date_time.day}"
+        txt_time: str = f"{self.py_date_time.hour}{self.py_date_time.minute}"
+        txt_comment: str = str(self.dic_takeoff['Location'])
+        msg: str = f"in the folder:\nFLY_{txt_date}_{txt_time}_{txt_comment}"
+        print(f"[INFO] Transfer finished (transfer worker).\n {msg}")
+
+
+    def on_transfer_error(self, message: str) -> None:
+        """Handle TRANSFER worker errors (display and proceed)."""
+        print("[ERROR] TRANSFER worker:", message)
+        Uti.show_info_message("IRDrone", "EXIF worker error", message)
+        # decide whether to close or let user retry — here we close:
+        self.close()
+
+
+    def start_exif_worker(self, output_dir) -> None:
+        """
+        Create and start the EXIF worker in a separate QThread.
+        The worker will emit progress and finished(dict) when done.
+        """
+        txt_date: str = f"{self.py_date_time.year}{self.py_date_time.month}{self.py_date_time.day}"
+        txt_time: str = f"{self.py_date_time.hour}{self.py_date_time.minute}"
+        txt_comment: str = str(self.dic_takeoff['Location'])
+        msg: str = f"in the folder:\nFLY_{txt_date}_{txt_time}_{txt_comment}"
+        # Guard: ensure output_dir exists (should be set in ok_clicked)
+        if not hasattr(self, "output_dir") or self.output_dir is None:
+            print("[ERROR] output_dir not set — cannot start EXIF worker.")
+            return
+
+        # Create thread + worker
+        self.exif_thread = QtCore.QThread()
+        self.exif_worker = WorkerExif(str(output_dir), msg)  # WorkerExif expects folder path
+
+        # Move worker to its thread
+        self.exif_worker.moveToThread(self.exif_thread)
+
+        # Connect signals
+        self.exif_thread.started.connect(self.exif_worker.run)
+        self.exif_worker.progress.connect(self.update_progress_exif)
+        self.exif_worker.finished.connect(self.on_exif_finished)
+        self.exif_worker.error.connect(self.on_exif_error)
+
+        # Cleanup once finished
+        self.exif_worker.finished.connect(self.exif_thread.quit)
+        self.exif_worker.finished.connect(self.exif_worker.deleteLater)
+        self.exif_thread.finished.connect(self.exif_thread.deleteLater)
+
+        # Optionally, reset/show progress bar for EXIF stage
+        # self.progress_bar.setValue(0)
+
+        # Start the EXIF thread
+        self.exif_thread.start()
+
+
+    def update_progress_exif(self, value: int) -> None:
+        """Update progress bar"""
+        # Here we reuse the same progress bar; you can create a second one later.
+        self.progress_bar.setValue(value)
+
+
+    def on_exif_finished(self, exif_data: dict, msg) -> None:
+        """
+        Called when EXIF worker finished.
+        Now we can emit the data to the main window and close the dialog.
+        """
+        txt_date: str = f"{self.py_date_time.year}{self.py_date_time.month}{self.py_date_time.day}"
+        txt_time: str = f"{self.py_date_time.hour}{self.py_date_time.minute}"
+        txt_comment: str = str(self.dic_takeoff['Location'])
+        msg: str = f"in the folder:\nFLY_{txt_date}_{txt_time}_{txt_comment}"
+        Uti.show_info_message("IRDrone", "Creation des fichiers exif dans le dossier ", msg)
+        print("[INFO] EXIF parsing finished. :", msg)
+
+        # Emit the data to main window (you may want to include exif_data in the payload)
+        # If you want to pass exif_data upstream, adjust the signal signature in the main window accordingly.
+        self.data_signal_from_dialog_create_file_structure_to_main_window.emit(
+            self.validate_answer,
+            self.dic_takeoff,
+        )
+
+        # finally close the dialog
+        self.close()
+
+
+    def on_exif_error(self, message: str) -> None:
+        """Handle EXIF worker errors (display and proceed)."""
+        print("[ERROR] EXIF worker:", message)
+        Uti.show_info_message("IRDrone", "EXIF worker error", message)
+        # decide whether to close or let user retry — here we close:
+        self.close()
+
+
 
 
 

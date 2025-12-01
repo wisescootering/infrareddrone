@@ -43,6 +43,7 @@ class Main_Window(QMainWindow):
         self.list_dic_exif_xmp: list[dict] = None
         self.list_summary: list[dict] = None
         self.pathImageTakeoff = None
+        self.original_pathImageTakeoff = None
         self.image_display_size = (100, 100)
         self.def_app_dir = None
         self.def_user_dir = None
@@ -192,7 +193,6 @@ class Main_Window(QMainWindow):
         """
         if validate:
             self.dic_takeoff = dic_takeoff
-            print(f'DEBUG 1  handle_data_from_dialog_create_file_structure     dic_takeoff {dic_takeoff}')
             self.dialog_create_file_structure.data_signal_from_dialog_create_file_structure_to_main_window.disconnect()  # Disconnect the signal
             self.dialog_create_file_structure.close()  # Close dialog_create_file_structure
             self.btn_load_images.setAutoDefault(True)
@@ -221,8 +221,6 @@ class Main_Window(QMainWindow):
         height = 500  # height of the window
 
         # ----------------------- Choice of mission file -------------------------------------------------
-        print(f'DEBUG 2  open_window_load_set_images     ---------- Choice of mission file ------------')
-        print(f'DEBUG 2b  open_window_load_set_images     dic_takeoff {self.dic_takeoff}')
         folderMissionPath, coherent_response = Uti.choose_folder_mission(
             self.dic_takeoff,
             self.pref_screen.default_user_dir,
@@ -231,12 +229,18 @@ class Main_Window(QMainWindow):
         )
         if not coherent_response: return()
         # ---------------- Loads the 5 reference “VIS” images --------------------------------------------
-        if self.dic_takeoff is not None: self.pathImageTakeoff = self.dic_takeoff["path mission image take-off"]
+        if self.dic_takeoff is not None:
+            self.pathImageTakeoff = self.dic_takeoff["path mission image take-off"]
+            print(f'DEBUG  self.pathImageTakeoff = {self.pathImageTakeoff}')
+            self.original_pathImageTakeoff = self.dic_takeoff["File path take-off"]
+            print(f'DEBUG  self.original_pathImageTakeoff = {self.original_pathImageTakeoff}')
+
         dialog_VIS = LoadVisNirImagesDialog(width,
                                             height,
                                             "VIS",
                                             folderMission=folderMissionPath,
-                                            path_image_takeoff=self.pathImageTakeoff)
+                                            path_image_takeoff=self.pathImageTakeoff,
+                                            original_path_image_takeoff=self.original_pathImageTakeoff)
 
         dialog_VIS.exec()
         vis_timeline = getattr(dialog_VIS, "timeline", None)
@@ -263,7 +267,7 @@ class Main_Window(QMainWindow):
     # ===================================================================================
     #                   Button #3 click handlers
     #     Step 3 pre process images  (clock synchronization, adjustment of shooting frequencies
-    #     creating the timeline, calculation of geographic coordinates,
+    #     creating the absolut time line, calculation of geographic coordinates,
     #     camera attitudes( yaw, pitch roll).
     # ===================================================================================
 

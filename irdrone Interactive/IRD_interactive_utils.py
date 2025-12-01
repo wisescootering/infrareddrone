@@ -13,11 +13,14 @@ import json
 import shutil
 from datetime import datetime, date
 import time
-from typing import Optional, Union, Tuple, Iterable
+from typing import Any, Dict, Optional, Tuple, List, Union, Iterable
 from pathlib import Path
 from fractions import Fraction
 import re
 import numpy as np
+import tempfile
+import subprocess
+
 
 # -------------------- Exif Library -------------------------------
 import piexif
@@ -29,7 +32,6 @@ from PyQt6.QtWidgets import QMessageBox, QApplication
 # -----------------------------------------------------------------
 
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
-from typing import List, Optional
 import config as cf
 # ------------------------------------------------------------------
 
@@ -50,6 +52,8 @@ class Prefrence_Screen:
         self.screenAdjust = [0, 40]  # 40 for taskbar and
         self.windowDisplaySize = (800, 640)
         self.AerialPhotoFolder: str = "AerialPhotography"  # folder of images taken by VIS and NIR cameras
+        self.AerialPhotoFolder_VIS: str = "AerialPhotography/VIS"  # folder of images taken by VIS and NIR cameras
+        self.AerialPhotoFolder_NIR: str = "AerialPhotography/NIR"  # folder of images taken by VIS and NIR cameras
         self.AnalyticFolder: str = "FlightAnalytics"  # technical folder containing information on the mission
         self.ImgIRdroneFolder: str = "ImgIRdrone"  # folder of images processed by IRDrone
         self.SynchroFolder: str = "Synchro"  # folder for images from the camera synchronization phase
@@ -237,13 +241,13 @@ def extract_date_RAW_SJCam(fileName: str) -> tuple:
         if suffix:
             if suffix.lower() == "raw":
                 if index:
-                    shootingNumber = int((index + 1) / 2)
+                    shootingNumber = int(index + 1)
                 else:
                     print(Style.RED + f'Error {fileName} incompatible' + Style.RESET)
 
             elif suffix.lower() == "jpg":
                 if index:
-                    shootingNumber = int(index / 2)
+                    shootingNumber = int(index)
                 else:
                     print(Style.RED + f'Error {fileName} incompatible' + Style.RESET)
             else:
@@ -258,7 +262,6 @@ def extract_date_RAW_SJCam(fileName: str) -> tuple:
             second = int(prefix[14:16])
             # Create a datetime object for the shooting date
             shootingDate = datetime(year, month, day, hour, minute, second)
-            # print(f'[DEBUG 001 shootingNumber {shootingNumber} ...  prefix, index, suffix  { prefix, index, suffix}')
             return shootingNumber, shootingDate
 
     except Exception as e:
@@ -283,7 +286,6 @@ def extract_num_DNG_DJI(fileName: str) -> tuple:
                     shootingNumber = int(index)
                 else:
                     print(Style.RED + f'Error {fileName} incompatible' + Style.RESET)
-            # print(f'[DEBUG 002 shootingNumber {shootingNumber} ...  prefix, index, suffix  {prefix, index, suffix}')
             return shootingNumber
 
     except Exception as e:
@@ -1129,7 +1131,7 @@ def interpolationCameraCenterVis(x, k, dt, timelapse_Vis):
 
 # ----------------------time line
 
-def build_time_line(fichiers, numeros, dates, deltas, time_line, spectral_band="VIS"):
+def build_time_line_Old(fichiers, numeros, dates, deltas, time_line, spectral_band="VIS"):
     """
     Construit la structure d'une timeline pour un spectral_band (VIS ou NIR).
     Retourne un dictionnaire { spectral_band: [ dict_entry, ... ] }.
@@ -1151,33 +1153,86 @@ def build_time_line(fichiers, numeros, dates, deltas, time_line, spectral_band="
     return {spectral_band: data}
 
 
-def save_time_line_json(output_dir, *timeline_dicts, out_name="time_line.json"):
+def save_time_line_json(
+        output_dir: Union[str, Path],
+        *timeline_dicts: Dict[str, List[Dict]]
+) -> Path:
     """
-    Sauvegarde un fichier JSON qui fusionne plusieurs timelines.
-    timeline_dicts sont des dicts renvoyés par build_time_line.
+    Save multiple timelines (VIS, NIR, etc.) into a single JSON file.
+
+    Example of usage:
+        save_time_line_json(output_dir, vis_timeline, nir_timeline)
+
+    The final JSON file will have the structure:
+    {
+        "VIS": [ ... ],
+        "NIR": [ ... ]
+    }
     """
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    out_file = output_dir / out_name
+    try:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        out_file: Path = output_dir / "time_line.json"
 
-    merged = {}
-    for d in timeline_dicts:
-        if not isinstance(d, dict):
-            continue
-        merged.update(d)  # clé = spectral_band (ex: "VIS") remplacera/ajoutera
+        # Merge all timeline dictionaries by spectral band key
+        merged: dict[str, list[dict]] = {}
+        for d in timeline_dicts:
+            merged.update(d)
 
-    with open(out_file, "w", encoding="utf-8") as fh:
-        json.dump(merged, fh, indent=4, ensure_ascii=False)
+        with open(out_file, "w", encoding="utf-8") as f:
+            json.dump(merged, f, indent=4, ensure_ascii=False)
 
+        print(Style.GREEN + f"💾 JSON file saved: {out_file}" + Style.RESET)
+    except Exception as e:
+        print(f'error in (Uti)   save_time_line_json   {e}')
     return out_file
 
 
 def safe_path(path):
+    """
+    Convert a path (string or Path) into a clean, absolute, POSIX-style path.
+
+    This function performs two main operations:
+
+    1. **Path.resolve()**
+       - Converts the path to an **absolute path**.
+       - Normalises “..” and “.” components.
+       - Follows symbolic links when possible.
+       - Raises an exception if the path is invalid or contains illegal characters.
+       Example:
+           "C:\\Users\\Alain\\..\\Documents" → "C:\\Users\\Documents"
+
+    2. **Path.as_posix()**
+       - Converts the path to a **POSIX format**, meaning:
+         - All backslashes `\` are converted to forward slashes `/`
+         - Useful for:
+             * JSON files
+             * Logs
+             * URLs
+             * Cross-platform consistency (Windows/Linux/Mac)
+       Example:
+           "C:\\Users\\Alain\\Documents" → "C:/Users/Alain/Documents"
+
+    If an error occurs during resolution (invalid or forbidden path),
+    the function prints a warning and returns the original string unchanged.
+
+    Parameters
+    ----------
+    path : str or Path
+        Input path to clean and normalize.
+
+    Returns
+    -------
+    str
+        The cleaned POSIX-style absolute path, or the original value as str
+        if normalisation failed.
+    """
     try:
         return Path(path).resolve().as_posix()
     except Exception as e:
         print(f"[safe_path] ⚠️ Invalid path {path} : {e}")
         return str(path)
+
 
 
 def _format_duration(seconds: float) -> str:
@@ -1307,50 +1362,192 @@ def copy_images(inputDir: str, imgName: str, outputDir: str) -> Optional[str]:
     return f"File {imgName} was successfully copied from {inputDir} to {outputDir}."
 
 
-def change_icon(folder_path, file_path):
-    if not folder_path:  # choice of the target folder whose icon will be changed
-        print("No folder selected or operation canceled.")
-        exit()
-    if not os.path.exists(folder_path):
-        print("folder ", folder_path, " not exist.")
-        exit()
-    try:  # Checking if the folder is editable
-        temp_file = os.path.join(folder_path, 'temp.txt')
-        with open(temp_file, 'w') as f:
-            f.write('test')
-        os.remove(temp_file)
-    except PermissionError:
-        print("The selected folder cannot be edited.")
-        exit()
 
+def copy_and_rename_images(input_dir: Path,
+                           input_img_name: str,
+                           output_dir: Path,
+                           output_img_name: str,
+                           verbose: bool = True
+                           ) -> None:
+    """
+    Copy an image from input_dir/input_img_name to output_dir/output_img_name,
+    only if the destination file does not already exist.
+
+    Conditions:
+        - If output file exists → do nothing.
+        - If output file does NOT exist:
+            * Verify that input file exists.
+            * Verify that input and output extensions match.
+            * Copy input -> output.
+
+    Parameters
+    ----------
+    input_dir : Path
+        Source directory.
+    input_img_name : str
+        Filename to copy.
+    output_dir : Path
+        Destination directory.
+    output_img_name : str
+        Filename after renaming.
+    """
+
+    src = input_dir / input_img_name
+    dst = output_dir / output_img_name
+    nothing_done = False
+
+
+    # 1) Check if target exists → do nothing
+    if dst.exists():
+        nothing_done = True
+        if verbose: print(Style.CYAN + f"Target already exists, nothing done: {dst}" + Style.RESET)
+
+    # 2) Check if source exists
+    if not src.exists():
+        if verbose: print(Style.YELLOW + f"⚠️  Source file not found: {src}" + Style.RESET)
+        return
+
+    # 3) Check extension
+    if src.suffix.lower() != dst.suffix.lower():
+        if verbose: print(Style.YELLOW + f"⚠️  Extension mismatch: {src.suffix} != {dst.suffix}" + Style.RESET)
+        return
+
+    # 4) Copy
     try:
-        if not file_path:  # Checking the path to the ico file
-            print("No .ico file selected or operation canceled.")
-            exit()
-        if not os.path.exists(file_path):
-            print("file icon ", file_path, " not exist.")
-            exit()
+        if not nothing_done:
+            shutil.copy2(src, dst)   # copy2 keeps metadata
+            if verbose: print(Style.GREEN + f"Copied: {src} → {dst}" + Style.RESET)
     except Exception as e:
-        print("error icon file : ", e)
+        print(Style.RED + f"ERROR copying file: {e}" + Style.RESET)
 
-    # Copies the desktop.ini file from a temporary location
-    desktop_ini_path = os.path.join(folder_path, 'desktop.ini')
 
-    # Creates a desktop.ini file with the custom icon in a temporary location
-    temp_desktop_ini_path = os.path.join(os.path.expanduser("~"), 'temp_desktop.ini')
-    with open(temp_desktop_ini_path, 'w') as desktop_ini:
-        desktop_ini.write('[.ShellClassInfo]\n')
-        desktop_ini.write('IconResource={},0\n'.format(file_path))
+def change_icon(folder_path: Union[str, Path], file_path: Union[str, Path]) -> None:
+    """
+    Change the icon of a Windows folder by creating/updating the 'desktop.ini' file
+    and marking the folder as a system folder.
 
-    # Copy file from temporary location to target folder
-    shutil.copy(temp_desktop_ini_path, desktop_ini_path)
+    Args:
+        folder_path (str | Path): Path to the target folder.
+        file_path (str | Path): Path to the .ico file to use as the folder icon.
 
-    # Mark the folder as system for the custom icon to be used
+    Raises:
+        FileNotFoundError: If the folder or icon file does not exist.
+        PermissionError: If the folder is not writable.
+        OSError: For other errors when creating or copying files.
+        RuntimeError: If not running on Windows.
+
+    Notes:
+        - Works only on Windows.
+        - Sets the folder attribute to 'system' so Windows recognizes the custom icon.
+        - Overwrites any existing desktop.ini for the folder.
+    """
+    # Ensure running on Windows
+    if os.name != 'nt':
+        raise RuntimeError("change_icon is only supported on Windows.")
+
+    folder_path = Path(folder_path)
+    file_path = Path(file_path)
+
+    if not folder_path.exists():
+        raise FileNotFoundError(f"Target folder does not exist: {folder_path}")
+    if not file_path.exists():
+        raise FileNotFoundError(f"Icon file does not exist: {file_path}")
+
+    # Check write permission by attempting to create a temporary file
+    try:
+        temp_file = folder_path / 'temp_permission_check.txt'
+        temp_file.write_text('test')
+        temp_file.unlink()
+    except PermissionError:
+        raise PermissionError(f"Folder is not writable: {folder_path}")
+
+    # Create a temporary desktop.ini file
+    try:
+        with tempfile.NamedTemporaryFile('w', delete=False, suffix='.ini') as tmp_ini:
+            tmp_ini.write('[.ShellClassInfo]\n')
+            tmp_ini.write(f'IconResource={file_path},0\n')
+            temp_ini_path = Path(tmp_ini.name)
+    except Exception as e:
+        raise OSError(f"Failed to create temporary desktop.ini: {e}")
+
+    # Copy the temporary desktop.ini to the target folder
+    try:
+        shutil.copy(temp_ini_path, folder_path / 'desktop.ini')
+    finally:
+        temp_ini_path.unlink(missing_ok=True)
+
+    # Mark the folder as system so Windows uses desktop.ini
     os.system(f'attrib +s "{folder_path}"')
 
-    # print(f"Folder icon {folder_name} has been successfully replaced.")
 
-    return
+def list_files_with_suffix(suffix: str, folder: str) -> List[Path]:
+    """
+    Return a sorted list of files with a given suffix in a folder.
+
+    Args:
+        suffix (str): File extension without the dot, e.g., 'dng' or 'json'.
+        folder (str): Path to the folder to search in.
+
+    Returns:
+        List[Path]: Sorted list of Path objects for files matching the suffix.
+
+    Raises:
+        FileNotFoundError: If the specified folder does not exist.
+    """
+    folder_path = Path(folder)
+    if not folder_path.exists():
+        raise FileNotFoundError(f"Folder not found: {folder}")
+
+    # Use glob to find files matching the suffix and sort them
+    return sorted(folder_path.glob(f"*.{suffix}"))
+
+
+def rename_file_VIS(input_img_name: str) -> str:
+    """
+    Rename a VIS image file from format 'HYPERLAPSE_0123.dng' to 'VIS_0123.dng'.
+
+    This function extracts the numeric part of the original filename and
+    creates a new filename with 'VIS_' prefix, keeping a 4-digit number
+    with leading zeros.
+
+    Args:
+        input_img_name (str): Input filename, expected format 'HYPERLAPSE_XXXX.dng'.
+
+    Returns:
+        str: Renamed filename, format 'VIS_XXXX.dng'.
+
+    Raises:
+        ValueError: If the input filename does not match the expected pattern.
+    """
+    stem = Path(input_img_name).stem  # e.g., 'HYPERLAPSE_0123'
+    try:
+        num = int(stem.split("_")[1])  # Split by underscore and take the second part as number
+    except (IndexError, ValueError) as e:
+        raise ValueError(f"Invalid filename: '{input_img_name}'. Expected format: 'HYPERLAPSE_XXXX.dng'.") from e
+    output_img_name = f"VIS_{num:04d}.dng"
+    return output_img_name
+
+
+def read_exiftool_metadata(path: Path) -> dict:
+    """
+    Read all metadata of an image using exiftool, including XMP (attitude angles).
+    Return a dictionary.
+    """
+    try:
+        result = subprocess.run(
+            ["exiftool", "-j", "-n", str(path)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True
+        )
+        data = json.loads(result.stdout)
+        return data[0] if data else {}
+
+    except subprocess.CalledProcessError as e:
+        print("Exiftool error:", e.stderr)
+        return {}
+
 
 
 
