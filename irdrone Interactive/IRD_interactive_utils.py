@@ -18,8 +18,13 @@ from pathlib import Path
 from fractions import Fraction
 import re
 import numpy as np
+from fractions import Fraction
 import tempfile
 import subprocess
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import piexif
+from collections import Counter
+
 
 
 # -------------------- Exif Library -------------------------------
@@ -34,6 +39,32 @@ from PyQt6.QtWidgets import QMessageBox, QApplication
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
 import config as cf
 # ------------------------------------------------------------------
+
+# ------------------------------------------------------
+# ExifTool path detection (Windows / Linux / macOS)
+# ------------------------------------------------------
+if os.name == 'nt':
+    EXIFTOOLPATH = osp.join(
+        osp.dirname(__file__),
+        "..", "thirdparty", "exiftool", "exiftool.exe"
+    )
+else:
+    EXIFTOOLPATH = "exiftool"
+if os.name == 'nt' and not osp.exists(EXIFTOOLPATH):
+    print(f"[WARNING] ExifTool not found at {EXIFTOOLPATH}")
+
+# --------------- SJCam converter RAW to DNG
+
+exe_path = r"C:\Documents-Alain\Projet-IRdrone\Code_Python\irdrone\thirdparty\sjcam_raw2dng\sjcam_raw2dng.exe"
+
+if os.name == 'nt':
+    SJCONVERTERPATH = exe_path
+else:
+    SJCONVERTERPATH = "sjcam_raw2dng"
+if os.name == 'nt' and not osp.exists(SJCONVERTERPATH):
+    print(f"[WARNING] SJCam RAW converter not found at {SJCONVERTERPATH}")
+
+
 
 
 class Prefrence_Screen:
@@ -61,246 +92,6 @@ class Prefrence_Screen:
         self.CameraFolder: str = "cameras"  # here the “s” of cameras is obligatory. Used by ODM
         self.background_color = "white"
         self.txt_color = "black"
-
-
-def show_info_message(title: str, text: str, informativeText: str, icon=QMessageBox.Icon.Information):
-    """
-    Display an info message.
-    :param title:
-    :param text:
-    :param informativeText:
-    :param icon:
-    :return:
-    """
-    try:
-        msg_box = QMessageBox()
-        msg_box.setIcon(icon)
-        msg_box.setText(text)
-        msg_box.setInformativeText(informativeText)
-        msg_box.setWindowTitle(title)
-        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-        msg_box.exec()
-    except Exception as e:
-        print("error  in def show_info_message(self, title, text, informativeText, icon)", e)
-
-
-def show_warning_OK_Cancel_message(title: str, text: str, informativeText: str, icon=QMessageBox.Icon.Warning):
-    """
-    Display an warning OK Cancel message.
-    :param title:
-    :param text:
-    :param informativeText:
-    :param icon:
-    :return:
-    """
-    msg_box = QMessageBox()
-    msg_box.setIcon(icon)
-    msg_box.setText(text)
-    msg_box.setInformativeText(informativeText)
-    msg_box.setWindowTitle(title)
-    msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-    msg_box.exec()
-
-
-def show_error_message(message: str):
-    """
-    Display an error message.
-    :param message:
-    :return:
-    """
-
-    msgBox = QMessageBox()
-    msgBox.setIcon(QMessageBox.Icon.Critical)
-    msgBox.setText(message)
-    msgBox.setWindowTitle("Error")
-    msgBox.setStandardButtons(QMessageBox.StandardButton.Ok)
-    msgBox.exec()
-
-
-def datetimePy2datetimeJson(py_datetime: datetime) -> str:
-    """
-    Convert a Python datetime object (date & time ) to a string in JSON datetime format (Exif).
-
-    Parameters:
-    - py_datetime (datetime): A Python datetime object to be converted.
-
-    Returns:
-    - str: The input datetime as a string in JSON/Exif datetime format ('%Y:%m:%d %H:%M:%S').
-
-    Note:
-    - The function uses the strftime method to format the datetime in the '%Y:%m:%d %H:%M:%S' format,
-      which is commonly used to represent times in JSON / EXIF.
-    """
-    return py_datetime.strftime('%Y:%m:%d %H:%M:%S')
-
-
-def datetimeJson2datetimePy(json_str: str) -> datetime:
-    """
-    Convert a Python datetime object (date & time ) to a string in JSON datetime format (Exif).
-
-    Parameters:
-    - py_datetime (datetime): A Python datetime object to be converted.
-
-    Returns:
-    - str: The input datetime as a string in JSON/Exif datetime format ('%Y:%m:%d %H:%M:%S').
-
-    Note:
-    - The function uses the strftime method to format the time in the '%Y:%m:%d %H:%M:%S' format,
-      which is commonly used to represent times in JSON / EXIF.
-    """
-    return datetime.strptime(json_str, '%Y:%m:%d %H:%M:%S')
-
-
-def datePy2dateJson(py_date: datetime) -> str:
-    """
-    Convert a Python datetime object to a string in JSON date format.
-
-    Parameters:
-    - py_date (datetime): A Python datetime object to be converted.
-
-    Returns:
-    - str: The input date as a string in JSON date format ('%Y-%m-%d').
-
-    Note:
-    - The function uses the strftime method to format the date in the 'YYYY-MM-DD' format,
-      which is commonly used to represent dates in JSON.
-    - If the input is None, the function returns None.
-    """
-    return py_date.strftime('%Y:%m:%d')
-
-
-def dateJson2datePy(json_str: str) -> date:
-    """
-    Convert a string representing a date in JSON format to a Python date object.
-
-    Parameters:
-    - json_str (str): A string representing a date in JSON format ('%Y-%m-%d').
-
-    Returns:
-    - date: The input string converted to a Python date object.
-
-    Note:
-    - The function uses the strptime method of the datetime class to parse the input string and
-      convert it to a date object. The input string should be in 'YYYY-MM-DD' format.
-    - If the input is None, the function returns None.
-    """
-    return datetime.strptime(json_str, '%Y:%m:%d').date()
-
-
-def timePy2timeJson(py_time: time) -> str:
-    """
-    Convert a Python time object to a string in JSON time format.
-
-    Parameters:
-    - py_time (time): A Python time object to be converted.
-
-    Returns:
-    - str: The input time as a string in JSON time format ('%H:%M:%S').
-
-    Note:
-    - The function uses the strftime method to format the time in the 'HH:MM:SS' format,
-      which is commonly used to represent times in JSON.
-    """
-    return py_time.strftime('%H:%M:%S')
-
-
-def timeJson2timePy(json_str: str) -> time:
-    """
-    Convert a string representing a time in JSON format to a Python time object.
-
-    Parameters:
-    - json_str (str): A string representing a time in JSON format ('%H:%M:%S').
-
-    Returns:
-    - time: The input string converted to a Python time object.
-
-    Example usage:
-    - loaded_data = json.load(file)
-    - py_time = timeJson2timePy(loaded_data["Hour"])
-
-    Note:
-    - The function uses the strptime method of the datetime class to parse the input string and
-      convert it to a time object. The input string should be in 'HH:MM:SS' format.
-    - If the input is None, the function returns None.
-    """
-    return datetime.strptime(json_str, '%H:%M:%S').time()
-
-
-
-def extract_date_RAW_SJCam(fileName: str) -> tuple:
-    """
-    Extract shooting number and shooting date from a RAW or JPG file name.
-
-    :param fileName: The file name with suffix.
-    :type fileName: str
-    :return: A tuple containing the shooting number (int) and shooting date (datetime).
-    """
-    prefix, index, suffix = parse_filename(fileName, allowed_suffix=["raw", "jpg"])
-    shootingNumber, shootingDate = -9999, None
-    try:
-        if suffix:
-            if suffix.lower() == "raw":
-                if index:
-                    shootingNumber = int(index + 1)
-                else:
-                    print(Style.RED + f'Error {fileName} incompatible' + Style.RESET)
-
-            elif suffix.lower() == "jpg":
-                if index:
-                    shootingNumber = int(index)
-                else:
-                    print(Style.RED + f'Error {fileName} incompatible' + Style.RESET)
-            else:
-                shootingNumber = int(index)
-
-            # Extract year, month, day, hour, minute, and second from the file name
-            year = int(prefix[0:4])
-            month = int(prefix[5:7])
-            day = int(prefix[7:9])
-            hour = int(prefix[10:12])
-            minute = int(prefix[12:14])
-            second = int(prefix[14:16])
-            # Create a datetime object for the shooting date
-            shootingDate = datetime(year, month, day, hour, minute, second)
-            return shootingNumber, shootingDate
-
-    except Exception as e:
-        print(Style.RED + f'error in extract_date_RAW_SJCam   {fileName} incompatible.   {e}' + Style.RESET)
-        return shootingNumber, shootingDate
-
-
-def extract_num_DNG_DJI(fileName: str) -> tuple:
-    """
-    Extract shooting number and shooting date from a DNG file name.
-
-    :param fileName: The file name with suffix.
-    :type fileName: str
-    :return: A tuple containing the shooting number (int) and shooting date (datetime).
-    """
-    prefix, index, suffix = parse_filename(fileName, allowed_suffix=["dng"])
-    shootingNumber = -9999
-    try:
-        if suffix:
-            if suffix.lower() == "dng":
-                if index:
-                    shootingNumber = int(index)
-                else:
-                    print(Style.RED + f'Error {fileName} incompatible' + Style.RESET)
-            return shootingNumber
-
-    except Exception as e:
-        print(Style.RED + f'error in extract_num_DNG_DJI   {fileName} incompatible.   {e}' + Style.RESET)
-        return -9999
-
-
-
-    if fileName.split(".")[1].lower() in ["dng"]:
-        temp = fileName.split(".")[0].split("_")[1]
-        shootingNumber = int(temp)
-        return shootingNumber
-
-    # Return None values if the file suffix is not RAW or JPG
-    return None, None
 
 
 
@@ -339,13 +130,11 @@ def parse_filename(file_name: str, allowed_suffix: Optional[Iterable[str]] = Non
 
     return prefix, index, img_suffix
 
-
 def show(widget):
     try:
         widget.show()
     except Exception as e:
         print("show error ", e)
-
 
 def center_on_screen(widget, screen_Id: int = 0, screen_adjust=(1, 1), window_display_size=(800, 650)):
     try:
@@ -379,7 +168,6 @@ def center_on_screen(widget, screen_Id: int = 0, screen_adjust=(1, 1), window_di
                 print("error 1  in center_on_screen :", e)
     except Exception as e:
         print("error in center_on_screen :", e)
-
 
 def folder_name_consistency_analysis(folderMissionPath: str) -> bool:
     """
@@ -424,6 +212,290 @@ def folder_name_consistency_analysis(folderMissionPath: str) -> bool:
 
     return coherent_response
 
+def show_info_message(title: str, text: str, informativeText: str, icon=QMessageBox.Icon.Information):
+    """
+    Display an info message.
+    :param title:
+    :param text:
+    :param informativeText:
+    :param icon:
+    :return:
+    """
+    try:
+        msg_box = QMessageBox()
+        msg_box.setIcon(icon)
+        msg_box.setText(text)
+        msg_box.setInformativeText(informativeText)
+        msg_box.setWindowTitle(title)
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg_box.exec()
+    except Exception as e:
+        print("error  in def show_info_message(self, title, text, informativeText, icon)", e)
+
+def show_warning_OK_Cancel_message(title: str, text: str, informativeText: str, icon=QMessageBox.Icon.Warning):
+    """
+    Display an warning OK Cancel message.
+    :param title:
+    :param text:
+    :param informativeText:
+    :param icon:
+    :return:
+    """
+    msg_box = QMessageBox()
+    msg_box.setIcon(icon)
+    msg_box.setText(text)
+    msg_box.setInformativeText(informativeText)
+    msg_box.setWindowTitle(title)
+    msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+    msg_box.exec()
+
+def show_error_message(message: str):
+    """
+    Display an error message.
+    :param message:
+    :return:
+    """
+
+    msgBox = QMessageBox()
+    msgBox.setIcon(QMessageBox.Icon.Critical)
+    msgBox.setText(message)
+    msgBox.setWindowTitle("Error")
+    msgBox.setStandardButtons(QMessageBox.StandardButton.Ok)
+    msgBox.exec()
+
+def image_takeoff_available_test(dic_takeoff: dict, default_user_dir: Path):
+    """
+
+    :param dic_takeoff:
+    :param default_user_dir:
+    :return:
+    """
+    try:
+        image_takeoff_available = False
+        path_image_mission = Path(default_user_dir)
+        try:
+            if isinstance(dic_takeoff, dict) and 'File path mission' in dic_takeoff:
+                path_image_mission = Path(dic_takeoff['File path mission'])
+                if path_image_mission.exists():
+                    coherent_response = folder_name_consistency_analysis(path_image_mission)
+                    if coherent_response:
+                        image_takeoff_available = True
+        except (TypeError, KeyError) as e:
+            print("Error in image_takeoff_available", e)
+            pass
+        return image_takeoff_available, path_image_mission
+    except Exception as e:
+        print("error   in image_takeoff_available", e)
+
+# ---------------- dates ---------------------------------------
+
+def datetimePy2datetimeJson(py_datetime: datetime) -> str:
+    """
+    Convert a Python datetime object (date & time ) to a string in JSON datetime format (Exif).
+
+    Parameters:
+    - py_datetime (datetime): A Python datetime object to be converted.
+
+    Returns:
+    - str: The input datetime as a string in JSON/Exif datetime format ('%Y:%m:%d %H:%M:%S').
+
+    Note:
+    - The function uses the strftime method to format the datetime in the '%Y:%m:%d %H:%M:%S' format,
+      which is commonly used to represent times in JSON / EXIF.
+    """
+    return py_datetime.strftime('%Y:%m:%d %H:%M:%S')
+
+def datetimeJson2datetimePy(json_str: str) -> datetime:
+    """
+    Convert a Python datetime object (date & time ) to a string in JSON datetime format (Exif).
+
+    Parameters:
+    - py_datetime (datetime): A Python datetime object to be converted.
+
+    Returns:
+    - str: The input datetime as a string in JSON/Exif datetime format ('%Y:%m:%d %H:%M:%S').
+
+    Note:
+    - The function uses the strftime method to format the time in the '%Y:%m:%d %H:%M:%S' format,
+      which is commonly used to represent times in JSON / EXIF.
+    """
+    return datetime.strptime(json_str, '%Y:%m:%d %H:%M:%S')
+
+def datePy2dateJson(py_date: datetime) -> str:
+    """
+    Convert a Python datetime object to a string in JSON date format.
+
+    Parameters:
+    - py_date (datetime): A Python datetime object to be converted.
+
+    Returns:
+    - str: The input date as a string in JSON date format ('%Y-%m-%d').
+
+    Note:
+    - The function uses the strftime method to format the date in the 'YYYY-MM-DD' format,
+      which is commonly used to represent dates in JSON.
+    - If the input is None, the function returns None.
+    """
+    return py_date.strftime('%Y:%m:%d')
+
+def dateJson2datePy(json_str: str) -> date:
+    """
+    Convert a string representing a date in JSON format to a Python date object.
+
+    Parameters:
+    - json_str (str): A string representing a date in JSON format ('%Y-%m-%d').
+
+    Returns:
+    - date: The input string converted to a Python date object.
+
+    Note:
+    - The function uses the strptime method of the datetime class to parse the input string and
+      convert it to a date object. The input string should be in 'YYYY-MM-DD' format.
+    - If the input is None, the function returns None.
+    """
+    return datetime.strptime(json_str, '%Y:%m:%d').date()
+
+def timePy2timeJson(py_time: time) -> str:
+    """
+    Convert a Python time object to a string in JSON time format.
+
+    Parameters:
+    - py_time (time): A Python time object to be converted.
+
+    Returns:
+    - str: The input time as a string in JSON time format ('%H:%M:%S').
+
+    Note:
+    - The function uses the strftime method to format the time in the 'HH:MM:SS' format,
+      which is commonly used to represent times in JSON.
+    """
+    return py_time.strftime('%H:%M:%S')
+
+def timeJson2timePy(json_str: str) -> time:
+    """
+    Convert a string representing a time in JSON format to a Python time object.
+
+    Parameters:
+    - json_str (str): A string representing a time in JSON format ('%H:%M:%S').
+
+    Returns:
+    - time: The input string converted to a Python time object.
+
+    Example usage:
+    - loaded_data = json.load(file)
+    - py_time = timeJson2timePy(loaded_data["Hour"])
+
+    Note:
+    - The function uses the strptime method of the datetime class to parse the input string and
+      convert it to a time object. The input string should be in 'HH:MM:SS' format.
+    - If the input is None, the function returns None.
+    """
+    return datetime.strptime(json_str, '%H:%M:%S').time()
+
+def extract_date_RAW_SJCam(fileName: str) -> tuple:
+    """
+    Extract shooting number and shooting date from a RAW or JPG file name.
+
+    :param fileName: The file name with suffix.
+    :type fileName: str
+    :return: A tuple containing the shooting number (int) and shooting date (datetime).
+    """
+    prefix, index, suffix = parse_filename(fileName, allowed_suffix=["raw", "jpg"])
+    shootingNumber, shootingDate = -9999, None
+    try:
+        if suffix:
+            if suffix.lower() == "raw":
+                if index:
+                    shootingNumber = int(index + 1)
+                else:
+                    print(Style.RED + f'Error {fileName} incompatible' + Style.RESET)
+
+            elif suffix.lower() == "jpg":
+                if index:
+                    shootingNumber = int(index)
+                else:
+                    print(Style.RED + f'Error {fileName} incompatible' + Style.RESET)
+            else:
+                shootingNumber = int(index)
+
+            # Extract year, month, day, hour, minute, and second from the file name
+            year = int(prefix[0:4])
+            month = int(prefix[5:7])
+            day = int(prefix[7:9])
+            hour = int(prefix[10:12])
+            minute = int(prefix[12:14])
+            second = int(prefix[14:16])
+            # Create a datetime object for the shooting date
+            shootingDate = datetime(year, month, day, hour, minute, second)
+            return shootingNumber, shootingDate
+
+    except Exception as e:
+        print(Style.RED + f'error in extract_date_RAW_SJCam   {fileName} incompatible.   {e}' + Style.RESET)
+        return shootingNumber, shootingDate
+
+def extract_num_DNG_DJI(fileName: str) -> tuple:
+    """
+    Extract shooting number and shooting date from a DNG file name.
+
+    :param fileName: The file name with suffix.
+    :type fileName: str
+    :return: A tuple containing the shooting number (int) and shooting date (datetime).
+    """
+    prefix, index, suffix = parse_filename(fileName, allowed_suffix=["dng"])
+    shootingNumber = -9999
+    try:
+        if suffix:
+            if suffix.lower() == "dng":
+                if index:
+                    shootingNumber = int(index)
+                else:
+                    print(Style.RED + f'Error {fileName} incompatible' + Style.RESET)
+            return shootingNumber
+
+    except Exception as e:
+        print(Style.RED + f'error in extract_num_DNG_DJI   {fileName} incompatible.   {e}' + Style.RESET)
+        return -9999
+
+
+
+    if fileName.split(".")[1].lower() in ["dng"]:
+        temp = fileName.split(".")[0].split("_")[1]
+        shootingNumber = int(temp)
+        return shootingNumber
+
+    # Return None values if the file suffix is not RAW or JPG
+    return None, None
+
+# ------------------   GPS
+
+def gps_coordinate_to_float(gps_coordinate: str) -> float:
+    """
+    Convert a GPS coordinate (Exif dng DJI) in the format 'DD deg MM' SS.SS\" D' to a floating point number.
+    If the direction is N or W, the value is positive. If the direction is S or E, the value is negative.
+
+    Example usage:  coord_str = "45 deg 10' 12.74\" N"
+                    decimal_coord = gps_coordinate_to_float(coord_str)
+                    print(decimal_coord)   # 45.17020556
+    """
+    # Replacing 'deg' with space and splitting the string
+    parts = gps_coordinate.replace('deg', '').split()
+    if len(parts) != 4 or parts[1][-1] != '\'' or parts[2][-1] != '"' or parts[3] not in ('N', 'S', 'E', 'W'):
+        raise ValueError("Invalid GPS coordinate string format")
+
+    # Extracting degrees, minutes, seconds, and direction
+    degrees = float(parts[0])
+    minutes = float(parts[1][:-1])  # Removing the apostrophe '
+    seconds = float(parts[2][:-1])  # Removing the double quote "
+    direction = parts[3]
+
+    # Converting to float
+    decimal_coord = degrees + minutes / 60 + seconds / 3600
+
+    # Adjusting for direction
+    if direction in ['S', 'W']:
+        decimal_coord = -decimal_coord
+
+    return decimal_coord
 
 def extract_exif(file_path: str) -> tuple[Optional[float], Optional[float], Optional[float], Optional[str], Optional[str], Optional[str], Optional[str]]:
     """
@@ -485,7 +557,6 @@ def extract_exif(file_path: str) -> tuple[Optional[float], Optional[float], Opti
 
     return latitude, longitude, altitude, date_time, maker, model, id_camera
 
-
 def convert_coordinates(latitude, longitude, altitude) -> tuple[float, float, float]:
     """
     Convert geographical coordinates to decimal format.
@@ -511,7 +582,6 @@ def convert_coordinates(latitude, longitude, altitude) -> tuple[float, float, fl
 
     return lat_decimal, lon_decimal, alt_decimal
 
-
 def convert_dng_coordinates(latitude, longitude, altitude) -> tuple[float, float, float]:
     """
     """
@@ -520,7 +590,6 @@ def convert_dng_coordinates(latitude, longitude, altitude) -> tuple[float, float
     alt_decimal = ifdtag_altitude_to_decimal(altitude)
 
     return lat_decimal, lon_decimal, alt_decimal
-
 
 def ifdtag_angle_to_decimal(ifdtag) -> float:
     """
@@ -549,7 +618,6 @@ def ifdtag_angle_to_decimal(ifdtag) -> float:
     else:
         return None
 
-
 def dng_angle_to_decimal(angle: str) -> float:
 
     if angle:
@@ -558,7 +626,6 @@ def dng_angle_to_decimal(angle: str) -> float:
         return dms_to_decimal(values)
     else:
         return None
-
 
 def dms_to_decimal(dms: list[Union[int, Fraction]]) -> float:
     """
@@ -588,7 +655,6 @@ def dms_to_decimal(dms: list[Union[int, Fraction]]) -> float:
 
     return decimal_degrees
 
-
 def ifdtag_altitude_to_decimal(ifdtag) -> float:
     """
     Convert geographical altitude from IFD tag format to decimal format.
@@ -607,7 +673,6 @@ def ifdtag_altitude_to_decimal(ifdtag) -> float:
     else:
         alt_decimal = None
     return alt_decimal
-
 
 def find_value_in_dic(dictionary: dict[str, any], key_searched: str) -> Optional[any]:
     """
@@ -650,7 +715,6 @@ def find_value_in_dic(dictionary: dict[str, any], key_searched: str) -> Optional
                     if results is not None:
                         return results
 
-
 def display_dictionary(dictionary: dict[str, any], indentation=""):
     """
     This function recursively prints the contents of a dictionary, handling nested
@@ -689,7 +753,6 @@ def display_dictionary(dictionary: dict[str, any], indentation=""):
         # If the value is neither a dictionary nor a list, print key-value pair
         else:
             print(f"{indentation}{key}: {value}")
-
 
 def display_dictionary_EXIF_jpg(exif_dict: dict[str, any], tag_type=None, indentation="", verbose=False) -> dict[str, any]:
     dic_exif_utf = {}
@@ -736,7 +799,6 @@ def display_dictionary_EXIF_jpg(exif_dict: dict[str, any], tag_type=None, indent
 
     return dic_exif_utf
 
-
 def get_filesystem_metadata(image_path: str) -> dict:
     p = Path(image_path)
 
@@ -747,7 +809,6 @@ def get_filesystem_metadata(image_path: str) -> dict:
         "FileLastModifiedDate": time.ctime(p.stat().st_mtime),
     }
 
-
 def bytes2utf(value):
     if isinstance(value, bytes):
         try:
@@ -756,7 +817,6 @@ def bytes2utf(value):
             # Gestion de l'erreur ou utilisation de la byte-string telle quelle
             pass
     return value
-
 
 def ecriture_donnees_EXIF():
     # ceci est un exemple à étudier ....................
@@ -775,7 +835,6 @@ def ecriture_donnees_EXIF():
     # Ecrire les données EXIF dans une image.
     piexif.insert(exif_bytes, "path_to_output_image.jpg")
 
-
 def extract_exif_data(file_path: str) -> dict[str, any]:
     """
     Extract and return EXIF data from a DNG file.
@@ -790,7 +849,6 @@ def extract_exif_data(file_path: str) -> dict[str, any]:
         exif_data = exifread.process_file(f)
 
     return exif_data
-
 
 def display_exif_data(exif_data: dict[str, any], indentation="", verbose=False) -> dict[str, any]:
     """
@@ -814,65 +872,9 @@ def display_exif_data(exif_data: dict[str, any], indentation="", verbose=False) 
 
     return dic_exif_utf
 
-
-def image_takeoff_available_test(dic_takeoff: dict, default_user_dir: Path):
-    """
-
-    :param dic_takeoff:
-    :param default_user_dir:
-    :return:
-    """
-    try:
-        image_takeoff_available = False
-        path_image_mission = Path(default_user_dir)
-        try:
-            if isinstance(dic_takeoff, dict) and 'File path mission' in dic_takeoff:
-                path_image_mission = Path(dic_takeoff['File path mission'])
-                if path_image_mission.exists():
-                    coherent_response = folder_name_consistency_analysis(path_image_mission)
-                    if coherent_response:
-                        image_takeoff_available = True
-        except (TypeError, KeyError) as e:
-            print("Error in image_takeoff_available", e)
-            pass
-        return image_takeoff_available, path_image_mission
-    except Exception as e:
-        print("error   in image_takeoff_available", e)
-
-
 def format_number(number, decimal=3, car=" "):
     format_string = f"{car}{{:.{decimal}f}}" if number >= 0 else f"{{:.{decimal}f}}"
     return format_string.format(number)
-
-
-def gps_coordinate_to_float(gps_coordinate: str) -> float:
-    """
-    Convert a GPS coordinate (Exif dng DJI) in the format 'DD deg MM' SS.SS\" D' to a floating point number.
-    If the direction is N or W, the value is positive. If the direction is S or E, the value is negative.
-
-    Example usage:  coord_str = "45 deg 10' 12.74\" N"
-                    decimal_coord = gps_coordinate_to_float(coord_str)
-                    print(decimal_coord)   # 45.17020556
-    """
-    # Replacing 'deg' with space and splitting the string
-    parts = gps_coordinate.replace('deg', '').split()
-    if len(parts) != 4 or parts[1][-1] != '\'' or parts[2][-1] != '"' or parts[3] not in ('N', 'S', 'E', 'W'):
-        raise ValueError("Invalid GPS coordinate string format")
-
-    # Extracting degrees, minutes, seconds, and direction
-    degrees = float(parts[0])
-    minutes = float(parts[1][:-1])  # Removing the apostrophe '
-    seconds = float(parts[2][:-1])  # Removing the double quote "
-    direction = parts[3]
-
-    # Converting to float
-    decimal_coord = degrees + minutes / 60 + seconds / 3600
-
-    # Adjusting for direction
-    if direction in ['S', 'W']:
-        decimal_coord = -decimal_coord
-
-    return decimal_coord
 
 
 # ----------------------   A priori calculation of the pitch, yaw & roll "coarse".  -----------------------------------
@@ -905,18 +907,25 @@ def motion_in_DroneAxis(listPts, mute=True):
 
     return
 
-
 def motionDrone_in_GeographicAxis(listPt, mute=True):
     """
-        vector   D = x_EW e_EW + y_SN e_SN       |e_EW|=1, |e_SN|=1, e_EW.e_SN=0
-        Axe orientation  e_EW <=> West > East ,   e_SN <=> South > North
+    Vector decomposition:
+        D = x_EW * e_EW + y_SN * e_SN
+        |e_EW| = 1, |e_SN| = 1, e_EW · e_SN = 0
 
-            N  e_SN
-              |
-        W ----E ----> E  e_WE
-              |
-              S
-        """
+    Axis orientation:
+        e_EW: West → East
+        e_SN: South → North
+
+               N
+               ↑
+               │ e_SN
+               │
+               │        e_EW
+         W ────┼──────────────→ E
+               │
+               S
+    """
     x_WE, y_SN = [], []
     for i in range(len(listPt)):
         if i >= len(listPt) - 1:
@@ -934,12 +943,10 @@ def motionDrone_in_GeographicAxis(listPt, mute=True):
 
     return x_WE, y_SN
 
-
 def motionDroneZaxis(listPts):
     listPts[-1].x_3 = 0.
     for i in range(0, len(listPts) - 1):
         listPts[i].x_3 = (listPts[i + 1].altGround - listPts[i].altGround) + (listPts[i + 1].altGeo - listPts[i].altGeo)
-
 
 def theoreticalIrToVi(listPts, timelapse_Vis, offset=None):
     #   theoretical  Yaw
@@ -970,7 +977,6 @@ def theoreticalIrToVi(listPts, timelapse_Vis, offset=None):
 
     return listPts, theoreticalPitch, theoreticalYaw, theoreticalRoll
 
-
 def add_offset_theoretical_angles(list_pts, offset=None):
     if offset is None:
         return
@@ -978,7 +984,6 @@ def add_offset_theoretical_angles(list_pts, offset=None):
         list_pts[idx].yawIR2VI += offset[0]
         list_pts[idx].pitchIR2VI += offset[1]
         list_pts[idx].rollIR2VI += offset[2]
-
 
 def theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, axe=0):
     """
@@ -1012,7 +1017,6 @@ def theoreticalAngleDeviation(listPts, angle, x, timelapse_Vis, axe=0):
 
     return theoreticalAngle
 
-
 def rollDeviation(listPts, timelapse_Vis):
     """
     yaw drone  <=> roll NIR camera
@@ -1034,7 +1038,6 @@ def rollDeviation(listPts, timelapse_Vis):
         theoreticalRoll.append(rollNir2Vis)
 
     return theoreticalRoll
-
 
 def interpolParabolicAngle(listPts, angle, i, timelapse_Vis):
     """
@@ -1066,7 +1069,6 @@ def interpolParabolicAngle(listPts, angle, i, timelapse_Vis):
 
     return alpha, dt
 
-
 def Parabolic(listPts, angle, k, t):
     t_1 = listPts[k - 1].timeLine
     t0 = listPts[k].timeLine
@@ -1078,7 +1080,6 @@ def Parabolic(listPts, angle, k, t):
     c = angle[k] - a * t0**2 - b * t0
     alpha = a * t**2 + b * t + c
     return alpha
-
 
 def interpolLinearAngle(listPts, angle, i, timelapse_Vis):
     """
@@ -1094,7 +1095,6 @@ def interpolLinearAngle(listPts, angle, i, timelapse_Vis):
     else:
         alpha = (angle[i - 1] * dt / timelapse_Vis - angle[i] * (dt / timelapse_Vis - 1))
     return alpha, dt
-
 
 def interpolationCameraCenterVis(x, k, dt, timelapse_Vis):
     """
@@ -1131,27 +1131,6 @@ def interpolationCameraCenterVis(x, k, dt, timelapse_Vis):
 
 # ----------------------time line
 
-def build_time_line_Old(fichiers, numeros, dates, deltas, time_line, spectral_band="VIS"):
-    """
-    Construit la structure d'une timeline pour un spectral_band (VIS ou NIR).
-    Retourne un dictionnaire { spectral_band: [ dict_entry, ... ] }.
-    """
-    data = []
-    for i, f in enumerate(fichiers):
-        delta = float(deltas[i - 1]) if i > 0 and (i - 1) < len(deltas) else 0.0
-        if isinstance(dates[i], datetime):
-            date_str = dates[i].isoformat(timespec="seconds")
-        else:
-            date_str = str(dates[i])
-        data.append({
-            "img_path": str(f),
-            "num_img": int(numeros[i]),
-            "date_img": date_str,
-            "delta_img": round(delta, 6),
-            "relative_timeline": round(float(time_line[i]), 6)
-        })
-    return {spectral_band: data}
-
 
 def save_time_line_json(
         output_dir: Union[str, Path],
@@ -1186,7 +1165,6 @@ def save_time_line_json(
     except Exception as e:
         print(f'error in (Uti)   save_time_line_json   {e}')
     return out_file
-
 
 def safe_path(path):
     """
@@ -1232,8 +1210,6 @@ def safe_path(path):
     except Exception as e:
         print(f"[safe_path] ⚠️ Invalid path {path} : {e}")
         return str(path)
-
-
 
 def _format_duration(seconds: float) -> str:
     """
@@ -1295,7 +1271,7 @@ def choose_folder_mission(
                 show_info_message(
                     "IRDrone",
                     f"Your images will be transferred to the mission folder:\n{folderMissionPath}",
-                    f"They will be distributed between the folders {AerialPhotoFolder} and {SynchroFolder}"
+                    f"They will be distributed in the folder {AerialPhotoFolder}/VIS "
                 )
             else:
                 coherent_response = False
@@ -1419,6 +1395,61 @@ def copy_and_rename_images(input_dir: Path,
             if verbose: print(Style.GREEN + f"Copied: {src} → {dst}" + Style.RESET)
     except Exception as e:
         print(Style.RED + f"ERROR copying file: {e}" + Style.RESET)
+
+
+def read_exif_and_write_json(dng_path: Path, exiftool_path: str) -> dict:
+    """
+    Read EXIF/XMP metadata from a DNG file using ExifTool
+    and write a small .exif JSON file next to the image.
+
+    Returns:
+        dict: cleaned metadata
+    """
+    try:
+
+        out_path = dng_path.with_suffix(".exif")
+        if out_path.exists():
+            # print(f'File {out_path.name} already exist in {out_path.parent}.')
+            pass
+
+        # --- 1) Read metadata with ExifTool ---
+        cmd = [exiftool_path, "-json", str(dng_path)]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr)
+
+        metadata_list = json.loads(result.stdout)
+        if not metadata_list:
+            raise RuntimeError("ExifTool returned empty output")
+
+        full_metadata = metadata_list[0]
+
+        # --- 2) Select relevant keys (you can expand this list easily) ---
+        essential_keys = [
+            "FileName", "Directory", "DateTimeOriginal",
+            "Make", "Model", "CameraSerialNumber",
+            "Orientation",
+            "ExposureTime", "FNumber", "ISO", "ExposureCompensation",
+            "FocalLength", "FOV", "FocalLengthIn35mmFormat", "HyperfocalDistance",
+            "GPSLatitude", "GPSLongitude", "GPSAltitude", "GPSPosition",
+
+            "FlightYawDegree", "FlightPitchDegree", "FlightRollDegree",  # DJI XMP
+            "GimbalYawDegree", "GimbalPitchDegree", "GimbalRollDegree",
+        ]
+
+        cleaned = {k: full_metadata.get(k) for k in essential_keys if k in full_metadata}
+
+        # --- 3) Write .exif JSON file next to the image ---
+        out_path = dng_path.with_suffix(".exif")
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(cleaned, f, indent=2)
+
+        return cleaned
+
+    except Exception as e:
+        print(f"[ERROR] read_exif_and_write_json failed for {dng_path}: {e}")
+        return {}
 
 
 def change_icon(folder_path: Union[str, Path], file_path: Union[str, Path]) -> None:
@@ -1548,6 +1579,626 @@ def read_exiftool_metadata(path: Path) -> dict:
         print("Exiftool error:", e.stderr)
         return {}
 
+
+# =============================================================================
+# RAW → DNG CONVERSION UTILITIES
+# =============================================================================
+
+def build_dng_name(raw_file: str) -> str:
+    """
+    Build the target DNG filename from a SJCam RAW file.
+
+    Naming rule:
+        If RAW is like '2022_0125_130446_023.RAW'
+        → extract 23
+        → compute new index = (23 + 1) // 2 = 12
+        → return 'NIR_0012.dng'
+    """
+    raw_path = Path(raw_file)
+    stem = raw_path.stem                # '2022_0125_130446_023'
+    last_number = int(stem.split("_")[-1])   # 23
+
+    new_index = (last_number + 1) // 2       # 12
+    number_str = str(new_index).zfill(4)     # '0012'
+
+    return f"NIR_{number_str}.dng"
+
+
+
+def _set_exif_from_raw(dng_path: Path, raw_path: Path, exiftool_path: str, verbose: bool = False):
+    """
+    Set DateTimeOriginal and CreateDate in EXIF from the RAW filename using exiftool.
+
+    Parameters
+    ----------
+    dng_path : Path
+        Path to the DNG file.
+    raw_path : Path
+        Path to the original RAW file.
+    exiftool_path : str
+        Full path to exiftool executable.
+    verbose : bool
+        If True, prints status messages.
+    """
+    try:
+        # --- Extract date/time from RAW filename ---
+        stem = raw_path.stem  # '2022_0125_130446_023'
+        parts = stem.split("_")
+        year = int(parts[0])
+        month = int(parts[1][:2])
+        day = int(parts[1][2:])
+        hour = int(parts[2][:2])
+        minute = int(parts[2][2:4])
+        second = int(parts[2][4:])
+        dt = datetime(year, month, day, hour, minute, second)
+        exif_dt = dt.strftime("%Y:%m:%d %H:%M:%S")
+
+        # --- Call exiftool to set DateTimeOriginal and CreateDate ---
+        cmd = [
+            str(exiftool_path),
+            f"-DateTimeOriginal={exif_dt}",
+            f"-CreateDate={exif_dt}",
+            f"-XMP:DateCreated={exif_dt}",
+            str(dng_path),
+            "-overwrite_original"
+        ]
+        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        if verbose:
+            print(f"🕒 EXIF date updated for {dng_path.name} → {exif_dt}")
+
+    except subprocess.CalledProcessError as e:
+        print(f"⚠ Failed to insert EXIF for {dng_path.name}: {e.stderr.decode(errors='ignore')}")
+    except Exception as e:
+        print(f"⚠ Unexpected error for {dng_path.name}: {e}")
+
+
+
+def _convert_single_raw_to_dng(raw_file: str, exe_path: str, output_folder: str, nb_threads: str, verbose: bool, exiftool_path: str) -> str:
+    """
+    Internal helper: converts a single RAW file to DNG using sjcam_raw2dng.
+    The output DNG filename is standardized to 'NIR_XXXX.dng'.
+    EXIF DateTimeOriginal and CreateDate are updated from RAW filename.
+
+    Parameters
+    ----------
+    raw_file : str
+        Path to the RAW file.
+    exe_path : str
+        Path to sjcam_raw2dng executable.
+    output_folder : str
+        Destination folder for the DNG file.
+    nb_threads : str
+        Number of threads passed to the converter ("0" = auto).
+    verbose : bool
+        If True, prints detailed information.
+
+    Returns
+    -------
+    str
+        Full path to the generated DNG file.
+    """
+    raw_path = Path(raw_file)
+    dng_name = build_dng_name(raw_file)
+    dng_output_path = Path(output_folder) / dng_name
+
+    if dng_output_path.exists():
+        if verbose:
+            print(f"⏭ DNG already exists, skipping: {dng_output_path.name}")
+        return str(dng_output_path)
+
+    if verbose:
+        print(f"➡ Converting: {raw_path.name}")
+
+    # Command for conversion
+    cmd = [
+        str(exe_path),
+        "--no-color",
+        "--thumb",
+        "--threads", nb_threads,
+        "--output", str(output_folder),
+        str(raw_path)
+    ]
+    subprocess.run(cmd, check=True)
+
+    # Define original DNG path (created by sjcam_raw2dng, same stem as RAW)
+    original_dng_path = Path(output_folder) / (raw_path.stem + ".dng")
+
+    # Rename to standardized name
+    if original_dng_path.exists() and original_dng_path != dng_output_path:
+        original_dng_path.rename(dng_output_path)
+        if verbose:
+            print(f"✏ Renamed {original_dng_path.name} → {dng_output_path.name}")
+
+    # Update EXIF from RAW filename
+    _set_exif_from_raw(dng_output_path, raw_path, exiftool_path, verbose)
+
+    return str(dng_output_path)
+
+
+
+def convert_raw_to_dng_parallel(
+        input_folder: str,
+        output_folder: str,
+        exe_path: str,
+        nb_threads: str = "0",
+        verbose: bool = False,
+        max_workers: int = None,
+        exiftool_path=None
+) -> List[str]:
+    """
+    Convert all SJCam M20 .RAW files in an input folder to .DNG in parallel,
+    using multiple processes to speed up conversion. Each RAW file is processed
+    independently using the sjcam_raw2dng executable. Output files are renamed
+    in the 'NIR_XXXX.dng' format and EXIF dates are corrected from RAW filename.
+
+    Parameters
+    ----------
+    input_folder : str
+        Path to the folder containing the .RAW files.
+    output_folder : str
+        Path to the folder where the converted DNG files will be stored.
+    exe_path : str
+        Full path to sjcam_raw2dng.exe.
+    nb_threads : str, optional
+        Number of threads passed to each converter instance ("0" = auto).
+    verbose : bool, optional
+        If True, prints detailed conversion information.
+    max_workers : int, optional
+        Maximum number of parallel processes to run.
+        If None, automatically set to the number of physical CPU cores.
+
+    Returns
+    -------
+    List[str]
+        List of paths to the generated DNG files in output_folder.
+    """
+    exe = Path(exe_path)
+    if not exe.exists():
+        link = "https://github.com/yanburman/sjcam_raw2dng/releases"
+        raise FileNotFoundError(
+            f"Converter not found: {exe_path}. You can download it from: {link}"
+        )
+
+    input_folder_path = Path(input_folder)
+    if not input_folder_path.exists():
+        raise FileNotFoundError(f"Input folder not found: {input_folder}")
+
+    raw_files = sorted([str(p) for p in input_folder_path.glob("*.RAW")])
+    dng_files: List[str] = []
+
+    # Auto-adjust max_workers if not provided
+    if max_workers is None:
+        cpu_physical = psutil.cpu_count(logical=False) or 1
+        max_workers = max(1, cpu_physical)
+
+    if verbose:
+        print(f"Using max_workers={max_workers} (detected {os.cpu_count()} CPU threads)")
+
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        future_to_raw = {
+            executor.submit(_convert_single_raw_to_dng, raw, exe, output_folder, nb_threads, verbose, exiftool_path): raw
+            for raw in raw_files
+        }
+
+        for future in as_completed(future_to_raw):
+            try:
+                dng_path = future.result()
+                dng_files.append(dng_path)
+            except subprocess.CalledProcessError as e:
+                print(f"⚠ Conversion failed for {future_to_raw[future]}: {e}")
+
+    return sorted(dng_files)
+
+
+def read_exif_json(path_exif: Path) -> dict:
+    """Load JSON content from a .exif file."""
+    with open(path_exif, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def list_tempo_time_line(
+        folder: Path,
+        spectral_band: str = "VIS"
+) -> List[Dict]:
+    """
+    Build and return a list of reduced EXIF dictionaries
+    for VIS or NIR images inside a given folder.
+
+    Parameters
+    ----------
+    folder : Path
+        Folder containing images VIS_xxxx.dng + VIS_xxxx.exif
+    spectral_band : str ("VIS" or "NIR")
+        Spectral band used in filenames
+
+    Returns
+    -------
+    List[Dict]
+        A list of filtered EXIF dictionaries (one per image)
+    """
+
+    folder = Path(folder)
+    bdspectr = spectral_band.upper()
+
+    if bdspectr not in ("VIS", "NIR"):
+        raise ValueError("spectral_band must be 'VIS' or 'NIR'")
+
+    # -----------------------------------------------------
+    # 1) Trouver les fichiers images concernés
+    # -----------------------------------------------------
+    pattern = re.compile(rf"^{bdspectr}_(\d+)\.dng$", re.IGNORECASE)
+
+    img_files = [f for f in folder.iterdir() if pattern.match(f.name)]
+    img_files.sort()
+
+    results = []
+
+    # ----------------------------------------------------------------
+    # 2) Pour chaque image : charger son fichier compagnon .exif
+    # ----------------------------------------------------------------
+    def extract_reduced_exif(d: dict) -> dict:
+        """Extract only the essential fields from a full EXIF dictionary."""
+        keys_needed = [
+            "FileName",
+            "Directory",
+            "DateTimeOriginal"
+        ]
+        return {k: d.get(k) for k in keys_needed}
+
+
+    for img in img_files:
+        number = pattern.match(img.name).group(1)
+        exif_path = img.with_suffix(".exif")
+
+        if not exif_path.exists():
+            print(f"[WARN] Missing EXIF file for {img.name}")
+            continue
+
+        full_dict = read_exif_json(exif_path)
+        reduced_dict = extract_reduced_exif(full_dict)
+        results.append(reduced_dict)
+
+    return results
+
+def time_line_analyser_images(list_dic_exif,
+                              spectral_band: Optional[str] = None,
+                              img_suffix: str = ".tif",
+                              verbose: bool = False
+                              ) -> Dict:
+    """
+    Analyze image files in a folder:
+      - extract the date and time from the filename
+      - extract the shot number (XXX)
+      - compute time differences between consecutive images
+      - check the regularity of time intervals
+      - estimate the nominal period (median, mode, outlier filtering)
+      - display any detected "jumps"
+      - adaptive filtering tolerance automatically computed (1% of median)
+
+    Parameters
+    ----------
+    inputFolder : Path | str
+        Path to the folder containing the image files.
+    spectral_band : str | None, optional
+        Image type, "VIS" or "NIR", by default None.
+    img_suffix : str, optional
+        File img_suffix to filter images, by default ".tif".
+    verbose : bool, optional
+        If True, prints detailed information during analysis, by default False.
+
+    Returns
+    -------
+    dict
+        Dictionary containing files, numbers, dates, deltas, time_line, and camera type.
+    """
+
+    dates: list[datetime] = []
+    numeros: list[int] = []
+    shootings: list[int] = []
+    list_file_path = []
+
+    # ________  récupérer ici les dates des petits fichier exif
+
+    for idx, dic_exif in enumerate(list_dic_exif):
+        date_str = dic_exif["DateTimeOriginal"]
+        dt = datetime.strptime(date_str, "%Y:%m:%d %H:%M:%S")
+        dates.append(dt)
+        numeros.append(idx)
+        shootings.append(idx)
+        list_file_path.append(dic_exif["FileName"])
+
+
+    dates = np.array(dates)
+    numeros = np.array(numeros)
+
+    if len(dates) > 1:
+        deltas = np.diff([d.timestamp() for d in dates])
+        if verbose: print(deltas)
+    else:
+        deltas = np.array([])
+
+    if len(deltas) == 0:
+        print(Style.YELLOW + f"⚠️ Not enough images to compute intervals." + Style.RESET)
+        return {"dates": dates, "numeros": numeros, "deltas": deltas}
+
+    print(Style.GREEN + f"🔍 {len(dates)} {img_suffix.upper()} files found" + Style.RESET)
+
+    # --- Total sequence duration ---
+    total_duration = (dates[-1] - dates[0]).total_seconds()
+    print(f"⏱️ Total sequence duration : {total_duration:.3f} s ({str(dates[-1] - dates[0])})")
+
+    # --- Method 1: Median ---
+    periode_mediane = np.median(deltas)
+
+    # --- Method 2: Mode ---
+    counts = Counter(np.round(deltas, 3))
+    periode_mode, freq = counts.most_common(1)[0]
+
+    # --- Method 3: Outlier filtering ---
+    tol = max(0.001, 0.01 * periode_mediane)  # 1% of median, min 1 ms
+    filtered_deltas = deltas[np.abs(deltas - periode_mediane) < tol]
+    if len(filtered_deltas) > 0:
+        periode_filtre = np.mean(filtered_deltas)
+    else:
+        periode_filtre = periode_mediane
+        print(Style.YELLOW + f"⚠️ No intervals within defined tolerance for filtering." + Style.RESET)
+
+    # --- Best time-lapse estimate ---
+    estims = np.array([periode_mediane, periode_mode, periode_filtre])
+    periode_time_lapse = np.median(estims)
+    print(Style.GREEN + f"📌 best_timelapse_estimate : {periode_time_lapse:.3f} s" + Style.RESET)
+
+    # --- Jump detection ---
+    sauts: list[tuple[int, int, float]] = []
+    for i, d in enumerate(deltas):
+        if not np.isclose(d, periode_mediane, atol=tol):
+            sauts.append((i, i + 1, d))
+
+    # --- True recording period accounting for detected jumps ---
+    true_record_period = true_recording_period(dates, sauts, periode_time_lapse)
+
+    # --- Construct the actual timeline ---
+    time_line = build_time_line(dates, sauts, true_record_period, numeros, list_file_path, verbose=False)
+
+    # --- Overall summary ---
+    print(f"🕒 Timeline computed: {time_line[-1]:.3f} s up to the last image (n={len(time_line)})")
+
+    dic_timeline = build_time_line_dictionnary(
+        list_file_path=list_file_path,
+        shootings=shootings,
+        dates=dates,
+        deltas=deltas,
+        time_line=time_line,
+        spectral_band=spectral_band
+    )
+
+    return dic_timeline
+
+def build_time_line(dates: list[float],
+                    sauts: list[tuple[int, int, float]],
+                    periode_reelle: float,
+                    numeros: list[int],
+                    list_file_path: list[Path],
+                    verbose: bool = False
+                    ) -> np.ndarray:
+    """
+    Construct a vector of actual elapsed times since the first image,
+    taking into account real jumps, apparent jumps (EXIF artifacts), and abnormal jumps.
+    If verbose=True, display the timeline image by image with the type of jump.
+
+    Parameters
+    ----------
+    dates : list[float]
+        List of timestamps (raw image acquisition times).
+    sauts : list[tuple[int, int, float]]
+        List of detected jumps as tuples (index1, index2, delta_time).
+    periode_reelle : float
+        Nominal real period between images.
+    numeros : list[int]
+        List of raw image numbers for display purposes.
+    verbose : bool, optional
+        If True, prints detailed timeline information, by default False.
+
+    Returns
+    -------
+    np.ndarray
+        Array of adjusted timeline values in seconds.
+    """
+
+    n = len(dates)
+    if n == 0:
+        return np.array([])
+
+    time_line = np.zeros(n, dtype=float)
+
+    # --- 1) Classify jumps ---
+    classified_jumps: list[tuple[int, int, float, str]] = []  # (idx1, idx2, delta, type)
+    dict_sauts: dict[int, float] = {}
+
+    for idx1, idx2, d_saut in sauts:
+        ratio = d_saut / periode_reelle
+
+        # Case 1: real jump (integer multiple of period)
+        if np.isclose(ratio, round(ratio), atol=0.49 / periode_reelle):
+            type_saut = "real"
+            dict_sauts[idx1] = d_saut
+
+        # Case 2: apparent jump (EXIF artifact)
+        elif d_saut < 2 * periode_reelle:
+            type_saut = "apparent"
+            # not added to dict_sauts because ignored
+
+        # Case 3: abnormal jump
+        else:
+            type_saut = "abnormal"
+            dict_sauts[idx1] = d_saut
+
+        classified_jumps.append((idx1, idx2, d_saut, type_saut))
+
+    # --- 2) Display jumps (only now that type is known) ---
+    if classified_jumps:
+        print(Style.YELLOW + f"⚠️ {len(classified_jumps)} jumps detected :" + Style.RESET)
+        for idx1, idx2, delta, type_saut in classified_jumps:
+            if type_saut == "real":
+                label = "real jump"
+                color = Style.YELLOW
+            elif type_saut == "apparent":
+                label = "apparent jump"
+                color = Style.GREEN
+            else:
+                label = "abnormal jump"
+                color = Style.RED
+
+
+            print(
+                color
+                + f"   - Between {Path(list_file_path[idx1]).name} and {Path(list_file_path[idx2]).name} : {delta:.3f} s → {label}"
+                + Style.RESET
+            )
+
+    else:
+        print(Style.GREEN + "✅ No jumps detected" + Style.RESET)
+
+    # --- 3) Construct adjusted timeline ---
+    if verbose:
+        print("\n--- Adjusted real timeline ---")
+        print(f"raw image N° : {numeros[0]:04d} | time_line {time_line[0]:.3f} s")
+
+    for i in range(1, n):
+        delta = periode_reelle  # default value
+        saut_txt = ""
+
+        if (i - 1) in dict_sauts:
+            d_saut = dict_sauts[i - 1]
+            ratio = d_saut / periode_reelle
+
+            # Same classification as above
+            if np.isclose(ratio, round(ratio), atol=0.49 / periode_reelle):
+                delta = d_saut
+                saut_txt = f" | real jump {d_saut:.3f} s"
+            elif d_saut < 2 * periode_reelle:
+                saut_txt = f" | apparent jump ({d_saut:.3f} s)"
+            else:
+                delta = d_saut
+                saut_txt = f" | abnormal jump {d_saut:.3f} s"
+
+        time_line[i] = time_line[i - 1] + delta
+
+        if verbose:
+            print(f"raw image N° : {numeros[i]:04d} | time_line {time_line[i]:.3f} s{saut_txt}")
+
+    if verbose:
+        print("---------------------------------\n")
+
+    return time_line
+
+def build_time_line_dictionnary(
+        list_file_path: List[Path],
+        shootings: List[int],
+        dates: List[Union[datetime, str]],
+        deltas: np.ndarray,
+        time_line: np.ndarray,
+        spectral_band: str = "VIS"
+) -> Dict[str, List[Dict[str, Union[float, int, str]]]]:
+    """
+    Build a dictionary containing the timeline of an image sequence
+    for a given spectral band (VIS, NIR, etc.).
+
+    Returns a dictionary in the form:
+        { spectral_band: [ {img_path, num_img, date_img, delta_img, relative_timeline}, ... ] }
+
+    Each entry corresponds to an image and contains:
+        - img_path : full path of the image
+        - num_img  : image capture number
+        - date_img : date in ISO format
+        - delta_img: interval since previous image (s)
+        - relative_timeline: cumulative time since first image (s)
+
+    rem:  if f = C:\ ....\folder_name\hyperlapse.DNG
+        Path(f).parent =  C:\ ....\folder_name
+        Path(f).parent.name = folder_name
+        Path(f).name  = "hyperlapse.DNG"
+        Path(f).stem  = "hyperlapse"
+        Path(f).suffix  = ".DNG"
+        Path(f).suffix[1:] = "DNG"
+
+    """
+
+    data: List[Dict[str, Union[float, int, str]]] = []
+
+    for i, f in enumerate(list_file_path):
+        delta: float = float(time_line[i]) - float(time_line[i-1]) if i > 0 and i - 1 < len(deltas) else 0.0
+        # Format the date as ISO string if datetime, else use string directly
+        if isinstance(dates[i], datetime):
+            date_str: str = dates[i].isoformat(timespec="seconds")
+        else:
+            date_str = str(dates[i])
+
+        data.append({
+            "img_path": str(f),
+            "relative_shooting_number": int(shootings[i]),
+            "date_img": date_str,
+            "delta_img": round(delta, 6),
+            "relative_timeline": round(float(time_line[i]), 6)
+        })
+
+    return {spectral_band: data}
+
+def true_recording_period(
+        dates: list[datetime],
+        sauts: list[tuple[int, int, float]],
+        periode_time_lapse: float
+) -> float:
+    """
+    Computes the true recording period of an image sequence, taking into account detected jumps.
+
+    Logic:
+    - If jumps are present, compute the mean jump duration.
+    - If the mean jump is an exact multiple of the estimated time-lapse period,
+      the jumps are considered "real" (i.e., intentional or consistent with the capture rate),
+      and the true recording period is set to the estimated time-lapse period.
+    - Otherwise, or if no jumps are detected, the true recording period is calculated
+      as the total elapsed time divided by the number of intervals (dates - 1),
+      which accounts for possible small timing variations or EXIF artifacts ("apparent" jumps).
+
+    Parameters
+    ----------
+    dates : list[datetime]
+        List of capture times for each image in the sequence.
+    sauts : list[tuple[int, int, float]]
+        List of detected jumps as tuples (index1, index2, delta_time).
+        These can be "real", "apparent", or "abnormal".
+    periode_time_lapse : float
+        Estimated nominal period between consecutive images (s).
+
+    Returns
+    -------
+    float
+        The true recording period in seconds.
+    """
+    n_intervals = len(dates) - 1
+    if n_intervals <= 0:
+        return 0.0
+
+    if sauts:
+        delta_jumps = np.array([d for (_, _, d) in sauts])
+        mean_jump = np.mean(delta_jumps)
+
+        # Check if the mean jump is a multiple of the estimated period
+        if np.isclose(mean_jump / periode_time_lapse, round(mean_jump / periode_time_lapse), atol=0.01):
+            # Jumps are exact multiples → true period = estimated period
+            true_record_period = periode_time_lapse
+            print(Style.GREEN + f"📌 true_recording_period (excluding jumps): {true_record_period:.3f} s" + Style.RESET)
+        else:
+            # True period = total duration / number of intervals
+            true_record_period = (dates[-1] - dates[0]).total_seconds() / n_intervals
+            print(Style.GREEN + f"📌 true_recording_period: {true_record_period:.3f} s" + Style.RESET)
+    else:
+        # No jumps → true period = total duration / number of intervals
+        true_record_period = (dates[-1] - dates[0]).total_seconds() / n_intervals
+        print(Style.GREEN + f"📌 true_recording_period: {true_record_period:.3f} s" + Style.RESET)
+
+    return true_record_period
 
 
 

@@ -157,6 +157,7 @@ class Main_Window(QMainWindow):
     #     Step 1 Define the mission
     # ===================================================================================
 
+
     def open_window_define_mission(self):
         """
         Open dialog_load_takeoff_image when the corresponding button is clicked.
@@ -230,9 +231,9 @@ class Main_Window(QMainWindow):
         if not coherent_response: return()
         # ---------------- Loads the 5 reference “VIS” images --------------------------------------------
         if self.dic_takeoff is not None:
-            self.pathImageTakeoff = self.dic_takeoff["path mission image take-off"]
+            self.pathImageTakeoff = Path(self.dic_takeoff["path mission image take-off"]).parent  # self.dic_takeoff["File path mission"]
             print(f'DEBUG  self.pathImageTakeoff = {self.pathImageTakeoff}')
-            self.original_pathImageTakeoff = self.dic_takeoff["File path take-off"]
+            self.original_pathImageTakeoff = self.dic_takeoff["original File path take-off"]
             print(f'DEBUG  self.original_pathImageTakeoff = {self.original_pathImageTakeoff}')
 
         dialog_VIS = LoadVisNirImagesDialog(width,

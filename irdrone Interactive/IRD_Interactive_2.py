@@ -115,7 +115,7 @@ class LoadVisNirImagesDialog(QDialog):
             self.img_suffix = "dng"
             self.spectral_band = "VIS"
         elif self.spectral_band.lower() in ("nir", "ir", "near infrared"):
-            self.img_suffix = "jpg"
+            self.img_suffix = "dng"
             self.spectral_band = "NIR"
         else:
             self.img_suffix = "jpg"
@@ -174,8 +174,6 @@ class LoadVisNirImagesDialog(QDialog):
                 if self.info_vis_dng:
                     self._set_image_flags_from_info(self.info_vis_dng)
                     self.info_vis_dng_available = True
-                else:
-                    self.info_vis_dng_available = False
             elif self.spectral_band == "NIR":
                 # ----- jpg -----
                 self.info_nir_jpg = self.load_transfer_info(self.outputFlightAnalyticsFolder, "NIR", "jpg")
@@ -194,14 +192,17 @@ class LoadVisNirImagesDialog(QDialog):
 
         self.timeline: list[dict] = []
         self.path_image_takeoff: Optional[Path] = path_image_takeoff   # Take-off image path
+        print(f'DEBUG  901   path_image_takeoff = {path_image_takeoff} ')
         self.original_path_image_takeoff = original_path_image_takeoff  # Original take-off image path
+        print(f'DEBUG  902   original_path_image_takeoff = {original_path_image_takeoff} ')
         self.image_takeoff_available: bool = False   # Takeoff image path
         self.image_display_size: tuple[int, int] = (100, 100)  # Image display size (will be set in init_GUI)
         self.empty_pixmap: Optional[QPixmap] = None  # Empty pixmap placeholder (will be set in init_GUI)
 
 
         # ---- Initialize takeoff image availability
-        rep = self.init_image_takeoff_available(path_image_takeoff, original_path_image_takeoff)
+        print(f'DEBUG  903   avant  init_image_takeoff_available')
+        self.init_image_takeoff_available(path_image_takeoff, original_path_image_takeoff)
 
         # ---- Initialize GUI
         self.init_GUI()
@@ -503,12 +504,11 @@ class LoadVisNirImagesDialog(QDialog):
             idMinFly = int(os.path.splitext(os.path.basename(self.listImgRefPath[3]))[0].split("_")[-1])
             idMaxFly = int(os.path.splitext(os.path.basename(self.listImgRefPath[4]))[0].split("_")[-1])
 
-            print(Uti.Style.RED + f'DEBUG    CETTE LIGNE POSE PROBLEME     après changement du nom des images  ...' + Uti.Style.RESET)
             idTakeoff = int(os.path.splitext(os.path.basename(self.listImgRefPath[0]))[0].split("_")[-1])
-            print(f'DEBUG idTakeoff = {idTakeoff}')
+            print(f'DEBUG 099  idTakeoff = {idTakeoff}')
 
-            outputFlyFolder = os.path.join(outputFolder, "AerialPhotography")
-            outputTakeoffFolder = os.path.join(outputFolder, "FlightAnalytics")
+            outputFlyFolder = os.path.join(outputFolder, "AerialPhotography", self.currentSpectralBand)
+            outputTakeoffFolder = os.path.join(outputFolder, "AerialPhotography", self.currentSpectralBand)
             outputFlightAnalyticsFolder = os.path.join(outputFolder, "FlightAnalytics")
             if not os.path.isdir(outputFlyFolder):
                 # print("The destination folder ", outputFlyFolder, " of the images does not exist!")
@@ -519,7 +519,7 @@ class LoadVisNirImagesDialog(QDialog):
 
             idMinSync = int(os.path.splitext(os.path.basename(self.listImgRefPath[1]))[0].split("_")[-1])
             idMaxSync = int(os.path.splitext(os.path.basename(self.listImgRefPath[2]))[0].split("_")[-1])
-            outputSyncFolder = os.path.join(outputFolder, "Synchro")
+            outputSyncFolder = os.path.join(outputFolder, "AerialPhotography", self.currentSpectralBand)
             if not os.path.isdir(outputSyncFolder):
                 # print("The destination folder ", outputSyncFolder, " of the images does not exist!")
                 Uti.show_error_message(f"The destination folder {outputSyncFolder} for the images does not exist!\n"
@@ -530,16 +530,20 @@ class LoadVisNirImagesDialog(QDialog):
             # --------------------- Entry folder  --------------------------------------
             #  Normally these are the DCIM files on the SD card of the drone and the NIR camera
 
-            inputFolder = os.path.dirname(self.listImgRefPath[0])
+            inputFolder = Path(self.listImgRefPath[0]).parent
+            print(f'DEBUG 456  inputFolder = {inputFolder}')
 
-            if not os.path.isdir(inputFolder):
-                # print("The image input folder ", inputFolder, " does not exist.")
-                Uti.show_error_message(Uti.Style.YELLOW + f"The input folder { inputFolder} of the images does not exist!" + Uti.Style.RESET)
-                exit()
             # Consistency test normally all images were extracted from the same folder
-            consistency_choice = self.choice_of_reference_images_consistency_analysis(inputFolder)
+            consistency_choice = self.choice_of_reference_images_consistency_analysis()
             if not consistency_choice:
+                if not os.path.isdir(inputFolder):
+                    # print("The image input folder ", inputFolder, " does not exist.")
+                    Uti.show_error_message(Uti.Style.YELLOW + f"The input folder {inputFolder} of the images does not exist!" + Uti.Style.RESET)
+                    exit()
                 return
+
+
+
 
             # ---------------Copy images from the camera's SD card to the computer's hard drive.----------------------
             Uti.show_info_message("IRDrone", f"Copying {(max((idMaxFly - idMinFly),0) + max((idMaxSync - idMinSync),0) )} "
@@ -551,12 +555,9 @@ class LoadVisNirImagesDialog(QDialog):
                 # -----------------------------------------------------------------------------------
                 #                               VIS
                 # -----------------------------------------------------------------------------------
-
-                # ----------  build time line VIS
-                self.timeline = self.time_line_analyser_images(inputFolder, spectral_band=self.currentSpectralBand, img_suffix=".DNG", verbose=False)
-
                 # ----------   transfer of VIS images of the tkoff,  Sync  and Fly phase (dng) ----------------
-                self.process_image_transfer(inputFolder,
+                print(f'DEBUG 983   outputFlyFolder = {outputFlyFolder}')
+                self.process_image_transfer(outputFlyFolder,
                                             "dng",
                                             outputSyncFolder, outputFlyFolder, outputFlightAnalyticsFolder,
                                             idTakeoff, idMinSync, idMaxSync, idMinFly, idMaxFly,
@@ -567,13 +568,9 @@ class LoadVisNirImagesDialog(QDialog):
                 # -----------------------------------------------------------------------------------
                 #                               NIR
                 # -----------------------------------------------------------------------------------
-
-                # ----------  build time line NIR
-                self.timeline = self.time_line_analyser_images(inputFolder, spectral_band=self.currentSpectralBand, img_suffix=".RAW", verbose=False)
-
                 # ----------  transfer of NIR images of the tkoff, Sync and Fly phase (jpg & raw) ----------------
                 self.process_image_transfer(inputFolder,
-                                            ["jpg", "raw"],
+                                            ["jpg", "raw", "dng"],
                                             outputSyncFolder, outputFlyFolder, outputFlightAnalyticsFolder,
                                             idTakeoff, idMinSync,  idMaxSync, idMinFly, idMaxFly, offset=[0, -1],
                                             progressSync=[(0, 10), (0, 30)], progressFly=[(10, 100), (30, 100)],
@@ -639,276 +636,6 @@ class LoadVisNirImagesDialog(QDialog):
             print(Uti.Style.GREEN + f"🔍 {len(files)} files {img_suffix.upper()} found" + Uti.Style.RESET)
 
         return files
-
-
-    def time_line_analyser_images(
-            self,
-            inputFolder: Union[Path, str],
-            spectral_band: Optional[str] = None,
-            img_suffix: str = ".tif",
-            verbose: bool = False
-    ) -> Dict:
-        """
-        Analyze image files in a folder:
-          - extract the date and time from the filename
-          - extract the shot number (XXX)
-          - compute time differences between consecutive images
-          - check the regularity of time intervals
-          - estimate the nominal period (median, mode, outlier filtering)
-          - display any detected "jumps"
-          - adaptive filtering tolerance automatically computed (1% of median)
-
-        Parameters
-        ----------
-        inputFolder : Path | str
-            Path to the folder containing the image files.
-        spectral_band : str | None, optional
-            Image type, "VIS" or "NIR", by default None.
-        img_suffix : str, optional
-            File img_suffix to filter images, by default ".tif".
-        verbose : bool, optional
-            If True, prints detailed information during analysis, by default False.
-
-        Returns
-        -------
-        dict
-            Dictionary containing files, numbers, dates, deltas, time_line, and camera type.
-        """
-
-        fichiers = self.extract_files_images(inputFolder, img_suffix=img_suffix)
-
-        dates: list[datetime] = []
-        numeros: list[int] = []
-        shootings: list[int] = []
-
-        if spectral_band.lower() == "nir":
-            for f in fichiers:
-                stem = f.stem
-                try:
-                    # The filename contains a full timestamp (YYYY_MMDD_HHMMSS).
-                    # Note: on some cameras (e.g., SJCam M20), if the battery is removed,
-                    # the internal clock may reset to the factory date, resulting in an incorrect date.
-                    # However, this has no impact on the relative timeline, since time differences
-                    # are computed with respect to the first image of the mission. Only the relative
-                    # intervals matter, not the absolute date.
-                    annee, reste = stem.split("_", 1)
-                    moisjour, heuresec, numero = reste.split("_")
-
-                    dt = datetime.strptime(f"{annee}{moisjour}{heuresec}", "%Y%m%d%H%M%S")
-                    if verbose:
-                        print(Uti.Style.GREEN + f'image {img_suffix} N° : {numero} | time {heuresec}' + Uti.Style.RESET)
-                    dates.append(dt)
-                    shoot_num = int(int(numero) + 1)
-                    numeros.append(shoot_num)
-                    shootings.append(shoot_num)
-                except Exception as e:
-                    print(Uti.Style.YELLOW + f"⚠️ Filename ignored ({stem}): {e}" + Uti.Style.RESET)
-
-        elif spectral_band.lower() == "vis":
-            for f in fichiers:
-                stem = f.stem
-                file_path = Path(f)
-                # extract the shot number
-                match = re.search(r'(\d+)$', stem)
-                if match:
-                    numero = int(match.group(1))
-                else:
-                    print("Shot number not found")
-                # extract capture date
-                dt = self.extract_dng_capture_date(file_path)
-                dates.append(dt)
-                numeros.append(int(numero))
-                shootings.append(int(numero))
-                if verbose:
-                    print(f'image {img_suffix} N° : {numero} | time {dt}')
-
-        else:
-            print(Uti.Style.YELLOW + f"⚠️ Invalid spectral band ({spectral_band}). (must be VIS or NIR)" + Uti.Style.RESET)
-
-        dates = np.array(dates)
-        numeros = np.array(numeros)
-
-        if len(dates) > 1:
-            deltas = np.diff([d.timestamp() for d in dates])
-            if verbose:
-                print(deltas)
-        else:
-            deltas = np.array([])
-
-        if len(deltas) == 0:
-            print(Uti.Style.YELLOW + f"⚠️ Not enough images to compute intervals." + Uti.Style.RESET)
-            return {"dates": dates, "numeros": numeros, "deltas": deltas}
-
-        print(Uti.Style.GREEN + f"🔍 {len(dates)} {img_suffix.upper()} files found" + Uti.Style.RESET)
-
-        # --- Total sequence duration ---
-        total_duration = (dates[-1] - dates[0]).total_seconds()
-        print(f"⏱️ Total sequence duration : {total_duration:.3f} s ({str(dates[-1] - dates[0])})")
-
-        # --- Method 1: Median ---
-        periode_mediane = np.median(deltas)
-
-        # --- Method 2: Mode ---
-        counts = Counter(np.round(deltas, 3))
-        periode_mode, freq = counts.most_common(1)[0]
-
-        # --- Method 3: Outlier filtering ---
-        tol = max(0.001, 0.01 * periode_mediane)  # 1% of median, min 1 ms
-        filtered_deltas = deltas[np.abs(deltas - periode_mediane) < tol]
-        if len(filtered_deltas) > 0:
-            periode_filtre = np.mean(filtered_deltas)
-        else:
-            periode_filtre = periode_mediane
-            print(Uti.Style.YELLOW + f"⚠️ No intervals within defined tolerance for filtering." + Uti.Style.RESET)
-
-        # --- Best time-lapse estimate ---
-        estims = np.array([periode_mediane, periode_mode, periode_filtre])
-        periode_time_lapse = np.median(estims)
-        print(Uti.Style.GREEN + f"📌 best_timelapse_estimate : {periode_time_lapse:.3f} s" + Uti.Style.RESET)
-
-        # --- Jump detection ---
-        sauts: list[tuple[int, int, float]] = []
-        for i, d in enumerate(deltas):
-            if not np.isclose(d, periode_mediane, atol=tol):
-                sauts.append((i, i + 1, d))
-
-        # --- True recording period accounting for detected jumps ---
-        true_record_period = self.true_recording_period(dates, sauts, periode_time_lapse)
-
-        # --- Construct the actual timeline ---
-        time_line = self.build_time_line(dates, sauts, true_record_period, numeros, fichiers, verbose=False)
-
-        # --- Overall summary ---
-        print(f"🕒 Timeline computed: {time_line[-1]:.3f} s up to the last image (n={len(time_line)})")
-
-        dic_timeline = self.build_time_line_dictionnary(
-            fichiers=fichiers,
-            shootings=shootings,
-            dates=dates,
-            deltas=deltas,
-            time_line=time_line,
-            spectral_band=self.currentSpectralBand
-        )
-
-        return dic_timeline
-
-
-    @staticmethod
-    def build_time_line(dates: list[float],
-                        sauts: list[tuple[int, int, float]],
-                        periode_reelle: float,
-                        numeros: list[int],
-                        fichiers: list[Path],
-                        verbose: bool = False
-                        ) -> np.ndarray:
-        """
-        Construct a vector of actual elapsed times since the first image,
-        taking into account real jumps, apparent jumps (EXIF artifacts), and abnormal jumps.
-        If verbose=True, display the timeline image by image with the type of jump.
-
-        Parameters
-        ----------
-        dates : list[float]
-            List of timestamps (raw image acquisition times).
-        sauts : list[tuple[int, int, float]]
-            List of detected jumps as tuples (index1, index2, delta_time).
-        periode_reelle : float
-            Nominal real period between images.
-        numeros : list[int]
-            List of raw image numbers for display purposes.
-        verbose : bool, optional
-            If True, prints detailed timeline information, by default False.
-
-        Returns
-        -------
-        np.ndarray
-            Array of adjusted timeline values in seconds.
-        """
-
-        n = len(dates)
-        if n == 0:
-            return np.array([])
-
-        time_line = np.zeros(n, dtype=float)
-
-        # --- 1) Classify jumps ---
-        classified_jumps: list[tuple[int, int, float, str]] = []  # (idx1, idx2, delta, type)
-        dict_sauts: dict[int, float] = {}
-
-        for idx1, idx2, d_saut in sauts:
-            ratio = d_saut / periode_reelle
-
-            # Case 1: real jump (integer multiple of period)
-            if np.isclose(ratio, round(ratio), atol=0.49 / periode_reelle):
-                type_saut = "real"
-                dict_sauts[idx1] = d_saut
-
-            # Case 2: apparent jump (EXIF artifact)
-            elif d_saut < 2 * periode_reelle:
-                type_saut = "apparent"
-                # not added to dict_sauts because ignored
-
-            # Case 3: abnormal jump
-            else:
-                type_saut = "abnormal"
-                dict_sauts[idx1] = d_saut
-
-            classified_jumps.append((idx1, idx2, d_saut, type_saut))
-
-        # --- 2) Display jumps (only now that type is known) ---
-        if classified_jumps:
-            print(Uti.Style.YELLOW + f"⚠️ {len(classified_jumps)} jumps detected :" + Uti.Style.RESET)
-            for idx1, idx2, delta, type_saut in classified_jumps:
-                if type_saut == "real":
-                    label = "real jump"
-                    color = Uti.Style.YELLOW
-                elif type_saut == "apparent":
-                    label = "apparent jump"
-                    color = Uti.Style.GREEN
-                else:
-                    label = "abnormal jump"
-                    color = Uti.Style.RED
-
-                print(
-                    color
-                    + f"   - Between {Path(fichiers[idx1]).name} and {Path(fichiers[idx2]).name} : {delta:.3f} s → {label}"
-                    + Uti.Style.RESET
-                )
-        else:
-            print(Uti.Style.GREEN + "✅ No jumps detected" + Uti.Style.RESET)
-
-        # --- 3) Construct adjusted timeline ---
-        if verbose:
-            print("\n--- Adjusted real timeline ---")
-            print(f"raw image N° : {numeros[0]:04d} | time_line {time_line[0]:.3f} s")
-
-        for i in range(1, n):
-            delta = periode_reelle  # default value
-            saut_txt = ""
-
-            if (i - 1) in dict_sauts:
-                d_saut = dict_sauts[i - 1]
-                ratio = d_saut / periode_reelle
-
-                # Same classification as above
-                if np.isclose(ratio, round(ratio), atol=0.49 / periode_reelle):
-                    delta = d_saut
-                    saut_txt = f" | real jump {d_saut:.3f} s"
-                elif d_saut < 2 * periode_reelle:
-                    saut_txt = f" | apparent jump ({d_saut:.3f} s)"
-                else:
-                    delta = d_saut
-                    saut_txt = f" | abnormal jump {d_saut:.3f} s"
-
-            time_line[i] = time_line[i - 1] + delta
-
-            if verbose:
-                print(f"raw image N° : {numeros[i]:04d} | time_line {time_line[i]:.3f} s{saut_txt}")
-
-        if verbose:
-            print("---------------------------------\n")
-
-        return time_line
 
 
 
@@ -1016,7 +743,7 @@ class LoadVisNirImagesDialog(QDialog):
             idMinF = idMinFly + offset[i]
             idMaxF = idMaxFly + offset[i]
 
-            print(f'DEBUG   process_image_transfer  {suffix}   idTkoff= {idTkoff}   offset[{i}]= {offset[i]} ')
+            print(f'DEBUG 088  process_image_transfer  {suffix}   idTkoff= {idTkoff}   offset[{i}]= {offset[i]} ')
 
             sync_prog = progressSync[i]
             fly_prog = progressFly[i]
@@ -1024,31 +751,36 @@ class LoadVisNirImagesDialog(QDialog):
             # List of images with this suffix
             listInputImages = self.create_list_image_in_input_folder(inputFolder, suffix)
 
+            print(f'DEBUG  995   listInputImages ={listInputImages} ')
+
+            '''
+
             # --- Takeoff (one image)
-            takeOff_list, idTk, idTk, original_name_take_off = self.load_inputFolder_2_outputFolder(
+            print(f'DEBUG 999 self.original_path_image_takeoff.name = {Path(self.original_path_image_takeoff).name}')
+            takeOff_list, idTk, idTk = self.load_inputFolder_2_outputFolder(
                 Path(inputFolder), listInputImages,
-                Path(outputFlightAnalyticsFolder),
+                Path(outputFlyFolder),
                 idTk, idTk,
                 *sync_prog
             )
 
             # --- Sync phase
-            sync_list, idMinS, idMaxS, name = self.load_inputFolder_2_outputFolder(
+            sync_list, idMinS, idMaxS = self.load_inputFolder_2_outputFolder(
                 Path(inputFolder), listInputImages,
-                Path(outputSyncFolder),
+                Path(outputFlyFolder),
                 idMinS, idMaxS,
                 *sync_prog
             )
 
             # --- Fly phase
-            fly_list, idMinF, idMaxF, name = self.load_inputFolder_2_outputFolder(
+            fly_list, idMinF, idMaxF = self.load_inputFolder_2_outputFolder(
                 Path(inputFolder), listInputImages,
                 Path(outputFlyFolder),
                 idMinF, idMaxF,
                 *fly_prog
             )
-
-            print(f'DEBUG process_image_transfer  {suffix}   original_name_take_off = {original_name_take_off} ')
+            '''
+            print(f'DEBUG 077 process_image_transfer  {suffix}   original_name_take_off = {Path(self.original_path_image_takeoff).name} ')
 
             # --- JSON creation (one per suffix)
             self.save_transfer_info(
@@ -1057,8 +789,8 @@ class LoadVisNirImagesDialog(QDialog):
                 spectral_band=self.currentSpectralBand,
                 img_suffix=suffix,  # IMPORTANT: single suffix
                 tkoff_data={
-                    "outputFolder": str(outputFlightAnalyticsFolder),
-                    "original name": original_name_take_off,
+                    "outputFolder": str(Path(outputFlyFolder, "AerialPhotography", "VIS")),
+                    "original name": str(Path(self.original_path_image_takeoff).name),
                     "idMin": idTk,
                     "idMax": idTk,
                     "listCopiedImages": takeOff_list,
@@ -1233,94 +965,6 @@ class LoadVisNirImagesDialog(QDialog):
             print(Uti.Style.RED + f"[ERROR] Failed to read {json_path}: {e}" + Uti.Style.RESET)
             return None
 
-    @staticmethod
-    def build_time_line_dictionnary(
-            fichiers: List[Path],
-            shootings: List[int],
-            dates: List[Union[datetime, str]],
-            deltas: np.ndarray,
-            time_line: np.ndarray,
-            spectral_band: str = "VIS"
-    ) -> Dict[str, List[Dict[str, Union[float, int, str]]]]:
-        """
-        Build a dictionary containing the timeline of an image sequence
-        for a given spectral band (VIS, NIR, etc.).
-
-        Returns a dictionary in the form:
-            { spectral_band: [ {img_path, num_img, date_img, delta_img, relative_timeline}, ... ] }
-
-        Each entry corresponds to an image and contains:
-            - img_path : full path of the image
-            - num_img  : image capture number
-            - date_img : date in ISO format
-            - delta_img: interval since previous image (s)
-            - relative_timeline: cumulative time since first image (s)
-
-        rem:  if f = C:\ ....\folder_name\hyperlapse.DNG
-            Path(f).parent =  C:\ ....\folder_name
-            Path(f).parent.name = folder_name
-            Path(f).name  = "hyperlapse.DNG"
-            Path(f).stem  = "hyperlapse"
-            Path(f).suffix  = ".DNG"
-            Path(f).suffix[1:] = "DNG"
-
-        """
-
-        data: List[Dict[str, Union[float, int, str]]] = []
-
-        for i, f in enumerate(fichiers):
-            delta: float = float(time_line[i]) - float(time_line[i-1]) if i > 0 and i - 1 < len(deltas) else 0.0
-            # Format the date as ISO string if datetime, else use string directly
-            if isinstance(dates[i], datetime):
-                date_str: str = dates[i].isoformat(timespec="seconds")
-            else:
-                date_str = str(dates[i])
-
-            data.append({
-                "img_path": str(f),
-                "original_file_name": Path(f).name,
-                "IRD_file_name": f"{spectral_band}_{shootings[i]:04d}.{Path(f).suffix[1:]}",
-                "relative_shooting_number": int(shootings[i]),
-                "date_img": date_str,
-                "delta_img": round(delta, 6),
-                "relative_timeline": round(float(time_line[i]), 6)
-            })
-
-        return {spectral_band: data}
-
-
-    @staticmethod
-    def save_time_line_json_old(
-            output_dir: Union[str, Path],
-            *timeline_dicts: Dict[str, List[Dict]]
-    ) -> Path:
-        """
-        Save multiple timelines (VIS, NIR, etc.) into a single JSON file.
-
-        Example of usage:
-            save_time_line_json(output_dir, vis_timeline, nir_timeline)
-
-        The final JSON file will have the structure:
-        {
-            "VIS": [ ... ],
-            "NIR": [ ... ]
-        }
-        """
-
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        out_file: Path = output_dir / "time_line.json"
-
-        # Merge all timeline dictionaries by spectral band key
-        merged: dict[str, list[dict]] = {}
-        for d in timeline_dicts:
-            merged.update(d)
-
-        with open(out_file, "w", encoding="utf-8") as f:
-            json.dump(merged, f, indent=4, ensure_ascii=False)
-
-        print(Uti.Style.GREEN + f"💾 JSON file saved: {out_file}" + Uti.Style.RESET)
-        return out_file
 
 
     @staticmethod
@@ -1429,39 +1073,23 @@ class LoadVisNirImagesDialog(QDialog):
         Returns:
         None
         """
+        print(f'load_inputFolder_2_outputFolder entrée   ')
         listFileName = []
-        original_name_take_off = None
         try:
             for imgFileName in listInputImages:   # imgFileName  =  name + suffix
                 num_img, name_img = self.extract_num_image(imgFileName)
                 if id_min <= num_img <= id_max:
-                    if id_min == num_img == id_max:
-                        original_name_take_off = imgFileName
-                    new_num_img = num_img
-                    if self.currentSpectralBand.lower() == "nir":
-                        if Path(imgFileName).suffix[1:].lower() == "raw":
-                            new_num_img = int((num_img + 1))
-                        else:
-                            new_num_img = int(num_img)
-                    outputImageName = f"{self.currentSpectralBand}_{new_num_img:04d}{Path(imgFileName).suffix}"
+                    outputImageName = f"{self.currentSpectralBand}_{num_img:04d}{Path(imgFileName).suffix}"
                     listFileName.append(outputImageName)
-                    Uti.copy_and_rename_images(inputFolder, imgFileName, outputFolder, outputImageName, verbose=False)
-                    # listFileName.append(imgFileName)
-                    # Uti.copy_images(inputFolder, imgFileName, outputFolder)
+                    # Uti.copy_and_rename_images(inputFolder, imgFileName, outputFolder, outputImageName, verbose=False)
                     self.progress_bar.setValue(pgsbar0 + int((pgrbar1-pgsbar0)*(len(listFileName) / (id_max + 1 - id_min))))
-
-            if self.currentSpectralBand.lower() == "nir":
-                if Path(imgFileName).suffix[1:].lower() == "raw":
-                    id_min = int(id_min + 1)
-                    id_max = int(id_max + 1)
-                else:
                     id_min = int(id_min)
                     id_max = int(id_max)
             #  end of loading images associated with the imgTyp type in the mission files
             LoadVisNirImagesDialog.flagAllImageOK = True
         except Exception as e:
             print("error in load_inputFolder_2_outputFolder :", e)
-        return listFileName, id_min, id_max, original_name_take_off
+        return listFileName, id_min, id_max
 
 
     @staticmethod
@@ -1509,7 +1137,7 @@ class LoadVisNirImagesDialog(QDialog):
 
 
 
-    def init_image_takeoff_available(self, path_image_takeoff: str, original_path_image_takeoff: str) -> bool:
+    def init_image_takeoff_available(self, path_image_takeoff: str, original_path_image_takeoff: str):
         """
         Initialize the availability of a takeoff image based on the provided path and image type.
 
@@ -1524,7 +1152,7 @@ class LoadVisNirImagesDialog(QDialog):
         Returns:
         None
         """
-        image_takeoff_available = False
+        print(f'DEBUG   entrée de init_image_takeoff_available  : path_image_takeoff ={path_image_takeoff}   original_path_image_takeoff ={original_path_image_takeoff} ')
         try:
             self.image_takeoff_available = False    # Initialize as False
             # Check if the image type is "VIS" or "DNG"
@@ -1539,17 +1167,15 @@ class LoadVisNirImagesDialog(QDialog):
                 if path_image_takeoff is not None and os.path.exists(path_image_takeoff):
                     self.path_image_takeoff = path_image_takeoff
                     self.image_takeoff_available = True
-                    image_takeoff_available = True
                     self.image_0_available = True
                 elif original_path_image_takeoff is not None and os.path.exists(original_path_image_takeoff):
                     self.path_image_takeoff = path_image_takeoff
                     self.image_takeoff_available = True
-                    image_takeoff_available = True
                     self.image_0_available = True
 
         except Exception as e:
             print("error   in init_image_takeoff_available", e)
-        return image_takeoff_available
+
 
 
     def open_takeoff_image(self, path_image_takeoff: Path) -> None:
@@ -1571,6 +1197,7 @@ class LoadVisNirImagesDialog(QDialog):
         try:
             file_path = path_image_takeoff
             file_path = Uti.safe_path(file_path)
+            print(f'DEBUG  open_takeoff_image  path_image_takeoff = {path_image_takeoff}  ')
             if file_path:
                 self.flags[0] = True
                 self.new_user_dir = os.path.dirname(file_path)
@@ -1764,7 +1391,7 @@ class LoadVisNirImagesDialog(QDialog):
                 if img_suffix.lower() == "dng":
                     self.listVisRefPath[numBtn] = file_path
 
-                elif img_suffix.lower() == "jpg":
+                elif img_suffix.lower() == "dng":
                     self.listNirRefPath[numBtn] = file_path
                 flag = True
             # return flag, self.new_user_dir
@@ -1783,8 +1410,59 @@ class LoadVisNirImagesDialog(QDialog):
             print("error", e)
         pass
 
+    def choice_of_reference_images_consistency_analysis_new(self) -> bool:
+        """
+        Analyze the consistency of the choice of reference images.
 
-    def choice_of_reference_images_consistency_analysis(self, inputFolder: str) -> bool:
+        This method checks if all specified reference images are located within the provided
+        input folder. An inconsistency is detected if any of the reference images are not
+        found in the provided input folder, and an error message will be displayed, detailing
+        which images are inconsistent.
+
+        Parameters:
+        - inputFolder (str): The path of the folder expected to contain the reference images.
+
+        Returns:
+        - bool: True if the choice of reference images is consistent (all images are in the
+                input folder), False otherwise.
+        """
+        # Vérification minimale : liste non vide
+        if not hasattr(self, "listImgRefPath") or not self.listImgRefPath:
+            Uti.show_error_message("No reference image paths found.")
+            return False
+
+        values = self.listImgRefPath
+        first_value = values[0]
+
+        # Consistance : tous identiques ?
+        consistency_choice = (len(set(values)) == 1)
+
+        if not consistency_choice:
+            # Pour construire le message des éléments différents
+            labels = [
+                "first image of Sync",
+                "last image of Sync",
+                "first image of Fly",
+                "last image of Fly",
+                "extra image"
+            ]
+
+            message = ""
+            for idx, (value, label) in enumerate(zip(values, labels)):
+                if value != first_value:
+                    message += f" - {label} differs: {value}\n"
+
+            Uti.show_error_message(
+                "We detected an inconsistency in the choice of reference images:\n"
+                f"{message}\n"
+                f"They must all be identical (same reference image)."
+            )
+
+        return consistency_choice
+
+
+
+    def choice_of_reference_images_consistency_analysis(self) -> bool:
         """
         Analyze the consistency of the choice of reference images.
 
@@ -1801,22 +1479,22 @@ class LoadVisNirImagesDialog(QDialog):
                 input folder), False otherwise.
         """
         message = ""
-        if (inputFolder != os.path.dirname(self.listImgRefPath[1]) or
-                inputFolder != os.path.dirname(self.listImgRefPath[2]) or
-                inputFolder != os.path.dirname(self.listImgRefPath[3]) or
-                inputFolder != os.path.dirname(self.listImgRefPath[4])):
+        if (os.path.dirname(self.listImgRefPath[0]) != os.path.dirname(self.listImgRefPath[1]) or
+                os.path.dirname(self.listImgRefPath[0]) != os.path.dirname(self.listImgRefPath[2]) or
+                os.path.dirname(self.listImgRefPath[0]) != os.path.dirname(self.listImgRefPath[3]) or
+                os.path.dirname(self.listImgRefPath[0]) != os.path.dirname(self.listImgRefPath[4])):
 
             consistency_choice = False
             labels = ["first image of Sync", "last image of Sync", "first image of Fly", "last image of Fly"]
             for idx, label in zip(range(1, 5), labels):
-                if inputFolder != os.path.dirname(self.listImgRefPath[idx]):
+                if os.path.dirname(self.listImgRefPath[0]) != os.path.dirname(self.listImgRefPath[idx]):
                     message += f" | {label} \n"
         else:
             consistency_choice = True
 
         if not consistency_choice:
             # Uti.show_error_message` is a method to display error messages to the user.
-            Uti.show_error_message(f"We detected an inconsistency in the choice of reference images: \n {message} \n Please note they must come from the same folder: \n {inputFolder} !")
+            Uti.show_error_message(f"We detected an inconsistency in the choice of reference images: \n {message} \n Please note they must come from the same folder: \n {os.path.dirname(self.listImgRefPath[0])} !")
 
         return consistency_choice
 

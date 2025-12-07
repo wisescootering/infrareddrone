@@ -5,16 +5,18 @@
 #   29/10/2023   V002
 # ---------------------------------------------------------------------------------
 
-
+from typing import Any, Dict, Optional, Tuple, List, Union, Callable
 import sys
 import os
+from pathlib import Path
 import shutil
 import json
 from datetime import date, time, datetime
-from typing import Any, Dict, Optional, Tuple, List, Union
-from pathlib import Path
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import psutil
 
+import piexif
 # -------------------- Image Library ------------------------------
 import rawpy
 import imageio
@@ -23,7 +25,7 @@ from PyQt6.QtWidgets import QFileDialog, QWidget,  QLineEdit, QFrame,  QPushButt
                             QProgressBar, QHBoxLayout,  QVBoxLayout, QLabel, QMessageBox, QDialog
 from PyQt6.QtGui import QPixmap, QImage, QColor, QIcon, QRegularExpressionValidator
 from PyQt6 import QtCore
-from PyQt6.QtCore import Qt, pyqtSignal, QRegularExpression
+from PyQt6.QtCore import Qt, pyqtSignal, QRegularExpression, QUrl
 
 # -------------- IRDrone Library ------------------------------------
 import IRD_interactive_utils as Uti
@@ -49,342 +51,946 @@ class WorkerExif(QtCore.QObject):
         finished (dict): mapping filename -> metadata-dict (simulated)
         error (str): error message
     """
-    progress = QtCore.pyqtSignal(int)
-    finished = QtCore.pyqtSignal(dict, str)
+
+    progress: QtCore.pyqtSignal = QtCore.pyqtSignal(int)
+    finished: QtCore.pyqtSignal = QtCore.pyqtSignal(dict, str)
     error = QtCore.pyqtSignal(str)
 
-    def __init__(self, folder_to_scan: str, msg: str):
+
+    def __init__(self, folder_to_scan: str, msg: str,  spectral_band: str = "VIS"):
         super().__init__()
-        self.folder_to_scan = Path(folder_to_scan)
-        self.msg = msg
+        try:
+            self.folder_to_scan = Path(folder_to_scan)
+            self.msg = msg
+            self.spectral_band = spectral_band
+
+            print(f"[DEBUG] WorkerExif __init__ for band={self.spectral_band}, folder={self.folder_to_scan}, object id={id(self)}")
+
+        except Exception as e1:
+            print(f'error in class WorkerExif __init__ : {e1}')
 
     def run(self) -> None:
-        """
-        Simulate scanning .dng files and extracting EXIF.
-        Replace the body with real exiftool calls when ready.
-        """
         try:
             files = list(self.folder_to_scan.glob("*.dng"))
-            n = len(files) if files else 0
+            n = len(files)
+            self.progress.emit(0)  # ← force le début de la progress bar
 
-            fake_data: Dict[str, Any] = {}
+            if n == 0:
+                self.progress.emit(100)
+                self.finished.emit({}, self.msg)
+                return
 
-            for i, f in enumerate(files):
-                # simulate a small delay per file (replace by real EXIF read)
-                time.sleep(0.05)
+            exiftool_path = Uti.EXIFTOOLPATH
+            results: Dict[str, Any] = {}
 
-                # fill fake metadata — replace with real parsed values later
-                fake_data[f.name] = {
-                    "yaw": 0.0,
-                    "pitch": 0.0,
-                    "roll": 0.0,
-                }
+            # ----------- PARALLÉLISATION ----------
+            cached = True
 
-                # emit progress (guard against division by zero)
-                if n > 0:
-                    self.progress.emit(int(100 * (i + 1) / n))
+            # Liste des fichiers à traiter réellement
+            to_process = []
+            for f in files:
+                out_path = f.with_suffix(".exif")
+                if out_path.exists() and cached:
+                    pass
+                else:
+                    to_process.append(f)
 
-            # finished: send the dict (may be empty)
-            self.finished.emit(fake_data, self.msg)
+            total = len(to_process)
+            if total == 0:
+                # rien à calculer → avance directement
+                self.progress.emit(95)
+
+            else:
+                # Pool CPU (nb de workers = nb CPU physiques)
+                max_workers = psutil.cpu_count(logical=False) or 1
+
+                done_counter = 0
+
+                def _task_done(_):
+                    nonlocal done_counter
+                    done_counter += 1
+                    percent = int(95 * done_counter / total)
+                    self.progress.emit(percent)
+
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    futures = []
+                    for f in to_process:
+                        fut = executor.submit(Uti.read_exif_and_write_json, f, exiftool_path)
+                        fut.add_done_callback(_task_done)
+                        futures.append(fut)
+
+                    # Récupérer les résultats
+                    for f, fut in zip(to_process, futures):
+                        meta = fut.result()
+                        results[f.name] = meta
+
+            # ----------- POST-PROCESS (hors parallélisation) ----------
+            list_dic_exif = Uti.list_tempo_time_line(self.folder_to_scan,
+                                                     spectral_band=self.spectral_band)
+
+            dic_timeline = Uti.time_line_analyser_images(
+                list_dic_exif,
+                spectral_band=self.spectral_band,
+                img_suffix=".DNG",
+                verbose=False
+            )
+
+            Uti.save_time_line_json(self.folder_to_scan, dic_timeline)
+
+            # fin !
+            self.progress.emit(100)
+            self.finished.emit(results, self.msg)
 
         except Exception as ex:
-            # emit an error string (do not raise in a thread)
             self.error.emit(str(ex))
 
 
-
-class WorkerTransfert(QtCore.QObject):
+class WorkerTransfer_VIS(QtCore.QObject):
     """
     Worker class to transfer and rename VIS images from input directory
     to output directory in a separate thread, emitting progress updates
     and a finished signal when done.
-
-    Signals:
-        progress (int): Emits the progress percentage (0-100).
-        finished (str): Emits a completion message when the transfer is finished.
     """
 
     progress: QtCore.pyqtSignal = QtCore.pyqtSignal(int)
     finished: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
-    error = pyqtSignal(str)
+    error = QtCore.pyqtSignal(str)
 
     def __init__(self, input_dir: Union[str, Path], output_dir: Union[str, Path]):
-        """
-        Initialize the worker.
-
-        Args:
-            input_dir (str | Path): Path to the folder containing source images.
-            output_dir (str | Path): Path to the destination folder.
-            msg (str): Message to emit upon completion.
-        """
         super().__init__()
         self.input_dir: Path = Path(input_dir)
         self.output_dir: Path = Path(output_dir)
         self.exif_data = {}
 
     def run(self) -> None:
-        """
-        Run the transfer process.
-
-        Reads all DNG files in the input directory, renames them according
-        to the VIS naming convention, copies them to the output directory,
-        and emits progress updates. Emits finished signal at the end, even
-        if an error occurs.
-        """
         try:
             list_file = Uti.list_files_with_suffix("dng", self.input_dir)
             n = len(list_file)
 
-            for index, file in enumerate(list_file):
-                input_img_name: str = Path(file).name
-                output_img_name: str = Uti.rename_file_VIS(input_img_name)
+            # --- progress bar : début ---
+            self.progress.emit(0)
 
-                Uti.copy_and_rename_images(
-                    self.input_dir,
-                    input_img_name,
-                    self.output_dir,
-                    output_img_name,
-                    verbose=False,
+            cached = True
+
+            # Liste des fichiers à traiter réellement
+            to_process = []
+            for f in list_file:
+                out_path = f.with_suffix(".exif")
+                if out_path.exists() and cached:
+                    pass
+                else:
+                    to_process.append(f)
+
+            n = len(to_process)
+            if n == 0:
+                self.progress.emit(100)
+                self.finished.emit("No files to transfer")
+                return
+
+            done_counter = 0  # compteur pour progress bar
+
+            for file in to_process:
+                try:
+                    input_img_name: str = Path(file).name
+                    output_img_name: str = Uti.rename_file_VIS(input_img_name)
+
+                    Uti.copy_and_rename_images(
+                        self.input_dir,
+                        input_img_name,
+                        self.output_dir,
+                        output_img_name,
+                        verbose=False,
+                    )
+                except Exception as e:
+                    print(f"[ERROR] transfer failed for {file}: {e}")
+
+                done_counter += 1
+                percent = int(100 * done_counter / n)
+                self.progress.emit(percent)
+
+            self.finished.emit("transfer_finished")
+
+        except Exception as e:
+            print("Error in WorkerTransfer_VIS.run:", e)
+            self.error.emit(str(e))
+
+
+class WorkerTransfer_NIR(QtCore.QObject):
+    """
+    Worker to convert NIR RAW files to DNG in parallel using ThreadPoolExecutor.
+    Emits:
+      - progress(int)
+      - finished(str)
+      - error(str)
+    """
+
+    progress = QtCore.pyqtSignal(int)
+    finished = QtCore.pyqtSignal(str)
+    error = QtCore.pyqtSignal(str)
+
+    def __init__(self,
+                 input_folder: Union[str, Path],
+                 output_folder: Union[str, Path],
+                 exe_path: Optional[str] = None,
+                 nb_threads: str = "0",
+                 max_workers: Optional[int] = None,
+                 verbose: bool = False,
+                 exiftool_path: Optional[str] = None):
+        super().__init__()
+        self.input_folder = Path(input_folder)
+        self.output_folder = Path(output_folder)
+        self.exe_path = exe_path or getattr(Uti, "SJCONVERTERPATH", None)
+        self.nb_threads = nb_threads
+        self.max_workers = max_workers
+        self.verbose = verbose
+        self.exiftool_path = exiftool_path or getattr(Uti, "EXIFTOOLPATH", None)
+        self.dng_files: List[str] = []
+
+    def run(self) -> None:
+        try:
+            self.output_folder.mkdir(parents=True, exist_ok=True)
+
+            # RAW list
+            raw_files = sorted([str(p) for p in self.input_folder.glob("*.RAW")])
+            if not raw_files:
+                raw_files = sorted([str(p) for p in self.input_folder.glob("*.raw")])
+
+            n = len(raw_files)
+            if n == 0:
+                self.progress.emit(100)
+                self.finished.emit("No NIR RAW files found")
+                return
+
+            # Determine worker count
+            if self.max_workers is None:
+                try:
+                    cpu_physical = psutil.cpu_count(logical=False)
+                    if cpu_physical is None:
+                        raise ValueError("psutil returned None")
+                    self.max_workers = max(1, cpu_physical)
+                except Exception:
+                    self.max_workers = max(1, (os.cpu_count() or 1))
+
+            if self.verbose:
+                print(f"[TRACE] WorkerTransfer_NIR: converting {n} files with max_workers={self.max_workers}")
+
+            dng_results = []
+            completed = 0
+
+            # -------------------------------------
+            # THREADPOOLEXECUTOR (PyQt6 OK)
+            # -------------------------------------
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                futures = {
+                    executor.submit(
+                        Uti._convert_single_raw_to_dng,
+                        raw,
+                        self.exe_path,
+                        str(self.output_folder),
+                        self.nb_threads,
+                        self.verbose,
+                        self.exiftool_path
+                    ): raw for raw in raw_files
+                }
+
+                for future in as_completed(futures):
+                    raw = futures[future]
+                    try:
+                        dng_path = future.result()
+                        if dng_path:
+                            dng_results.append(dng_path)
+                    except Exception as e:
+                        print(f"[ERROR] conversion failed for {raw}: {e}")
+                    finally:
+                        completed += 1
+                        pct = int(100 * completed / n)
+                        if self.verbose:
+                            print(f"[TRACE] completed = {completed} / {n}   pct = {pct}%")
+
+                        # emit progress
+                        if completed == n:
+                            pct = 100
+                        self.progress.emit(pct)
+
+            # end
+            self.dng_files = sorted(dng_results)
+            msg = f"NIR conversion finished: {len(self.dng_files)} files created in {self.output_folder}"
+            self.finished.emit(msg)
+
+        except Exception as e:
+            print("Error in WorkerTransfer_NIR.run:", e)
+            self.error.emit(str(e))
+
+
+# --------------------------------------------------------------------------------------------
+#
+#                     Window_create_file_structure
+#
+#                Creation of the mission file structure
+#
+# --------------------------------------------------------------------------------------------
+
+class Window_create_file_structure(QDialog):
+    """
+    Creation of the mission file structure
+    C:/Air-Mission/
+        └── FLY-YYYYMMDD-hhmm-<txt>/
+            │
+            ├── AerialPhotography/
+            │       └── VIS/
+            │             └──  [VIS_0001.dng, VIS_0002.dng, ...]
+            │             └──  [VIS_0001.exif, VIS_0002.exif, ...]
+            │             └──  time_line.json
+            │       └── NIR/
+            │             └──  [NIR_0001.dng, NIR_0002.dng, ...]
+            │             └──  [NIR_0001.exif, NIR_0002.exif, ...]
+            │             └──  time_line.json
+            ├── Synchro/
+            ├── ImgIRdrone/
+            ├── mapping_MULTI/
+            └── cameras/
+            ├── FlightAnalytics/
+            │       └── config.json              ( mission parameters )
+            │       └── transfer_info_VIS_dng.json (minimal version)
+            └──
+
+
+            At this stage, we do not have   └── cameras/
+                                            │       └── camera_IRdrone.json
+
+
+    """
+    # Creates a class signal to transmit the data to the parent which will here be an instance of the window_11 class
+    # Here the return is a boolean (click on OK True or False and the dictionary containing the answers to the questionnaire)
+    data_signal_from_dialog_create_file_structure_to_main_window = pyqtSignal(bool, dict)
+
+    def __init__(self, parent, dic_takeoff_light: Dict[str, Any]):
+        super().__init__(parent)
+        # -----------Name of folders to store mission images. ----------------
+        try:
+            self.transfer_thread_VIS = None
+            self.transfer_worker_VIS = None
+            self.exif_thread_VIS = None
+            self.exif_worker_VIS = None
+            self.exif_started_VIS = False
+            self.exif_results = None
+            self.worker = None
+            self.input_dir_VIS: Path = Path()
+            self.output_dir_VIS: Path = Path()
+            self.output_dir_NIR: Path = Path()
+            self.exif_started_VIS = False
+            self.path_folder_NIR: Optional[Path] = None
+            self.nir_thread = None
+            self.nir_worker = None
+            self.nir_started = False
+            self._exif_threads = {}
+            self._exif_workers = {}
+            self.thread_vis = None
+            self.worker_vis = None
+            self.thread_nir = None
+            self.worker_nir = None
+
+            self.path_image_takeoff = None
+            self.name_image_takeoff = None
+            self.dirname_image_takeoff = None
+            self.suffix_image_takeoff = None
+            self.path_folder_NIR = None
+            self.altitude_DJI = None
+            self.dic_info_geo = None
+            self.Date_Exif = None
+
+            self.pref = Prefrence_Screen()
+            self.layout = None
+            self.zone_121 = None
+            self.zone_122 = None
+            self.zone_122_layout = None
+            self.btn_1221 = None
+            self.btn_1222 = None
+            self.time_layout = None
+            self.location_label = None
+            self.location_field = None
+            self.location_layout = None
+            self.phase_label = None
+
+            self.validate_answer = True
+            self.date_layout = None
+            self.time_label = None
+            self.time_field = None
+
+            self.GPS_label = None
+            self.GPS_NS_lat: str = None
+            self.GPS_lat: float = None
+            self.GPS_lat_field = None
+            self.GPS_NS = None
+            self.GPS_EW = None
+            self.GPS_lon = None
+            self.GPS_lon_field = None
+            self.GPS_alti = None
+            self.GPS_layout = None
+            self.description_label = None
+            self.description_field = None
+            self.description_layout = None
+            self.pilot_Name = "Alain"
+            self.pilot_ID = None
+            self.pilot_Name_field = None
+            self.pilot_layout = None
+            self.pilot_ID_field = None
+            self.pilot_label = None
+
+            self.camera_VIS_ID_field = None
+            self.camera_VIS_maker_field = None
+            self.camera_VIS_tlapse_field = None
+            self.camera_VIS_layout = None
+            self.camera_VIS_t_layout = None
+            self.camera_VIS_t_label = None
+            self.camera_VIS_label = None
+            self.camera_VIS_deltatime_field = None
+            self.camera_VIS_deltatime = None
+            self.camera_VIS_timelaspe = None
+            self.camera_VIS_maker = None
+            self.camera_VIS_ID = None
+
+            self.camera_NIR_ID_field = None
+            self.camera_NIR_maker_field = None
+            self.camera_NIR_tlapse_field = None
+            self.camera_NIR_layout = None
+            self.camera_NIR_t_layout = None
+            self.camera_NIR_t_label = None
+            self.camera_NIR_label = None
+            self.camera_NIR_deltatime_field = None
+            self.camera_NIR_deltatime = None
+            self.camera_NIR_timelaspe = None
+            self.camera_NIR_maker = None
+            self.camera_NIR_ID = None
+
+            self.image_VIS_format = None
+            self.image_VIS_format_label = None
+            self.image_VIS_format_field = None
+            self.image_VIS_format_layout = None
+
+            self.image_NIR_format = None
+            self.image_NIR_format_label = None
+            self.image_NIR_format_field = None
+            self.image_NIR_format_layout = None
+            self.image_NIR_filter_layout = None
+            self.image_NIR_filter_maker = None
+            self.image_NIR_filter_maker_field = None
+            self.image_NIR_filter_band = None
+            self.image_NIR_filter_band_field = None
+            self.image_NIR_filter_label = None
+
+
+            self.AerialPhotoFolder: str = self.pref.AerialPhotoFolder  # folder of images taken by VIS and NIR cameras
+            self.AerialPhotoFolder_VIS: str = self.pref.AerialPhotoFolder_VIS  # folder of images taken by VIS and NIR cameras
+            self.AerialPhotoFolder_NIR: str = self.pref.AerialPhotoFolder_NIR  # folder of images taken by VIS and NIR cameras
+            self.AnalyticFolder: str = self.pref.AnalyticFolder  # technical folder containing information on the mission
+            self.ImgIRdroneFolder: str = self.pref.ImgIRdroneFolder  # folder of images processed by IRDrone
+            self.SynchroFolder: str = self.pref.SynchroFolder  # folder for images from the camera synchronization phase
+            self.MappingFolder: str = self.pref.MappingFolder  # folder for image assembly with Open Drone Map
+            self.CameraFolder: str = self.pref.CameraFolder  # Used by ODM
+            self.missionFolder: str = self.pref.directory
+
+            self.dic_takeoff_light: dict = dic_takeoff_light
+            self.dic_takeoff: dict[str, Any] = {}
+            self.date_label = None
+            self.date_field = None
+
+            self.py_date_time = datetime.strptime(self.dic_takeoff_light['Date Exif'], "%Y:%m:%d %H:%M:%S")
+            self.py_date = self.py_date_time.date()
+            self.py_time = self.py_date_time.time()
+
+            self.progress_bar = None
+
+
+
+            self.initGUI()
+        except Exception as e:
+            print(f' error in   Window_create_file_structure  __init__  : {e}')
+
+    def initGUI(self) -> None:
+        """
+        Initialize the graphical user interface (GUI) for the mission creation dialog.
+
+        Sets up the window title, geometry, main layouts, action buttons, progress bar,
+        and initial input fields. Connects signals to their corresponding slots.
+        """
+        try:
+            # Set window title
+            self.setWindowTitle("Create a mission")
+
+            # Main vertical layout
+            self.layout: QVBoxLayout = QVBoxLayout(self)
+
+            # Set window size
+            width: int = 680  # 700
+            height: int = 700  # 500
+            self.setGeometry(0, 0, width, height)
+
+            # Initialize input fields for takeoff point
+            self.init_fields()
+            self.update_dic_takeoff()
+
+            # Zone 121: Placeholder widget (can hold dynamic content)
+            self.zone_121: QWidget = QWidget()
+            self.layout.addWidget(self.zone_121)
+
+            # Zone 122: Buttons and progress bar
+            self.zone_122: QWidget = QWidget()
+            self.layout.addWidget(self.zone_122)
+
+            # Action buttons
+            self.btn_1221: QPushButton = QPushButton("Validate create mission.")
+            self.btn_1221.setStyleSheet("background-color: darkGray; color: black;")
+            self.btn_1222: QPushButton = QPushButton("<< previous step")
+            self.btn_1222.setStyleSheet("background-color: darkGray; color: black;")
+
+            # ---- Nouveau layout vertical principal ----
+            zone_122_vlayout = QVBoxLayout()
+            self.zone_122.setLayout(zone_122_vlayout)
+
+            # Phase label au-dessus de la barre, centré
+            self.phase_label = QLabel("Waiting …")
+            self.phase_label.setStyleSheet("font-weight: bold; color: black;")
+            self.phase_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            zone_122_vlayout.addWidget(self.phase_label)
+
+            # Progress bar setup
+            self.progress_bar: QProgressBar = QProgressBar(self)
+            self.progress_bar.setStyleSheet("QProgressBar { color: white; }")
+            self.progress_bar.setValue(0)
+            zone_122_vlayout.addWidget(self.progress_bar)
+
+            # Layout horizontal pour les boutons
+            self.zone_122_layout = QHBoxLayout()
+            self.zone_122_layout.addWidget(self.btn_1222)
+            self.zone_122_layout.addWidget(self.btn_1221)
+            zone_122_vlayout.addLayout(self.zone_122_layout)
+
+            # Connect buttons to slots
+            self.btn_1221.clicked.connect(self.ok_clicked)
+            self.btn_1222.clicked.connect(self.cancel_clicked)
+
+            # Set initial focus sequence for UI fields
+            self.focus_sequence()
+
+            # Center window on the specified screen
+            Uti.center_on_screen(self, screen_Id=1)
+
+            # Set overall style
+            self.setStyleSheet("background-color: white; color: black;")
+        except Exception as e:
+            print(f'error in initGUI : {e}')
+
+    def focus_sequence(self) -> None:
+        try:
+            self.date_field.returnPressed.connect(self.time_field.setFocus)
+            self.time_field.returnPressed.connect(self.location_field.setFocus)
+
+            self.location_field.returnPressed.connect(self.GPS_lat_field.setFocus)
+            self.GPS_lat_field.returnPressed.connect(self.GPS_lon_field.setFocus)
+
+            self.GPS_lon_field.returnPressed.connect(self.description_field.setFocus)
+
+            self.description_field.returnPressed.connect(self.pilot_Name_field.setFocus)
+
+            self.pilot_Name_field.returnPressed.connect(self.pilot_ID_field.setFocus)
+            self.pilot_ID_field.returnPressed.connect(self.camera_VIS_maker_field.setFocus)
+
+            self.camera_VIS_maker_field.returnPressed.connect(self.camera_VIS_ID_field.setFocus)
+            self.camera_VIS_ID_field.returnPressed.connect(self.camera_VIS_tlapse_field.setFocus)
+            self.camera_VIS_tlapse_field.returnPressed.connect(self.camera_VIS_deltatime_field.setFocus)
+            self.camera_VIS_deltatime_field.returnPressed.connect(self.image_VIS_format_field.setFocus)
+
+            self.image_VIS_format_field.returnPressed.connect(self.camera_NIR_maker_field.setFocus)
+            self.camera_NIR_maker_field.returnPressed.connect(self.camera_NIR_ID_field.setFocus)
+            self.camera_NIR_ID_field.returnPressed.connect(self.camera_NIR_tlapse_field.setFocus)
+            self.camera_NIR_tlapse_field.returnPressed.connect(self.camera_NIR_deltatime_field.setFocus)
+            self.camera_NIR_deltatime_field.returnPressed.connect(self.image_NIR_format_field.setFocus)
+
+            self.image_NIR_format_field.returnPressed.connect(self.image_NIR_filter_maker_field.setFocus)
+            self.image_NIR_filter_maker_field.returnPressed.connect(self.image_NIR_filter_band_field.setFocus)
+
+            self.image_NIR_filter_band_field.returnPressed.connect(self.btn_1221.setFocus)
+        except Exception as e:
+            print("error __init__  Sequence of focuses ", e)
+
+    def init_fields(self) -> None:
+        """
+        Initializes takeoff point data fields.
+        The Date, Time, GPS coordinates and Location fields are pre-populated.
+        They are extracted from the Exif data of the image taken at takeoff.
+        These fields cannot be modified by the user (setReadOnly(True),
+        with the exception of the location field (setReadOnly(False).
+        """
+        try:
+            self._init_date_mission()
+            self._init_time_mission()
+            self._init_location()
+            self._init_GPS()
+            self._init_description()
+            self._init_pilot()
+            self._init_VIS_camera()
+            self._init_NIR_camera()
+            self._init_NIR_filter()
+        except Exception as e:
+            print(f'error in init_fields : {e}')
+
+    # ======= Bouton principal ==========
+
+    def ok_clicked(self) -> None:
+        """
+        Slot called when 'OK' is clicked.
+        Explicitly triggers the full mission pipeline:
+            1. VIS transfer
+            2. EXIF VIS
+            3. NIR transfer
+            4. EXIF NIR
+            5. Final message
+        """
+        try:
+            self.btn_1221.setEnabled(False)
+
+            # Update mission info
+            self.update_dic_takeoff()
+            self.create_mission_folder()
+            self.update_image_takeoff()
+            self.update_transfert_info_VIS_dng_json()
+
+            # Directories VIS
+            self.input_dir_VIS = Path(self.dic_takeoff.get("original File path take-off")).parent
+            self.output_dir_VIS = Path(self.dic_takeoff["File path mission"]) / "AerialPhotography" / "VIS"
+
+            # --- Launch pipeline ---
+            self.start_mission_pipeline()
+
+        except Exception as e:
+            print(f"[ERROR] in ok_clicked: {e}")
+            self.btn_1221.setEnabled(True)
+
+
+    def cancel_clicked(self) -> None:
+        """
+        Slot called when the 'Cancel' button is clicked.
+        Closes the current dialog window.
+        """
+        try:
+            self.close()
+        except Exception as e:
+            print("Error in Window_create_file_structure.cancel_clicked:", e)
+
+    # ==== Orchestrateur des worker(s)  et pipe line =============
+
+
+    def start_mission_pipeline(self):
+        pipeline = [
+            self.start_transfer_VIS,
+            self.start_exif_VIS_step,
+            self.start_transfer_NIR,
+            self.start_exif_NIR_step,
+            self._final_mission_done
+        ]
+        self._run_pipeline(pipeline, step_index=0)
+
+    def _run_pipeline(self, pipeline, step_index, *args):
+        """Exécute le pipeline étape par étape."""
+        if step_index >= len(pipeline):
+            print("[TRACE] Pipeline terminé.")
+            return
+        step_fn = pipeline[step_index]
+
+        def done_callback(result, msg):
+            self._run_pipeline(pipeline, step_index + 1, result, msg)             # Quand le worker courant termine, passer au suivant
+        step_fn(done_callback, *args)  # Lancer l’étape
+
+
+    # =======  Gestion worker transfer_VIS ===================
+
+
+    def start_transfer_VIS(self, done, *args):
+        print("[PIPE] Starting VIS transfer")
+
+        self.thread_vis = QtCore.QThread()
+        self.worker_vis = WorkerTransfer_VIS(self.input_dir_VIS, self.output_dir_VIS)
+        self.worker_vis.moveToThread(self.thread_vis)
+
+        self.thread_vis.started.connect(self.worker_vis.run)
+        self.worker_vis.progress.connect(self.on_transfer_VIS_progress)
+        self.worker_vis.finished.connect(lambda msg: done("VIS_TRANSFER_OK", msg))
+        self.worker_vis.error.connect(self.on_transfer_VIS_error)
+
+        # cleanup
+        self.worker_vis.finished.connect(self.thread_vis.quit)
+        self.worker_vis.finished.connect(self.worker_vis.deleteLater)
+        self.thread_vis.finished.connect(self.thread_vis.deleteLater)
+
+        self.thread_vis.start()
+
+    def on_transfer_VIS_error(self, message: str) -> None:
+        """Handle TRANSFER worker errors (display and proceed)."""
+        try:
+            self.btn_1221.setEnabled(True)
+            print("[ERROR] TRANSFER worker:", message)
+            Uti.show_info_message("IRDrone", "EXIF worker error", message)
+            self.close()
+        except Exception as e:
+            print(f'error in on_transfer_VIS_error {e}')
+
+    def on_transfer_VIS_progress(self, pct: int) -> None:
+        """Slot appelé par WorkerTransfer_VIS.progress"""
+        try:
+            self.progress_bar.setValue(pct)
+            self.phase_label.setText(f"Transfer VIS: {pct}%")
+        except Exception as e:
+            print("Error in on_transfer_VIS_progress:", e)
+
+    # =======  Gestion worker transfer_NIR ===================
+
+
+    def start_transfer_NIR(self, done, *args):
+        print("[PIPE] Starting NIR transfer")
+        self.progress_bar.setValue(0)
+        self.phase_label.setText(f"Waiting …")
+
+        Uti.show_info_message("IRDrone", "Choisissez le dossier des images ", "Proche infrarouge  (NIR)")
+        src_nir_folder = self.load_NIR_directory()
+
+        dest_nir_folder = Path(self.dic_takeoff["File path mission"]) / "AerialPhotography" / "NIR"
+        self.output_dir_NIR = dest_nir_folder
+
+        self.thread_nir = QtCore.QThread()
+        self.worker_nir = WorkerTransfer_NIR(src_nir_folder, dest_nir_folder, verbose=True)
+        self.worker_nir.moveToThread(self.thread_nir)
+
+        self.thread_nir.started.connect(self.worker_nir.run)
+        self.worker_nir.progress.connect(self.on_nir_progress)
+        self.worker_nir.finished.connect(lambda msg: done("NIR_TRANSFER_OK", msg))
+
+        self.worker_nir.finished.connect(self.thread_nir.quit)
+        self.worker_nir.finished.connect(self.worker_nir.deleteLater)
+        self.thread_nir.finished.connect(self.thread_nir.deleteLater)
+
+        self.thread_nir.start()
+
+    def on_nir_progress(self, pct: int) -> None:
+        try:
+            self.progress_bar.setValue(pct)
+            self.phase_label.setText(f"Transfer NIR : {pct}%")
+        except Exception as e:
+            print("Error in on_nir_progress:", e)
+
+    def on_nir_finished(self, msg: str) -> None:
+        try:
+            self.nir_started = False
+            self.btn_1221.setEnabled(True)
+            mission_folder = Path(self.dic_takeoff["File path mission"]).name
+            print(f'[INFO] NIR transfer finished: {msg}')
+            Uti.show_info_message(
+                "IRDrone",
+                "Mission creation completed",
+                f"The mission '{mission_folder}' has been successfully created."
+            )
+            self.data_signal_from_dialog_create_file_structure_to_main_window.emit(self.validate_answer, self.dic_takeoff)
+            self.close()
+        except Exception as e:
+            print("error in on_nir_finished:", e)
+
+    def on_nir_error(self, message: str) -> None:
+        try:
+            print("[ERROR] NIR worker:", message)
+            self.nir_started = False
+            self.btn_1221.setEnabled(True)
+            Uti.show_info_message("IRDrone", "NIR worker error", message)
+            self.close()
+        except Exception as e:
+            print("error in on_nir_error:", e)
+
+    def load_NIR_directory(self) -> Optional[Path]:
+        try:
+            dlg = QFileDialog()
+            dlg.setWindowTitle("Select a NIR RAW/JPG (SJCam M20)")
+
+            dlg.setFileMode(QFileDialog.FileMode.ExistingFile)
+            dlg.setNameFilter("SJCam Images (*.RAW *.JPG *.JPEG)")
+
+            # --- Ouvre sur C:
+            dlg.setDirectory("C:/")
+
+            # --- Ajoute des entrées utiles dans la sidebar
+            dlg.setSidebarUrls([
+                QUrl.fromLocalFile("C:/"),
+                QUrl("file:///"),  # Montages de disques, cartes SD, USB
+            ])
+
+            if dlg.exec():
+                file_path = dlg.selectedFiles()[0]
+                file_path = Path(file_path)
+                folder = file_path.parent
+
+                self.path_folder_NIR = folder
+                sample_image_NIR = file_path
+
+                print(f"[TRACE] NIR folder selected via RAW/JPG: {folder}")
+                return folder
+
+            print("[INFO] NIR selection cancelled by user.")
+            return None
+
+        except Exception as e:
+            print("error in load_NIR_directory:", e)
+            return None
+
+
+    # =======  Gestion worker Exif   for VIS and NIR =========
+
+
+    def start_exif_worker(self, folder: str, band: str, callbacks: Optional[List[Callable]] = None):
+        """
+        Generic EXIF worker starter for any spectral band (VIS, NIR, ...).
+
+        Parameters
+        ----------
+        folder : str
+            Directory containing .dng files.
+        band : str
+            Spectral band name ('VIS', 'NIR', etc.).
+        callbacks : list of callables
+            Functions called on finish: cb(exif_data, msg)
+        """
+        try:
+            print(f"[PIPE] Starting EXIF {band} on folder: {folder}")
+
+            thread = QtCore.QThread()
+            worker = WorkerExif(folder, f"EXIF {band}", spectral_band=band)
+            worker.moveToThread(thread)
+
+            # Store references to avoid garbage collection
+            self._exif_threads[band] = thread
+            self._exif_workers[band] = worker
+
+            worker.progress.connect(lambda pct: self.on_exif_progress(band, pct))
+            worker.error.connect(lambda msg: self.on_exif_error(band, msg))
+
+            def _finished(meta_dict, msg):
+                try:
+                    # toujours exécuter le handler interne (stockage, logs) dans le main thread
+                    self.on_exif_finished(band, meta_dict, msg)
+                except Exception as e:
+                    print(f"[ERROR] on_exif_finished({band}) raised: {e}")
+
+                if not callbacks:
+                    return
+
+                # schedule execution of callbacks in the main event loop to avoid thread-affinity issues
+                def _run_callbacks():
+                    for i, cb in enumerate(callbacks):
+                        try:
+                            print(f"[TRACE] start_exif_worker: invoking callback {i} for band {band}")
+                            cb(meta_dict, msg)
+                        except Exception as e:
+                            # don't let one failing callback kill the sequence — log and continue
+                            print(f"[ERROR] callback {i} for EXIF {band} raised: {e}")
+
+                QtCore.QTimer.singleShot(0, _run_callbacks)
+
+            worker.finished.connect(_finished)
+
+            # Cleanup
+            worker.finished.connect(thread.quit)
+            worker.finished.connect(worker.deleteLater)
+            thread.finished.connect(thread.deleteLater)
+
+            # Run
+            thread.started.connect(worker.run)
+            thread.start()
+
+        except Exception as e:
+            print(f"[ERROR] start_exif_worker({band}): {e}")
+
+    def on_exif_progress(self, band: str, pct: int):
+        verbose = False
+        if verbose: print(f"[INF0]   [EXIF {band}] progress = {pct}%")
+        self.phase_label.setText(f"EXIF {band} : {pct}%")
+        self.progress_bar.setValue(pct)  # ou barre spécifique si tu veux
+
+    def on_exif_error(self, band: str, msg: str):
+        print(f"[ERROR] EXIF {band}: {msg}")
+        Uti.show_info_message("IRDrone", f"Erreur EXIF {band}", msg)
+        self.close()
+
+    def on_exif_finished(self, band: str, exif_data: dict, msg: str):
+        try:
+            # print(f"[DEBUG] on_exif_finished called for band={band}, object id={id(self)}")
+            print(f"[INFO] EXIF {band} finished: {msg}")
+            self.exif_results = exif_data
+        except Exception as e:
+            print(f"[ERROR] on_exif_finished({band}): {e}")
+
+    def start_exif_VIS_step(self, done: Callable, *args):
+        try:
+            folder = self.output_dir_VIS
+            cb = lambda exif_data, msg: done(exif_data, msg)
+            self.start_exif_worker(folder=folder, band="VIS", callbacks=[cb])
+        except Exception as e:
+            print(f"[ERROR] start_exif_VIS_step: {e}")
+            done({}, f"Error starting EXIF VIS: {e}")
+
+    def start_exif_NIR_step(self, done: Callable, *args):
+        print(f'[TRACE]  start_exif_NIR_step est appelé')
+        try:
+            folder = getattr(self, "output_dir_NIR", None)
+            if folder is None:
+                print("[WARN] start_exif_NIR_step: no output_dir_NIR set")
+                done({}, "No NIR folder")
+                return
+            cb = lambda exif_data, msg: done(exif_data, msg)
+            self.start_exif_worker(folder=str(folder), band="NIR", callbacks=[cb])
+        except Exception as e:
+            print(f"[ERROR] start_exif_NIR_step: {e}")
+            done({}, f"Error starting EXIF NIR: {e}")
+
+    # === Message final. Indique à l'utilisateur le nom du dossier de la mission =====
+
+
+    def _final_mission_done(self, done: Callable, exif_or_nir_data, msg: str):
+        """
+        Dernière étape de la chaîne :
+        affiche le message final à l’utilisateur.
+        """
+        try:
+            mission_dir = self.dic_takeoff.get("File path mission", None)
+
+            if mission_dir is None:
+                Uti.show_info_message(
+                    "IRDrone",
+                    "Mission terminée",
+                    "La mission est terminée, mais le dossier n'a pas pu être déterminé."
+                )
+            else:
+                Uti.show_info_message(
+                    "IRDrone",
+                    "Mission créée",
+                    f"La mission a été créée avec succès :\n\n{mission_dir}"
                 )
 
-                # Emit progress percentage
-                self.progress.emit(int(100 * (index + 1) / n))
+            # Réactiver le bouton si c'est ton workflow
+            if hasattr(self, "btn_1221"):
+                self.btn_1221.setEnabled(True)
 
-            # Emit finished signal
-            self.finished.emit("OK")
-
-        except Exception as e:
-            print("Error in WorkerTransfert.run:", e)
-            self.finished.emit(f"Error during transfer: {e}")
-
-
-
-# --------------------------------------------------------------------------------------------
-#
-#              Window_Load_TakeOff_Image
-#
-#                Load take-off image
-#
-# --------------------------------------------------------------------------------------------
-class Window_Load_TakeOff_Image(QDialog):
-
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.image_label = None  # declare (placeholder)
-        self.main_layout = None  # idem if needed
-        self.central_widget = None
-        self.btn_load_image = None
-        self.btn_NextStep = None,
-        self.btnPreviousStep = None
-        self.progress_bar = None
-        self.image_display_size = None
-        self.empty_pixmap = None
-        self.layout = None
-
-        self.info_Geo_label = None
-        self.dic_takeoff_light: dict = dict()
-        self.dic_info_geo: dict = dict()
-        self.init_dic_takeoff_light()
-        self.altitude_DJI: float = 0.0
-        self.Date_Exif = None
-        self.py_date_time = None
-
-        self.path_image_takeoff: Optional[Path] = None
-        self.dirname_image_takeoff: str = None
-        self.name_image_takeoff: str = None
-        self.suffix_image_takeoff: str = None
-
-        self.default_app_dir = os.path.join("C:/", "Program Files", "IRdrone")
-        self.default_user_dir = os.path.join("C:/", "Air-Mission")
-
-        self.prefScreen = Uti.Prefrence_Screen()  # Initializing screen preferences
-
-        self.initGUI()  # Initializing the GUI  Using attributes previously created
-        self.setLayout(self.main_layout)
-
-
-    def initGUI(self):
-        """
-            Initializes the GUI.
-            The graphical interface has 4 areas.
-
-            > Area N° 1: “Load take-off image” control button.
-                         User can only upload images in dng format. The images taken in the visible spectrum of the drone camera are of the dng type.
-
-            > Area N° 2: Graphic zone for displaying the image.
-                         The image display is a little long due to the size of the drone's dng images but also the extraction of EXIF data and
-                         the querying of geographic information systems. The progress bar indicates the progress of the image loading.
-
-            > Area N° 3: Text zone for displaying temporal and geographic location information of the image.
-                         The shooting date and GPS coordinates (latitude, longitude) are extracted from the EXIF tag.
-                         The geographical altitude is obtained by querying the IGN database (France)
-                         The map location data (road, place, village, postal code, etc.) are obtained by interrogating the Open Street Map database.
-
-            > Area N° 4: "Previous step" and "Next step" control buttons and a progress bar.
-                         The "Previous step" command button is only available if an image has been loaded
-        """
-        try:
-            #   Setting the top command bar and window dimensions
-
-            self.setStyleSheet("background-color: white; color: black;")
-            self.setWindowTitle("Choose the image taken by the drone during takeoff.")
-            icon_path = os.path.join(self.default_app_dir, "Icon", "IRDrone.ico")
-            if os.path.exists(icon_path):
-                icon = QIcon(icon_path)
-                self.setWindowIcon(icon)
-        except Exception as e:
-            print("error   in initUI  ", e)
-
-        # Set layout and widgets
-        # Create the central widget
-        self.central_widget = QWidget()
-        # Create the main layout
-        self.main_layout = QVBoxLayout(self.central_widget)
-
-        # Create the four zones (sublayouts) and add them to the main layout
-        zone1_layout = QHBoxLayout()
-        zone2_layout = QVBoxLayout()
-        zone3_layout = QVBoxLayout()
-        zone4_layout = QHBoxLayout()
-
-        self.main_layout.addLayout(zone1_layout)
-        self.main_layout.addLayout(zone2_layout)
-        self.main_layout.addLayout(zone3_layout)
-        self.main_layout.addLayout(zone4_layout)
-
-        # Area 1
-
-        self.btn_load_image = QPushButton("Load take-off image")
-        self.btn_load_image.setFixedWidth(300)
-        self.btn_load_image.setStyleSheet("background-color: darkBlue; color: white;")
-        zone1_layout.addWidget(self.btn_load_image)
-
-        # Area 2  Image area.
-
-        # ----------------  Creating a neutral image -----------------
-        width = self.prefScreen.windowDisplaySize[1]
-        num_images = 1
-        # print("TEST dim Ecran   l x H :", int((width - 100) / num_images), int((width - 100) / num_images * 3 / 4))
-        self.image_display_size = (int((width - 100) / num_images), int((width - 100) / num_images * 3 / 4))  # image area size
-        # Create an empty pixmap of the desired size and adjust the size if necessary
-        self.empty_pixmap = QPixmap(int((width - 100) / num_images), int((width - 100) / num_images * 3 / 4))
-        self.empty_pixmap.fill(QColor(Qt.GlobalColor.darkGray))  # transparent, gray, darkYellow etc)
-        # Adjust the size if necessary
-        self.empty_pixmap.scaled(*self.image_display_size, Qt.AspectRatioMode.KeepAspectRatio)
-
-        self.image_label = QLabel("Image taken during takeoff.")
-        zone2_layout.addWidget(self.image_label)
-        self.image_label.setPixmap(self.empty_pixmap)
-        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        # Area 3    Location information
-        self.info_Geo_label = QLabel("Location information")
-        self.info_Geo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.info_Geo_label.setFrameStyle(QFrame.Shape.Box | QFrame.Shadow.Sunken)  # Add a frame
-        zone3_layout.addWidget(self.info_Geo_label)
-        self.info_Geo_label.setStyleSheet("background-color: gray;")
-        self.info_Geo_label.setFixedHeight(150)
-
-        default_geo_data = f"Wpt:  \n" \
-                           f"image:\n" \
-                           f"Coordonnées:\n" \
-                           f"Date:  \n" \
-                           f"Lieu-dit: \n" \
-                           f"Commune: \n" \
-                           f"Région:   \n" \
-                           f"Pays: "
-
-        self.info_Geo_label.setText(default_geo_data)
-        self.info_Geo_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
-
-        #  Area 4    Previous Step an Next Step button
-        self.btnPreviousStep = QPushButton("<< previous step")
-        self.btnPreviousStep.setFixedWidth(100)
-        self.btnPreviousStep.setStyleSheet("background-color: darkGray; color: black;")
-        self.btn_NextStep = QPushButton("next step >>>>")
-        self.btn_NextStep.setFixedWidth(100)
-        self.btn_NextStep.setStyleSheet("background-color: darkGray; color: black;")
-        # Disable Next Step  button
-        self.btn_NextStep.setAutoDefault(False)
-        self.btn_NextStep.setEnabled(False)
-        self.btn_NextStep.setStyleSheet("background-color: darkGray; color:gray;")
-
-        zone4_layout.addWidget(self.btnPreviousStep)
-        zone4_layout.addWidget(self.btn_NextStep)
-
-        # Progress bar
-        self.progress_bar = QProgressBar(self)
-        self.progress_bar.setStyleSheet("QProgressBar { color: white; }")
-        zone4_layout.addWidget(self.progress_bar)
-        self.progress_bar.setValue(0)
-
-        self.btn_load_image.clicked.connect(self.load_takeoff_image)
-        self.btn_NextStep.clicked.connect(self.placeholder_method)
-        self.btnPreviousStep.clicked.connect(self.cancel_clicked)
-        self.resize(600, 600)
-        Uti.center_on_screen(self, screen_Id=1)
-
-
-    def init_dic_takeoff_light(self):
-        """
-        Initialise une version simplifiée du  dictionnaire self.dic_takeoff_light.
-
-        """
-        try:
-            self.dic_takeoff_light = {
-                "File path mission": None,
-                "File path take-off": None,
-                "File path": "C:/",
-                "Maker": "Nimbus",
-                "Model": "Old",
-                "Body serial number": "570608",
-                "Date Exif": "1900:01:01 12:00:00",
-                "Date": '1900-01-01',
-                "Time": f"12:00:00",
-                "Location": "Paris",
-                "Description": "Eiffel tower",
-                "GPS coordinate": f"N 48.858370 E 2.294481",
-                "GPS N-S": "N",
-                "GPS lat": 48.858370,
-                "GPS E-W": "E",
-                "GPS lon":  2.294481,
-                "GPS alti": 33.5,
-                "GPS drone alti": 330,
-                "AerialPhotography folder": "AerialPhotography",
-                "FlightAnalytics folder": "FlightAnalytics",
-                "ImgIRdrone folder": "ImgIRdrone",
-                "Synchro folder": "Synchro",
-                "ODM folder": "mapping_MULTI",
-                "cameras folder": "cameras"
-            }
-            # print( "TEST   sortie de   init_dic_takeoff       self.dic_takeoff_light  :", self.dic_takeoff_light)
-        except Exception as e:
-            print('error in init_dic_takeoff', e)
-
-
-    @staticmethod
-    def placeholder_method():
-        """
-        Dummy (empty) method for connecting the "Next Step" button.
-        The "real" connection is in the open_window_11 method of the Main_Window class of the main module.
-        def open_window_11(self):  de la class Main_Window() du module principal.
-        The line of code is:
-        self.window_11.btn_NextStep.clicked.connect(self.open_window_12)  # Connect Window_create_file_structure signal to Main_Window method
-
-        If we delete the line of code in initGUI method: self.btn_NextStep.clicked.connect(self.placeholder_method)
-        as well as this method (placeholder_method) the code works perfectly!
-        """
-        try:
-            Uti.show_info_message("IRDrone", "Your takeoff point has been taken into account for this mission. \n ",
-                                  "You can complete the settings for this mission in the next step.")
-            pass
+            print("[TRACE] Final callback executed.")
+            self.data_signal_from_dialog_create_file_structure_to_main_window.emit(self.validate_answer, self.dic_takeoff)
+            # Fin de la chaîne → appeler done pour être conforme à l’API
+            done("END", msg)
+            self.close()
 
         except Exception as e:
-            print("error in placeholder_method       message :", e)
+            print(f"[ERROR] in _final_mission_done: {e}")
+            done(None, f"Final callback error: {e}")
 
 
-    def closeEvent(self, event):
-        event.accept()
+    # ==================================================
+    #            autres modules de la
+    #    class Window_create_file_structure(QDialog)
+    # ==================================================
 
 
     def load_takeoff_image(self):
@@ -505,335 +1111,84 @@ class Window_Load_TakeOff_Image(QDialog):
             print("error 3 in load_takeoff_image ", e)
         return
 
-
-    def cancel_clicked(self):
-        """Méthode appelée lorsque le bouton 'Cancel' est cliqué."""
-        try:
-            self.close()
-        except Exception as e:
-            print("error in Window_Load_TakeOff_Image   cancel_clicked :", e)
-
-
-# --------------------------------------------------------------------------------------------
-#
-#                     Window_create_file_structure
-#
-#                Creation of the mission file structure
-#
-# --------------------------------------------------------------------------------------------
-
-
-class Window_create_file_structure(QDialog):
-    """
-    Creation of the mission file structure
-    C:/Air-Mission/
-        └── FLY-YYYYMMDD-hhmm-<txt>/
-            │
-            ├── AerialPhotography/
-            │       └── VIS/
-            │       └── NIR/
-            ├── Synchro/
-            ├── ImgIRdrone/
-            ├── mapping_MULTI/
-            └── cameras/
-            ├── FlightAnalytics/
-            │       └── HYPERLAPSE_0001.dng      ( first image at the  take-off)
-            │       └── config.json              ( mission parameters )
-            │       └── transfer_info_VIS_dng.json (dans une version minimale)
-            └──
-
-
-            A ce stade on a pas └── cameras/
-                                │       └── camera_IRdrone.json
-
-
-    """
-    # Creates a class signal to transmit the data to the parent which will here be an instance of the window_11 class
-    # Here the return is a boolean (click on OK True or False and the dictionary containing the answers to the questionnaire)
-    data_signal_from_dialog_create_file_structure_to_main_window = pyqtSignal(bool, dict)
-
-    def __init__(self, parent, dic_takeoff_light: Dict[str, Any]):
-        super().__init__(parent)
-        # -----------Name of folders to store mission images. ----------------
-
-        self.transfert_thread = None
-        self.transfert_worker = None
-        self.exif_thread = None
-        self.exif_worker = None
-        self.worker = None
-        self.output_dir = None
-
-        self.pref = Prefrence_Screen()
-        self.layout = None
-        self.zone_121 = None
-        self.zone_122 = None
-        self.zone_122_layout = None
-        self.btn_1221 = None
-        self.btn_1222 = None
-        self.time_layout = None
-        self.location_label = None
-        self.location_field = None
-        self.location_layout = None
-
-        self.validate_answer = True
-        self.date_layout = None
-        self.time_label = None
-        self.time_field = None
-
-        self.GPS_label = None
-        self.GPS_NS_lat: str = None
-        self.GPS_lat: float = None
-        self.GPS_lat_field = None
-        self.GPS_NS = None
-        self.GPS_EW = None
-        self.GPS_lon = None
-        self.GPS_lon_field = None
-        self.GPS_alti = None
-        self.GPS_layout = None
-        self.description_label = None
-        self.description_field = None
-        self.description_layout = None
-        self.pilot_Name = "Alain"
-        self.pilot_ID = None
-        self.pilot_Name_field = None
-        self.pilot_layout = None
-        self.pilot_ID_field = None
-        self.pilot_label = None
-
-        self.camera_VIS_ID_field = None
-        self.camera_VIS_maker_field = None
-        self.camera_VIS_tlapse_field = None
-        self.camera_VIS_layout = None
-        self.camera_VIS_t_layout = None
-        self.camera_VIS_t_label = None
-        self.camera_VIS_label = None
-        self.camera_VIS_deltatime_field = None
-        self.camera_VIS_deltatime = None
-        self.camera_VIS_timelaspe = None
-        self.camera_VIS_maker = None
-        self.camera_VIS_ID = None
-
-        self.camera_NIR_ID_field = None
-        self.camera_NIR_maker_field = None
-        self.camera_NIR_tlapse_field = None
-        self.camera_NIR_layout = None
-        self.camera_NIR_t_layout = None
-        self.camera_NIR_t_label = None
-        self.camera_NIR_label = None
-        self.camera_NIR_deltatime_field = None
-        self.camera_NIR_deltatime = None
-        self.camera_NIR_timelaspe = None
-        self.camera_NIR_maker = None
-        self.camera_NIR_ID = None
-
-        self.image_VIS_format = None
-        self.image_VIS_format_label = None
-        self.image_VIS_format_field = None
-        self.image_VIS_format_layout = None
-
-        self.image_NIR_format = None
-        self.image_NIR_format_label = None
-        self.image_NIR_format_field = None
-        self.image_NIR_format_layout = None
-        self.image_NIR_filter_layout = None
-        self.image_NIR_filter_maker = None
-        self.image_NIR_filter_maker_field = None
-        self.image_NIR_filter_band = None
-        self.image_NIR_filter_band_field = None
-        self.image_NIR_filter_label = None
-
-
-        self.AerialPhotoFolder: str = self.pref.AerialPhotoFolder  # folder of images taken by VIS and NIR cameras
-        self.AerialPhotoFolder_VIS: str = self.pref.AerialPhotoFolder_VIS  # folder of images taken by VIS and NIR cameras
-        self.AerialPhotoFolder_NIR: str = self.pref.AerialPhotoFolder_NIR  # folder of images taken by VIS and NIR cameras
-        self.AnalyticFolder: str = self.pref.AnalyticFolder  # technical folder containing information on the mission
-        self.ImgIRdroneFolder: str = self.pref.ImgIRdroneFolder  # folder of images processed by IRDrone
-        self.SynchroFolder: str = self.pref.SynchroFolder  # folder for images from the camera synchronization phase
-        self.MappingFolder: str = self.pref.MappingFolder  # folder for image assembly with Open Drone Map
-        self.CameraFolder: str = self.pref.CameraFolder  # Used by ODM
-        self.missionFolder: str = self.pref.directory
-
-        self.dic_takeoff_light: dict = dic_takeoff_light
-        self.dic_takeoff: dict[str, Any] = {}
-        self.date_label = None
-        self.date_field = None
-
-        self.py_date_time = datetime.strptime(self.dic_takeoff_light['Date Exif'], "%Y:%m:%d %H:%M:%S")
-        self.py_date = self.py_date_time.date()
-        self.py_time = self.py_date_time.time()
-
-        self.progress_bar = None
-
-        self.initGUI()
-
-
-    def initGUI(self) -> None:
+    def build_mission_folder_name(self):
         """
-        Initialize the graphical user interface (GUI) for the mission creation dialog.
-
-        Sets up the window title, geometry, main layouts, action buttons, progress bar,
-        and initial input fields. Connects signals to their corresponding slots.
-        """
-        # Set window title
-        self.setWindowTitle("Create a mission")
-
-        # Main vertical layout
-        self.layout: QVBoxLayout = QVBoxLayout(self)
-
-        # Set window size
-        width: int = 700
-        height: int = 500
-        self.setGeometry(0, 0, width, height)
-
-        # Initialize input fields for takeoff point
-        self.init_fields()
-        self.update_dic_takeoff()
-
-        # Zone 121: Placeholder widget (can hold dynamic content)
-        self.zone_121: QWidget = QWidget()
-        self.layout.addWidget(self.zone_121)
-
-        # Zone 122: Buttons and progress bar
-        self.zone_122: QWidget = QWidget()
-        self.layout.addWidget(self.zone_122)
-
-        # Action buttons
-        self.btn_1221: QPushButton = QPushButton("Validate create mission.")
-        self.btn_1221.setStyleSheet("background-color: darkGray; color: black;")
-        self.btn_1222: QPushButton = QPushButton("<< previous step")
-        self.btn_1222.setStyleSheet("background-color: darkGray; color: black;")
-
-        # Horizontal layout for buttons
-        self.zone_122_layout = QHBoxLayout()
-        self.zone_122_layout.addWidget(self.btn_1222)
-        self.zone_122_layout.addWidget(self.btn_1221)
-        self.zone_122.setLayout(self.zone_122_layout)
-
-        # Connect buttons to slots
-        self.btn_1221.clicked.connect(self.ok_clicked)
-        self.btn_1222.clicked.connect(self.cancel_clicked)
-
-        # Progress bar setup
-        self.progress_bar: QProgressBar = QProgressBar(self)
-        self.progress_bar.setStyleSheet("QProgressBar { color: white; }")
-        self.progress_bar.setValue(0)
-        self.zone_122_layout.addWidget(self.progress_bar)
-
-        # Set initial focus sequence for UI fields
-        self.focus_sequence()
-
-        # Center window on the specified screen
-        Uti.center_on_screen(self, screen_Id=1)
-
-        # Set overall style
-        self.setStyleSheet("background-color: white; color: black;")
-
-    def ok_clicked(self) -> None:
-        """
-        Slot called when the 'OK' button is clicked.
-
-        1. Updates the takeoff dictionary with any user-modified fields.
-        2. Creates the main mission folder and its subfolder structure:
-           AerialPhotography, FlightAnalytics, ImgIRdrone, Synchro, mapping_MULTI, cameras.
-        3. Saves mission metadata to a JSON file.
-        4. Launches a background thread to transfer and rename VIS images,
-           updating the progress bar in real-time.
-        5. Sends the completed data back to the main window via a signal.
-
-        Notes on threading:
-            The image transfer can be time-consuming and may involve parallelized
-            operations internally (e.g., copying many large DNG files). If this
-            method were run in the main GUI thread, the Qt event loop would be
-            blocked, preventing the progress bar from updating and freezing the user interface.
-            To avoid this, a separate QThread is used, and the WorkerTransfert
-            object is moved to that thread. Progress updates and the final
-            completion signal are emitted via Qt signals, which safely update
-            the GUI from the main thread.
+        Create mission folder
+        Convert date and time objects to strings
         """
         try:
-            # Update the takeoff dictionary with current field values
-            self.update_dic_takeoff()
-            # Create mission folder and subfolders if they do not exist
-            self.create_mission_folder()
-            # Update takeoff image metadata
-            self.update_image_takeoff()
-            self.update_transfert_info_VIS_dng_json()
 
-            # Determine source and destination directories for VIS images
-            input_path: Optional[str] = self.dic_takeoff.get("File path take-off", None)
-            input_dir: Path = Path(input_path).parent
-            output_dir: Path = Path(self.dic_takeoff["File path mission"]) / "AerialPhotography" / "VIS"
-            # store output_dir for use by EXIF worker later
-            self.output_dir = output_dir
-
-            self.start_transfer_worker(input_dir, output_dir)
-            # Start the EXIF worker that will parse the files in self.output_dir
-            self.start_exif_worker(output_dir)
-
+            date_str = self.py_date.strftime('%Y%m%d')
+            time_str = self.py_time.strftime('%H%M')
+            if self.location_field.text():
+                fileName = f"FLY-{date_str}-{time_str}-{self.location_field.text()}"
+            else:
+                fileName = f"FLY-{date_str}-{time_str}"
+            path = os.path.join(self.pref.default_user_dir, fileName)
+            directory = os.path.normpath(path).replace('\\', '/')
+            return directory
         except Exception as e:
-            print("Error in Window_create_file_structure.ok_clicked:", e)
+            print("error in build_mission_folder_name :", e)
 
+    def create_mission_folder(self):
+        """
+        Create the mission folder structure (only creates missing folders,
+        never overwrites existing ones).
+        """
+        base_dir = Path(self.build_mission_folder_name())
 
-    def cancel_clicked(self) -> None:
-        """
-        Slot called when the 'Cancel' button is clicked.
-        Closes the current dialog window.
-        """
+        # List of subfolders to create inside the mission folder
+        subfolders = [
+            self.AerialPhotoFolder,
+            self.AnalyticFolder,
+            self.ImgIRdroneFolder,
+            self.SynchroFolder,
+            self.MappingFolder,
+            self.CameraFolder,
+            self.AerialPhotoFolder_VIS,
+            self.AerialPhotoFolder_NIR,
+        ]
+
         try:
-            self.close()
-        except Exception as e:
-            print("Error in Window_create_file_structure.cancel_clicked:", e)
+            # Create base directory + subfolders
+            for sf in subfolders:
+                (base_dir / sf).mkdir(parents=True, exist_ok=True)
 
-    def focus_sequence(self) -> None:
+            # Optional: change folder icons
+            try:
+                change_icon = True
+                icon_dir = Path(self.pref.default_app_dir) / "Icon"
+
+                if change_icon:
+                    Uti.change_icon(base_dir, icon_dir / "IRdrone_appli.ico")
+                    Uti.change_icon(base_dir / self.AerialPhotoFolder, icon_dir / "AerialPhoto.ico")
+                    Uti.change_icon(base_dir / self.AnalyticFolder, icon_dir / "FlyAnalytic.ico")
+                    Uti.change_icon(base_dir / self.ImgIRdroneFolder, icon_dir / "ImgIRdrone.ico")
+                    Uti.change_icon(base_dir / self.SynchroFolder, icon_dir / "synchro.ico")
+                    Uti.change_icon(base_dir / self.MappingFolder, icon_dir / "mapping_MULTI.ico")
+                    Uti.change_icon(base_dir / self.CameraFolder, icon_dir / "camera.ico")
+
+            except Exception as e:
+                print("Error in create_mission_folder (icon change):", e)
+
+        except Exception as e:
+            print("Error in create_mission_folder (creating folder tree):", e)
+
+        # --- Save configuration JSON ---
         try:
-            self.date_field.returnPressed.connect(self.time_field.setFocus)
-            self.time_field.returnPressed.connect(self.location_field.setFocus)
+            config_path = base_dir / "FlightAnalytics" / "config.json"
+            config_path.parent.mkdir(parents=True, exist_ok=True)
 
-            self.location_field.returnPressed.connect(self.GPS_lat_field.setFocus)
-            self.GPS_lat_field.returnPressed.connect(self.GPS_lon_field.setFocus)
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(self.dic_takeoff, f, ensure_ascii=False, indent=4)
 
-            self.GPS_lon_field.returnPressed.connect(self.description_field.setFocus)
+            # Build the message for the user
+            txt_date = f"{self.py_date_time.year}{self.py_date_time.month}{self.py_date_time.day}"
+            txt_time = f"{self.py_date_time.hour}{self.py_date_time.minute}"
+            txt_comment = str(self.dic_takeoff['Location'])
 
-            self.description_field.returnPressed.connect(self.pilot_Name_field.setFocus)
-
-            self.pilot_Name_field.returnPressed.connect(self.pilot_ID_field.setFocus)
-            self.pilot_ID_field.returnPressed.connect(self.camera_VIS_maker_field.setFocus)
-
-            self.camera_VIS_maker_field.returnPressed.connect(self.camera_VIS_ID_field.setFocus)
-            self.camera_VIS_ID_field.returnPressed.connect(self.camera_VIS_tlapse_field.setFocus)
-            self.camera_VIS_tlapse_field.returnPressed.connect(self.camera_VIS_deltatime_field.setFocus)
-            self.camera_VIS_deltatime_field.returnPressed.connect(self.image_VIS_format_field.setFocus)
-
-            self.image_VIS_format_field.returnPressed.connect(self.camera_NIR_maker_field.setFocus)
-            self.camera_NIR_maker_field.returnPressed.connect(self.camera_NIR_ID_field.setFocus)
-            self.camera_NIR_ID_field.returnPressed.connect(self.camera_NIR_tlapse_field.setFocus)
-            self.camera_NIR_tlapse_field.returnPressed.connect(self.camera_NIR_deltatime_field.setFocus)
-            self.camera_NIR_deltatime_field.returnPressed.connect(self.image_NIR_format_field.setFocus)
-
-            self.image_NIR_format_field.returnPressed.connect(self.image_NIR_filter_maker_field.setFocus)
-            self.image_NIR_filter_maker_field.returnPressed.connect(self.image_NIR_filter_band_field.setFocus)
-
-            self.image_NIR_filter_band_field.returnPressed.connect(self.btn_1221.setFocus)
         except Exception as e:
-            print("error __init__  Sequence of focuses ", e)
-
-    def init_fields(self) -> None:
-        """
-        Initializes takeoff point data fields.
-        The Date, Time, GPS coordinates and Location fields are pre-populated.
-        They are extracted from the Exif data of the image taken at takeoff.
-        These fields cannot be modified by the user (setReadOnly(True),
-        with the exception of the location field (setReadOnly(False).
-        """
-        self._init_date_mission()
-        self._init_time_mission()
-        self._init_location()
-        self._init_GPS()
-        self._init_description()
-        self._init_pilot()
-        self._init_VIS_camera()
-        self._init_NIR_camera()
-        self._init_NIR_filter()
+            print("Error in create_mission_folder (saving JSON):", e)
 
     def _init_date_mission(self):
         try:
@@ -1131,7 +1486,7 @@ class Window_create_file_structure(QDialog):
         try:
             # camera NIR part 4 (filter)
             self.image_NIR_filter_maker: str = "KOLARI VISION USA"  # Optic Concept LP830
-            self.image_NIR_filter_band: int = 810
+            self.image_NIR_filter_band: int = 810  # 830
 
             self.image_NIR_filter_label = QLabel("NIR Filter    maker | band in nm:")
             self.image_NIR_filter_maker_field = QLineEdit(self)
@@ -1147,7 +1502,6 @@ class Window_create_file_structure(QDialog):
         except Exception as e:
             print("error _init_NIR_filter : ", e)
 
-
     def update_image_takeoff(self, verbose: bool = False) -> None:
         """
         Copies the take-off image to the exact destination path provided
@@ -1162,33 +1516,36 @@ class Window_create_file_structure(QDialog):
         -------
         None
         """
-        # Retrieve paths (string → Path)
-        src_path = Path(self.dic_takeoff["File path take-off"])
-        dst_path = Path(self.dic_takeoff["path mission image take-off"])  # full path incl. filename
-
-        if verbose: print(Uti.Style.GREEN + f"Sauvegarde de l'image du takeoff : {src_path}\n  → vers : {dst_path}" + Uti.Style.RESET)
-
-        # --- Sanity checks ------------------------------------------------------
-        if not src_path.exists():
-            raise RuntimeError(Uti.Style.YELLOW + f"Le fichier source n'existe pas : {src_path}" + Uti.Style.RESET)
-
-        if not src_path.is_file():
-            raise RuntimeError(Uti.Style.YELLOW + f"Le chemin source n'est pas un fichier : {src_path}" + Uti.Style.RESET)
-
-        dst_dir = dst_path.parent
-        if not dst_dir.exists():
-            raise RuntimeError(Uti.Style.YELLOW + f"Le dossier de destination n'existe pas : {dst_dir}" + Uti.Style.RESET)
-
-        if not dst_dir.is_dir():
-            raise RuntimeError(Uti.Style.YELLOW + f"Le chemin parent de destination n'est pas un dossier : {dst_dir}" + Uti.Style.RESET)
-
-        # --- Effective copy -----------------------------------------------------
         try:
-            shutil.copy2(src_path, dst_path)
-            if verbose: print(Uti.Style.GREEN + f"Image du take off copiée avec succès vers : {dst_path}" + Uti.Style.RESET)
-        except Exception as exc:
-            raise RuntimeError(f"Erreur pendant la copie : {exc}") from exc
+            # Retrieve paths (string → Path)
+            src_path = Path(self.dic_takeoff["original File path take-off"])  # full path incl. filename
 
+            dst_path = Path(self.dic_takeoff["path mission image take-off"])  # full path incl. filename
+
+            if verbose: print(Uti.Style.GREEN + f"Sauvegarde de l'image du takeoff : {src_path}\n  → vers : {dst_path}" + Uti.Style.RESET)
+
+            # --- Sanity checks ------------------------------------------------------
+            if not src_path.exists():
+                raise RuntimeError(Uti.Style.YELLOW + f"Le fichier source n'existe pas : {src_path}" + Uti.Style.RESET)
+
+            if not src_path.is_file():
+                raise RuntimeError(Uti.Style.YELLOW + f"Le chemin source n'est pas un fichier : {src_path}" + Uti.Style.RESET)
+
+            dst_dir = dst_path.parent
+            if not dst_dir.exists():
+                raise RuntimeError(Uti.Style.YELLOW + f"Le dossier de destination n'existe pas : {dst_dir}" + Uti.Style.RESET)
+
+            if not dst_dir.is_dir():
+                raise RuntimeError(Uti.Style.YELLOW + f"Le chemin parent de destination n'est pas un dossier : {dst_dir}" + Uti.Style.RESET)
+
+            # --- Effective copy -----------------------------------------------------
+            try:
+                shutil.copy2(src_path, dst_path)
+                if verbose: print(Uti.Style.GREEN + f"Image du take off copiée avec succès vers : {dst_path}" + Uti.Style.RESET)
+            except Exception as exc:
+                raise RuntimeError(f"Erreur pendant la copie : {exc}") from exc
+        except Exception as e1:
+            print(f'error in update_image_takeoff: {e1}')
 
     def update_transfert_info_VIS_dng_json(self, verbose: bool = False) -> None:
         """
@@ -1218,10 +1575,8 @@ class Window_create_file_structure(QDialog):
         dic_light = {
             "spectral_band": "VIS",
             "img_suffix": "dng",
-            "inputFolder": str(Path(self.dic_takeoff_light["File path"]).parent),
-
             "tkoff": {
-                "outputFolder": str(Path(self.missionFolder) / "FlightAnalytics"),
+                "outputFolder": str(Path(self.missionFolder) / "AerialPhotography" / "VIS"),
                 "original name": self.dic_takeoff_light["original name image take-off"],
                 "idMin": 1,
                 "idMax": 1,
@@ -1231,11 +1586,11 @@ class Window_create_file_structure(QDialog):
             },
 
             "sync": {
-                "outputFolder": str(Path(self.missionFolder) / "Synchro")
+                "outputFolder": str(Path(self.missionFolder) / "AerialPhotography" / "VIS")
             },
 
             "fly": {
-                "outputFolder": str(Path(self.missionFolder) / "AerialPhotography")
+                "outputFolder": str(Path(self.missionFolder) / "AerialPhotography" / "VIS")
             }
         }
 
@@ -1265,7 +1620,7 @@ class Window_create_file_structure(QDialog):
 
                 def same_value(key: str) -> bool:
                     """Compare les clés de haut niveau (str -> Any)"""
-                    return old_dic.get(key) == dic_light.get(key)
+                    return old_dic.get(key.lower()) == dic_light.get(key.lower())
 
                 def same_output_folder(key: str) -> bool:
                     """Compare uniquement la sous-clé outputFolder."""
@@ -1276,23 +1631,25 @@ class Window_create_file_structure(QDialog):
 
                 all_same = True
 
-                # Comparaison complète sur spectral_band / img_suffix / inputFolder
-                for key in ["spectral_band", "img_suffix", "inputFolder"]:
+                # Comparaison complète sur spectral_band / img_suffix
+                for key in ["spectral_band", "img_suffix"]:
                     if not same_value(key):
+                        print(Uti.Style.YELLOW + f'DEBUG  ECART lors de Comparaison complète sur spectral_band / img_suffix")' + Uti.Style.RESET)
                         all_same = False
                         break
 
-                # Comparaison complète pour tkoff
-                if all_same and (old_dic.get("tkoff") != dic_light.get("tkoff")):
-                    print(f'DEBUG  2001  update_transfert_info_VIS_dng_json    old_dic.get("tkoff") !=  dic_light.get("tkoff")')
-                    all_same = False
-
                 # Comparaison SEULEMENT outputFolder pour sync / fly
                 if all_same and not same_output_folder("sync"):
-                    all_same = False
+                    print(Uti.Style.YELLOW + "DEBUG: Modifications détectées → same_output_folder(sync)." + Uti.Style.RESET)
+                    print(Uti.Style.YELLOW + f'NEUTRALISE' + Uti.Style.RESET)
+                    all_same = True  # False
+                    return
 
                 if all_same and not same_output_folder("fly"):
-                    all_same = False
+                    print(Uti.Style.YELLOW + "DEBUG: Modifications détectées → same_output_folder(fly)." + Uti.Style.RESET)
+                    print(Uti.Style.YELLOW + f'NEUTRALISE' + Uti.Style.RESET)
+                    all_same = True  # False
+                    return
 
                 if all_same:
                     if verbose: print("DEBUG: Aucun changement détecté → fichier conservé tel quel.")
@@ -1312,7 +1669,6 @@ class Window_create_file_structure(QDialog):
         except Exception as exc:
             print(f"ERREUR: Impossible d'écrire le fichier JSON : {json_file}\n{exc}")
 
-
     def update_dic_takeoff(self):
         """
         Initialise le dictionnaire self.dic_takeoff.
@@ -1322,18 +1678,13 @@ class Window_create_file_structure(QDialog):
         self.fields_consistency_analysis()
         self.missionFolder = self.build_mission_folder_name()
         try:
-            path_mission_image_takeoff = str(Uti.safe_path(Path(self.missionFolder) /
-                                                           "FlightAnalytics" /
-                                                           self.dic_takeoff_light["name image take-off"]
-                                                           ))
-
             self.dic_takeoff = {
                 "File path mission": self.missionFolder,
-                "File path take-off": self.dic_takeoff_light["File path"],  # original file path of the take-off image
+                "original File path take-off": self.dic_takeoff_light["File path"],  # original file path of the take-off image
                 "original name image take-off": self.dic_takeoff_light["original name image take-off"],
                 "name image take-off": self.dic_takeoff_light["name image take-off"],
                 "suffix image take-off": self.dic_takeoff_light["suffix image take-off"],
-                "path mission image take-off": str(Path(self.missionFolder) / "FlightAnalytics" / self.dic_takeoff_light["name image take-off"]),
+                "path mission image take-off": str(Path(self.missionFolder) / "AerialPhotography" / "VIS" / self.dic_takeoff_light["name image take-off"]),
                 "Body serial number": self.dic_takeoff_light["Body serial number"],
                 "Date Exif": f"{Uti.datePy2dateJson(self.py_date)} {Uti.timePy2timeJson(self.py_time)}",
                 "Date": Uti.datePy2dateJson(self.py_date),
@@ -1380,7 +1731,6 @@ class Window_create_file_structure(QDialog):
         except Exception as e:
             print('error in update_dic_takeoff ', e)
 
-
     def fields_consistency_analysis(self):
         """
         Checks the validity of the data ( GPS coordinates, etc.)
@@ -1424,227 +1774,375 @@ class Window_create_file_structure(QDialog):
             return
 
 
-    def build_mission_folder_name(self):
+
+
+    # =================================================================
+    #
+    #                  MODULES OBSOLETES ...
+    #
+    # =================================================================
+
+# --------------------------------------------------------------------------------------------
+#
+#              Window_Load_TakeOff_Image
+#
+#                Load take-off image
+#
+# --------------------------------------------------------------------------------------------
+class Window_Load_TakeOff_Image(QDialog):
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.image_label = None  # declare (placeholder)
+        self.main_layout = None  # idem if needed
+        self.central_widget = None
+        self.btn_load_image = None
+        self.btn_NextStep = None,
+        self.btnPreviousStep = None
+        self.progress_bar = None
+        self.image_display_size = None
+        self.empty_pixmap = None
+        self.layout = None
+
+        self.info_Geo_label = None
+        self.dic_takeoff_light: dict = dict()
+        self.dic_info_geo: dict = dict()
+        self.init_dic_takeoff_light()
+        self.altitude_DJI: float = 0.0
+        self.Date_Exif = None
+        self.py_date_time = None
+
+        self.path_image_takeoff: Optional[Path] = None
+        self.dirname_image_takeoff: str = None
+        self.name_image_takeoff: str = None
+        self.suffix_image_takeoff: str = None
+
+        self.default_app_dir = os.path.join("C:/", "Program Files", "IRdrone")
+        self.default_user_dir = os.path.join("C:/", "Air-Mission")
+
+        self.prefScreen = Uti.Prefrence_Screen()  # Initializing screen preferences
+
+        self.initGUI()  # Initializing the GUI  Using attributes previously created
+        self.setLayout(self.main_layout)
+
+
+    def initGUI(self):
         """
-        Create mission folder
-        Convert date and time objects to strings
+            Initializes the GUI.
+            The graphical interface has 4 areas.
+
+            > Area N° 1: “Load take-off image” control button.
+                         User can only upload images in dng format. The images taken in the visible spectrum of the drone camera are of the dng type.
+
+            > Area N° 2: Graphic zone for displaying the image.
+                         The image display is a little long due to the size of the drone's dng images but also the extraction of EXIF data and
+                         the querying of geographic information systems. The progress bar indicates the progress of the image loading.
+
+            > Area N° 3: Text zone for displaying temporal and geographic location information of the image.
+                         The shooting date and GPS coordinates (latitude, longitude) are extracted from the EXIF tag.
+                         The geographical altitude is obtained by querying the IGN database (France)
+                         The map location data (road, place, village, postal code, etc.) are obtained by interrogating the Open Street Map database.
+
+            > Area N° 4: "Previous step" and "Next step" control buttons and a progress bar.
+                         The "Previous step" command button is only available if an image has been loaded
         """
         try:
+            #   Setting the top command bar and window dimensions
 
-            date_str = self.py_date.strftime('%Y%m%d')
-            time_str = self.py_time.strftime('%H%M')
-            if self.location_field.text():
-                fileName = f"FLY-{date_str}-{time_str}-{self.location_field.text()}"
-            else:
-                fileName = f"FLY-{date_str}-{time_str}"
-            path = os.path.join(self.pref.default_user_dir, fileName)
-            directory = os.path.normpath(path).replace('\\', '/')
-            return directory
+            self.setStyleSheet("background-color: white; color: black;")
+            self.setWindowTitle("Choose the image taken by the drone during takeoff.")
+            icon_path = os.path.join(self.default_app_dir, "Icon", "IRDrone.ico")
+            if os.path.exists(icon_path):
+                icon = QIcon(icon_path)
+                self.setWindowIcon(icon)
         except Exception as e:
-            print("error in build_mission_folder_name :", e)
+            print("error   in initUI  ", e)
 
+        # Set layout and widgets
+        # Create the central widget
+        self.central_widget = QWidget()
+        # Create the main layout
+        self.main_layout = QVBoxLayout(self.central_widget)
 
-    def create_mission_folder(self):
-        """
-        Create the mission folder structure (only creates missing folders,
-        never overwrites existing ones).
-        """
-        base_dir = Path(self.build_mission_folder_name())
+        # Create the four zones (sublayouts) and add them to the main layout
+        zone1_layout = QHBoxLayout()
+        zone2_layout = QVBoxLayout()
+        zone3_layout = QVBoxLayout()
+        zone4_layout = QHBoxLayout()
 
-        # List of subfolders to create inside the mission folder
-        subfolders = [
-            self.AerialPhotoFolder,
-            self.AnalyticFolder,
-            self.ImgIRdroneFolder,
-            self.SynchroFolder,
-            self.MappingFolder,
-            self.CameraFolder,
-            self.AerialPhotoFolder_VIS,
-            self.AerialPhotoFolder_NIR,
-        ]
+        self.main_layout.addLayout(zone1_layout)
+        self.main_layout.addLayout(zone2_layout)
+        self.main_layout.addLayout(zone3_layout)
+        self.main_layout.addLayout(zone4_layout)
 
-        try:
-            # Create base directory + subfolders
-            for sf in subfolders:
-                (base_dir / sf).mkdir(parents=True, exist_ok=True)
+        # Area 1
 
-            # Optional: change folder icons
-            try:
-                change_icon = True
-                icon_dir = Path(self.pref.default_app_dir) / "Icon"
+        self.btn_load_image = QPushButton("Load take-off image")
+        self.btn_load_image.setFixedWidth(300)
+        self.btn_load_image.setStyleSheet("background-color: darkBlue; color: white;")
+        zone1_layout.addWidget(self.btn_load_image)
 
-                if change_icon:
-                    Uti.change_icon(base_dir, icon_dir / "IRdrone_appli.ico")
-                    Uti.change_icon(base_dir / self.AerialPhotoFolder, icon_dir / "AerialPhoto.ico")
-                    Uti.change_icon(base_dir / self.AnalyticFolder, icon_dir / "FlyAnalytic.ico")
-                    Uti.change_icon(base_dir / self.ImgIRdroneFolder, icon_dir / "ImgIRdrone.ico")
-                    Uti.change_icon(base_dir / self.SynchroFolder, icon_dir / "synchro.ico")
-                    Uti.change_icon(base_dir / self.MappingFolder, icon_dir / "mapping_MULTI.ico")
-                    Uti.change_icon(base_dir / self.CameraFolder, icon_dir / "camera.ico")
+        # Area 2  Image area.
 
-            except Exception as e:
-                print("Error in create_mission_folder (icon change):", e)
+        # ----------------  Creating a neutral image -----------------
+        width = self.prefScreen.windowDisplaySize[1]
+        num_images = 1
+        # print("TEST dim Ecran   l x H :", int((width - 100) / num_images), int((width - 100) / num_images * 3 / 4))
+        self.image_display_size = (int((width - 100) / num_images), int((width - 100) / num_images * 3 / 4))  # image area size
+        # Create an empty pixmap of the desired size and adjust the size if necessary
+        self.empty_pixmap = QPixmap(int((width - 100) / num_images), int((width - 100) / num_images * 3 / 4))
+        self.empty_pixmap.fill(QColor(Qt.GlobalColor.darkGray))  # transparent, gray, darkYellow etc)
+        # Adjust the size if necessary
+        self.empty_pixmap.scaled(*self.image_display_size, Qt.AspectRatioMode.KeepAspectRatio)
 
-        except Exception as e:
-            print("Error in create_mission_folder (creating folder tree):", e)
+        self.image_label = QLabel("Image taken during takeoff.")
+        zone2_layout.addWidget(self.image_label)
+        self.image_label.setPixmap(self.empty_pixmap)
+        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # --- Save configuration JSON ---
-        try:
-            config_path = base_dir / "FlightAnalytics" / "config.json"
-            config_path.parent.mkdir(parents=True, exist_ok=True)
+        # Area 3    Location information
+        self.info_Geo_label = QLabel("Location information")
+        self.info_Geo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.info_Geo_label.setFrameStyle(QFrame.Shape.Box | QFrame.Shadow.Sunken)  # Add a frame
+        zone3_layout.addWidget(self.info_Geo_label)
+        self.info_Geo_label.setStyleSheet("background-color: gray;")
+        self.info_Geo_label.setFixedHeight(150)
 
-            with open(config_path, "w", encoding="utf-8") as f:
-                json.dump(self.dic_takeoff, f, ensure_ascii=False, indent=4)
+        default_geo_data = f"Wpt:  \n" \
+                           f"image:\n" \
+                           f"Coordonnées:\n" \
+                           f"Date:  \n" \
+                           f"Lieu-dit: \n" \
+                           f"Commune: \n" \
+                           f"Région:   \n" \
+                           f"Pays: "
 
-            # Build the message for the user
-            txt_date = f"{self.py_date_time.year}{self.py_date_time.month}{self.py_date_time.day}"
-            txt_time = f"{self.py_date_time.hour}{self.py_date_time.minute}"
-            txt_comment = str(self.dic_takeoff['Location'])
+        self.info_Geo_label.setText(default_geo_data)
+        self.info_Geo_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
-        except Exception as e:
-            print("Error in create_mission_folder (saving JSON):", e)
+        #  Area 4    Previous Step an Next Step button
+        self.btnPreviousStep = QPushButton("<< previous step")
+        self.btnPreviousStep.setFixedWidth(100)
+        self.btnPreviousStep.setStyleSheet("background-color: darkGray; color: black;")
+        self.btn_NextStep = QPushButton("next step >>>>")
+        self.btn_NextStep.setFixedWidth(100)
+        self.btn_NextStep.setStyleSheet("background-color: darkGray; color: black;")
+        # Disable Next Step  button
+        self.btn_NextStep.setAutoDefault(False)
+        self.btn_NextStep.setEnabled(False)
+        self.btn_NextStep.setStyleSheet("background-color: darkGray; color:gray;")
 
+        zone4_layout.addWidget(self.btnPreviousStep)
+        zone4_layout.addWidget(self.btn_NextStep)
 
-    def start_transfer_worker(self, input_dir: Union[str, Path], output_dir: Union[str, Path], msg: str = "") -> None:
-        """
-        Create and start the TRANSFERT worker in a separate QThread.
-        The worker will emit progress and finished(str) when done.
-
-        Args:
-            input_dir (str | Path): folder containing source images
-            output_dir (str | Path): destination folder
-            msg (str): optional message to emit when finished
-        """
-        # Guard: ensure folders exist
-        if not input_dir or not output_dir:
-            print("[ERROR] Input or output folder not set — cannot start transfer worker.")
-            return
-
-        # Create thread + worker
-        self.transfert_thread = QtCore.QThread()
-        self.transfert_worker = WorkerTransfert(input_dir, output_dir)
-
-        # Move worker to its thread
-        self.transfert_worker.moveToThread(self.transfert_thread)
-
-        # Connect signals
-        self.transfert_thread.started.connect(self.transfert_worker.run)
-        self.transfert_worker.progress.connect(self.update_progress_transfer)
-        self.transfert_worker.finished.connect(self.on_transfer_finished)
-        self.transfert_worker.error.connect(self.on_transfer_error)
-
-        # Cleanup once finished
-        self.transfert_worker.finished.connect(self.transfert_thread.quit)
-        self.transfert_worker.finished.connect(self.transfert_worker.deleteLater)
-        self.transfert_thread.finished.connect(self.transfert_thread.deleteLater)
-
-        # Reset progress bar for this stage
+        # Progress bar
+        self.progress_bar = QProgressBar(self)
+        self.progress_bar.setStyleSheet("QProgressBar { color: white; }")
+        zone4_layout.addWidget(self.progress_bar)
         self.progress_bar.setValue(0)
 
-        # Start the thread
-        self.transfert_thread.start()
+        self.btn_load_image.clicked.connect(self.load_takeoff_image)
+        self.btn_NextStep.clicked.connect(self.placeholder_method)
+        self.btnPreviousStep.clicked.connect(self.cancel_clicked)
+
+        # Set window size
+        width: int = 680  # 700
+        height: int = 700  # 500
+        self.setGeometry(0, 0, width, height)
+
+        # self.resize(600, 600)
+        Uti.center_on_screen(self, screen_Id=1)
 
 
-    def update_progress_transfer(self, value: int) -> None:
-        """Update progress bar"""
-        # Here we reuse the same progress bar; you can create a second one later.
-        self.progress_bar.setValue(value)
-
-
-    def on_transfer_finished(self) -> None:
+    def init_dic_takeoff_light(self):
         """
-        Called when WorkerTransfert finished. Do NOT close the dialog here.
-        Show a short info and then start the EXIF worker to parse files already copied.
+        Initialise une version simplifiée du  dictionnaire self.dic_takeoff_light.
+
         """
-        txt_date: str = f"{self.py_date_time.year}{self.py_date_time.month}{self.py_date_time.day}"
-        txt_time: str = f"{self.py_date_time.hour}{self.py_date_time.minute}"
-        txt_comment: str = str(self.dic_takeoff['Location'])
-        msg: str = f"in the folder:\nFLY_{txt_date}_{txt_time}_{txt_comment}"
-        print(f"[INFO] Transfer finished (transfer worker).\n {msg}")
+        try:
+            self.dic_takeoff_light = {
+                "File path mission": None,
+                "original File path take-off": None,
+                "File path": "C:/",
+                "Maker": "Nimbus",
+                "Model": "Old",
+                "Body serial number": "570608",
+                "Date Exif": "1900:01:01 12:00:00",
+                "Date": '1900-01-01',
+                "Time": f"12:00:00",
+                "Location": "Paris",
+                "Description": "Eiffel tower",
+                "GPS coordinate": f"N 48.858370 E 2.294481",
+                "GPS N-S": "N",
+                "GPS lat": 48.858370,
+                "GPS E-W": "E",
+                "GPS lon":  2.294481,
+                "GPS alti": 33.5,
+                "GPS drone alti": 330,
+                "AerialPhotography folder": "AerialPhotography",
+                "FlightAnalytics folder": "FlightAnalytics",
+                "ImgIRdrone folder": "ImgIRdrone",
+                "Synchro folder": "Synchro",
+                "ODM folder": "mapping_MULTI",
+                "cameras folder": "cameras"
+            }
+            # print( "TEST   sortie de   init_dic_takeoff       self.dic_takeoff_light  :", self.dic_takeoff_light)
+        except Exception as e:
+            print('error in init_dic_takeoff', e)
 
 
-    def on_transfer_error(self, message: str) -> None:
-        """Handle TRANSFER worker errors (display and proceed)."""
-        print("[ERROR] TRANSFER worker:", message)
-        Uti.show_info_message("IRDrone", "EXIF worker error", message)
-        # decide whether to close or let user retry — here we close:
-        self.close()
-
-
-    def start_exif_worker(self, output_dir) -> None:
+    @staticmethod
+    def placeholder_method():
         """
-        Create and start the EXIF worker in a separate QThread.
-        The worker will emit progress and finished(dict) when done.
+        Dummy (empty) method for connecting the "Next Step" button.
+        The "real" connection is in the open_window_11 method of the Main_Window class of the main module.
+        def open_window_11(self):  de la class Main_Window() du module principal.
+        The line of code is:
+        self.window_11.btn_NextStep.clicked.connect(self.open_window_12)  # Connect Window_create_file_structure signal to Main_Window method
+
+        If we delete the line of code in initGUI method: self.btn_NextStep.clicked.connect(self.placeholder_method)
+        as well as this method (placeholder_method) the code works perfectly!
         """
-        txt_date: str = f"{self.py_date_time.year}{self.py_date_time.month}{self.py_date_time.day}"
-        txt_time: str = f"{self.py_date_time.hour}{self.py_date_time.minute}"
-        txt_comment: str = str(self.dic_takeoff['Location'])
-        msg: str = f"in the folder:\nFLY_{txt_date}_{txt_time}_{txt_comment}"
-        # Guard: ensure output_dir exists (should be set in ok_clicked)
-        if not hasattr(self, "output_dir") or self.output_dir is None:
-            print("[ERROR] output_dir not set — cannot start EXIF worker.")
-            return
+        try:
+            Uti.show_info_message("IRDrone", "Your takeoff point has been taken into account for this mission. \n ",
+                                  "You can complete the settings for this mission in the next step.")
+            pass
 
-        # Create thread + worker
-        self.exif_thread = QtCore.QThread()
-        self.exif_worker = WorkerExif(str(output_dir), msg)  # WorkerExif expects folder path
-
-        # Move worker to its thread
-        self.exif_worker.moveToThread(self.exif_thread)
-
-        # Connect signals
-        self.exif_thread.started.connect(self.exif_worker.run)
-        self.exif_worker.progress.connect(self.update_progress_exif)
-        self.exif_worker.finished.connect(self.on_exif_finished)
-        self.exif_worker.error.connect(self.on_exif_error)
-
-        # Cleanup once finished
-        self.exif_worker.finished.connect(self.exif_thread.quit)
-        self.exif_worker.finished.connect(self.exif_worker.deleteLater)
-        self.exif_thread.finished.connect(self.exif_thread.deleteLater)
-
-        # Optionally, reset/show progress bar for EXIF stage
-        # self.progress_bar.setValue(0)
-
-        # Start the EXIF thread
-        self.exif_thread.start()
+        except Exception as e:
+            print("error in placeholder_method       message :", e)
 
 
-    def update_progress_exif(self, value: int) -> None:
-        """Update progress bar"""
-        # Here we reuse the same progress bar; you can create a second one later.
-        self.progress_bar.setValue(value)
+    def closeEvent(self, event):
+        event.accept()
 
 
-    def on_exif_finished(self, exif_data: dict, msg) -> None:
+    def load_takeoff_image(self):
         """
-        Called when EXIF worker finished.
-        Now we can emit the data to the main window and close the dialog.
+        Ouvrir une boîte de dialogue pour sélectionner une image.
+        Ici on n'admet uniquement des images au format DNG
+        Elles doivent provenir de la caméra du drone qui capture des images dans le spectre VISIBLE (VIS).
         """
-        txt_date: str = f"{self.py_date_time.year}{self.py_date_time.month}{self.py_date_time.day}"
-        txt_time: str = f"{self.py_date_time.hour}{self.py_date_time.minute}"
-        txt_comment: str = str(self.dic_takeoff['Location'])
-        msg: str = f"in the folder:\nFLY_{txt_date}_{txt_time}_{txt_comment}"
-        Uti.show_info_message("IRDrone", "Creation des fichiers exif dans le dossier ", msg)
-        print("[INFO] EXIF parsing finished. :", msg)
 
-        # Emit the data to main window (you may want to include exif_data in the payload)
-        # If you want to pass exif_data upstream, adjust the signal signature in the main window accordingly.
-        self.data_signal_from_dialog_create_file_structure_to_main_window.emit(
-            self.validate_answer,
-            self.dic_takeoff,
-        )
+        directory = os.path.abspath('/')   # DD racine
+        file_name, _ = QFileDialog.getOpenFileName(self, "Open Image", directory, "Images (*.dng)")  # (*.png *.xpm *.jpg *.dng)")
 
-        # finally close the dialog
-        self.close()
+        try:
+            if file_name:
+                self.path_image_takeoff = Path(Uti.safe_path(file_name))
+                self.name_image_takeoff = os.path.basename(self.path_image_takeoff)
+                self.dirname_image_takeoff = str(self.path_image_takeoff.parent)
+                self.suffix_image_takeoff = self.path_image_takeoff.suffix
+                self.dic_takeoff_light["File path"] = file_name
+                if file_name.lower().endswith(".dng"):
+                    # Charger une image DNG avec rawpy. Attention cette étape est longue ...
+                    self.progress_bar.setValue(10)
+                    with rawpy.imread(file_name) as raw:
+                        rgb = raw.postprocess()
+                        self.progress_bar.setValue(20)
+                    image_bytes = imageio.imsave(imageio.RETURN_BYTES, rgb, format='png')
+                    self.progress_bar.setValue(30)
+                    image = QImage.fromData(image_bytes)
+                    pixmap = QPixmap.fromImage(image)
+                else:
+                    # Charger et afficher l'image
+                    pixmap = QPixmap(file_name)
+                self.progress_bar.setValue(40)
+                # Redimensionner l'image pour qu'elle s'adapte à l'espace disponible
+                pixmap = pixmap.scaled(self.image_label.width(), self.image_label.height(), Qt.AspectRatioMode.KeepAspectRatio)
+                self.image_label.setPixmap(pixmap)
+
+                # Extraire les données EXIF et obtenir les coordonnées GPS
+                # Attention :   l'altitude donnée par les données Exif des images (.dng) prises par le drone DJI Mavic Air 2 est
+                # l'altitude mesurée par rapport au sol au point de décollage.
+                # L'information de la clé Exif  "GPS GPSAltitudeRef" qui renvoie 0  (cad "Above Sea Level") est erronée !!
+                latitude_exif, longitude_exif, altitude_exif, date_time_excif, maker, model, id_camera = Uti.extract_exif(file_name)
+                latitude, longitude, self.altitude_DJI = Uti.convert_coordinates(latitude_exif, longitude_exif, altitude_exif)
+                self.progress_bar.setValue(45)
+
+                # Utilise API IGN (Institut Géographique National. France) ou bien OpenTopoData (Monde)
+                # Renvoie en fonction des coordonnées GPS, l'altitude géographique.
+                # C'est le niveau du sol par rapport au niveau de la mer
+                self.dic_info_geo = Geo.extract_alti_IGN([(latitude, longitude)], bypass=False)[0]
+                self.progress_bar.setValue(60)
+                # Utilise l'API Open Street Map pour obtenir les données géographiques (lieu-dit, ville, code postal, ...)
+                self.dic_info_geo = Geo.extract_geoTag(self.dic_info_geo, bypass=False)
+                self.progress_bar.setValue(80)
+                # Mettre à jour le label d'information avec les données de localisation
+                geo_data = f"Wpt: take-off \n" \
+                           f"image: {file_name.lower()}\n" \
+                           f"Coordonnées: {round(self.dic_info_geo.get('lat'),6)}      {round(self.dic_info_geo.get('lon'),6)}   Alti. {round(self.dic_info_geo.get('z'),3)} m  (above sea level)\n" \
+                           f"Date: {date_time_excif}  \n" \
+                           f"Lieu-dit: {self.dic_info_geo.get('lieu_dit')}    {self.dic_info_geo.get('road') if self.dic_info_geo.get('road') is not None else ''}\n"\
+                           f"Commune: {self.dic_info_geo.get('ville')}    {self.dic_info_geo.get('code_postal')}     {self.dic_info_geo.get('dept')} \n" \
+                           f"Région: {self.dic_info_geo.get('region')} \n" \
+                           f"Pays: {self.dic_info_geo.get('pays')}"
+
+                self.info_Geo_label.setText(geo_data)
+                self.info_Geo_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+                Uti.center_on_screen(self.central_widget, screen_Id=0, screen_adjust=(1, 1), window_display_size=(800, 600))
+                self.btn_NextStep.setAutoDefault(True)
+                self.btn_NextStep.setEnabled(True)
+                self.btn_NextStep.setStyleSheet("background-color: darkGray; color:Black;")
+                self.progress_bar.setValue(100)
+
+            else:
+                return
+
+        except Exception as e:
+            print("error 1 in on_load_Image_take_off:", e)
+
+        try:
+            self.Date_Exif = str(date_time_excif)
+            self.dic_takeoff_light['Maker'] = str(maker)
+            self.dic_takeoff_light['Model'] = str(model)
+            self.dic_takeoff_light['Body serial number'] = str(id_camera)
+            self.dic_takeoff_light['Date Exif'] = str(date_time_excif)
+            self.py_date_time = datetime.strptime(str(date_time_excif), "%Y:%m:%d %H:%M:%S")
+            self.dic_takeoff_light['Location'] = self.dic_info_geo['ville']
+            if self.dic_info_geo['lat'] >= 0:
+                self.dic_takeoff_light["GPS N-S"] = "N"
+            else:
+                self.dic_takeoff_light["GPS N-S"] = "S"
+            if self.dic_info_geo['lon'] >= 0:
+                self.dic_takeoff_light["GPS E-W"] = "E"
+            else:
+                self.dic_takeoff_light["GPS E-W"] = "W"
+            self.dic_takeoff_light["GPS lat"] = self.dic_info_geo['lat']
+            if self.dic_info_geo['lon'] < 10:
+                self.dic_takeoff_light["GPS lon"] = f"00{self.dic_info_geo['lon']}"
+            elif 10 <= self.dic_info_geo['lon'] < 10:
+                self.dic_takeoff_light["GPS lon"] = f"0{self.dic_info_geo['lon']}"
+            else:
+                self.dic_takeoff_light["GPS lon"] = f"{self.dic_info_geo['lon']}"
+
+            self.dic_takeoff_light["GPS lon"] = str(self.dic_info_geo['lon'])
+            self.dic_takeoff_light["GPS alti"] = str(self.dic_info_geo['z'])  # altitude above sea level
+            self.dic_takeoff_light["GPS coordinate"] = f"{self.dic_takeoff_light['GPS N-S']} {str(self.dic_info_geo['lat'])} {self.dic_takeoff_light['GPS E-W']} {self.dic_info_geo['lon']}"
+
+            self.dic_takeoff_light["GPS drone alti"] = self.altitude_DJI  # altitude above takeoff point
+        except Exception as e:
+            print("error 2 in load_takeoff_image ", e)
 
 
-    def on_exif_error(self, message: str) -> None:
-        """Handle EXIF worker errors (display and proceed)."""
-        print("[ERROR] EXIF worker:", message)
-        Uti.show_info_message("IRDrone", "EXIF worker error", message)
-        # decide whether to close or let user retry — here we close:
-        self.close()
+        try:
+            self.dic_takeoff_light["original name image take-off"] = self.name_image_takeoff
+            num = int(Path(self.name_image_takeoff).stem.split("_")[-1])
+            suffix = self.suffix_image_takeoff[1:]  # example "DNG"
+            self.dic_takeoff_light["name image take-off"] = f"VIS_{num:04d}.{suffix}"
+            self.dic_takeoff_light["suffix image take-off"] = suffix
+        except Exception as e:
+            print("error 3 in load_takeoff_image ", e)
+        return
+
+
+    def cancel_clicked(self):
+        """Méthode appelée lorsque le bouton 'Cancel' est cliqué."""
+        try:
+            self.close()
+        except Exception as e:
+            print("error in Window_Load_TakeOff_Image   cancel_clicked :", e)
+
+
 
 
 
