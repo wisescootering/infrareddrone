@@ -26,7 +26,7 @@ from geopy.exc import GeocoderTimedOut, GeocoderUnavailable
 from requests import Session
 import requests
 # -------------- IRDrone Library ------------------------------------
-import IRD_interactive_utils as Uti
+from IRD_Interactive_color_style import Style
 
 
 # ========================================
@@ -116,12 +116,11 @@ def extract_alti_IGN(coordinates: list[tuple[float, float]], interpolation: int 
     lat_lon_alti = get_altitudes(coordinates, verbose=verbose, bypass=False)
     dico_coordinates_IGN = {'elevations': lat_lon_alti}
 
-
     if 'elevations' in dico_coordinates_IGN and isinstance(dico_coordinates_IGN['elevations'], list) and len(dico_coordinates_IGN['elevations']) > 0:
         return dico_coordinates_IGN['elevations']
     else:
         # Gérez le cas où 'elevations' n'est pas une liste ou est vide
-        print(Uti.Style.YELLOW + f'⚠️  \'elevations\' n\'est pas une liste ou est vide' + Uti.Style.RESET)
+        print(Style.YELLOW + f'⚠️  \'elevations\' n\'est pas une liste ou est vide' + Style.RESET)
         return {'elevations': {'lon': coordinates[0][1], 'lat': coordinates[0][0], 'z': 0., 'acc': 0.}}
 
 
@@ -156,17 +155,17 @@ def get_altitudes(coordinates, verbose=False, bypass=False):
 
     if bypass:
         dico_coordinates_GPS = force_sea_Level(coordinates)
-        print(Uti.Style.YELLOW + f"⚠    Ground level set to zero (bypass)" + Uti.Style.RESET)
+        print( Style.YELLOW + f"⚠    Ground level set to zero (bypass)" +  Style.RESET)
         return dico_coordinates_GPS
 
     if verbose:
-        print(Uti.Style.GREEN + "[INFO]  Querying IGN..." + Uti.Style.RESET)
+        print( Style.GREEN + "[INFO]  Querying IGN..." +  Style.RESET)
     dico_coordinates_GPS = get_altitudes_IGN(coordinates)
 
     # Check if IGN completely failed
     if all(p["z"] == -99999.00 for p in dico_coordinates_GPS):
         if verbose:
-            print(Uti.Style.YELLOW + f"⚠️ IGN unavailable. Switching completely to OpenTopoData..." + Uti.Style.RESET)
+            print( Style.YELLOW + f"⚠️ IGN unavailable. Switching completely to OpenTopoData..." +  Style.RESET)
         dico_coordinates_GPS = get_altitudes_OpenTopo(coordinates)
         return dico_coordinates_GPS
 
@@ -174,7 +173,7 @@ def get_altitudes(coordinates, verbose=False, bypass=False):
     missing_points = [(p["lat"], p["lon"]) for p in dico_coordinates_GPS if p["z"] == -99999.00]
     if missing_points:
         if verbose:
-            print(Uti.Style.YELLOW + f"⚠  ️ {len(missing_points)} points outside France detected. Querying OpenTopoData..." + Uti.Style.RESET)
+            print( Style.YELLOW + f"⚠  ️ {len(missing_points)} points outside France detected. Querying OpenTopoData..." +  Style.RESET)
         topo_data = get_altitudes_OpenTopo(missing_points)
         topo_dict = {(p["lat"], p["lon"]): p for p in topo_data}
 
@@ -188,7 +187,7 @@ def get_altitudes(coordinates, verbose=False, bypass=False):
                     p.update({"z": 0, "acc": "unavailable"})
 
     if verbose:
-        print(Uti.Style.GREEN + "[INFO]  Querying IGN OK" + Uti.Style.RESET)
+        print(Style.GREEN + "[INFO]  Querying IGN OK" +  Style.RESET)
 
     return dico_coordinates_GPS
 
@@ -263,18 +262,18 @@ def get_altitudes_IGN(points, pause=0.3, batch_size=100, max_tries: int = 3, res
                     break
                 elif response.status_code == 429:
                     retry = int(response.headers.get("retry-after", 5))
-                    print(Uti.Style.YELLOW + f"⚠️ Too many IGN requests, waiting {retry}s..." + Uti.Style.RESET)
+                    print( Style.YELLOW + f"⚠️ Too many IGN requests, waiting {retry}s..." +  Style.RESET)
                     time.sleep(retry)
                 elif response.status_code == 405:
-                    print(Uti.Style.YELLOW + f"⚠️ Attempt {attempt+1}/{max_tries} failed. Invalid IGN URL:\n {url}" + Uti.Style.RESET)
+                    print( Style.YELLOW + f"⚠️ Attempt {attempt+1}/{max_tries} failed. Invalid IGN URL:\n {url}" +  Style.RESET)
                 else:
-                    print(Uti.Style.RED + f"❌ HTTP Error IGN {response.status_code}: {response.text}" + Uti.Style.RESET)
+                    print( Style.RED + f"❌ HTTP Error IGN {response.status_code}: {response.text}" +  Style.RESET)
             except requests.RequestException as e:
-                print(Uti.Style.YELLOW + f"⚠️ Attempt {attempt+1}/{max_tries} failed (IGN): {e}" + Uti.Style.RESET)
+                print( Style.YELLOW + f"⚠️ Attempt {attempt+1}/{max_tries} failed (IGN): {e}" +  Style.RESET)
                 time.sleep(2)
 
         if not success:
-            print(Uti.Style.YELLOW + f"⚠ IGN unavailable for this batch, altitudes set to -99999.00" + Uti.Style.RESET)
+            print( Style.YELLOW + f"⚠ IGN unavailable for this batch, altitudes set to -99999.00" +  Style.RESET)
             results.extend([
                 {"lat": lat, "lon": lon, "z": -99999.00, "acc": "IGN_error"}
                 for lat, lon in batch
@@ -350,15 +349,15 @@ def get_altitudes_OpenTopo(points, pause=0.3, batch_size=100, max_tries: int = 3
                         success = True
                         break
                     else:
-                        print(Uti.Style.YELLOW + f"⚠️ OpenTopo response missing 'results'" + Uti.Style.RESET)
+                        print( Style.YELLOW + f"⚠️ OpenTopo response missing 'results'" +  Style.RESET)
                 else:
-                    print(Uti.Style.RED + f"❌ HTTP Error OpenTopo {response.status_code}" + Uti.Style.RESET)
+                    print( Style.RED + f"❌ HTTP Error OpenTopo {response.status_code}" +  Style.RESET)
             except requests.RequestException as e:
-                print(Uti.Style.YELLOW + f"⚠️ Attempt {attempt+1}/{max_tries} failed (OpenTopo): {e}" + Uti.Style.RESET)
+                print( Style.YELLOW + f"⚠️ Attempt {attempt+1}/{max_tries} failed (OpenTopo): {e}" +  Style.RESET)
                 time.sleep(2)
 
         if not success:
-            print(Uti.Style.YELLOW + f"⚠  OpenTopo unavailable, altitudes set to 0 m" + Uti.Style.RESET)
+            print( Style.YELLOW + f"⚠  OpenTopo unavailable, altitudes set to 0 m" +  Style.RESET)
             results.extend([
                 {"lat": lat, "lon": lon, "z": 0, "acc": "unavailable"}
                 for lat, lon in batch
@@ -489,7 +488,7 @@ def extract_geoTag(dic_geo: dict[str, Any],
     # Vérification des coordonnées
     if 'lat' not in dic_geo or 'lon' not in dic_geo:
         if verbose:
-            print(Uti.Style.YELLOW + f"⚠️ Pas de coordonnées GPS valides dans dic_geo." + Uti.Style.RESET)
+            print( Style.YELLOW + f"⚠️ Pas de coordonnées GPS valides dans dic_geo." +  Style.RESET)
         return dic_geo
 
     lat, lon = dic_geo['lat'], dic_geo['lon']
@@ -497,7 +496,7 @@ def extract_geoTag(dic_geo: dict[str, Any],
     # Mode bypass : retourne des valeurs factices/simulées sans appeler l'API
     if bypass:
         if verbose:
-            print(Uti.Style.YELLOW + f"⚠   ️ bypass activé : pas d'appel réseau pour la géolocalisation." + Uti.Style.RESET)
+            print( Style.YELLOW + f"⚠   ️ bypass activé : pas d'appel réseau pour la géolocalisation." +  Style.RESET)
         if bypass_data:
             # On remplit uniquement les clés attendues depuis bypass_data
             for k in fields:
@@ -552,23 +551,23 @@ def extract_geoTag(dic_geo: dict[str, Any],
 
             else:
                 if verbose:
-                    print(Uti.Style.YELLOW + f"⚠️ No address data returned (attempt {attempt})." + Uti.Style.RESET)
+                    print( Style.YELLOW + f"⚠️ No address data returned (attempt {attempt})." +  Style.RESET)
 
         except (GeocoderTimedOut, GeocoderUnavailable) as e:
             if verbose:
                 if verbose:
-                    print(Uti.Style.YELLOW + f"⏳ Attempt {attempt}/{max_retries}: failure ({e}). "
-                                             f"Retrying in {attempt} s..." + Uti.Style.RESET)
+                    print( Style.YELLOW + f"⏳ Attempt {attempt}/{max_retries}: failure ({e}). "
+                                             f"Retrying in {attempt} s..." +  Style.RESET)
                 time.sleep(attempt)  # pause progressive
 
         except Exception as e:
             if verbose:
-                print(Uti.Style.RED + f"❌ Unexpected error (attempt {attempt}): {e}" + Uti.Style.RESET)
+                print( Style.RED + f"❌ Unexpected error (attempt {attempt}): {e}" +  Style.RESET)
             time.sleep(attempt)
 
         # ------  IF ALL RETRIES FAILED
         if verbose:
-            print(Uti.Style.YELLOW + f"⚠️ Unable to obtain geolocation after {max_retries} attempts." + Uti.Style.RESET)
+            print( Style.YELLOW + f"⚠️ Unable to obtain geolocation after {max_retries} attempts." +  Style.RESET)
         for f in fields:
             dic_geo[f] = dic_geo.get(f) or None
 
@@ -827,7 +826,7 @@ def printGPS(gpsLatitude, gpsLongitude, gpsAltitude):
     stringgpsLong = "%s %d° %d\' %.6f\" " % (gpsLongitude[0], gpsLongitude[1], gpsLongitude[2], gpsLongitude[3])
     stringgpsLat = "%s %d° %d\' %.6f\" " % (gpsLatitude[0], gpsLatitude[1], gpsLatitude[2], gpsLatitude[3])
     stringgpsAlt = "%.2f" % gpsAltitude
-    print(Uti.Style.GREEN + f"  Longitude : { stringgpsLong} |  Latitude : { stringgpsLat} | Altitude : { stringgpsAlt} m" + Uti.Style.RESET)
+    print( Style.GREEN + f"  Longitude : { stringgpsLong} |  Latitude : { stringgpsLat} | Altitude : { stringgpsAlt} m" +  Style.RESET)
     return
 
 
@@ -841,7 +840,7 @@ def writeGPX(listPts, dirNameVol, dateEtude, mute=True):
         Construction d'un fichier gpx contenant le tracé du plan de vol
         Il y a au début une tres grosse étiquette !!
     """
-    print(Uti.Style.GREEN + f'[INFO]  Write Garmin .gpx file' + Uti.Style.RESET)
+    print( Style.GREEN + f'[INFO]  Write Garmin .gpx file' +  Style.RESET)
     #  mise en forme de la date pour le format gpx Garmin
     if dateEtude.month < 10:
         monthGpx = str('0' + str(dateEtude.month))
@@ -917,7 +916,7 @@ def writeGPX(listPts, dirNameVol, dateEtude, mute=True):
 
     dirpath = '%s\\TrkGpx-%s-%s-%i.gpx' % (dirNameVol, dayGpx, monthGpx, dateEtude.year)
 
-    if not mute: print(Uti.Style.GREEN + '[INFO]   Ecriture du fichier gpx %s' % dirpath)
+    if not mute: print( Style.GREEN + '[INFO]   Ecriture du fichier gpx %s' % dirpath)
     if not os.path.isdir(dirNameVol):
         os.mkdir(dirNameVol)
     with open(dirpath, "w") as fichier:
@@ -965,27 +964,68 @@ def extract_geotag_AVR(dic_geo: dict[str, any]):
 
             api_OSM = f"https://nominatim.openstreetmap.org/reverse?format=geocodejson&lat={latitude_AVR}&lon={longitude_AVR}"
             location_AVR = json.loads(requests.get(api_OSM).text)
-            road = Uti.find_value_in_dic(location_AVR, 'road')
-            label_road = Uti.find_value_in_dic(location_AVR, 'label').split(",")[0]
-            lieu_dit = Uti.find_value_in_dic(location_AVR, 'district')
+            road = find_value_in_dic(location_AVR, 'road')
+            label_road = find_value_in_dic(location_AVR, 'label').split(",")[0]
+            lieu_dit = find_value_in_dic(location_AVR, 'district')
             if label_road != lieu_dit:
                 road = label_road
             else:
                 road = None
             dic_geo['road'] = road
             dic_geo['lieu_dit'] = lieu_dit
-            dic_geo['ville'] = Uti.find_value_in_dic(location_AVR, 'level8')
-            dic_geo['code_postal'] = Uti.find_value_in_dic(location_AVR, 'postcode')
-            dic_geo['dept'] = Uti.find_value_in_dic(location_AVR, 'level6')
-            dic_geo['region'] = Uti.find_value_in_dic(location_AVR, 'level4')
-            dic_geo['pays'] = Uti.find_value_in_dic(location_AVR, 'level3')
+            dic_geo['ville'] = find_value_in_dic(location_AVR, 'level8')
+            dic_geo['code_postal'] = find_value_in_dic(location_AVR, 'postcode')
+            dic_geo['dept'] = find_value_in_dic(location_AVR, 'level6')
+            dic_geo['region'] = find_value_in_dic(location_AVR, 'level4')
+            dic_geo['pays'] = find_value_in_dic(location_AVR, 'level3')
 
 
         except AttributeError as e:
-            print(Uti.Style.YELLOW + f"⚠     Pas de coordonnées GPS pour ce point." + Uti.Style.RESET)
+            print( Style.YELLOW + f"⚠     Pas de coordonnées GPS pour ce point." +  Style.RESET)
             dic_geo['road'], dic_geo['lieu_dit'], dic_geo['ville'], dic_geo['code_postal'], dic_geo['dept'], dic_geo['region'], dic_geo['pays'] = None, None, None, None, None, None, None
 
     except Exception as e:
         print("error", e,)
+
+    def find_value_in_dic(dictionary: dict[str, any], key_searched: str) -> Optional[any]:
+        """
+        This function recursively searches for a key in a nested dictionary structure and
+        returns the associated value if the key is found.
+
+        Parameters:
+        - dictionary (dict[any, any]): The dictionary in which to search for the key.
+        - key_searched (str): The key to search for in the dictionary.
+
+        Returns:
+        - Optional[any]: The value associated with the key_searched if it is found;
+                         otherwise, None.
+
+        Usage:
+        - The function iteratively searches through the keys of the input dictionary.
+        - If the current key matches the key_searched, the corresponding value is returned.
+        - If the associated value is a dictionary, the function calls itself recursively
+          to search within this nested dictionary, and returns the result if a match is found.
+        - If the associated value is a list, the function iterates through each item in the
+          list. If an item is a dictionary, the function calls itself recursively to search
+          within this nested dictionary, and returns the result if a match is found.
+        - If the key is not found, the function returns None.
+        """
+        for key, value in dictionary.items():
+            # Check if the current key matches the key_searched
+            if key == key_searched:
+                return value
+            # Check if the value is a dictionary
+            elif isinstance(value, dict):
+                results = find_value_in_dic(value, key_searched)
+                if results is not None:
+                    return results
+            # Check if the value is a list
+            elif isinstance(value, list):
+                for item in value:
+                    # Check if the item within the list is a dictionary
+                    if isinstance(item, dict):
+                        results = find_value_in_dic(item, key_searched)
+                        if results is not None:
+                            return results
 
 

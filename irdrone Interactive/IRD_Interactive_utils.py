@@ -35,35 +35,11 @@ import rawpy
 # -----------------------PyQt6 Library ----------------------------
 from PyQt6.QtWidgets import QMessageBox, QApplication
 # -----------------------------------------------------------------
+from IRD_interactive_geo import geo2UTM
+from IRD_Interactive_color_style import Style
 
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
 import config as cf
-# ------------------------------------------------------------------
-
-# ------------------------------------------------------
-# ExifTool path detection (Windows / Linux / macOS)
-# ------------------------------------------------------
-if os.name == 'nt':
-    EXIFTOOLPATH = osp.join(
-        osp.dirname(__file__),
-        "..", "thirdparty", "exiftool", "exiftool.exe"
-    )
-else:
-    EXIFTOOLPATH = "exiftool"
-if os.name == 'nt' and not osp.exists(EXIFTOOLPATH):
-    print(f"[WARNING] ExifTool not found at {EXIFTOOLPATH}")
-
-# --------------- SJCam converter RAW to DNG
-
-exe_path = r"C:\Documents-Alain\Projet-IRdrone\Code_Python\irdrone\thirdparty\sjcam_raw2dng\sjcam_raw2dng.exe"
-
-if os.name == 'nt':
-    SJCONVERTERPATH = exe_path
-else:
-    SJCONVERTERPATH = "sjcam_raw2dng"
-if os.name == 'nt' and not osp.exists(SJCONVERTERPATH):
-    print(f"[WARNING] SJCam RAW converter not found at {SJCONVERTERPATH}")
-
 
 
 
@@ -263,10 +239,10 @@ def show_error_message(message: str):
     msgBox.setStandardButtons(QMessageBox.StandardButton.Ok)
     msgBox.exec()
 
-def image_takeoff_available_test(dic_takeoff: dict, default_user_dir: Path):
+def image_takeoff_available_test(mission_parameters: dict, default_user_dir: Path):
     """
 
-    :param dic_takeoff:
+    :param mission_parameters:
     :param default_user_dir:
     :return:
     """
@@ -274,8 +250,8 @@ def image_takeoff_available_test(dic_takeoff: dict, default_user_dir: Path):
         image_takeoff_available = False
         path_image_mission = Path(default_user_dir)
         try:
-            if isinstance(dic_takeoff, dict) and 'File path mission' in dic_takeoff:
-                path_image_mission = Path(dic_takeoff['File path mission'])
+            if isinstance(mission_parameters, dict) and 'File path mission' in mission_parameters:
+                path_image_mission = Path(mission_parameters['File path mission'])
                 if path_image_mission.exists():
                     coherent_response = folder_name_consistency_analysis(path_image_mission)
                     if coherent_response:
@@ -673,47 +649,6 @@ def ifdtag_altitude_to_decimal(ifdtag) -> float:
     else:
         alt_decimal = None
     return alt_decimal
-
-def find_value_in_dic(dictionary: dict[str, any], key_searched: str) -> Optional[any]:
-    """
-    This function recursively searches for a key in a nested dictionary structure and
-    returns the associated value if the key is found.
-
-    Parameters:
-    - dictionary (dict[any, any]): The dictionary in which to search for the key.
-    - key_searched (str): The key to search for in the dictionary.
-
-    Returns:
-    - Optional[any]: The value associated with the key_searched if it is found;
-                     otherwise, None.
-
-    Usage:
-    - The function iteratively searches through the keys of the input dictionary.
-    - If the current key matches the key_searched, the corresponding value is returned.
-    - If the associated value is a dictionary, the function calls itself recursively
-      to search within this nested dictionary, and returns the result if a match is found.
-    - If the associated value is a list, the function iterates through each item in the
-      list. If an item is a dictionary, the function calls itself recursively to search
-      within this nested dictionary, and returns the result if a match is found.
-    - If the key is not found, the function returns None.
-    """
-    for key, value in dictionary.items():
-        # Check if the current key matches the key_searched
-        if key == key_searched:
-            return value
-        # Check if the value is a dictionary
-        elif isinstance(value, dict):
-            results = find_value_in_dic(value, key_searched)
-            if results is not None:
-                return results
-        # Check if the value is a list
-        elif isinstance(value, list):
-            for item in value:
-                # Check if the item within the list is a dictionary
-                if isinstance(item, dict):
-                    results = find_value_in_dic(item, key_searched)
-                    if results is not None:
-                        return results
 
 def display_dictionary(dictionary: dict[str, any], indentation=""):
     """
@@ -1230,7 +1165,7 @@ def _format_duration(seconds: float) -> str:
 
 
 def choose_folder_mission(
-    dic_takeoff: dict,
+    mission_parameters: dict,
     pref_screen_default_user_dir: str,
     AerialPhotoFolder: str,
     SynchroFolder: str
@@ -1239,12 +1174,12 @@ def choose_folder_mission(
     Choose the mission folder for IRDrone images.
 
     This function checks whether a takeoff image is available. If yes, it uses
-    the folder indicated in dic_takeoff['File path mission'] and checks its consistency.
+    the folder indicated in mission_parameters['File path mission'] and checks its consistency.
     Otherwise, it prompts the user to select a mission folder manually via a dialog.
 
     Parameters
     ----------
-    dic_takeoff : dict
+    mission_parameters : dict
         Dictionary containing takeoff information including the mission file path.
     pref_screen_default_user_dir : str
         Default directory to open for folder selection dialog.
@@ -1260,11 +1195,11 @@ def choose_folder_mission(
         coherent_response: Boolean indicating if the folder name is consistent
     """
     try:
-        image_takeoff_available, path_image_takeoff = image_takeoff_available_test(dic_takeoff, pref_screen_default_user_dir)
+        image_takeoff_available, path_image_takeoff = image_takeoff_available_test(mission_parameters, pref_screen_default_user_dir)
 
         if image_takeoff_available:
             # --- Construct the mission folder path ---
-            folderMissionPath = Path(dic_takeoff['File path mission'])
+            folderMissionPath = Path(mission_parameters['File path mission'])
             coherent_response = folder_name_consistency_analysis(folderMissionPath)
 
             if coherent_response:
@@ -1398,6 +1333,107 @@ def copy_and_rename_images(input_dir: Path,
 
 
 def read_exif_and_write_json(dng_path: Path, exiftool_path: str) -> dict:
+    """
+    Extract selected EXIF/XMP metadata from a DNG file using ExifTool
+    and save a clean .exif JSON file next to the image.
+    """
+
+    try:
+        # 1) Run ExifTool
+        cmd = [exiftool_path, "-json", str(dng_path)]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr)
+
+        metadata_list = json.loads(result.stdout)
+        if not metadata_list:
+            raise RuntimeError("ExifTool returned empty output")
+
+        full_metadata = metadata_list[0]
+
+        # 2) Keep only essential keys
+        essential_keys = [
+            "FileName", "Directory", "DateTimeOriginal",
+            "Make", "Model", "CameraSerialNumber",
+            "Orientation",
+            "ExposureTime", "FNumber", "ISO", "ExposureCompensation",
+            "FocalLength", "FOV", "FocalLengthIn35mmFormat",
+            "HyperfocalDistance",
+            "GPSLatitude", "GPSLongitude", "GPSAltitude", "GPSPosition",
+            "FlightYawDegree", "FlightPitchDegree", "FlightRollDegree",
+            "GimbalYawDegree", "GimbalPitchDegree", "GimbalRollDegree",
+            "DroneLatitude", "DroneLongitude", "DroneAltitudeTakeOff",
+            "DroneAltitudeSeaLevel", "DroneAltitudeGround", "GroundAltitude",
+            "UTM_x", "UTM_y", "UTM_zone",
+        ]
+
+        # Special handling for GPSAltitude of Drone DJI
+        gps_alt = full_metadata.get("GPSAltitude")
+        if gps_alt:
+            alt_info = parse_and_normalize_gps_altitude(gps_alt)
+            meters = round(alt_info["meters"], 3)
+            full_metadata["DroneAltitudeTakeOff"] = meters
+            full_metadata["GPSAltitude"] = f"{meters} m Above Take Off"
+
+        gps_lat = full_metadata.get("GPSLatitude")
+        gps_lon = full_metadata.get("GPSLongitude")
+        if gps_lat and gps_lon :
+            full_metadata["DroneLatitude"] = gps_coordinate_to_float(gps_lat)
+            full_metadata["DroneLongitude"] = gps_coordinate_to_float(gps_lon)
+            UTM_x, UTM_y, UTM_zone = geo2UTM(gps_coordinate_to_float(gps_lat), gps_coordinate_to_float(gps_lon))
+            full_metadata["UTM_x"], full_metadata["UTM_y"], full_metadata["UTM_zone"] = UTM_x, UTM_y, UTM_zone
+        cleaned = {k: full_metadata.get(k) for k in essential_keys if k in full_metadata}
+
+
+        # 3) Write the companion .exif JSON
+        out_path = dng_path.with_suffix(".exif")
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(cleaned, f, indent=2)
+
+        return cleaned
+
+    except Exception as e:
+        print(f"[ERROR] read_exif_and_write_json failed for {dng_path}: {e}")
+        return {}
+
+
+
+def parse_and_normalize_gps_altitude(value: str) -> dict:
+    """
+    Extract and normalize altitude like:
+        '0.6 m'
+        '0.6 m above sea level'
+        '350 ft'
+        '350 ft Above Take Off'
+    Returns a dict with value in meters and metadata.
+    """
+    s = value.strip().lower()
+
+    # Regex : capture  (nombre) (unité)
+    # ex: '120.5 m', '350 ft', '12.34m', '50ft'
+    match = re.search(r"([+-]?\d+(?:\.\d*)?)\s*(m|ft)\b", s)
+    if not match:
+        raise ValueError(f"Impossible d'extraire altitude et unité dans GPSAltitude: {value}")
+
+    number_str, unit = match.groups()
+    number = float(number_str)
+
+    # Conversion
+    meters = number if unit == "m" else number * 0.3048
+
+    return {
+        "original_value": number,
+        "original_unit": unit,
+        "meters": round(meters, 3),
+    }
+
+
+
+
+
+
+def read_exif_and_write_json_old(dng_path: Path, exiftool_path: str) -> dict:
     """
     Read EXIF/XMP metadata from a DNG file using ExifTool
     and write a small .exif JSON file next to the image.
@@ -1654,7 +1690,13 @@ def _set_exif_from_raw(dng_path: Path, raw_path: Path, exiftool_path: str, verbo
 
 
 
-def _convert_single_raw_to_dng(raw_file: str, exe_path: str, output_folder: str, nb_threads: str, verbose: bool, exiftool_path: str) -> str:
+def _convert_single_raw_to_dng(raw_file: str,
+                               exe_path: str,
+                               output_folder: str,
+                               nb_threads: str,
+                               verbose: bool,
+                               exiftool_path: str,
+                               show_converter_output: bool = False) -> str:
     """
     Internal helper: converts a single RAW file to DNG using sjcam_raw2dng.
     The output DNG filename is standardized to 'NIR_XXXX.dng'.
@@ -1699,7 +1741,17 @@ def _convert_single_raw_to_dng(raw_file: str, exe_path: str, output_folder: str,
         "--output", str(output_folder),
         str(raw_path)
     ]
-    subprocess.run(cmd, check=True)
+
+    # Decide where to send stdout/stderr
+    if show_converter_output:
+        stdout_target = None  # print to console
+        stderr_target = None
+    else:
+        stdout_target = subprocess.DEVNULL
+        stderr_target = subprocess.DEVNULL
+
+
+    subprocess.run(cmd, check=True, stdout=stdout_target, stderr=stderr_target)
 
     # Define original DNG path (created by sjcam_raw2dng, same stem as RAW)
     original_dng_path = Path(output_folder) / (raw_path.stem + ".dng")
@@ -2202,20 +2254,6 @@ def true_recording_period(
 
 
 
-class Style:
-    """
-    Use for nice console line colors
-    """
-    BLACK = '\033[30m '
-    RED = '\033[31m '
-    GREEN = '\033[32m '
-    YELLOW = '\033[33m '
-    BLUE = '\033[34m '
-    MAGENTA = '\033[35m '
-    CYAN = '\033[36m '
-    WHITE = '\033[37m '
-    UNDERLINE = '\033[4m '
-    RESET = '\033[0m '
 
 
 

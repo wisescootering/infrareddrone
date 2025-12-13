@@ -31,8 +31,9 @@ from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLab
 from PyQt6.QtGui import QPixmap, QColor, QImage, QCloseEvent, QIcon
 from PyQt6.QtCore import Qt
 # -------------- IRDrone Library -------------------------------------
-import IRD_interactive_utils as Uti
-from IRD_interactive_utils import center_on_screen
+import IRD_Interactive_utils as Uti
+from IRD_Interactive_utils import center_on_screen
+from IRD_Interactive_color_style import Style
 
 
 """
@@ -97,7 +98,7 @@ class LoadVisNirImagesDialog(QDialog):
         super().__init__()
 
         if folderMission is None or not folderMission.exists():
-            raise ValueError(Uti.Style.YELLOW + f"Invalid folderMission: {folderMission}" + Uti.Style.RESET)
+            raise ValueError(Style.YELLOW + f"Invalid folderMission: {folderMission}" + Style.RESET)
 
         # ---- Basic GUI and screen parameters
         self.number_images_reference: int = 5
@@ -126,7 +127,7 @@ class LoadVisNirImagesDialog(QDialog):
         self.user_dir: str = self.currentUserDir
         self.new_user_dir: str = self.currentUserDir
         self.folderMissionPath: Path = folderMission
-        self.outputTakeoffFolder: Path = Path(self.folderMissionPath) / "FlightAnalytics"
+        self.outputTakeoffFolder: Path = Path(self.folderMissionPath) / "AerialPhotography"/ "VIS"
         self.outputFlightAnalyticsFolder: Path = Path(self.folderMissionPath) / "FlightAnalytics"
         self.outputTakeoffFolder.mkdir(parents=True, exist_ok=True)
         self.outputFlightAnalyticsFolder.mkdir(parents=True, exist_ok=True)
@@ -168,26 +169,19 @@ class LoadVisNirImagesDialog(QDialog):
         # ---- Load previous transfer info if available
         verbose = True
 
-        if self.outputFlightAnalyticsFolder:
-            if self.spectral_band == "VIS":
-                self.info_vis_dng = self.load_transfer_info(self.outputFlightAnalyticsFolder, "VIS", "dng")
-                if self.info_vis_dng:
-                    self._set_image_flags_from_info(self.info_vis_dng)
-                    self.info_vis_dng_available = True
-            elif self.spectral_band == "NIR":
-                # ----- jpg -----
-                self.info_nir_jpg = self.load_transfer_info(self.outputFlightAnalyticsFolder, "NIR", "jpg")
-                if self.info_nir_jpg:
-                    self._set_image_flags_from_info(self.info_nir_jpg)
-                    self.info_nir_jpg_available = True
-                # ----- raw -----
-                self.info_nir_raw = self.load_transfer_info(self.outputFlightAnalyticsFolder, "NIR", "raw")
-                if self.info_nir_raw:
-                    self.info_nir_raw_available = True
-                # ----- dng ----
-                self.info_nir_dng = self.load_transfer_info(self.outputFlightAnalyticsFolder, "NIR", "dng")
-                if self.info_nir_dng:
-                    self.info_nir_dng_available = True
+        try:
+            if self.outputTakeoffFolder:
+                if self.spectral_band == "VIS":
+                    self.info_vis_dng = self.load_transfer_info(self.outputTakeoffFolder, "VIS", "dng")
+                    if self.info_vis_dng:
+                        self._set_image_flags_from_info(self.info_vis_dng)
+                        self.info_vis_dng_available = True
+                elif self.spectral_band == "NIR":
+                    self.info_nir_dng = self.load_transfer_info(self.outputTakeoffFolder, "NIR", "dng")
+                    if self.info_nir_dng:
+                        self.info_nir_dng_available = True
+        except Exception as e:
+            print(f'error  in Load previous transfer info if available:  {e}')
 
 
         self.timeline: list[dict] = []
@@ -370,22 +364,22 @@ class LoadVisNirImagesDialog(QDialog):
             # Load images if interactive sequence was already completed once
             if self.spectral_band == "VIS":
                 if self.image_0_available:
-                    print(Uti.Style.GREEN + '[INFO] Loading takeoff image' + Uti.Style.RESET)
+                    print(Style.GREEN + '[INFO] Loading takeoff image' + Style.RESET)
                     self.open_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 0)
                 elif self.image_takeoff_available:
                     self.open_takeoff_image(self.path_image_takeoff)
 
                 if self.image_first_sync_available:
-                    print(Uti.Style.GREEN + '[INFO] Loading first sync image' + Uti.Style.RESET)
+                    print(Style.GREEN + '[INFO] Loading first sync image' + Style.RESET)
                     self.open_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 1)
                 if self.image_last_sync_available:
-                    print(Uti.Style.GREEN + '[INFO] Loading last sync image VIS' + Uti.Style.RESET)
+                    print(Style.GREEN + '[INFO] Loading last sync image VIS' + Style.RESET)
                     self.open_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 2)
                 if self.image_first_fly_available:
-                    print(Uti.Style.GREEN + '[INFO] Loading first fly image VIS' + Uti.Style.RESET)
+                    print(Style.GREEN + '[INFO] Loading first fly image VIS' + Style.RESET)
                     self.open_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 3)
                 if self.image_last_fly_available:
-                    print(Uti.Style.GREEN + '[INFO] Loading last fly image VIS' + Uti.Style.RESET)
+                    print(Style.GREEN + '[INFO] Loading last fly image VIS' + Style.RESET)
                     self.open_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 4)
 
                 if all(self.flags):
@@ -394,19 +388,19 @@ class LoadVisNirImagesDialog(QDialog):
 
             elif self.spectral_band == "NIR":
                 if self.image_0_available:
-                    print(Uti.Style.GREEN + '[INFO] Loading takeoff image' + Uti.Style.RESET)
+                    print(Style.GREEN + '[INFO] Loading takeoff image' + Style.RESET)
                     self.open_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 0)
                 if self.image_first_sync_available:
-                    print(Uti.Style.GREEN + '[INFO] Loading first sync image NIR' + Uti.Style.RESET)
+                    print(Style.GREEN + '[INFO] Loading first sync image NIR' + Style.RESET)
                     self.open_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 1)
                 if self.image_last_sync_available:
-                    print(Uti.Style.GREEN + '[INFO] Loading last sync image NIR' + Uti.Style.RESET)
+                    print(Style.GREEN + '[INFO] Loading last sync image NIR' + Style.RESET)
                     self.open_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 2)
                 if self.image_first_fly_available:
-                    print(Uti.Style.GREEN + '[INFO] Loading first fly image NIR' + Uti.Style.RESET)
+                    print(Style.GREEN + '[INFO] Loading first fly image NIR' + Style.RESET)
                     self.open_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 3)
                 if self.image_last_fly_available:
-                    print(Uti.Style.GREEN + '[INFO] Loading last fly image NIR' + Uti.Style.RESET)
+                    print(Style.GREEN + '[INFO] Loading last fly image NIR' + Style.RESET)
                     self.open_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 4)
 
             # Setting button actions
@@ -538,7 +532,7 @@ class LoadVisNirImagesDialog(QDialog):
             if not consistency_choice:
                 if not os.path.isdir(inputFolder):
                     # print("The image input folder ", inputFolder, " does not exist.")
-                    Uti.show_error_message(Uti.Style.YELLOW + f"The input folder {inputFolder} of the images does not exist!" + Uti.Style.RESET)
+                    Uti.show_error_message(Style.YELLOW + f"The input folder {inputFolder} of the images does not exist!" + Style.RESET)
                     exit()
                 return
 
@@ -569,10 +563,10 @@ class LoadVisNirImagesDialog(QDialog):
                 #                               NIR
                 # -----------------------------------------------------------------------------------
                 # ----------  transfer of NIR images of the tkoff, Sync and Fly phase (jpg & raw) ----------------
-                self.process_image_transfer(inputFolder,
-                                            ["jpg", "raw", "dng"],
+                self.process_image_transfer(outputFlyFolder,
+                                            "dng",
                                             outputSyncFolder, outputFlyFolder, outputFlightAnalyticsFolder,
-                                            idTakeoff, idMinSync,  idMaxSync, idMinFly, idMaxFly, offset=[0, -1],
+                                            idTakeoff, idMinSync,  idMaxSync, idMinFly, idMaxFly,
                                             progressSync=[(0, 10), (0, 30)], progressFly=[(10, 100), (30, 100)],
                                             )
 
@@ -633,7 +627,7 @@ class LoadVisNirImagesDialog(QDialog):
         files = sorted([f for f in folder_path.iterdir() if f.suffix.lower() == img_suffix])
 
         if verbose:
-            print(Uti.Style.GREEN + f"🔍 {len(files)} files {img_suffix.upper()} found" + Uti.Style.RESET)
+            print(Style.GREEN + f"🔍 {len(files)} files {img_suffix.upper()} found" + Style.RESET)
 
         return files
 
@@ -702,115 +696,114 @@ class LoadVisNirImagesDialog(QDialog):
         -------
         None
         """
+        try:
+            # Normalize to Path
+            inputFolder = Path(inputFolder)
 
-        # Normalize to Path
-        inputFolder = Path(inputFolder)
+            # Normalize list_img_suffix → list[str]
+            if isinstance(list_img_suffix, str):
+                list_img_suffix = [list_img_suffix]
+            else:
+                list_img_suffix = list(list_img_suffix)
 
-        # Normalize list_img_suffix → list[str]
-        if isinstance(list_img_suffix, str):
-            list_img_suffix = [list_img_suffix]
-        else:
-            list_img_suffix = list(list_img_suffix)
+            n = len(list_img_suffix)
 
-        n = len(list_img_suffix)
+            # Normalize offset
+            if isinstance(offset, int):
+                offset = [offset] * n
+            elif isinstance(offset, list):
+                if len(offset) != n:
+                    raise ValueError("offset list must have same length as list_img_suffix")
+            else:
+                raise TypeError("offset must be int or list[int]")
 
-        # Normalize offset
-        if isinstance(offset, int):
-            offset = [offset] * n
-        elif isinstance(offset, list):
-            if len(offset) != n:
-                raise ValueError("offset list must have same length as list_img_suffix")
-        else:
-            raise TypeError("offset must be int or list[int]")
+            # Normalize progress ranges
+            def normalize_progress(val):
+                if isinstance(val, list) and isinstance(val[0], tuple):
+                    return val
+                return [tuple(val)] * n
 
-        # Normalize progress ranges
-        def normalize_progress(val):
-            if isinstance(val, list) and isinstance(val[0], tuple):
-                return val
-            return [tuple(val)] * n
+            progressSync = normalize_progress(progressSync)
+            progressFly = normalize_progress(progressFly)
 
-        progressSync = normalize_progress(progressSync)
-        progressFly = normalize_progress(progressFly)
+            # ----------------------------------------------------------
+            # Loop on suffix → generate one JSON per suffix
+            # ----------------------------------------------------------
+            for i, suffix in enumerate(list_img_suffix):
+                # Apply per-suffix offset
+                idTk = idTkoff + offset[i]
+                idMinS = idMinSync + offset[i]
+                idMaxS = idMaxSync + offset[i]
+                idMinF = idMinFly + offset[i]
+                idMaxF = idMaxFly + offset[i]
 
-        # ----------------------------------------------------------
-        # Loop on suffix → generate one JSON per suffix
-        # ----------------------------------------------------------
-        for i, suffix in enumerate(list_img_suffix):
-            # Apply per-suffix offset
-            idTk = idTkoff + offset[i]
-            idMinS = idMinSync + offset[i]
-            idMaxS = idMaxSync + offset[i]
-            idMinF = idMinFly + offset[i]
-            idMaxF = idMaxFly + offset[i]
+                print(f'DEBUG 088  process_image_transfer  {suffix}   idTkoff= {idTkoff}   offset[{i}]= {offset[i]} ')
 
-            print(f'DEBUG 088  process_image_transfer  {suffix}   idTkoff= {idTkoff}   offset[{i}]= {offset[i]} ')
+                sync_prog = progressSync[i]
+                fly_prog = progressFly[i]
 
-            sync_prog = progressSync[i]
-            fly_prog = progressFly[i]
+                # List of images with this suffix
+                listInputImages = self.create_list_image_in_input_folder(inputFolder, suffix)
 
-            # List of images with this suffix
-            listInputImages = self.create_list_image_in_input_folder(inputFolder, suffix)
+                print(f'DEBUG  995   listInputImages ={listInputImages} ')
 
-            print(f'DEBUG  995   listInputImages ={listInputImages} ')
+                # --- Takeoff (one image)
+                takeOff_list, idTk, idTk = self.load_inputFolder_2_outputFolder(
+                    Path(inputFolder), listInputImages,
+                    Path(outputFlyFolder),
+                    idTk, idTk,
+                    *sync_prog
+                )
 
-            '''
+                # --- Sync phase
+                sync_list, idMinS, idMaxS = self.load_inputFolder_2_outputFolder(
+                    Path(inputFolder), listInputImages,
+                    Path(outputFlyFolder),
+                    idMinS, idMaxS,
+                    *sync_prog
+                )
 
-            # --- Takeoff (one image)
-            print(f'DEBUG 999 self.original_path_image_takeoff.name = {Path(self.original_path_image_takeoff).name}')
-            takeOff_list, idTk, idTk = self.load_inputFolder_2_outputFolder(
-                Path(inputFolder), listInputImages,
-                Path(outputFlyFolder),
-                idTk, idTk,
-                *sync_prog
-            )
+                # --- Fly phase
+                fly_list, idMinF, idMaxF = self.load_inputFolder_2_outputFolder(
+                    Path(inputFolder), listInputImages,
+                    Path(outputFlyFolder),
+                    idMinF, idMaxF,
+                    *fly_prog
+                )
+                print(f'DEBUG 077 process_image_transfer  {suffix}   original_name_take_off = {Path(self.original_path_image_takeoff).name} ')
 
-            # --- Sync phase
-            sync_list, idMinS, idMaxS = self.load_inputFolder_2_outputFolder(
-                Path(inputFolder), listInputImages,
-                Path(outputFlyFolder),
-                idMinS, idMaxS,
-                *sync_prog
-            )
+                # --- JSON creation (one per suffix)
+                output_Folder = str(Path(self.folderMissionPath, "AerialPhotography", "VIS"))
+                self.save_transfer_info(
+                    output_folder=output_Folder,
+                    input_folder=inputFolder,
+                    spectral_band=self.currentSpectralBand,
+                    img_suffix=suffix,  # IMPORTANT: single suffix
+                    tkoff_data={
+                        "outputFolder": output_Folder,
+                        "original name": str(Path(self.original_path_image_takeoff).name),
+                        "idMin": idTk,
+                        "idMax": idTk,
+                        "listCopiedImages": takeOff_list,
+                    },
+                    sync_data={
+                        "outputFolder": output_Folder,
+                        "idMin": idMinS,
+                        "idMax": idMaxS,
+                        "listCopiedImages": sync_list,
+                    },
+                    fly_data={
+                        "outputFolder": output_Folder,
+                        "idMin": idMinF,
+                        "idMax": idMaxF,
+                        "listCopiedImages": fly_list,
+                    }
+                )
 
-            # --- Fly phase
-            fly_list, idMinF, idMaxF = self.load_inputFolder_2_outputFolder(
-                Path(inputFolder), listInputImages,
-                Path(outputFlyFolder),
-                idMinF, idMaxF,
-                *fly_prog
-            )
-            '''
-            print(f'DEBUG 077 process_image_transfer  {suffix}   original_name_take_off = {Path(self.original_path_image_takeoff).name} ')
-
-            # --- JSON creation (one per suffix)
-            self.save_transfer_info(
-                output_folder=outputFlightAnalyticsFolder,
-                input_folder=inputFolder,
-                spectral_band=self.currentSpectralBand,
-                img_suffix=suffix,  # IMPORTANT: single suffix
-                tkoff_data={
-                    "outputFolder": str(Path(outputFlyFolder, "AerialPhotography", "VIS")),
-                    "original name": str(Path(self.original_path_image_takeoff).name),
-                    "idMin": idTk,
-                    "idMax": idTk,
-                    "listCopiedImages": takeOff_list,
-                },
-                sync_data={
-                    "outputFolder": str(outputSyncFolder),
-                    "idMin": idMinS,
-                    "idMax": idMaxS,
-                    "listCopiedImages": sync_list,
-                },
-                fly_data={
-                    "outputFolder": str(outputFlyFolder),
-                    "idMin": idMinF,
-                    "idMax": idMaxF,
-                    "listCopiedImages": fly_list,
-                }
-            )
-
-        # Final global progress
-        self.progress_bar.setValue(100)
+            # Final global progress
+            self.progress_bar.setValue(100)
+        except Exception as e:
+            print(f'error in process_image_transfer : {e}')
 
 
     @staticmethod
@@ -852,57 +845,59 @@ class LoadVisNirImagesDialog(QDialog):
         Path
             Path to the saved JSON file.
         """
+        try:
+            # Ensure output folder exists
+            output_folder = Path(output_folder)
+            output_folder.mkdir(parents=True, exist_ok=True)
 
-        # Ensure output folder exists
-        output_folder = Path(output_folder)
-        output_folder.mkdir(parents=True, exist_ok=True)
+            # JSON file name including spectral band and image type (suffix)
+            json_name = f"transfer_info_{spectral_band}_{img_suffix}.json"
+            json_path = Uti.safe_path(Path(output_folder) / json_name)
+            print(f'[INFO]   json_path = {json_path} ')
 
-        # JSON file name including spectral band and image type (suffix)
-        json_name = f"transfer_info_{spectral_band}_{img_suffix}.json"
-        json_path = output_folder / json_name
-
-        # Base data
-        data = {
-            "spectral_band": spectral_band,
-            "img_suffix": img_suffix,
-            "inputFolder": str(input_folder),
-        }
-
-        # take-off data
-        if tkoff_data:
-            data["tkoff"] = {
-                "outputFolder": str(tkoff_data.get("outputFolder", "")),
-                "original name": str(tkoff_data.get("original name", "")),
-                "idMin": int(tkoff_data.get("idMin", -1)),
-                "idMax": int(tkoff_data.get("idMax", -1)),
-                "listCopiedImages": list(map(str, tkoff_data.get("listCopiedImages", []))),
+            # Base data
+            data = {
+                "spectral_band": str(spectral_band),
+                "img_suffix": img_suffix,
+                "inputFolder": str(input_folder),
             }
 
-        # Sync phase data
-        if sync_data:
-            data["sync"] = {
-                "outputFolder": str(sync_data.get("outputFolder", "")),
-                "idMin": int(sync_data.get("idMin", -1)),
-                "idMax": int(sync_data.get("idMax", -1)),
-                "listCopiedImages": list(map(str, sync_data.get("listCopiedImages", []))),
-            }
+            # take-off data
+            if tkoff_data:
+                data["tkoff"] = {
+                    "outputFolder": str(output_folder),
+                    "original name": str(tkoff_data.get("original name", "")),
+                    "idMin": int(tkoff_data.get("idMin", -1)),
+                    "idMax": int(tkoff_data.get("idMax", -1)),
+                    "listCopiedImages": list(map(str, tkoff_data.get("listCopiedImages", []))),
+                }
 
-        # Fly phase data
-        if fly_data:
-            data["fly"] = {
-                "outputFolder": str(fly_data.get("outputFolder", "")),
-                "idMin": int(fly_data.get("idMin", -1)),
-                "idMax": int(fly_data.get("idMax", -1)),
-                "listCopiedImages": list(map(str, fly_data.get("listCopiedImages", []))),
-            }
+            # Sync phase data
+            if sync_data:
+                data["sync"] = {
+                    "outputFolder": str(output_folder),
+                    "idMin": int(sync_data.get("idMin", -1)),
+                    "idMax": int(sync_data.get("idMax", -1)),
+                    "listCopiedImages": list(map(str, sync_data.get("listCopiedImages", []))),
+                }
 
-        # Write JSON file
-        with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
+            # Fly phase data
+            if fly_data:
+                data["fly"] = {
+                    "outputFolder": str(output_folder),
+                    "idMin": int(fly_data.get("idMin", -1)),
+                    "idMax": int(fly_data.get("idMax", -1)),
+                    "listCopiedImages": list(map(str, fly_data.get("listCopiedImages", []))),
+                }
 
-        print(Uti.Style.GREEN + f"[INFO] JSON file saved: {json_path}" + Uti.Style.RESET)
-        return json_path
+            # Write JSON file
+            with open(json_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4, ensure_ascii=False)
 
+            print(Style.GREEN + f"[INFO] JSON file saved: {json_path}" + Style.RESET)
+            return json_path
+        except Exception as e:
+            print(f'error in save_transfer_info : {e}')
 
     @staticmethod
     def load_transfer_info(
@@ -946,7 +941,7 @@ class LoadVisNirImagesDialog(QDialog):
 
         # Check if the JSON file exists
         if not json_path.exists():
-            if verbose: print(Uti.Style.YELLOW + f"[WARN] JSON file not found: {json_path}. Creating an empty JSON file." + Uti.Style.RESET)
+            if verbose: print(Style.YELLOW + f"[WARN] JSON file not found: {json_path}. Creating an empty JSON file." + Style.RESET)
             # Crée un fichier JSON vide
             json_path.parent.mkdir(parents=True, exist_ok=True)  # s'assure que le dossier existe
             with open(json_path, "w", encoding="utf-8") as f:
@@ -958,15 +953,15 @@ class LoadVisNirImagesDialog(QDialog):
             with open(json_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
-            print(Uti.Style.GREEN + f"[INFO] JSON file loaded: {json_path}" + Uti.Style.RESET)
+            print(Style.GREEN + f"[INFO] JSON file loaded: {json_path}" + Style.RESET)
             return data
 
         except Exception as e:
-            print(Uti.Style.RED + f"[ERROR] Failed to read {json_path}: {e}" + Uti.Style.RESET)
+            print(Style.RED + f"[ERROR] Failed to read {json_path}: {e}" + Style.RESET)
             return None
 
 
-
+    '''
     @staticmethod
     def extract_dng_capture_date(file_path: Path, verbose: bool = False) -> Optional[datetime]:
         """
@@ -985,12 +980,12 @@ class LoadVisNirImagesDialog(QDialog):
                         print(f"Capture date: {dt}")
                     return dt
                 else:
-                    print(Uti.Style.YELLOW + f"⚠️ DateTimeOriginal not found in {file_path.name}" + Uti.Style.RESET)
+                    print(Style.YELLOW + f"⚠️ DateTimeOriginal not found in {file_path.name}" + Style.RESET)
                     return None
         except Exception as e:
             print(f"❌ Error extracting EXIF from {file_path.name}: {e}")
             return None
-
+    '''
 
     @staticmethod
     def true_recording_period(
@@ -1037,15 +1032,15 @@ class LoadVisNirImagesDialog(QDialog):
             if np.isclose(mean_jump / periode_time_lapse, round(mean_jump / periode_time_lapse), atol=0.01):
                 # Jumps are exact multiples → true period = estimated period
                 true_record_period = periode_time_lapse
-                print(Uti.Style.GREEN + f"📌 true_recording_period (excluding jumps): {true_record_period:.3f} s" + Uti.Style.RESET)
+                print(Style.GREEN + f"📌 true_recording_period (excluding jumps): {true_record_period:.3f} s" + Style.RESET)
             else:
                 # True period = total duration / number of intervals
                 true_record_period = (dates[-1] - dates[0]).total_seconds() / n_intervals
-                print(Uti.Style.GREEN + f"📌 true_recording_period: {true_record_period:.3f} s" + Uti.Style.RESET)
+                print(Style.GREEN + f"📌 true_recording_period: {true_record_period:.3f} s" + Style.RESET)
         else:
             # No jumps → true period = total duration / number of intervals
             true_record_period = (dates[-1] - dates[0]).total_seconds() / n_intervals
-            print(Uti.Style.GREEN + f"📌 true_recording_period: {true_record_period:.3f} s" + Uti.Style.RESET)
+            print(Style.GREEN + f"📌 true_recording_period: {true_record_period:.3f} s" + Style.RESET)
 
         return true_record_period
 
@@ -1152,7 +1147,9 @@ class LoadVisNirImagesDialog(QDialog):
         Returns:
         None
         """
-        print(f'DEBUG   entrée de init_image_takeoff_available  : path_image_takeoff ={path_image_takeoff}   original_path_image_takeoff ={original_path_image_takeoff} ')
+        print(f'DEBUG   entrée de init_image_takeoff_available  : \n'
+              f'path_image_takeoff ={path_image_takeoff}  \n '
+              f'        original_path_image_takeoff ={original_path_image_takeoff} ')
         try:
             self.image_takeoff_available = False    # Initialize as False
             # Check if the image type is "VIS" or "DNG"
@@ -1164,14 +1161,12 @@ class LoadVisNirImagesDialog(QDialog):
                 # if path_image_takeoff is not None:
                 #    if os.path.exists(path_image_takeoff):
                 # ---------------------------------------------------
-                if path_image_takeoff is not None and os.path.exists(path_image_takeoff):
-                    self.path_image_takeoff = path_image_takeoff
-                    self.image_takeoff_available = True
-                    self.image_0_available = True
-                elif original_path_image_takeoff is not None and os.path.exists(original_path_image_takeoff):
-                    self.path_image_takeoff = path_image_takeoff
-                    self.image_takeoff_available = True
-                    self.image_0_available = True
+                if os.path.exists(self.folderMissionPath):
+                    if Uti.safe_path(Path(self.folderMissionPath) / "AerialPhotography" / "VIS" / "transfer_info_VIS_dng.json") is not None:
+                        print(f'[INFO]   transfer_info_VIS_dng.json  exist    ')
+                        self.path_image_takeoff = Uti.safe_path(Path(self.folderMissionPath) / "AerialPhotography" / "VIS" )
+                        self.image_takeoff_available = True
+                        self.image_0_available = True
 
         except Exception as e:
             print("error   in init_image_takeoff_available", e)
@@ -1195,9 +1190,10 @@ class LoadVisNirImagesDialog(QDialog):
         None
         """
         try:
+
             file_path = path_image_takeoff
-            file_path = Uti.safe_path(file_path)
-            print(f'DEBUG  open_takeoff_image  path_image_takeoff = {path_image_takeoff}  ')
+            file_path = Uti.safe_path(Path(file_path) / self.info_vis_dng["original name"])
+            print(f'DEBUG  open_takeoff_image  path_image_takeoff = {file_path}  ')
             if file_path:
                 self.flags[0] = True
                 self.new_user_dir = os.path.dirname(file_path)
@@ -1253,18 +1249,25 @@ class LoadVisNirImagesDialog(QDialog):
                 raise ValueError(f"Invalid index: {index}")
 
             # --- Construct full paths ---
+            path_VIS = Uti.safe_path(Path(self.folderMissionPath) / "AerialPhotography" / "VIS")
+            path_NIR = Uti.safe_path(Path(self.folderMissionPath) / "AerialPhotography" / "NIR")
+            print(f'[INFO]  path_VIS   = {path_VIS}')
+            print(f'[DEBUG]  self.info_vis_dng[key_1][listCopiedImages][index_img])  = {self.info_vis_dng[key_1]["listCopiedImages"][index_img]}')
             if img_suffix.lower() == "dng":
-                file_path = Path(self.info_vis_dng[key_1]['outputFolder']) / self.info_vis_dng[key_1]['listCopiedImages'][index_img]
-                file_path = Uti.safe_path(file_path)
-                input_file_path = Path(self.info_vis_dng['inputFolder']) / self.info_vis_dng[key_1]['listCopiedImages'][index_img]
-                input_file_path = Uti.safe_path(input_file_path)
-            elif img_suffix.lower() == "jpg":
-                file_path = Path(self.info_nir_jpg[key_1]['outputFolder']) / self.info_nir_jpg[key_1]['listCopiedImages'][index_img]
-                file_path = Uti.safe_path(file_path)
-                input_file_path = Path(self.info_nir_jpg['inputFolder']) / self.info_nir_jpg[key_1]['listCopiedImages'][index_img]
-                input_file_path = Uti.safe_path(input_file_path)
+                if spectral_band == "VIS":
+                    file_path = Uti.safe_path(Path(path_VIS) / self.info_vis_dng[key_1]["listCopiedImages"][index_img])
+                    input_file_path = file_path
+                    print(f'[INFO]  image VIS   = {file_path}')
+                elif spectral_band == "NIR":
+                    file_path = Uti.safe_path(Path(path_VIS) / self.info_vis_dng[key_1]["listCopiedImages"][index_img])
+                    input_file_path = file_path
+                    print(f'[INFO]  image NIR   = {file_path}')
+                else:
+                    print(Style.RED + 'error invalid spectral band {spectral_band} ')
             else:
                 raise ValueError(f"Invalid file suffix: {img_suffix.lower()}")
+
+            print(f'DEBUG   file_path = {file_path}')
 
             if not file_path:
                 raise FileNotFoundError(f"File not found: {file_path}")

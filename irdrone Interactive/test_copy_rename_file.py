@@ -5,7 +5,7 @@ from pathlib import Path
 import shutil
 
 # -------------- IRDrone Library -------------------------------------
-import IRD_interactive_utils as Uti
+import IRD_Interactive_utils as Uti
 
 def copy_and_rename_images(input_dir: Path,
                            input_img_name: str,

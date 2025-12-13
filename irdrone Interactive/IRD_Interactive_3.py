@@ -20,9 +20,9 @@ from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPu
 from PyQt6.QtGui import QDoubleValidator, QPixmap, QColor, QIcon
 from PyQt6.QtCore import Qt, pyqtSignal, QRegularExpression
 # -------------- IRDrone Library ------------------------------------
-import IRD_interactive_utils as Uti
+import IRD_Interactive_utils as Uti
 import IRD_interactive_geo as Geo
-from IRD_interactive_utils import Prefrence_Screen
+from IRD_Interactive_utils import Prefrence_Screen
 import IRD_Interactive_Exif_Xmp as ExifXmp
 # -------------------- IRD Library -----------------------------------------------
 sys.path.append(osp.join(osp.dirname(__file__), '..'))

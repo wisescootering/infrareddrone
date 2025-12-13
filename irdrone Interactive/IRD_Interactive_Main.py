@@ -25,8 +25,9 @@ from PyQt6.QtGui import QPixmap, QColor, QIcon
 from IRD_Interactive_1 import Window_Load_TakeOff_Image, Window_create_file_structure
 from IRD_Interactive_2 import LoadVisNirImagesDialog
 from IRD_Interactive_3 import Dialog_extract_exif, Dialog_synchro_clock
-import IRD_interactive_utils as Uti
-from IRD_interactive_utils import Prefrence_Screen
+import IRD_Interactive_utils as Uti
+from IRD_Interactive_utils import Prefrence_Screen
+from IRD_Interactive_color_style import Style
 
 
 
@@ -38,12 +39,15 @@ class Main_Window(QMainWindow):
         """
         super().__init__()
         self.pref_screen = Prefrence_Screen()
-        self.dic_takeoff_light: dict = {"key": "value"}
-        self.dic_takeoff: dict = None
+        self.mission_parameters_light: dict = {"key": "value"}
+        self.mission_parameters: dict = None
         self.list_dic_exif_xmp: list[dict] = None
         self.list_summary: list[dict] = None
         self.pathImageTakeoff = None
         self.original_pathImageTakeoff = None
+        self.folderMissionPath = None
+
+
         self.image_display_size = (100, 100)
         self.def_app_dir = None
         self.def_user_dir = None
@@ -95,9 +99,9 @@ class Main_Window(QMainWindow):
         self.btn_create_mission.clicked.connect(self.open_window_define_mission)
         #  btn load_images
         self.btn_load_images = QPushButton("Step 2 : Choice of reference image set.", self)
-        self.btn_load_images.setAutoDefault(False)
-        self.btn_load_images.setEnabled(False)   # (True) pour test  et (False) en prod !
-        self.btn_load_images.setStyleSheet("background-color: Gray; color: darkGray;")
+        self.btn_load_images.setAutoDefault(True)
+        self.btn_load_images.setEnabled(True)   # (True) pour test  et (False) en prod !
+        self.btn_load_images.setStyleSheet("background-color: purple; color: white;")  # color: darkGray;")
         self.btn_load_images.clicked.connect(self.open_window_load_set_images)
         #  btn pre_process_images
         self.btn_pre_process_images = QPushButton("Step 3 : Image pre-processing", self)
@@ -138,7 +142,7 @@ class Main_Window(QMainWindow):
             default_pixmap = default_pixmap.scaled(*self.image_display_size, Qt.AspectRatioMode.KeepAspectRatio)
             self.image_label.setPixmap(default_pixmap)  # Display the image in  QLabel
         else:
-            # Create an empty pixmap of the desired size and adjust the size if necessary
+            # Create an empty pixmap of the desired size
             self.empty_pixmap = QPixmap(width, height)
             self.image_label.setText("Image area")
             self.empty_pixmap.fill(QColor(Qt.GlobalColor.gray))  # transparent,gray, darkYellow etc)
@@ -165,7 +169,7 @@ class Main_Window(QMainWindow):
         try:
             self.dialog_load_takeoff_image = Window_Load_TakeOff_Image(self)
             self.dialog_load_takeoff_image.show()
-            self.dic_takeoff_light = self.dialog_load_takeoff_image.dic_takeoff_light
+            self.mission_parameters_light = self.dialog_load_takeoff_image.mission_parameters_light
             self.dialog_load_takeoff_image.btn_NextStep.clicked.connect(self.open_window_create_file_structure)  # Connect dialog_create_file_structure signal to Main_Window method
         except Exception as e:
             print("Error in Main_Window open_window_define_mission:", e)
@@ -175,7 +179,7 @@ class Main_Window(QMainWindow):
         """
         Open dialog_create_mission_file_structure when called from dialog_load_takeoff_image.
         """
-        self.dialog_create_file_structure = Window_create_file_structure(self, self.dic_takeoff_light)  # Instantiate Window_12
+        self.dialog_create_file_structure = Window_create_file_structure(self, self.mission_parameters_light)  # Instantiate Window_12
         try:
             self.dialog_create_file_structure.data_signal_from_dialog_create_file_structure_to_main_window.connect(
                 self.handle_data_from_dialog_create_file_structure
@@ -185,20 +189,22 @@ class Main_Window(QMainWindow):
             print("Error in Main_Window open_window_create_file_structure:", e)
 
 
-    def handle_data_from_dialog_create_file_structure(self, validate: bool, dic_takeoff: dict):
+    def handle_data_from_dialog_create_file_structure(self, validate: bool, mission_parameters: dict):
         """
         Handle data from Window_create_file_structure and close parent windows.
         Args:
             validate (bool): True if the user has validated the entries, False otherwise.
-            dic_takeoff (dict): A dictionary containing image_path, location, and pilot data.
+            mission_parameters (dict): A dictionary containing image_path, location, and pilot data.
         """
         if validate:
-            self.dic_takeoff = dic_takeoff
+            self.mission_parameters = mission_parameters
+            self.folderMissionPath = self.mission_parameters['File path mission']
+            print(f'DEBUG   le dossier de la mission est  = {self.folderMissionPath}')
             self.dialog_create_file_structure.data_signal_from_dialog_create_file_structure_to_main_window.disconnect()  # Disconnect the signal
             self.dialog_create_file_structure.close()  # Close dialog_create_file_structure
             self.btn_load_images.setAutoDefault(True)
             self.btn_load_images.setEnabled(True)
-            self.btn_load_images.setStyleSheet("background-color: Gray; color: White;")
+            self.btn_load_images.setStyleSheet("background-color: purple; color: White;")
         else:
             print("The user has not validated his entries.")
 
@@ -222,18 +228,22 @@ class Main_Window(QMainWindow):
         height = 500  # height of the window
 
         # ----------------------- Choice of mission file -------------------------------------------------
+        if self.folderMissionPath:
+            print(f'DEBUG     Le dossier de la mission est {self.folderMissionPath}')
+        else:
+            print(f'DEBUG   Le dossier de la mission n\'existe pas encore.')
         folderMissionPath, coherent_response = Uti.choose_folder_mission(
-            self.dic_takeoff,
+            self.mission_parameters,
             self.pref_screen.default_user_dir,
             self.dialog_create_file_structure.AerialPhotoFolder,
             self.dialog_create_file_structure.SynchroFolder
         )
         if not coherent_response: return()
         # ---------------- Loads the 5 reference “VIS” images --------------------------------------------
-        if self.dic_takeoff is not None:
-            self.pathImageTakeoff = Path(self.dic_takeoff["path mission image take-off"]).parent  # self.dic_takeoff["File path mission"]
+        if self.mission_parameters is not None:
+            self.pathImageTakeoff = Path(self.mission_parameters["path mission image take-off"]).parent  # self.mission_parameters["File path mission"]
             print(f'DEBUG  self.pathImageTakeoff = {self.pathImageTakeoff}')
-            self.original_pathImageTakeoff = self.dic_takeoff["original File path take-off"]
+            self.original_pathImageTakeoff = self.mission_parameters["original File path take-off"]
             print(f'DEBUG  self.original_pathImageTakeoff = {self.original_pathImageTakeoff}')
 
         dialog_VIS = LoadVisNirImagesDialog(width,
@@ -244,7 +254,6 @@ class Main_Window(QMainWindow):
                                             original_path_image_takeoff=self.original_pathImageTakeoff)
 
         dialog_VIS.exec()
-        vis_timeline = getattr(dialog_VIS, "timeline", None)
         dialog_VIS.reset_flags()
         # ---------------- Loads the 5 reference “NIR” images --------------------------------------------
         dialog_NIR = LoadVisNirImagesDialog(width,
@@ -252,17 +261,7 @@ class Main_Window(QMainWindow):
                                             "NIR",
                                             folderMission=folderMissionPath)
         dialog_NIR.exec()
-        nir_timeline = getattr(dialog_NIR, "timeline", None)
         dialog_NIR.reset_flags()
-
-        # Merge timelines and save
-        vis_timeline = vis_timeline or {}
-        nir_timeline = nir_timeline or {}
-        outputTakeoffFolder = Path(folderMissionPath) / "FlightAnalytics"
-        outputTakeoffFolder.mkdir(parents=True, exist_ok=True)
-
-        out_file = Uti.save_time_line_json(outputTakeoffFolder, vis_timeline, nir_timeline)
-        print(f"✅ Timelines saved to {out_file}")
 
 
     # ===================================================================================
@@ -279,7 +278,7 @@ class Main_Window(QMainWindow):
         Open the dialog_extract_exif when the corresponding button (btn_pre_process_images) is clicked.
         """
         try:
-            self.dialog_extract_exif = Dialog_extract_exif(self.dic_takeoff)     # Instantiate Window dialog_extract_exif
+            self.dialog_extract_exif = Dialog_extract_exif(self.mission_parameters)     # Instantiate Window dialog_extract_exif
             self.dialog_extract_exif.data_signal_from_dialog_extract_exif_to_main_window.connect(self.handle_data_from_dialog_extract_exif)
             self.dialog_extract_exif.show()
             self.dialog_extract_exif.btn_preprocess_step1.clicked.connect(self.open_dialog_synchro_clock)  # Connect dialog_synchro_clock signal to Main_Window method

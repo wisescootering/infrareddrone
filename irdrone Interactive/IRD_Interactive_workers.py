@@ -1,0 +1,688 @@
+# -*- coding: utf-8 -*-
+# --------------------------------------------------------------------------------
+#   IR_drone interactive
+#   Creation of the mission by selection of the first image taken by the DJI (visible spectrum, image in dng format)
+#   29/10/2023   V002
+# ---------------------------------------------------------------------------------
+
+from typing import Any, Dict, Optional, Tuple, List, Union, Callable
+import sys
+import os
+import os.path as osp
+from pathlib import Path
+import shutil
+import json
+import numpy as np
+from datetime import date, time, datetime
+import time
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
+import threading
+import subprocess
+import psutil
+import piexif
+# -------------------- Image Library ------------------------------
+import rawpy
+import imageio
+# -------------- PyQt6 Library ------------------------------------
+from PyQt6.QtWidgets import QFileDialog, QWidget,  QLineEdit, QFrame,  QPushButton,\
+                            QProgressBar, QHBoxLayout,  QVBoxLayout, QLabel, QMessageBox, QDialog
+from PyQt6.QtGui import QPixmap, QImage, QColor, QIcon, QRegularExpressionValidator
+from PyQt6 import QtCore
+from PyQt6.QtCore import Qt, pyqtSignal, QRegularExpression, QUrl
+
+import matplotlib.pyplot as plt
+
+# -------------- IRDrone Library ------------------------------------
+import IRD_Interactive_utils as Uti
+import IRD_interactive_geo as Geo
+from IRD_Interactive_color_style import Style
+
+# ------------------------------------------------------
+# ExifTool path detection (Windows / Linux / macOS)
+# ------------------------------------------------------
+if os.name == 'nt':
+    EXIFTOOLPATH = osp.join(
+        osp.dirname(__file__),
+        "..", "thirdparty", "exiftool", "exiftool.exe"
+    )
+else:
+    EXIFTOOLPATH = "exiftool"
+if os.name == 'nt' and not osp.exists(EXIFTOOLPATH):
+    print(f"[WARNING] ExifTool not found at {EXIFTOOLPATH}")
+
+
+# ------------------------------------------------------
+# SJCam RAW→DNG converter path
+# ------------------------------------------------------
+if os.name == 'nt':
+    SJCONVERTERPATH = osp.join(
+        osp.dirname(__file__),
+        "..", "thirdparty", "sjcam_raw2dng", "sjcam_raw2dng.exe"
+    )
+else:
+    SJCONVERTERPATH = "sjcam_raw2dng"
+if os.name == 'nt' and not osp.exists(SJCONVERTERPATH):
+    print(f"[WARNING] SJCam RAW converter not found at {SJCONVERTERPATH}")
+
+# --------------------------------------------------------------------------------------------
+#
+#     Class pour utilisation du parallélisme avec des fenêtres interactives
+#
+# --------------------------------------------------------------------------------------------
+
+
+# -------  Persistent ExifTool wrapper (pyExifTool-like)  ----------
+
+
+class ExifToolPersist:
+    """
+    Persistent ExifTool process wrapper using the "-stay_open True" protocol.
+
+    Usage:
+        et = ExifToolPersist(path_to_exiftool)
+        et.start()
+        meta = et.get_metadata("image.dng")
+        et.close()
+
+    Behaviour notes:
+    - start() launches exiftool with "-stay_open True -@ -"
+    - execute(args) writes the args followed by "-execute" and returns the raw text
+      output produced by exiftool for that command (excluding the "{ready}" sentinel).
+    - execute_json(args) will parse the returned output as JSON and return the parsed object.
+    - get_metadata(filepath) is a convenience wrapper calling execute_json(["-json", filepath]).
+    - close() stops the persistent process cleanly.
+    """
+
+    def __init__(self, exiftool_path: str):
+        self.exiftool_path = exiftool_path
+        self.process: Optional[subprocess.Popen] = None
+        # Protect access to stdin/stdout to avoid interleaving from different threads
+        self._io_lock = threading.Lock()
+
+    def start(self) -> None:
+        """Start persistent ExifTool process (no-op if already started)."""
+        if self.process is not None:
+            return
+
+        # Launch exiftool in stay_open mode, reading/writing text
+        self.process = subprocess.Popen(
+            [self.exiftool_path, "-stay_open", "True", "-@", "-"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,               # use text mode for Python strings
+            universal_newlines=True,
+            bufsize=1,               # line-buffered
+        )
+
+        # Optionally read initial banner / first ready sentinel line if any.
+        # ExifTool usually prints nothing extra, so we don't block here.
+
+    def execute(self, args: List[str]) -> str:
+        """
+        Execute a single exiftool command via the persistent process.
+
+        Parameters
+        ----------
+        args : List[str]
+            List of strings that form the exiftool command arguments, e.g. ["-json", "file.dng"]
+
+        Returns
+        -------
+        str
+            Raw output produced by exiftool for these arguments (without the trailing '{ready}' sentinel).
+        """
+        if self.process is None or self.process.stdin is None or self.process.stdout is None:
+            raise RuntimeError("ExifToolPersist not started")
+
+        # Build the command by writing each arg on its own line, then "-execute"
+        with self._io_lock:
+            # write args lines
+            for a in args:
+                self.process.stdin.write(a + "\n")
+            # ask exiftool to execute but stay open
+            self.process.stdin.write("-execute\n")
+            self.process.stdin.flush()
+
+            # read stdout until sentinel "{ready}" is found on its own line
+            out_lines = []
+            while True:
+                line = self.process.stdout.readline()
+                if line == "":
+                    # EOF — process probably died; collect stderr and raise
+                    stderr = ""
+                    try:
+                        stderr = self.process.stderr.read() if self.process.stderr is not None else ""
+                    except Exception:
+                        pass
+                    raise RuntimeError(f"ExifTool process terminated unexpectedly. Stderr: {stderr!r}")
+                # strip only newline for sentinel check
+                if line.strip() == "{ready}":
+                    break
+                out_lines.append(line)
+
+        return "".join(out_lines)
+
+    def execute_json(self, args: List[str]) -> object:
+        """
+        Execute a command expecting JSON output and parse it.
+
+        Returns the parsed JSON object (could be list/dict depending on command).
+        """
+        raw = self.execute(args)
+        # exiftool outputs may include leading/trailing whitespace; strip before parsing
+        raw_stripped = raw.strip()
+        if not raw_stripped:
+            return None
+        try:
+            return json.loads(raw_stripped)
+        except json.JSONDecodeError as e:
+            # raise a clearer error
+            raise RuntimeError(f"Failed to parse exiftool JSON output: {e}; raw={raw!r}")
+
+    def get_metadata(self, filepath: str) -> dict:
+        """
+        Convenience: return metadata (first object) for `filepath` as a dict.
+        Returns empty dict on parse error or if exiftool returns empty output.
+        """
+        result = self.execute_json(["-json", filepath])
+        if isinstance(result, list) and len(result) > 0:
+            return result[0]
+        if isinstance(result, dict):
+            return result
+        return {}
+
+    def close(self) -> None:
+        """Terminate the persistent ExifTool process cleanly."""
+        if self.process is None:
+            return
+
+        # ask exiftool to stop and then terminate
+        try:
+            with self._io_lock:
+                if self.process.stdin:
+                    self.process.stdin.write("-stay_open\nFalse\n")
+                    self.process.stdin.flush()
+        except Exception:
+            pass
+
+        try:
+            self.process.wait(timeout=2.0)
+        except Exception:
+            try:
+                self.process.terminate()
+            except Exception:
+                pass
+        finally:
+            self.process = None
+
+    # context manager support
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+
+
+class CreateExif(QtCore.QObject):
+    """
+    Worker that scans a folder of DNG files and creates cleaned .exif JSON
+    companion files using ExifTool (filtered keys only).
+
+    Signals:
+        progress(int)
+        finished(dict, str)
+        error(str)
+    """
+
+    progress = QtCore.pyqtSignal(int)
+    finished = QtCore.pyqtSignal(dict, str)
+    error = QtCore.pyqtSignal(str)
+
+    def __init__(self, folder_to_scan: str, msg: str, spectral_band: str = "VIS"):
+        super().__init__()
+        try:
+            self.folder_to_scan = Path(folder_to_scan)
+            self.msg = msg
+            self.spectral_band = spectral_band
+
+            self.exiftool_path = EXIFTOOLPATH
+            self.et = ExifToolPersist(self.exiftool_path)
+
+        except Exception as e1:
+            print(f"[ERROR] CreateExif __init__: {e1}")
+
+    # =================================================================== #
+    #                               RUN
+    # =================================================================== #
+    def run(self) -> None:
+        try:
+            files = list(self.folder_to_scan.glob("*.dng"))
+            n = len(files)
+
+            self.progress.emit(0)
+
+            if n == 0:
+                self.progress.emit(100)
+                self.finished.emit({}, self.msg)
+                return
+
+            # Start persistent exiftool (if needed)
+            self.et.start()
+
+            # Determine files to process
+            to_process = []
+            for f in files:
+                out_path = f.with_suffix(".exif")
+                if not out_path.exists():
+                    to_process.append(f)
+
+            total = len(to_process)
+            results: Dict[str, dict] = {}
+
+            if total > 0:
+                # CPU pool
+                max_workers = psutil.cpu_count(logical=False) or 1
+                done_counter = 0
+
+                def _task_done(_):
+                    nonlocal done_counter
+                    done_counter += 1
+                    percent = int(95 * done_counter / total)
+                    self.progress.emit(percent)
+
+                # ---------------- PARALLEL EXIF READING ---------------- #
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    futures = []
+                    for f in to_process:
+                        fut = executor.submit(
+                            Uti.read_exif_and_write_json,
+                            f,
+                            self.exiftool_path
+                        )
+                        fut.add_done_callback(_task_done)
+                        futures.append((f, fut))
+
+                    for (f, fut) in futures:
+                        cleaned_meta = fut.result()  # already filtered + saved as .exif
+                        results[f.name] = cleaned_meta
+
+            else:
+                # nothing to compute, but still create timeline later
+                self.progress.emit(95)
+
+            # --------------- TIMELINE PROCESS (not parallel) --------------- #
+            list_dic_exif = Uti.list_tempo_time_line(
+                self.folder_to_scan,
+                spectral_band=self.spectral_band
+            )
+
+            dic_timeline = Uti.time_line_analyser_images(
+                list_dic_exif,
+                spectral_band=self.spectral_band,
+                img_suffix=".DNG",
+                verbose=False
+            )
+
+            Uti.save_time_line_json(self.folder_to_scan, dic_timeline)
+
+            # Finish
+            self.progress.emit(100)
+            self.finished.emit(results, self.msg)
+
+        except Exception as ex:
+            self.error.emit(str(ex))
+
+
+class Transfer_VIS(QtCore.QObject):
+    """
+    Worker class to transfer and rename VIS images from input directory
+    to output directory in a separate thread, emitting progress updates
+    and a finished signal when done.
+    """
+
+    progress: QtCore.pyqtSignal = QtCore.pyqtSignal(int)
+    finished: QtCore.pyqtSignal = QtCore.pyqtSignal(str)
+    error = QtCore.pyqtSignal(str)
+
+    def __init__(self, input_dir: Union[str, Path], output_dir: Union[str, Path]):
+        super().__init__()
+        self.input_dir: Path = Path(input_dir)
+        self.output_dir: Path = Path(output_dir)
+        self.exif_data = {}
+
+    def run(self) -> None:
+        try:
+            list_file = Uti.list_files_with_suffix("dng", self.input_dir)
+            n = len(list_file)
+
+            # --- progress bar : début ---
+            self.progress.emit(0)
+
+            cached = True
+
+            # Liste des fichiers à traiter réellement
+            to_process = []
+            for f in list_file:
+                out_path = f.with_suffix(".exif")
+                if out_path.exists() and cached:
+                    pass
+                else:
+                    to_process.append(f)
+
+            n = len(to_process)
+            if n == 0:
+                self.progress.emit(100)
+                self.finished.emit("No files to transfer")
+                return
+
+            done_counter = 0  # compteur pour progress bar
+
+            for file in to_process:
+                try:
+                    input_img_name: str = Path(file).name
+                    output_img_name: str = Uti.rename_file_VIS(input_img_name)
+
+                    Uti.copy_and_rename_images(
+                        self.input_dir,
+                        input_img_name,
+                        self.output_dir,
+                        output_img_name,
+                        verbose=False,
+                    )
+                except Exception as e:
+                    print(f"[ERROR] transfer failed for {file}: {e}")
+
+                done_counter += 1
+                percent = int(100 * done_counter / n)
+                self.progress.emit(percent)
+
+            self.finished.emit("transfer_finished")
+
+        except Exception as e:
+            print("Error in WorkerTransfer_VIS.run:", e)
+            self.error.emit(str(e))
+
+
+class Transfer_NIR(QtCore.QObject):
+    """
+    Worker to convert NIR RAW files to DNG in parallel using ThreadPoolExecutor.
+    Emits:
+      - progress(int)
+      - finished(str)
+      - error(str)
+    """
+
+    progress = QtCore.pyqtSignal(int)
+    finished = QtCore.pyqtSignal(str)
+    error = QtCore.pyqtSignal(str)
+
+    def __init__(self,
+                 input_folder: Union[str, Path],
+                 output_folder: Union[str, Path],
+                 exe_path: Optional[str] = None,
+                 nb_threads: str = "0",
+                 max_workers: Optional[int] = None,
+                 verbose: bool = False,
+                 exiftool_path: Optional[str] = None):
+        super().__init__()
+        self.input_folder = Path(input_folder)
+        self.output_folder = Path(output_folder)
+        self.exe_path = exe_path or SJCONVERTERPATH
+        self.nb_threads = nb_threads
+        self.max_workers = max_workers
+        self.verbose = verbose
+        self.exiftool_path = exiftool_path or EXIFTOOLPATH
+        self.dng_files: List[str] = []
+
+    def run(self) -> None:
+        try:
+            self.output_folder.mkdir(parents=True, exist_ok=True)
+
+            # RAW list
+            raw_files = sorted([str(p) for p in self.input_folder.glob("*.RAW")])
+            if not raw_files:
+                raw_files = sorted([str(p) for p in self.input_folder.glob("*.raw")])
+
+            n = len(raw_files)
+            if n == 0:
+                self.progress.emit(100)
+                self.finished.emit("No NIR RAW files found")
+                return
+
+            # Determine worker count
+            if self.max_workers is None:
+                try:
+                    cpu_physical = psutil.cpu_count(logical=False)
+                    if cpu_physical is None:
+                        raise ValueError("psutil returned None")
+                    self.max_workers = max(1, cpu_physical)
+                except Exception as e:
+                    self.max_workers = max(1, (os.cpu_count() or 1))
+
+            if self.verbose:
+                print(f"[TRACE] WorkerTransfer_NIR: converting {n} files with max_workers={self.max_workers}")
+
+            dng_results = []
+            completed = 0
+
+            # -------------------------------------
+            # THREADPOOLEXECUTOR (PyQt6 OK)
+            # -------------------------------------
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                futures = {
+                    executor.submit(
+                        Uti._convert_single_raw_to_dng,
+                        raw,
+                        self.exe_path,
+                        str(self.output_folder),
+                        self.nb_threads,
+                        self.verbose,
+                        self.exiftool_path
+                    ): raw for raw in raw_files
+                }
+
+                for future in as_completed(futures):
+                    raw = futures[future]
+                    try:
+                        dng_path = future.result()
+                        if dng_path:
+                            dng_results.append(dng_path)
+                    except Exception as e:
+                        print(f"[ERROR] conversion failed for {raw}: {e}")
+                    finally:
+                        completed += 1
+                        pct = int(100 * completed / n)
+                        if self.verbose:
+                            print(f"[TRACE] completed = {completed} / {n}   pct = {pct}%")
+
+                        # emit progress
+                        if completed == n:
+                            pct = 100
+                        self.progress.emit(pct)
+
+            # end
+            self.dng_files = sorted(dng_results)
+            msg = f"NIR conversion finished: {len(self.dng_files)} files created in {self.output_folder}"
+            self.finished.emit(msg)
+
+        except Exception as e:
+            print("Error in WorkerTransfer_NIR.run:", e)
+            self.error.emit(str(e))
+
+
+class Alti_GPS(QtCore.QObject):
+    """
+
+    """
+
+    progress = QtCore.pyqtSignal(int)
+    finished = QtCore.pyqtSignal(str)
+    error = QtCore.pyqtSignal(str)
+    plot_data = QtCore.pyqtSignal(object, object, object)
+
+    def __init__(self,
+                 folder: Union[str, Path],
+                 band: str = "VIS",
+                 verbose: bool = False
+                 ):
+        super().__init__()
+        self.folder = Path(folder)
+        self.band = band
+        self.verbose = verbose
+        self.list_dic_exif = []
+
+    def run(self) -> None:
+        try:
+            # exif list
+            exif_files = sorted([
+                str(p)
+                for p in self.folder.glob(f"{self.band}_*.exif")
+            ])
+            if not exif_files:
+                print(Style.YELLOW + f'⚠ Les données exif pour le dossier {self.folder} ne sont pas disponibles' + Style.RESET)
+                return
+            n = len(exif_files)
+
+            self.progress.emit(0)
+            gps_list = []
+            list_exif_dict = []
+            for idx, exif_path in enumerate(exif_files):
+                # --- Lecture du fichier .exif (JSON) ---
+                try:
+                    with open(exif_path, "r", encoding="utf-8") as f:
+                        exif_dict = json.load(f)
+                        list_exif_dict.append(exif_dict)
+                except Exception as e:
+                    print(f"[ERREUR] Impossible de lire {exif_path} : {e}")
+                    continue
+
+                # --- Lecture des clés GPS ---
+                keys = ["DateTimeOriginal", "DroneLatitude", "DroneLongitude", "DroneAltitudeTakeOff", "UTM_x", "UTM_y", "UTM_zone"]
+
+                gps_list.append({
+                    "file": exif_path,
+                    "lat": exif_dict.get("DroneLatitude"),
+                    "lon": exif_dict.get("DroneLongitude"),
+                    "alt_tkoff": exif_dict.get("DroneAltitudeTakeOff"),
+                    "UTM_x": exif_dict.get("UTM_x"),
+                    "UTM_y": exif_dict.get("UTM_y"),
+                })
+
+                # Pour debug
+                if self.verbose:
+                    print(f'[DEBUG] name = {Path(exif_path).stem} '
+                          f'Latitude : {exif_dict.get("DroneLatitude")}°'
+                          f'Longitude {exif_dict.get("DroneLongitude")}°'
+                          f', Altitude/take off :  {exif_dict.get("DroneAltitudeTakeOff")} m')
+
+
+            # --- Mise à jour de la barre de progression ---
+            pct = int(100 * idx / n)
+            self.progress.emit(pct)
+
+            self.progress.emit(10)
+            lat = np.array([d["lat"] for d in gps_list])
+            lon = np.array([d["lon"] for d in gps_list])
+            alt_tkoff = np.array([d["alt_tkoff"] for d in gps_list])
+            list_pts = [(lat[i], lon[i]) for i in range(len(gps_list))]
+            # print(f'[DEBUG] list_pts = {list_pts}')
+
+            # ------------------- altitudes du sol
+            # Utilise API IGN (Institut Géographique National. France) ou bien OpenTopoData (Monde)
+            # Renvoie en fonction des coordonnées GPS, l'altitude géographique.
+            # C'est le niveau du sol par rapport au niveau de la mer
+            self.progress.emit(30)
+
+            # ------------------ Extraction IGN
+            chunk_size = 300  # nombre de points maximum par requette à l'API IGN
+            n = len(list_pts)
+            alt_ground_list = []  # Liste pour accumuler les valeurs d'altitude
+            n_batches = (n + chunk_size - 1) // chunk_size  # Nombre total de batches
+
+            for b in range(n_batches):
+                # Début / fin de la requette à l'API IGN
+                start = b * chunk_size
+                end = min(start + chunk_size, n)
+                pts_batch = list_pts[start:end]
+                print(f"[INFO] Traitement batch {b + 1}/{n_batches} ({len(pts_batch)} points)")
+
+                try:
+                    dic_pts_geo = Geo.extract_alti_IGN(pts_batch, verbose=True, bypass=False)
+                    elevations = dic_pts_geo
+                except Exception as e:
+                    print(f"[ERREUR] Batch {b + 1} échoue : {e}")
+                    # On génère un batch de données INVALIDES
+                    elevations = [{"z": -9999} for _ in pts_batch]
+                # Accumulation des altitudes dans la liste globale
+                alt_ground_list.extend([d["z"] for d in elevations])
+                # ------------------ Mise à jour de la progression
+                pct = int(30 + 40 * (b + 1) / n_batches)  # Exemple : 30% → 70%
+                self.progress.emit(pct)
+
+            # Conversion en array NumPy
+            alt_ground = np.array(alt_ground_list)
+            alt_sea_level = alt_tkoff + alt_ground[0]
+
+            # Fin ------------------ Extraction IGN
+            self.progress.emit(70)
+            # print("[INFO] Altitudes IGN récupérées (avec gestion des erreurs)")
+
+            # ------------------- time line
+
+            time_line_path = next(self.folder.glob(f"time_line.json"), None)
+            if not time_line_path:
+                print(Style.YELLOW + f'⚠ Les données de la time line pour le dossier {self.folder} ne sont pas disponibles' + Style.RESET)
+                return
+            with open(time_line_path, "r", encoding="utf-8") as f: data = json.load(f)
+            list_time_line_dict = data["VIS"]
+            relative_timeline = np.array([d["relative_timeline"] for d in list_time_line_dict])
+            self.progress.emit(90)
+
+            # ------------------- distances entre les points
+            distP0P1, capP0P1 = Geo.calcul_distance(np.column_stack((lat, lon, alt_ground_list)))
+            distance_cum = np.cumsum(distP0P1)  # distance cumulée
+
+            for idx, exif_dict in enumerate(list_exif_dict):
+                exif_dict["GroundAltitude"] = alt_ground[idx]
+                exif_dict["DroneAltitudeSeaLevel"] = alt_sea_level[idx]
+                exif_dict["DroneAltitudeGround"] = alt_sea_level[idx] - alt_ground[idx]
+                exif_dict["DistanceToLastPoint"] = distP0P1[idx]
+                exif_dict["CapToLastPoint"] = capP0P1[idx]
+                exif_dict["RelativeTimeLine"] = relative_timeline[idx]
+                exif_dict["CumulDistance"] = distance_cum[idx]
+                # Construction du chemin du fichier .exif
+                json_path = Path(exif_dict["Directory"]) / (Path(exif_dict["FileName"]).stem + ".exif")
+                with json_path.open("w", encoding="utf-8") as f:
+                    json.dump(exif_dict, f, ensure_ascii=False, indent=2)
+
+            self.progress.emit(90)
+
+            # ======== CALCUL GRAPHIQUE (dans le worker, sans Matplotlib !) ========
+
+            try:
+                # altitude minimale du sol (référence)
+                alt_ground_min = np.min(alt_ground)
+
+                # altitudes normalisées
+                alt_ground_norm = alt_ground - alt_ground_min
+                alt_sea_level_norm = alt_sea_level - alt_ground_min
+                # print(f'[DEBUG]  distance_cum = {distance_cum[30]}   alt_ground_norm = {alt_ground_norm[30]}  alt_sea_level_norm = {alt_sea_level_norm[30]}')
+            except Exception as e:
+                print(f'error  dans CALCUL GRAPHIQUE {e}')
+            # ======== EMISSION Signal vers le MAIN THREAD ========
+            self.plot_data.emit(distance_cum, alt_ground_norm, alt_sea_level_norm)
+
+            # ======================================================================
+
+            self.progress.emit(100)
+            msg = "Calcul des altitudes et coordonnées GPS terminé"
+            self.finished.emit(msg)
+
+
+
+
+        except Exception as e:
+            print("Error in Alti_GPS:", e)
+            self.error.emit(str(e))
