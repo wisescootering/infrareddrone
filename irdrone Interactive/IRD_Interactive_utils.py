@@ -1101,50 +1101,13 @@ def save_time_line_json(
         print(f'error in (Uti)   save_time_line_json   {e}')
     return out_file
 
-def safe_path(path):
-    """
-    Convert a path (string or Path) into a clean, absolute, POSIX-style path.
-
-    This function performs two main operations:
-
-    1. **Path.resolve()**
-       - Converts the path to an **absolute path**.
-       - Normalises “..” and “.” components.
-       - Follows symbolic links when possible.
-       - Raises an exception if the path is invalid or contains illegal characters.
-       Example:
-           "C:\\Users\\Alain\\..\\Documents" → "C:\\Users\\Documents"
-
-    2. **Path.as_posix()**
-       - Converts the path to a **POSIX format**, meaning:
-         - All backslashes `\` are converted to forward slashes `/`
-         - Useful for:
-             * JSON files
-             * Logs
-             * URLs
-             * Cross-platform consistency (Windows/Linux/Mac)
-       Example:
-           "C:\\Users\\Alain\\Documents" → "C:/Users/Alain/Documents"
-
-    If an error occurs during resolution (invalid or forbidden path),
-    the function prints a warning and returns the original string unchanged.
-
-    Parameters
-    ----------
-    path : str or Path
-        Input path to clean and normalize.
-
-    Returns
-    -------
-    str
-        The cleaned POSIX-style absolute path, or the original value as str
-        if normalisation failed.
-    """
+def safe_path(path: Union[str, Path]) -> Path:
     try:
-        return Path(path).resolve().as_posix()
+        return Path(path).resolve()
     except Exception as e:
-        print(f"[safe_path] ⚠️ Invalid path {path} : {e}")
-        return str(path)
+        print(f"[safe_path] Invalid path {path} : {e}")
+        return Path(path)
+
 
 def _format_duration(seconds: float) -> str:
     """

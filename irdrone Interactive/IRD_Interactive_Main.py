@@ -248,7 +248,8 @@ class Main_Window(QMainWindow):
 
         dialog_VIS = LoadVisNirImagesDialog(width,
                                             height,
-                                            "VIS",
+                                            spectral_band="VIS",
+                                            suffix="dng",
                                             folderMission=folderMissionPath,
                                             path_image_takeoff=self.pathImageTakeoff,
                                             original_path_image_takeoff=self.original_pathImageTakeoff)
@@ -258,7 +259,8 @@ class Main_Window(QMainWindow):
         # ---------------- Loads the 5 reference “NIR” images --------------------------------------------
         dialog_NIR = LoadVisNirImagesDialog(width,
                                             height,
-                                            "NIR",
+                                            spectral_band="NIR",
+                                            suffix="dng",
                                             folderMission=folderMissionPath)
         dialog_NIR.exec()
         dialog_NIR.reset_flags()
