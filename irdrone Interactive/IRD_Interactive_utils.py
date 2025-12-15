@@ -33,7 +33,7 @@ import exifread
 from PIL import Image
 import rawpy
 # -----------------------PyQt6 Library ----------------------------
-from PyQt6.QtWidgets import QMessageBox, QApplication
+from PyQt6.QtWidgets import QMessageBox, QApplication, QFileDialog, QWidget
 # -----------------------------------------------------------------
 from IRD_interactive_geo import geo2UTM
 from IRD_Interactive_color_style import Style
@@ -68,8 +68,6 @@ class Prefrence_Screen:
         self.CameraFolder: str = "cameras"  # here the “s” of cameras is obligatory. Used by ODM
         self.background_color = "white"
         self.txt_color = "black"
-
-
 
 def parse_filename(file_name: str, allowed_suffix: Optional[Iterable[str]] = None) -> Tuple[Optional[str], Optional[int], Optional[str]]:
     """
@@ -1108,7 +1106,6 @@ def safe_path(path: Union[str, Path]) -> Path:
         print(f"[safe_path] Invalid path {path} : {e}")
         return Path(path)
 
-
 def _format_duration(seconds: float) -> str:
     """
     Returns a human-readable string representing the duration.
@@ -1125,7 +1122,6 @@ def _format_duration(seconds: float) -> str:
         return f"{seconds / 60:.1f} min"
     else:
         return f"{seconds:.0f} s"
-
 
 def choose_folder_mission(
     mission_parameters: dict,
@@ -1211,6 +1207,118 @@ def choose_folder_mission(
     except Exception as e:
         print("Error 2 in choose_folder_mission:", e)
 
+def choose_mission_folder_phase_2(
+    parent: Optional[QWidget] = None,
+    default_user_dir: str = r"C:\Air-Mission",
+    verbose: bool = False
+):
+    """
+    Open a folder selection dialog and validate the selected IRDrone mission folder.
+
+    Returns
+    -------
+    (Path | None, bool)
+        - Path to the selected folder (or None if cancelled)
+        - coherence flag
+    """
+
+    try:
+        folder = QFileDialog.getExistingDirectory(
+            parent,
+            "Select Mission Folder",
+            default_user_dir,
+            QFileDialog.Option.ShowDirsOnly
+        )
+
+        # User cancelled
+        if not folder:
+            return None, False
+
+        folderMissionPath = Path(folder)
+
+        if not folderMissionPath.exists():
+            show_warning_OK_Cancel_message(
+                "IRDrone",
+                f"You selected the folder:\n{folderMissionPath}\n",
+                "This folder is not recognized by IRDrone.\n"
+                "Choose a compatible folder named FLY_YYYYMMDD_hhmm_[Optional text]."
+            )
+            return folderMissionPath, False
+
+        coherent_answer = folder_name_consistency_analysis(folderMissionPath)
+
+        if not coherent_answer:
+            show_warning_OK_Cancel_message(
+                "IRDrone",
+                "Invalid mission folder name",
+                f"You selected the folder:\n{folderMissionPath}\n\n"
+                "The folder name does not match the expected format:\n"
+                "FLY_YYYYMMDD_hhmm_<free text>"
+            )
+            return folderMissionPath, False
+
+        valid_structure, error_msg = validate_mission_structure_phase_2(folderMissionPath)
+
+        if not valid_structure:
+            show_warning_OK_Cancel_message(
+                "IRDrone",
+                "Invalid mission folder structure",
+                f"The selected mission folder is incomplete:\n\n{error_msg}\n\n"
+                "This mission cannot be loaded in phase 2."
+            )
+            return folderMissionPath, False
+
+        if verbose:
+            print(
+                Style.GREEN
+                + f"The mission exists and is located at: {folderMissionPath}"
+                + Style.RESET
+            )
+
+        return safe_path(folderMissionPath), True
+
+
+    except Exception as e:
+        print("Error in choose_mission_folder_phase_2:", e)
+        return None, False
+
+def validate_mission_structure_phase_2(mission_path: Path) -> tuple[bool, str]:
+    """
+    Validate the minimal IRDrone mission folder structure for phase 2.
+
+    Returns
+    -------
+    (bool, str)
+        - validity flag
+        - error message (empty if valid)
+    """
+
+    required_paths = {
+        "AerialPhotography": mission_path / "AerialPhotography",
+        "FlightAnalytics": mission_path / "FlightAnalytics",
+        "VIS": mission_path / "AerialPhotography" / "VIS",
+        "NIR": mission_path / "AerialPhotography" / "NIR",
+        "mission_parameters.json": mission_path / "FlightAnalytics" / "mission_parameters.json",
+        "VIS timeline": mission_path / "AerialPhotography" / "VIS" / "time_line.json",
+        "NIR timeline": mission_path / "AerialPhotography" / "NIR" / "time_line.json",
+        "VIS transfer": mission_path / "AerialPhotography" / "VIS" / "transfer_info_VIS_dng.json",
+        "NIR transfer": mission_path / "AerialPhotography" / "NIR" / "transfer_info_NIR_dng.json",
+    }
+    optional_paths = {
+        "cameras": mission_path / "cameras",
+        "Synchro": mission_path / "Synchro",
+        "ImgIRdrone": mission_path / "ImgIRdrone",
+        "mapping_MULTI": mission_path / "mapping_MULTI",
+    }
+
+    for label, path in optional_paths.items():
+        if not path.exists():
+            print(Style.YELLOW + f"⚠ Missing optional element: {label}\n{path}" + Style .RESET)
+    for label, path in required_paths.items():
+        if not path.exists():
+            return False, f"Missing required element: {label}\n{path}"
+
+    return True, ""
 
 def copy_images(inputDir: str, imgName: str, outputDir: str) -> Optional[str]:
     """
@@ -1234,8 +1342,6 @@ def copy_images(inputDir: str, imgName: str, outputDir: str) -> Optional[str]:
     destination = os.path.join(outputDir, imgName)   # Construct the full path of the destination file
     shutil.copy(source, destination)    # Copy file
     return f"File {imgName} was successfully copied from {inputDir} to {outputDir}."
-
-
 
 def copy_and_rename_images(input_dir: Path,
                            input_img_name: str,
@@ -1294,7 +1400,6 @@ def copy_and_rename_images(input_dir: Path,
     except Exception as e:
         print(Style.RED + f"ERROR copying file: {e}" + Style.RESET)
 
-
 def read_exif_and_write_json(dng_path: Path, exiftool_path: str) -> dict:
     """
     Extract selected EXIF/XMP metadata from a DNG file using ExifTool
@@ -1341,7 +1446,7 @@ def read_exif_and_write_json(dng_path: Path, exiftool_path: str) -> dict:
 
         gps_lat = full_metadata.get("GPSLatitude")
         gps_lon = full_metadata.get("GPSLongitude")
-        if gps_lat and gps_lon :
+        if gps_lat and gps_lon:
             full_metadata["DroneLatitude"] = gps_coordinate_to_float(gps_lat)
             full_metadata["DroneLongitude"] = gps_coordinate_to_float(gps_lon)
             UTM_x, UTM_y, UTM_zone = geo2UTM(gps_coordinate_to_float(gps_lat), gps_coordinate_to_float(gps_lon))
@@ -1359,8 +1464,6 @@ def read_exif_and_write_json(dng_path: Path, exiftool_path: str) -> dict:
     except Exception as e:
         print(f"[ERROR] read_exif_and_write_json failed for {dng_path}: {e}")
         return {}
-
-
 
 def parse_and_normalize_gps_altitude(value: str) -> dict:
     """
@@ -1390,11 +1493,6 @@ def parse_and_normalize_gps_altitude(value: str) -> dict:
         "original_unit": unit,
         "meters": round(meters, 3),
     }
-
-
-
-
-
 
 def read_exif_and_write_json_old(dng_path: Path, exiftool_path: str) -> dict:
     """
@@ -1449,7 +1547,6 @@ def read_exif_and_write_json_old(dng_path: Path, exiftool_path: str) -> dict:
     except Exception as e:
         print(f"[ERROR] read_exif_and_write_json failed for {dng_path}: {e}")
         return {}
-
 
 def change_icon(folder_path: Union[str, Path], file_path: Union[str, Path]) -> None:
     """
@@ -1509,7 +1606,6 @@ def change_icon(folder_path: Union[str, Path], file_path: Union[str, Path]) -> N
     # Mark the folder as system so Windows uses desktop.ini
     os.system(f'attrib +s "{folder_path}"')
 
-
 def list_files_with_suffix(suffix: str, folder: str) -> List[Path]:
     """
     Return a sorted list of files with a given suffix in a folder.
@@ -1530,7 +1626,6 @@ def list_files_with_suffix(suffix: str, folder: str) -> List[Path]:
 
     # Use glob to find files matching the suffix and sort them
     return sorted(folder_path.glob(f"*.{suffix}"))
-
 
 def rename_file_VIS(input_img_name: str) -> str:
     """
@@ -1556,7 +1651,6 @@ def rename_file_VIS(input_img_name: str) -> str:
         raise ValueError(f"Invalid filename: '{input_img_name}'. Expected format: 'HYPERLAPSE_XXXX.dng'.") from e
     output_img_name = f"VIS_{num:04d}.dng"
     return output_img_name
-
 
 def read_exiftool_metadata(path: Path) -> dict:
     """
@@ -1601,8 +1695,6 @@ def build_dng_name(raw_file: str) -> str:
     number_str = str(new_index).zfill(4)     # '0012'
 
     return f"NIR_{number_str}.dng"
-
-
 
 def _set_exif_from_raw(dng_path: Path, raw_path: Path, exiftool_path: str, verbose: bool = False):
     """
@@ -1650,8 +1742,6 @@ def _set_exif_from_raw(dng_path: Path, raw_path: Path, exiftool_path: str, verbo
         print(f"⚠ Failed to insert EXIF for {dng_path.name}: {e.stderr.decode(errors='ignore')}")
     except Exception as e:
         print(f"⚠ Unexpected error for {dng_path.name}: {e}")
-
-
 
 def _convert_single_raw_to_dng(raw_file: str,
                                exe_path: str,
@@ -1730,8 +1820,6 @@ def _convert_single_raw_to_dng(raw_file: str,
 
     return str(dng_output_path)
 
-
-
 def convert_raw_to_dng_parallel(
         input_folder: str,
         output_folder: str,
@@ -1804,7 +1892,6 @@ def convert_raw_to_dng_parallel(
                 print(f"⚠ Conversion failed for {future_to_raw[future]}: {e}")
 
     return sorted(dng_files)
-
 
 def read_exif_json(path_exif: Path) -> dict:
     """Load JSON content from a .exif file."""

@@ -17,9 +17,10 @@ import os
 import os.path as osp
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
 from pathlib import Path
+import json
 # ------------------PyQt6 Library -----------------------------------
-from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout,  QWidget, QPushButton, QLabel, QFrame, QProgressBar
-from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout,  QWidget, QPushButton, QLabel, QFrame, QProgressBar, QMessageBox
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap, QColor, QIcon
 # -------------- IRDrone Library ------------------------------------
 from IRD_Interactive_1 import Window_Load_TakeOff_Image, Window_create_file_structure
@@ -199,7 +200,6 @@ class Main_Window(QMainWindow):
         if validate:
             self.mission_parameters = mission_parameters
             self.folderMissionPath = self.mission_parameters['File path mission']
-            print(f'DEBUG   le dossier de la mission est  = {self.folderMissionPath}')
             self.dialog_create_file_structure.data_signal_from_dialog_create_file_structure_to_main_window.disconnect()  # Disconnect the signal
             self.dialog_create_file_structure.close()  # Close dialog_create_file_structure
             self.btn_load_images.setAutoDefault(True)
@@ -228,24 +228,29 @@ class Main_Window(QMainWindow):
         height = 500  # height of the window
 
         # ----------------------- Choice of mission file -------------------------------------------------
-        if self.folderMissionPath:
-            print(f'DEBUG     Le dossier de la mission est {self.folderMissionPath}')
-        else:
-            print(f'DEBUG   Le dossier de la mission n\'existe pas encore.')
-        folderMissionPath, coherent_response = Uti.choose_folder_mission(
-            self.mission_parameters,
-            self.pref_screen.default_user_dir,
-            self.dialog_create_file_structure.AerialPhotoFolder,
-            self.dialog_create_file_structure.SynchroFolder
-        )
-        if not coherent_response: return()
-        # ---------------- Loads the 5 reference “VIS” images --------------------------------------------
-        if self.mission_parameters is not None:
-            self.pathImageTakeoff = Path(self.mission_parameters["path mission image take-off"]).parent  # self.mission_parameters["File path mission"]
-            print(f'DEBUG  self.pathImageTakeoff = {self.pathImageTakeoff}')
-            self.original_pathImageTakeoff = self.mission_parameters["original File path take-off"]
-            print(f'DEBUG  self.original_pathImageTakeoff = {self.original_pathImageTakeoff}')
+        try:
+            if self.folderMissionPath and self.dialog_create_file_structure:
+                folderMissionPath, coherent_answer = Uti.choose_folder_mission(self.mission_parameters,
+                                                                               self.pref_screen.default_user_dir,
+                                                                               self.dialog_create_file_structure.AerialPhotoFolder,
+                                                                               self.dialog_create_file_structure.SynchroFolder
+                                                                               )
+                if not coherent_answer: return
+            else:
+                Uti.show_info_message("IRDrone", f"Choose the mission folder.", "")
+                folderMissionPath, coherent_answer = Uti.choose_mission_folder_phase_2(self, verbose=True)
+                if not coherent_answer: return
+                if folderMissionPath:
+                    self.folderMissionPath = folderMissionPath
+                    self._load_mission_json()
+                    if not self.mission_parameters:
+                        raise RuntimeError("Mission parameters not loaded")
+            self.pathImageTakeoff = Uti.safe_path(Path(self.mission_parameters["path mission image take-off"]).parent)
+            self.original_pathImageTakeoff = Uti.safe_path(Path(self.mission_parameters["original File path take-off"]))
 
+        except Exception as e:
+            print(Style.RED + f'error in open_window_load_set_images (Choice of mission file) :  {e}')
+        # ---------------- Loads the 5 reference “VIS” images --------------------------------------------
         dialog_VIS = LoadVisNirImagesDialog(width,
                                             height,
                                             spectral_band="VIS",
@@ -264,6 +269,20 @@ class Main_Window(QMainWindow):
                                             folderMission=folderMissionPath)
         dialog_NIR.exec()
         dialog_NIR.reset_flags()
+
+
+
+    def _load_mission_json(self):
+        try:
+            json_path = (
+                    self.folderMissionPath
+                    / "FlightAnalytics"
+                    / "mission_parameters.json"
+            )
+            with json_path.open("r", encoding="utf-8") as f:
+                self.mission_parameters = json.load(f)
+        except Exception as e:
+            print(Style.RED + f'error in _load_mission_json {e}' + Style.RESET)
 
 
     # ===================================================================================
