@@ -124,8 +124,13 @@ def process_aruco_images(
         # --------------------------------------------------------
         # 2) SLOW PATH : pas de cache pour les données aruco de détection d'angle → chargement image normal
         # --------------------------------------------------------
-        if ext == "dng":
-            img_cv, _ = load_dng(str(img_path), template="Aruco_Detection.pp3")
+        template_name = "DJI_neutral.pp3" if spectral_band == "VIS" else "SJCAM.pp3"
+        if ext == "dng" and spectral_band == "VIS":
+            img_cv, _ = load_dng_for_aruco(str(img_path))
+            # img_cv, _ = load_dng_for_aruco(str(img_path), template="DJI_neutral.pp3")
+        elif ext == "dng" and spectral_band == "NIR":
+            img_cv, _ = load_dng_for_aruco(str(img_path))
+            # img_cv, _ = load_dng_for_aruco(str(img_path), template="SJCAM.pp3")
         elif ext == "raw":
             print('DEBUG   en cours de développement')
             return i, img, None
@@ -138,20 +143,62 @@ def process_aruco_images(
         # --------------------------------------------------------
         # 3) ArUco detection
         # --------------------------------------------------------
-        result, _ = detect_mobile_marker_absolute(
+        result, _, md = detect_mobile_marker_absolute(
             image=img_cv,
             img_path=img_path,
             arucoDict=get_aruco_dict("DICT_4X4_50"),
             fixed_ids=[5, 22, 16, 13],
             mobile_id=0,
             marker_data=None,
-            show=show,
+            show=False,
             title=name_folder + " - " + img,
             verbose=verbose,
             force_aruco_cache=force_aruco_cache,
         )
         result["relative_timeline"] = extract_relative_time_line(dic_relative_time_line, Path(img_path).name, spectral_band, suffix_image)
         print(f'DEBUG     result["relative_timeline"] = {result["relative_timeline"]}')
+        # --------------------------------------------------------
+        # DEBUG SAVE (thread-safe)
+        # --------------------------------------------------------
+        if show and result is not None:
+            debug_dir = folderMissionPath / "DEBUG_ARUCO"
+            debug_dir.mkdir(exist_ok=True)
+
+            # --------------------------------------------------------
+            # DEBUG SAVE (thread-safe, no GUI)
+            # --------------------------------------------------------
+            if show and result is not None and md is not None:
+                debug_dir = folderMissionPath / "DEBUG_ARUCO"
+                debug_dir.mkdir(exist_ok=True)
+
+                img_debug = draw_aruco_overlay(
+                    img_cv,
+                    result,
+                    md,
+                    fixed_ids=[5, 22, 16, 13]
+                )
+
+                # out_path = debug_dir / f"{img_path.stem}_aruco.png"
+                # cv2.imwrite(str(out_path), img_debug)
+                out_path = debug_dir / f"{img_path.stem}_aruco.jpg"
+
+                cv2.imwrite(
+                    str(out_path),
+                    img_debug,
+                    [cv2.IMWRITE_JPEG_QUALITY, 90]
+                )
+
+            # out_path = debug_dir / f"{img_path.stem}_aruco.png"
+            # cv2.imwrite(str(out_path), img_debug)
+
+            out_path = debug_dir / f"{img_path.stem}_aruco.jpg"
+            print(Style.CYAN + f'DEBUG SAVE (thread-safe, no GUI)    out_path = {out_path}  ' + Style.RESET)
+            cv2.imwrite(
+                str(out_path),
+                img_debug,
+                [cv2.IMWRITE_JPEG_QUALITY, 90]
+            )
+
         return i, img, result
 
     # ------------------------------------------------------------
@@ -165,7 +212,7 @@ def process_aruco_images(
         for future in as_completed(futures):
 
             i, img, result = future.result()
-            print(f'DEBUG   i= {i}   img = {img} angle_img = {result["angle_img"]}')
+            print(f'DEBUG 88888  i= {i}   img = {img}       angle_img = {result["angle_img"]}')
 
             if result:
                 results.append({
@@ -224,7 +271,7 @@ def detect_mobile_marker_absolute(image=None,
     r = read_aruco_cache(img_path)
     if r and force_aruco_cache:
         print(Style.GREEN + f'[INFO] Traitement AVEC CACHE de {img_path}' + Style.RESET)
-        return r, None
+        return r, None, None
     else:
         print(Style.GREEN + f'[INFO] Traitement de {img_path}' + Style.RESET)
 
@@ -234,11 +281,11 @@ def detect_mobile_marker_absolute(image=None,
     if marker_data is None:
         if image is None or arucoDict is None:
             raise ValueError("Soit marker_data doit être fourni, soit image et arucoDict.")
-        marker_data, _ = detect_aruco_marker(image.copy(), arucoDict, show=False, title=title, verbose=verbose)
+        marker_data, _ = detect_aruco_marker(image.copy(), arucoDict, title=title, verbose=verbose)
 
     if not marker_data:
         if verbose: print("Aucun marqueur détecté !")
-        return None, img_out
+        return None, img_out, None
 
     # organiser les données par ID
     md = {int(entry[0]): {"angle_img": entry[1],
@@ -271,7 +318,7 @@ def detect_mobile_marker_absolute(image=None,
         if show and img_out is not None:
             show_Aruco_marker(result, img_out, md, fixed_ids, title)
         write_aruco_cache(img_path, result)
-        return result, img_out
+        return result, img_out, md
 
     # --- calcul des coordonnées et de l'angle absolu
     geom = compute_mobile_marker_geometry(md, fixed_ids, mobile_id)
@@ -285,7 +332,7 @@ def detect_mobile_marker_absolute(image=None,
         show_Aruco_marker(result, img_out, md, fixed_ids, title)
 
     write_aruco_cache(img_path, result)
-    return result, img_out
+    return result, img_out, md
 
 
 def write_aruco_cache(img_path: str, aruco_data: dict) -> bool:
@@ -312,7 +359,7 @@ def write_aruco_cache(img_path: str, aruco_data: dict) -> bool:
     """
 
     exif_path = Path(img_path).with_suffix(".exif")
-    print(Style.MAGENTA + f'DEBUG  write_aruco_cache' +Style.RESET)
+    print(Style.MAGENTA + f'DEBUG  write_aruco_cache' + Style.RESET)
 
     try:
         # Load existing EXIF JSON data if the file exists
@@ -328,9 +375,14 @@ def write_aruco_cache(img_path: str, aruco_data: dict) -> bool:
 
         # Update only the "aruco" key
         print(f'DEBUG in write_aruco_cache   aruco_data ={aruco_data} ')
-        print(Style.MAGENTA + f'DEBUG  in write_aruco_cache   relative time line  = {data["RelativeTimeLine"]}' + Style.RESET)
+
         data["aruco"] = aruco_data
-        data["aruco"]["relative_timeline"] = copy.deepcopy(data["RelativeTimeLine"])
+
+        rel_tl = data.get("RelativeTimeLine", None)
+        print(Style.MAGENTA + f'DEBUG  in write_aruco_cache   relative time line  = {rel_tl}' + Style.RESET)
+
+        if rel_tl is not None:
+            data["aruco"]["relative_timeline"] = copy.deepcopy(rel_tl)
 
         # Save back to disk
         with open(exif_path, "w", encoding="utf-8") as f:
@@ -389,7 +441,6 @@ def read_aruco_cache(img_path: str) -> Optional[Dict[str, Any]]:
         return None
 
     return aruco
-
 
 
 def compute_reference_vectors(fixed_centers):
@@ -471,7 +522,32 @@ def compute_mobile_marker_geometry(md, fixed_ids, mobile_id):
         return None
 
 
-def show_Aruco_marker(result, img_out, md, fixed_ids, option_show=2, title=""):
+def show_Aruco_marker(result, img, md, fixed_ids, title=""):
+    """
+    AFFICHAGE UNIQUEMENT (GUI).
+    À appeler exclusivement depuis le thread principal.
+    """
+
+    raise RuntimeError(
+        "show_Aruco_marker() is GUI-only and must not be called anymore."
+    )
+
+    # ====================================================================
+    if img is None or result is None:
+        return
+
+    img_out = draw_aruco_overlay(img, result, md, fixed_ids)
+
+    fig, ax = plt.subplots()
+    ax.imshow(cv2.cvtColor(img_out, cv2.COLOR_BGR2RGB))
+    ax.set_title(title if title else "Aruco debug")
+    ax.axis("off")
+    plt.show()
+    plt.close(fig)
+
+
+
+def show_Aruco_marker_old(result, img_out, md, fixed_ids, option_show=2, title=""):
     """
     module appelé par def detect_mobile_marker_absolute
 
@@ -559,6 +635,59 @@ def show_Aruco_marker(result, img_out, md, fixed_ids, option_show=2, title=""):
     plt.close(fig)
 
     plt.close('all')
+
+
+
+def draw_aruco_overlay(img, result, md, fixed_ids):
+    """
+    Dessine les overlays ArUco directement sur l'image OpenCV.
+    Aucune GUI, aucun matplotlib.
+    """
+    if img is None or result is None:
+        return img
+
+    img_out = img.copy()
+
+    if md is None:
+        return img_out
+
+    # --- centres fixes
+    if fixed_ids is not None and not result["missing_fixed"]:
+        for fid in fixed_ids:
+            if fid in md:
+                ct = tuple(md[fid]["center"].astype(int))
+                cv2.circle(img_out, ct, 2, (0, 0, 255), -1)
+
+    # --- centre mobile
+    mid = result.get("mobile_id", None)
+    if mid not in md:
+        return img_out
+
+    cX, cY = tuple(md[mid]["center"].astype(int))
+    cv2.drawMarker(img_out, (cX, cY), (0, 0, 255),
+                   markerType=cv2.MARKER_CROSS,
+                   markerSize=20, thickness=2)
+
+    # --- orientation image
+    corners = md[mid].get("corners", None)
+    if corners is None or len(corners) < 4:
+        return img_out
+
+    u = ((corners[0] - corners[3]) + (corners[1] - corners[2]))
+    n = np.linalg.norm(u)
+    if n == 0:
+        return img_out
+    u /= n
+
+    marker_width = int(np.linalg.norm(corners[0] - corners[1]))
+    line_length = 3 * marker_width
+    endX = int(cX + u[0] * line_length)
+    endY = int(cY + u[1] * line_length)
+
+    cv2.line(img_out, (cX, cY), (endX, endY), (0, 255, 0), 4)
+
+    return img_out
+
 
 
 def draw_dashed_line(img, pt1, pt2, color, thickness=1, dash_length=10):
@@ -651,6 +780,64 @@ def best_thread_count(io_bound: bool = True) -> int:
 
 
 def detect_aruco_marker(
+    image: np.ndarray,
+    arucoDict: "cv2.aruco_Dictionary",
+    title: str = "",
+    verbose: bool = True
+) -> Tuple[List[Tuple[int, float, Tuple[int, int], np.ndarray]], np.ndarray]:
+    """
+    Détecte les marqueurs ArUco dans une image.
+
+    Retourne :
+        - marker_data : liste de tuples (markerID, angle_deg, (cX, cY), corners_array)
+        - image_out   : toujours l'image originale (non modifiée)
+
+    ⚠️ Aucun affichage, aucune GUI, aucun matplotlib.
+    Thread-safe.
+    """
+
+    try:
+        arucoParams = cv2.aruco.DetectorParameters_create()
+    except AttributeError:
+        arucoParams = cv2.aruco.DetectorParameters()
+
+    corners_list, ids, _ = cv2.aruco.detectMarkers(
+        image, arucoDict, parameters=arucoParams
+    )
+
+    if corners_list is None or len(corners_list) == 0:
+        if verbose:
+            print("Aucun marqueur détecté")
+        return [], image
+
+    ids = ids.flatten()
+    marker_data = []
+
+    for markerCorners, markerID in zip(corners_list, ids):
+        corners_array = markerCorners.reshape((4, 2))
+
+        principal_axis_ = (
+            (corners_array[0] - corners_array[3]) +
+            (corners_array[1] - corners_array[2])
+        )
+        principal_axis = principal_axis_ / np.linalg.norm(principal_axis_)
+
+        angle = float(np.rad2deg(np.arctan2(principal_axis[1], principal_axis[0])))
+
+        cX = int(np.mean(corners_array[:, 0]))
+        cY = int(np.mean(corners_array[:, 1]))
+
+        if verbose:
+            print(f"ID {markerID}, angle={angle:.1f}°, centre=({cX},{cY})")
+
+        marker_data.append((int(markerID), angle, (cX, cY), corners_array))
+
+    return marker_data, image
+
+
+
+
+def detect_aruco_marker_old(
     image: np.ndarray,
     arucoDict: "cv2.aruco_Dictionary",
     title: str = "",
@@ -975,6 +1162,31 @@ def read_transfer_info(folderMissionPath: Path, spectral_band: str, suffix_image
     return outputFolder, idMin, idMax, listCopiedImages
 
 
+
+def cached_jpeg(path):
+    p = Path(path)
+    return str(p.with_suffix("")) + "_RawTherapee.jpg"
+
+def load_dng_for_aruco(path):
+    out_file = cached_jpeg(path)
+    cmd = [
+        RAWTHERAPEEPATH,
+        "-t",
+        "-o", out_file,
+        "-j95",
+        "-p", osp.join(
+            osp.dirname(__file__),
+            "..", "thirdparty", "rawtherapee", "Aruco_Detection.pp3"
+        ),
+        "-c", path
+    ]
+    if not osp.isfile(out_file):
+        subprocess.call(cmd)
+
+    img = cv2.imread(out_file, cv2.IMREAD_COLOR)
+    return img, out_file
+
+
 def cached_tif(path):
     return path[:-4]+"_RawTherapee.tif"
 
@@ -995,16 +1207,16 @@ def load_dng(path, template="DJI_neutral.pp3"):
         # print(f'DEBUG  "DNG already processed by RAW THERAPEE {format(path) }')
         pass
     assert osp.isfile(out_file), f"DNG file not converted! {out_file}"
-    return load_tif(out_file), out_file
+    return load_tif_aruco(out_file), out_file
 
 
-def load_tif_balth(in_file):
+def load_tif_radiometric(in_file):
     flags = cv2.IMREAD_ANYDEPTH | cv2.IMREAD_ANYCOLOR
     flags |= cv2.IMREAD_IGNORE_ORIENTATION
     return cv2.cvtColor(cv2.imread(in_file, flags=flags), cv2.COLOR_BGR2RGB)/(2.**16-1)
 
 
-def load_tif(in_file):
+def load_tif_aruco(in_file):
     flags = cv2.IMREAD_ANYDEPTH | cv2.IMREAD_ANYCOLOR
     flags |= cv2.IMREAD_IGNORE_ORIENTATION
 
@@ -1031,8 +1243,8 @@ def detection_arruco_VIS_NIR(base_dir, name_folder, name_image_VI, name_image_IR
     img_vis_draw = img_vis.copy()
     img_ir_draw = img_ir.copy()
 
-    markers_vis, img_vis_annotated = detect_aruco_marker(img_vis.copy(), aruco_dict, show=True, title="Visible")
-    markers_ir, img_ir_annotated = detect_aruco_marker(img_ir.copy(), aruco_dict, show=True, title="Infrarouge")
+    markers_vis, img_vis_annotated = detect_aruco_marker(img_vis.copy(), aruco_dict,  title="Visible")
+    markers_ir, img_ir_annotated = detect_aruco_marker(img_ir.copy(), aruco_dict,  title="Infrarouge")
 
     print("\nRésultats détection :")
     print_marker_results(markers_vis, "Visible    ")
@@ -1079,9 +1291,9 @@ if __name__ == "__main__":
         name_folder=name_folder,
         spectral_band=spectral_band,
         suffix_image=suffix_image,
-        show=False,  # show each detection window?
+        show=True,  # show each detection window?
         verbose=True,  # print detailed info?
-        force_aruco_cache=True,  # overwrite .exif cache if False
+        force_aruco_cache=False,  # overwrite .exif cache if False
     )
     t1 = time.perf_counter()
     print(Style.CYAN + f"[TIMING] process_aruco_images : {t1 - t0:.3f} s" + Style.RESET)
@@ -1100,9 +1312,9 @@ if __name__ == "__main__":
         name_folder=name_folder,
         spectral_band=spectral_band,
         suffix_image=suffix_image,
-        show=False,  # show each detection window?
-        verbose=False,  # print detailed info?
-        force_aruco_cache=True,  # overwrite .exif cache if False
+        show=True,  # show each detection window?
+        verbose=True,  # print detailed info?
+        force_aruco_cache=False,  # overwrite .exif cache if False
     )
     t1 = time.perf_counter()
     print(Style.CYAN + f"[TIMING] process_aruco_images : {t1 - t0:.3f} s" + Style.RESET)
@@ -1121,6 +1333,5 @@ if __name__ == "__main__":
 
             time_shift = -31.0  # seconds
             time_NIR_shifted = [t + time_shift for t in time_NIR]
-            plot_angles([time_VIS, time_NIR_shifted],[angles_unwrapped_VIS, angles_unwrapped_NIR],mode='img',color=['b', 'r']
-            )
+            plot_angles([time_VIS, time_NIR_shifted], [angles_unwrapped_VIS, angles_unwrapped_NIR], mode='img', color=['b', 'r'])
     exit(2025)
