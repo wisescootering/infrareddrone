@@ -8,12 +8,17 @@ import matplotlib.pyplot as plt
 import time
 import json
 from json import JSONDecodeError
+from pathlib import Path
 from typing import List, Tuple, Optional, Dict, Any, Union
 import multiprocessing
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import copy
 
 import IRD_Interactive_utils as Uti
+from IRD_Interactive_utils import safe_path
+from IRD_Interactive_color_style import Style
+
 
 
 
@@ -34,8 +39,8 @@ ARUCO_DICT = {
 def process_aruco_images(
         folderMissionPath: Path,
         name_folder: str,
-        typ_img: str,
-        ext_img: str,
+        spectral_band: str,
+        suffix_image: str,
         show: bool = False,
         verbose: bool = False,
         force_aruco_cache: bool = False,
@@ -55,9 +60,9 @@ def process_aruco_images(
         Path to the mission folder (e.g. C:/Air-Mission/FLY-xxxxxx).
     name_folder : str
         Name of the subfolder containing the images (e.g. "Synchro").
-    typ_img : str
+    spectral_band : str
         Image type: "VIS" or "NIR".
-    ext_img : str
+    suffix_image : str
         Image extension: "dng", "jpg", ...
     show : bool, optional
         Show each detection result image. Default is False.
@@ -76,7 +81,7 @@ def process_aruco_images(
                 "angle_img": ...,
                 "delta": ...
             }
-    x_vals : list of int
+    x_vals : list of float
         Image index values used for regression or plotting.
     y_vals : list of float
         Angle_img values used for regression or plotting.
@@ -84,19 +89,20 @@ def process_aruco_images(
 
     # 1) Retrieve list of images
     outputFolder, idMin, idMax, listImages = read_transfer_info(
-        folderMissionPath, typ_img, ext_img, section="sync"
+        folderMissionPath, spectral_band, suffix_image, section="sync"
     )
 
     folder_images = folderMissionPath / name_folder
 
-    dic_relative_time_line = load_relative_time_line(folderMissionPath)
+    dic_relative_time_line = load_relative_time_line(folderMissionPath, spectral_band)
+    print(f'DEBUG  001 dic_relative_time_line = {dic_relative_time_line} ')
 
     results = []
     x_vals = []
     y_vals = []
 
     max_workers = best_thread_count(io_bound=True)
-    print(Uti.Style.CYAN + f"[INFO] Processing {len(listImages)} images using {max_workers} threads..." + Uti.Style.RESET)
+    print(Style.CYAN + f"[INFO] Processing {len(listImages)} images using {max_workers} threads..." + Style.RESET)
 
     # ------------------------------------------------------------
     # Worker function (one image per thread)
@@ -109,7 +115,10 @@ def process_aruco_images(
         # 1) FAST PATH : cache EXIF détecté → aucun chargement image
         # --------------------------------------------------------
         cached = read_aruco_cache(img_path)
+        print(f'DEBUG    cached ={cached}')
         if cached and force_aruco_cache:
+            print(f'DEBUG    UTILISATION DU CACHE')
+
             return i, img, cached
 
         # --------------------------------------------------------
@@ -141,8 +150,8 @@ def process_aruco_images(
             verbose=verbose,
             force_aruco_cache=force_aruco_cache,
         )
-        result["relative_time_line"] = extract_relative_time_line(dic_relative_time_line, Path(img_path).name, typ_img, ext_img)
-
+        result["relative_timeline"] = extract_relative_time_line(dic_relative_time_line, Path(img_path).name, spectral_band, suffix_image)
+        print(f'DEBUG     result["relative_timeline"] = {result["relative_timeline"]}')
         return i, img, result
 
     # ------------------------------------------------------------
@@ -154,7 +163,9 @@ def process_aruco_images(
             futures.append(executor.submit(process_one, i, img))
 
         for future in as_completed(futures):
+
             i, img, result = future.result()
+            print(f'DEBUG   i= {i}   img = {img} angle_img = {result["angle_img"]}')
 
             if result:
                 results.append({
@@ -162,9 +173,9 @@ def process_aruco_images(
                     "angle_abs": result["angle_abs"],
                     "angle_img": result["angle_img"],
                     "delta": result["delta_abs_img"],
-                    "relative_time_line": result["relative_time_line"],
+                    "relative_timeline": result["relative_timeline"],
                 })
-                x_vals.append(result["relative_time_line"])
+                x_vals.append(result["relative_timeline"])
                 y_vals.append(result["angle_img"])
 
     # ------------------------------------------------------------
@@ -174,6 +185,9 @@ def process_aruco_images(
     x_vals = [t[0] for t in ordered]
     y_vals = [t[1] for t in ordered]
     results = [t[2] for t in ordered]
+    print(f'DEBUG  002  x_vals = {x_vals}')
+    print(f'DEBUG  003  y_vals = {y_vals}')
+    print(f'DEBUG  004  results = {results}')
 
     return results, x_vals, y_vals
 
@@ -209,10 +223,10 @@ def detect_mobile_marker_absolute(image=None,
 
     r = read_aruco_cache(img_path)
     if r and force_aruco_cache:
-        print(Uti.Style.GREEN + f'[INFO] Traitement AVEC CACHE de {img_path}' + Uti.Style.RESET)
+        print(Style.GREEN + f'[INFO] Traitement AVEC CACHE de {img_path}' + Style.RESET)
         return r, None
     else:
-        print(Uti.Style.GREEN + f'[INFO] Traitement de {img_path}' + Uti.Style.RESET)
+        print(Style.GREEN + f'[INFO] Traitement de {img_path}' + Style.RESET)
 
     img_out = image.copy() if image is not None else None
 
@@ -247,18 +261,16 @@ def detect_mobile_marker_absolute(image=None,
         "y_ref": None,
         "width_px": None,
         "height_px": None,
-        "relative_time_line": None,
     }
 
     if missing_fixed or mobile_missing:
         if missing_fixed:
-            if verbose: print(Uti.Style.YELLOW + f"⚠️Tous les marqueurs fixes ne sont pas détectés ! manquants = {missing_fixed}" + Uti.Style.RESET)
+            if verbose: print(Style.YELLOW + f"⚠️Tous les marqueurs fixes ne sont pas détectés ! manquants = {missing_fixed}" + Style.RESET)
         if mobile_missing:
-            if verbose: print(Uti.Style.RED + f"❌ Le marqueur mobile ({mobile_id}) n'est pas détecté !" + Uti.Style.RESET)
+            if verbose: print(Style.RED + f"❌ Le marqueur mobile ({mobile_id}) n'est pas détecté !" + Style.RESET)
         if show and img_out is not None:
             show_Aruco_marker(result, img_out, md, fixed_ids, title)
         write_aruco_cache(img_path, result)
-        # print(f'DEBUG 0014  result = {result}')
         return result, img_out
 
     # --- calcul des coordonnées et de l'angle absolu
@@ -273,7 +285,6 @@ def detect_mobile_marker_absolute(image=None,
         show_Aruco_marker(result, img_out, md, fixed_ids, title)
 
     write_aruco_cache(img_path, result)
-    # print(f'DEBUG 0004  result = {result}')
     return result, img_out
 
 
@@ -301,6 +312,7 @@ def write_aruco_cache(img_path: str, aruco_data: dict) -> bool:
     """
 
     exif_path = Path(img_path).with_suffix(".exif")
+    print(Style.MAGENTA + f'DEBUG  write_aruco_cache' +Style.RESET)
 
     try:
         # Load existing EXIF JSON data if the file exists
@@ -315,7 +327,10 @@ def write_aruco_cache(img_path: str, aruco_data: dict) -> bool:
             data = {}
 
         # Update only the "aruco" key
+        print(f'DEBUG in write_aruco_cache   aruco_data ={aruco_data} ')
+        print(Style.MAGENTA + f'DEBUG  in write_aruco_cache   relative time line  = {data["RelativeTimeLine"]}' + Style.RESET)
         data["aruco"] = aruco_data
+        data["aruco"]["relative_timeline"] = copy.deepcopy(data["RelativeTimeLine"])
 
         # Save back to disk
         with open(exif_path, "w", encoding="utf-8") as f:
@@ -326,54 +341,6 @@ def write_aruco_cache(img_path: str, aruco_data: dict) -> bool:
     except Exception as e:
         print(f"[ERROR] Failed to write EXIF cache for {img_path}: {e}")
         return False  # Failure
-
-
-def read_aruco_cache_old(img_path: str) -> Optional[Dict[str, Any]]:
-    """
-    Check if a companion .exif JSON file exists for the given image,
-    and whether it contains a non-empty "aruco" key.
-
-    Parameters
-    ----------
-    img_path : str
-        Path to the original image (e.g., DNG, JPG, etc.).
-        The .exif file uses the same name but with a `.exif` extension.
-
-    Returns
-    -------
-    dict or None
-        The dictionary stored under the "aruco" key if found and non-empty,
-        otherwise None.
-
-    Notes
-    -----
-    Any file I/O or JSON parsing errors are caught silently and return None.
-    """
-    exif_path = Path(img_path).with_suffix(".exif")
-
-    if not exif_path.exists():
-        return None
-
-    try:
-        with open(exif_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except (JSONDecodeError, OSError):
-        # File exists but is unreadable or corrupted
-        return None
-
-    aruco = data.get("aruco", None)
-
-    # Ensure the "aruco" entry is a non-empty dictionary
-    if isinstance(aruco, dict) and aruco:
-        return aruco
-
-    return None
-
-from pathlib import Path
-from typing import Optional, Dict, Any
-import json
-from json import JSONDecodeError
-
 
 
 def read_aruco_cache(img_path: str) -> Optional[Dict[str, Any]]:
@@ -391,10 +358,11 @@ def read_aruco_cache(img_path: str) -> Optional[Dict[str, Any]]:
     dict or None
         Dictionary containing:
             - all key-value pairs from the "aruco" entry (if any)
-            - "relative_time_line" key from top-level JSON (if exists)
+            - "relative_timeline" key from top-level JSON (if exists)
         Returns None if file does not exist or is unreadable.
     """
     exif_path = Path(img_path).with_suffix(".exif")
+    print(f'DEBUG   read_aruco_cache     exif_path = {exif_path} ')
 
     if not exif_path.exists():
         return None
@@ -411,10 +379,11 @@ def read_aruco_cache(img_path: str) -> Optional[Dict[str, Any]]:
     if not isinstance(aruco, dict):
         aruco = {}
 
-    # Add top-level "relative time line" as "relative_time_line"
-    rel_time = data.get("relative time line", None)
+    # Add top-level "relative time line" as "relative_timeline"
+    rel_time = data.get("RelativeTimeLine", None)
+    print(f'DEBUG  rel_time = {rel_time}')
     if rel_time is not None:
-        aruco["relative_time_line"] = rel_time
+        aruco["relative_timeline"] = rel_time
 
     if not aruco:
         return None
@@ -792,25 +761,25 @@ def detect_aruco_marker(
 # Affichage console
 #
 
-def load_relative_time_line(folderMissionPath):
+def load_relative_time_line(folderMissionPath, spectral_band):
     """
     Load the relative timeline JSON file into self.dic_relative_time_line.
     """
-
-    json_path = Path(folderMissionPath) / "FlightAnalytics" / "time_line.json"
-
-    if not json_path.exists():
-        print(f"⚠️ Timeline file not found: {json_path}")
-        dic_relative_time_line = {}
-        return
-
     try:
+        json_path = safe_path(Path(folderMissionPath) / spectral_band / "time_line.json")
+
+        if not json_path.exists():
+            print(f"⚠️ Timeline file not found: {json_path}")
+            dic_relative_time_line = {}
+            return
+
+
         with open(json_path, "r", encoding="utf-8") as f:
             dic_relative_time_line = json.load(f)
-        print(Uti.Style.GREEN + "✔️ Relative timeline loaded successfully." + Uti.Style.RESET)
+        print(Style.GREEN + "✔️ Relative timeline loaded successfully." + Style.RESET)
 
     except Exception as e:
-        print(Uti.Style.RED + f"❌ Error loading timeline file: {e}" + Uti.Style.RESET)
+        print(Style.RED + f"❌ Error loading timeline file: {e}" + Style.RESET)
         dic_relative_time_line = {}
     return dic_relative_time_line
 
@@ -835,11 +804,11 @@ def extract_relative_time_line(dic_relative_time_line, file_name: str, type_img:
     file_stem = Path(file_name).stem  # file name without extension
 
     # Default value if not found
-    relative_time_line = 999.0
+    relative_timeline = -9999.0
 
     if type_img not in dic_relative_time_line:
         print(f"⚠️ extract_relative_time_line: type_img '{type_img}' not in dic_relative_time_line")
-        return relative_time_line
+        return relative_timeline
 
     img_list = dic_relative_time_line[type_img]
 
@@ -847,7 +816,7 @@ def extract_relative_time_line(dic_relative_time_line, file_name: str, type_img:
         # Look for exact match in the stem of img_path
         for dic in img_list:
             if Path(dic["img_path"]).stem == file_stem:
-                relative_time_line = dic.get("relative_timeline", 999.0)
+                relative_timeline = dic.get("relative_timeline", -9999.0)
                 break
 
     elif ext.lower() == "jpg" and type_img == "NIR":
@@ -856,17 +825,18 @@ def extract_relative_time_line(dic_relative_time_line, file_name: str, type_img:
             jpg_num = int(file_stem.split("_")[-1])
         except Exception as e:
             print(f"⚠️ extract_relative_time_line: cannot extract num_img from '{file_name}' : {e}")
-            return relative_time_line
+            return relative_timeline
 
         for dic in img_list:
             if dic.get("num_img") == jpg_num - 1:
-                relative_time_line = dic.get("relative_timeline", 999.0)
+                relative_timeline = dic.get("relative_timeline", 999.0)
                 break
 
     else:
         print(f"⚠️ extract_relative_time_line: file '{file_name}' with ext '{ext}' not handled")
 
-    return relative_time_line
+    print(f'DEBUG in extract_relative_time_line   relative_timeline = {relative_timeline} ')
+    return relative_timeline
 
 
 
@@ -978,13 +948,13 @@ def get_aruco_dict(dict_name="DICT_4X4_50", verbose=False):
         return cv2.aruco.Dictionary_get(ARUCO_DICT[dict_name])
 
 
-def read_transfer_info(folderMissionPath: Path, typ_img: str, ext_img: str, section: str):
+def read_transfer_info(folderMissionPath: Path, spectral_band: str, suffix_image: str, section: str):
     """
     section = 'tkoff' ou 'sync'
     """
 
     # Construction du chemin du fichier JSON
-    json_file = folderMissionPath / "FlightAnalytics" / f"transfer_info_{typ_img}_{ext_img}.json"
+    json_file = folderMissionPath / spectral_band / f"transfer_info_{spectral_band}_{suffix_image}.json"
     # print(f"DEBUG  def read_transfer_info    Lecture du fichier : {json_file}")
 
     # Chargement du fichier JSON
@@ -1097,49 +1067,49 @@ if __name__ == "__main__":
         RAWTHERAPEEPATH = "rawtherapee-cli"
         EXIFTOOLPATH = "exiftool"
 
-    print(f'DEBUG  cpu_count { multiprocessing.cpu_count()}')
-
-    folderMissionPath = Path(r"C:\Air-Mission\FLY-20220125-1159-Blassac")
-    name_folder = "Synchro"
+    folderMissionPath = Path(r"C:\Air-Mission\FLY-20220125-1159-Blassac\AerialPhotography")
+    name_folder = "VIS"
 
 
     t0 = time.perf_counter()
-    typ_img = "VIS"  # "NIR"
-    ext_img = "dng"  # "jpg"
+    spectral_band = "VIS"  # "NIR"
+    suffix_image = "dng"  # "jpg"
     results, x_vals, y_vals = process_aruco_images(
         folderMissionPath=folderMissionPath,
         name_folder=name_folder,
-        typ_img=typ_img,
-        ext_img=ext_img,
+        spectral_band=spectral_band,
+        suffix_image=suffix_image,
         show=False,  # show each detection window?
-        verbose=False,  # print detailed info?
+        verbose=True,  # print detailed info?
         force_aruco_cache=True,  # overwrite .exif cache if False
     )
     t1 = time.perf_counter()
-    print(Uti.Style.CYAN + f"[TIMING] process_aruco_images : {t1 - t0:.3f} s" + Uti.Style.RESET)
+    print(Style.CYAN + f"[TIMING] process_aruco_images : {t1 - t0:.3f} s" + Style.RESET)
     angles_deg = [r['angle_img'] for r in results if r['angle_img'] is not None]
     if len(angles_deg) > 1:
         angles_unwrapped_VIS = unwrap_angles(angles_deg)
-    time_VIS = [r['relative_time_line'] for r in results if r['relative_time_line'] is not None]
+    time_VIS = [r['relative_timeline'] for r in results if r['relative_timeline'] is not None]
+
 
     t0 = time.perf_counter()
-    typ_img = "NIR"  # "NIR"
-    ext_img = "jpg"  # "jpg"
+    spectral_band = "NIR"  # "NIR"
+    suffix_image = "dng"  # "jpg"
+    name_folder = "NIR"
     results, x_vals, y_vals = process_aruco_images(
         folderMissionPath=folderMissionPath,
         name_folder=name_folder,
-        typ_img=typ_img,
-        ext_img=ext_img,
+        spectral_band=spectral_band,
+        suffix_image=suffix_image,
         show=False,  # show each detection window?
         verbose=False,  # print detailed info?
         force_aruco_cache=True,  # overwrite .exif cache if False
     )
     t1 = time.perf_counter()
-    print(Uti.Style.CYAN + f"[TIMING] process_aruco_images : {t1 - t0:.3f} s" + Uti.Style.RESET)
+    print(Style.CYAN + f"[TIMING] process_aruco_images : {t1 - t0:.3f} s" + Style.RESET)
     angles_deg = [r['angle_img'] for r in results if r['angle_img'] is not None]
     if len(angles_deg) > 1:
         angles_unwrapped_NIR = unwrap_angles(angles_deg)
-    time_NIR = [r['relative_time_line'] for r in results if r['relative_time_line'] is not None]
+    time_NIR = [r['relative_timeline'] for r in results if r['relative_timeline'] is not None]
 
     # ------------------------------------------------------------
     # Optional graph

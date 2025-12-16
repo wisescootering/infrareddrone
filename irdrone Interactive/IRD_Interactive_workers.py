@@ -253,6 +253,21 @@ class CreateExif(QtCore.QObject):
         except Exception as e1:
             print(f"[ERROR] CreateExif __init__: {e1}")
 
+    def update_exif_json(self, exif_path: Path, key: str, value):
+        if not exif_path.exists():
+            raise FileNotFoundError(exif_path)
+
+        with exif_path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        if not isinstance(data, dict):
+            raise ValueError("EXIF JSON is not a dictionary")
+
+        data[key] = value
+
+        with exif_path.open("w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+
     # =================================================================== #
     #                               RUN
     # =================================================================== #
@@ -326,6 +341,27 @@ class CreateExif(QtCore.QObject):
             )
 
             Uti.save_time_line_json(self.folder_to_scan, dic_timeline)
+
+            print(f'DEBUG len(dic_timeline) = {len(dic_timeline)}')
+            for idx, pt in enumerate(dic_timeline[self.spectral_band]):
+                my_path = Path(list_dic_exif[idx]["Directory"]) / f'{Path(list_dic_exif[idx]["FileName"]).stem}.exif'
+                print(f'DEBUG my_path = {my_path}   {type(my_path)}')
+                my_timeline = pt["relative_timeline"]
+                print(f'DEBUG  time line  = {my_timeline}')
+            for idx, pt in enumerate(dic_timeline[self.spectral_band]):
+                my_path = (
+                        Path(list_dic_exif[idx]["Directory"])
+                        / f'{Path(list_dic_exif[idx]["FileName"]).stem}.exif'
+                )
+
+                try:
+                    self.update_exif_json(
+                        my_path,
+                        "RelativeTimeLine",
+                        pt["relative_timeline"]
+                    )
+                except Exception as e:
+                    print(f"[ERROR] {my_path.name}: {e}")
 
             # Finish
             self.progress.emit(100)

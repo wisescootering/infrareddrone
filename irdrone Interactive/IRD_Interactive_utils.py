@@ -1964,7 +1964,7 @@ def list_tempo_time_line(
 
 def time_line_analyser_images(list_dic_exif,
                               spectral_band: Optional[str] = None,
-                              img_suffix: str = ".tif",
+                              img_suffix: str = ".dng",
                               verbose: bool = False
                               ) -> Dict:
     """
@@ -1984,7 +1984,7 @@ def time_line_analyser_images(list_dic_exif,
     spectral_band : str | None, optional
         Image type, "VIS" or "NIR", by default None.
     img_suffix : str, optional
-        File img_suffix to filter images, by default ".tif".
+        File img_suffix to filter images, by default ".dng".
     verbose : bool, optional
         If True, prints detailed information during analysis, by default False.
 
