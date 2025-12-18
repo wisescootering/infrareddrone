@@ -28,14 +28,16 @@ from PyQt6.QtWidgets import QFileDialog, QWidget,  QLineEdit, QFrame,  QPushButt
                             QProgressBar, QHBoxLayout,  QVBoxLayout, QLabel, QMessageBox, QDialog
 from PyQt6.QtGui import QPixmap, QImage, QColor, QIcon, QRegularExpressionValidator
 from PyQt6 import QtCore
-from PyQt6.QtCore import Qt, pyqtSignal, QRegularExpression, QUrl
+from PyQt6.QtCore import Qt, pyqtSignal, QRegularExpression, QUrl, QObject, pyqtSignal, QRunnable, QThreadPool
 
 import matplotlib.pyplot as plt
 
 # -------------- IRDrone Library ------------------------------------
 import IRD_Interactive_utils as Uti
+from IRD_Interactive_utils import safe_path
 import IRD_interactive_geo as Geo
 from IRD_Interactive_color_style import Style
+import IRD_Interactive_ArUco as Aru
 
 # ------------------------------------------------------
 # ExifTool path detection (Windows / Linux / macOS)
@@ -64,11 +66,169 @@ else:
 if os.name == 'nt' and not osp.exists(SJCONVERTERPATH):
     print(f"[WARNING] SJCam RAW converter not found at {SJCONVERTERPATH}")
 
+# ------------------------------------------------------
+#     RAWTHERAPEEPATH    convert dng  to tif 16:8 bits  jpg  png ...
+# ------------------------------------------------------
+
+if os.name == 'nt':
+    RAWTHERAPEEPATH = r"C:\Program Files\RawTherapee\5.8\rawtherapee-cli.exe"
+    assert osp.exists(RAWTHERAPEEPATH), \
+        "Please install raw therapee first http://www.rawtherapee.com/downloads/5.8/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
+else:
+    RAWTHERAPEEPATH = "rawtherapee-cli"
+
+
 # --------------------------------------------------------------------------------------------
 #
 #     Class pour utilisation du parallélisme avec des fenêtres interactives
 #
 # --------------------------------------------------------------------------------------------
+
+class TimeShiftWorkerSignals(QObject):
+    progress = pyqtSignal(int)  # pour la progress bar
+    stage = pyqtSignal(str)
+    finished = finished = pyqtSignal(float,   # time_shift
+                                     list,    # time_line_VIS
+                                     list,    # angles_VIS
+                                     list,    # time_line_NIR
+                                     list     # angles_NIR
+                                     )  # remonter les données car interdit de tracer avec pyplot à ce niveau dans un worker
+    error = pyqtSignal(str)
+
+class TimeShiftWorker(QRunnable):
+    """
+    Worker QRunnable pour calculer l'offset temporel VIS/NIR (coquille pour l'instant).
+    """
+    def __init__(self, vis_results, vis_x, vis_y, nir_results, nir_x, nir_y):
+        super().__init__()
+        self.VIS_results = vis_results
+        self.NIR_results = nir_results
+        self.vis_x = vis_x
+        self.vis_y = vis_y
+        self.nir_x = nir_x
+        self.nir_y = nir_y
+        self.signals = TimeShiftWorkerSignals()
+        self.abstract = True
+
+    def run(self):
+        try:
+            time_line_VIS, angles_unwrapped_VIS = self.extract_timeline_and_angles(self.VIS_results, unwrap_func=Aru.unwrap_angles)
+            time_line_NIR, angles_unwrapped_NIR = self.extract_timeline_and_angles(self.NIR_results, unwrap_func=Aru.unwrap_angles)
+
+            time_shift, omega, metrics = Aru.compute_time_shift_L2(
+                time_line_VIS,
+                angles_unwrapped_VIS,
+                time_line_NIR,
+                angles_unwrapped_NIR,
+                use_median=True,
+            )
+            if self.abstract:
+                Aru.abstract_time_line_alignement(time_shift, omega, metrics)
+
+            self.signals.finished.emit(time_shift,
+                                       time_line_VIS,
+                                       angles_unwrapped_VIS,
+                                       time_line_NIR,
+                                       angles_unwrapped_NIR,
+                                       )
+
+        except Exception as e:
+            self.signals.error.emit(str(e))
+
+    def extract_timeline_and_angles(self, results, unwrap_func=None):
+        """
+        Extract relative timeline and (optionally unwrapped) angle values
+        from ArUco results.
+
+        Parameters
+        ----------
+        results : list of dict
+            Output of ArUco detection.
+        unwrap_func : callable or None
+            Function applied to angle list (e.g. Aru.unwrap_angles).
+            If None, angles are returned as-is.
+
+        Returns
+        -------
+        timeline : list
+            Relative timeline values.
+        angles : list
+            Angle values (possibly unwrapped).
+        """
+        timeline = []
+        angles = []
+
+        for r in results:
+            if r.get("relative_timeline") is not None:
+                timeline.append(r["relative_timeline"])
+            if r.get("angle_img") is not None:
+                angles.append(r["angle_img"])
+
+        if unwrap_func is not None and angles:
+            angles = unwrap_func(angles)
+
+        return timeline, angles
+
+
+class ArucoWorkerSignals(QObject):
+    progress = pyqtSignal(int)  # pour la progress bar
+    stage = pyqtSignal(str)
+    finished = pyqtSignal(list, list, list)  # results, x_vals, y_vals
+    error = pyqtSignal(str)
+
+class ArucoWorker(QRunnable):
+    """
+    Worker QRunnable pour exécuter process_aruco_images en thread séparé.
+    """
+    def __init__(
+        self,
+        folderMissionPath: Path,
+        name_folder: str,
+        spectral_band: str,
+        suffix_image: str,
+        save_check_detection_img: bool = False,
+        verbose: bool = False,
+        use_aruco_cache: bool = False,
+        multi_thread=False
+    ):
+        super().__init__()
+        self.folderMissionPath = folderMissionPath
+        self.name_folder = name_folder
+        self.spectral_band = spectral_band
+        self.suffix_image = suffix_image
+        self.save_check_detection_img = save_check_detection_img
+        self.verbose = verbose
+        self.use_aruco_cache = use_aruco_cache
+        self.multi_thread = multi_thread
+        self.signals = ArucoWorkerSignals()
+
+    def run(self):
+        try:
+            self.signals.stage.emit(f"Detect ArUco {self.spectral_band}")
+            self.signals.progress.emit(3)
+            results, x_vals, y_vals = Aru.process_aruco_images(
+                folderMissionPath=self.folderMissionPath,
+                name_folder=self.name_folder,
+                spectral_band=self.spectral_band,
+                suffix_image=self.suffix_image,
+                save_check_detection_img=self.save_check_detection_img,
+                verbose=self.verbose,
+                use_aruco_cache=self.use_aruco_cache,
+                multi_thread=self.multi_thread,
+                progress_callback=self.signals.progress.emit
+            )
+            self.signals.finished.emit(results, x_vals, y_vals)
+
+        except Exception as e:
+            self.signals.error.emit(str(e))
+
+
+
+
+
+
+
+
 
 
 # -------  Persistent ExifTool wrapper (pyExifTool-like)  ----------

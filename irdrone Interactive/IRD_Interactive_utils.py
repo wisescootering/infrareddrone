@@ -10,10 +10,11 @@ import os
 import os.path as osp
 import sys
 import json
+from json import JSONDecodeError
 import shutil
 from datetime import datetime, date
 import time
-from typing import Any, Dict, Optional, Tuple, List, Union, Iterable
+from typing import Any, Dict, Optional, Tuple, List, Union, Sequence, Iterable
 from pathlib import Path
 from fractions import Fraction
 import re
@@ -22,8 +23,15 @@ from fractions import Fraction
 import tempfile
 import subprocess
 from concurrent.futures import ProcessPoolExecutor, as_completed
-import piexif
+import multiprocessing
 from collections import Counter
+
+
+import cv2
+import matplotlib.pyplot as plt
+import copy
+
+from IRD_Interactive_color_style import Style
 
 
 
@@ -2301,6 +2309,437 @@ def true_recording_period(
         print(Style.GREEN + f"📌 true_recording_period: {true_record_period:.3f} s" + Style.RESET)
 
     return true_record_period
+
+# ------------------------------------
+#  pour phase 3
+# ------------------------------------
+def compute_time_shift_L2(
+    time_line_VIS: Sequence[float],
+    angles_unwrapped_VIS: Sequence[float],
+    time_line_NIR: Sequence[float],
+    angles_unwrapped_NIR: Sequence[float],
+    use_median: bool = False
+) -> Tuple[float, float, Dict[str, Optional[float]]]:
+    """
+    Estimate the temporal offset Δt such that:
+        theta_VIS(t) ≈ theta_NIR(t - Δt)
+
+    under the assumption of uniform angular velocity.
+    The offset is computed analytically by L2 minimization.
+
+    Parameters
+    ----------
+    time_line_VIS : sequence of float
+        Time stamps of VIS images.
+    angles_unwrapped_VIS : sequence of float
+        Unwrapped angular measurements for VIS images.
+    time_line_NIR : sequence of float
+        Time stamps of NIR images.
+    angles_unwrapped_NIR : sequence of float
+        Unwrapped angular measurements for NIR images.
+    use_median : bool, optional
+        If True, use the median estimator for VIS intercept (robust to outliers).
+        If False, use the mean (default: False).
+
+    Returns
+    -------
+    time_shift : float
+        Estimated temporal offset Δt (seconds).
+    omega : float
+        Estimated angular velocity (rad/s or deg/s).
+    metrics : dict
+        Dictionary of quality indicators:
+            - n_vis
+            - n_nir
+            - r2_nir
+            - dt_iqr
+            - dt_std
+            - omega_vis
+            - delta_omega
+            - rel_delta_omega
+    """
+
+    # --- Convert to numpy arrays ---
+    t_vis = np.asarray(time_line_VIS, dtype=float)
+    th_vis = np.asarray(angles_unwrapped_VIS, dtype=float)
+    t_nir = np.asarray(time_line_NIR, dtype=float)
+    th_nir = np.asarray(angles_unwrapped_NIR, dtype=float)
+
+    if t_nir.size < 2:
+        raise ValueError("At least two NIR points are required")
+
+    if t_vis.size < 1:
+        raise ValueError("At least one VIS point is required")
+
+    # --- 1. Linear regression on NIR (reference) ---
+    omega, b_nir = np.polyfit(t_nir, th_nir, 1)
+
+    th_nir_fit = omega * t_nir + b_nir
+    ss_res = np.sum((th_nir - th_nir_fit) ** 2)
+    ss_tot = np.sum((th_nir - np.mean(th_nir)) ** 2)
+    r2_nir = 1.0 - ss_res / ss_tot if ss_tot > 0 else None
+
+    # --- 2. VIS intercepts projected onto NIR slope ---
+    b_vis_vals = th_vis - omega * t_vis
+
+    if use_median:
+        b_vis = np.median(b_vis_vals)
+    else:
+        b_vis = np.mean(b_vis_vals)
+
+    # --- Individual time shifts ---
+    dt_vals = (b_nir - b_vis_vals) / omega
+
+    dt_iqr = np.percentile(dt_vals, 75) - np.percentile(dt_vals, 25)
+    dt_std = np.std(dt_vals) if dt_vals.size > 1 else 0.0
+
+    # --- 3. Optimal global time shift ---
+    time_shift = (b_nir - b_vis) / omega
+
+    # --- 4. VIS slope consistency check (optional) ---
+    if t_vis.size >= 2:
+        omega_vis, _ = np.polyfit(t_vis, th_vis, 1)
+        delta_omega = omega_vis - omega
+        rel_delta_omega = abs(delta_omega / omega)
+    else:
+        omega_vis = None
+        delta_omega = None
+        rel_delta_omega = None
+
+    metrics = {
+        "n_vis": int(t_vis.size),
+        "n_nir": int(t_nir.size),
+        "r2_nir": r2_nir,
+        "dt_iqr": dt_iqr,
+        "dt_std": dt_std,
+        "omega_vis": omega_vis,
+        "delta_omega": delta_omega,
+        "rel_delta_omega": rel_delta_omega,
+    }
+
+    return time_shift, omega, metrics
+
+def plot_angles_alignement_time_line(
+    time: Union[Sequence[float], Sequence[Sequence[float]]],
+    angles: Union[Sequence[float], Sequence[Sequence[float]]],
+    title_angles: List[str],
+    mode: str = "img",
+    color: Union[str, List[str], None] = None,
+    save_graph: bool = True,
+    folder_save: Path = None,
+    filename: str = "check_time_alignment.png",
+) -> None:
+    """
+    Plot one or multiple angle curves versus their own time axes
+    and save the figure to disk (GUI-safe, non-interactive).
+
+    Parameters
+    ----------
+    time : sequence or sequence of sequences
+        Time values (seconds).
+    angles : sequence or sequence of sequences
+        Angle values (degrees).
+    title_angles : list of str
+        Labels for each curve.
+    mode : str
+        "ground", "img" or "delta" to define the base label.
+    color : str or list of str or None
+        Color(s) for the curves.
+    save_graph : bool
+        If True, save the figure to disk.
+    folder_save : Path
+        Output directory for the figure.
+    filename : str
+        Name of the saved image file.
+    """
+
+    # --- Label selection ---
+    if mode == "ground":
+        label_base = "Ground reference angle"
+    elif mode == "img":
+        label_base = "Image reference angle"
+    elif mode == "delta":
+        label_base = "Delta angle (ground - image)"
+    else:
+        label_base = "Angle"
+
+    # --- Normalize input to list of lists ---
+    is_single_curve = isinstance(angles[0], (int, float, np.floating))
+
+    if is_single_curve:
+        angles_list = [angles]
+        time_list = [time]
+    else:
+        angles_list = list(angles)
+        time_list = list(time)
+
+    if len(title_angles) != len(angles_list):
+        raise ValueError("title_angles must match the number of curves.")
+
+    # --- Figure creation (GUI-safe) ---
+    fig, ax = plt.subplots(figsize=(8, 4))
+
+    # --- Colors handling ---
+    if color is None:
+        colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    elif isinstance(color, list):
+        colors = color
+    else:
+        colors = [color]
+
+    # --- Plot curves ---
+    for i, (t, y) in enumerate(zip(time_list, angles_list)):
+        if len(t) != len(y):
+            raise ValueError(f"Curve {i}: time and angles must have the same length.")
+
+        ax.plot(
+            t,
+            y,
+            marker="o",
+            color=colors[i % len(colors)],
+            label=f"{title_angles[i]} ({len(y)} img)"
+        )
+
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Angle (deg)")
+    ax.set_title(f"Evolution of {label_base}")
+    ax.legend()
+    ax.grid(True)
+
+    # --- Save and cleanup ---
+    if save_graph:
+        if folder_save is None:
+            raise ValueError("folder_save must be specified when save_graph=True")
+
+        folder_save.mkdir(parents=True, exist_ok=True)
+        out_path = folder_save / filename
+        fig.savefig(out_path, dpi=150, bbox_inches="tight")
+
+    plt.close(fig)
+
+def draw_aruco_overlay(img, result, md, fixed_ids):
+    if img is None or result is None:
+        return img
+
+    img_out = img.copy()
+
+    has_md = md is not None
+    mid = result.get("mobile_id", None)
+
+    has_mobile = has_md and mid in md
+    has_corners = has_mobile and "corners" in md[mid]
+
+    has_absolute_ref = (
+        has_md
+        and fixed_ids is not None
+        and not result.get("missing_fixed", True)
+        and result.get("x_ref") is not None
+        and result.get("y_ref") is not None
+    )
+
+    # --- fixed markers
+    if has_md and fixed_ids is not None and not result.get("missing_fixed", False):
+        draw_fixed_markers(img_out, md, fixed_ids)
+
+    # --- mobile marker
+    if has_mobile:
+        center = md[mid]["center"]
+        draw_mobile_center(img_out, center)
+
+    # --- image orientation
+    u_img = None
+    if has_mobile and has_corners:
+        u_img = draw_image_orientation(
+            img_out, center, md[mid]["corners"]
+        )
+
+    # --- absolute orientation
+    if has_absolute_ref and u_img is not None:
+        draw_absolute_orientation(
+            img_out,
+            center,
+            u_img,
+            result["x_ref"],
+            result["y_ref"],
+            md[mid]["corners"],
+        )
+
+    # --- legend (always)
+    lines = []
+
+    if has_mobile and result.get("angle_img") is not None:
+        lines.append(f"ID {mid}  angle img = {result['angle_img']:.1f} deg")
+
+    if has_absolute_ref and result.get("angle_abs") is not None:
+        delta = (result["angle_abs"] - result["angle_img"] + 180) % 360 - 180
+        lines.append(f"abs = {result['angle_abs']:.1f} deg   d = {delta:.1f} deg")
+    else:
+        lines.append("absolute reference: unavailable")
+
+    scale = 2
+    draw_legend(
+        img_out,
+        lines,
+        origin=(scale * 20, scale * 40),
+        font_scale=scale,
+        line_spacing=scale * 30,
+    )
+
+    return img_out
+
+def draw_legend(
+    img,
+    lines,
+    origin=(20, 40),
+    font_scale=1.,
+    line_spacing=28,
+    color=(255, 255, 255),
+    thickness=2,
+):
+    """
+    Draw a multi-line legend on an OpenCV image.
+
+    Parameters
+    ----------
+    lines : list of str
+        Lines to display.
+    origin : (int, int)
+        Top-left corner of the legend.
+    font_scale : float
+        Text scale (increase for better visibility).
+    line_spacing : int
+        Vertical spacing between lines (pixels).
+    """
+    x0, y0 = origin
+    for i, txt in enumerate(lines):
+        cv2.putText(
+            img,
+            txt,
+            (x0, y0 + i * line_spacing),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            font_scale,
+            color,
+            thickness,
+            cv2.LINE_AA,
+        )
+
+def draw_fixed_markers(img, md, fixed_ids):
+    for fid in fixed_ids:
+        if fid in md:
+            ct = tuple(md[fid]["center"].astype(int))
+            cv2.circle(img, ct, 2, (0, 0, 255), -1)
+
+def draw_mobile_center(img, center):
+    cX, cY = tuple(center.astype(int))
+    cv2.drawMarker(
+        img, (cX, cY),
+        (0, 0, 255),
+        markerType=cv2.MARKER_CROSS,
+        markerSize=20,
+        thickness=2,
+    )
+
+def draw_image_orientation(img, center, corners, scale=3, color=(0, 255, 0), thickness=4):
+    u = ((corners[0] - corners[3]) + (corners[1] - corners[2]))
+    n = np.linalg.norm(u)
+    if n == 0:
+        return
+
+    u /= n
+    marker_width = int(np.linalg.norm(corners[0] - corners[1]))
+    line_length = scale * marker_width
+
+    cX, cY = tuple(center.astype(int))
+    endX = int(cX + u[0] * line_length)
+    endY = int(cY + u[1] * line_length)
+
+    cv2.line(img, (cX, cY), (endX, endY), color, thickness)
+    return u
+
+def draw_absolute_orientation(
+    img,
+    center,
+    u_img,
+    x_ref,
+    y_ref,
+    corners,
+    scale=4,
+    color=(0, 165, 255),
+):
+    ux = np.dot(u_img, x_ref)
+    uy = np.dot(u_img, y_ref)
+    u_abs = ux * x_ref + uy * y_ref
+
+    marker_width = int(np.linalg.norm(corners[0] - corners[1]))
+    line_length = scale * marker_width
+
+    cX, cY = tuple(center.astype(int))
+    endX = int(cX + u_abs[0] * line_length)
+    endY = int(cY + u_abs[1] * line_length)
+
+    draw_dashed_line(
+        img,
+        (cX, cY),
+        (endX, endY),
+        color,
+        thickness=4,
+        dash_length=15,
+    )
+
+def draw_dashed_line(img, pt1, pt2, color, thickness=1, dash_length=10):
+    """
+    Trace une ligne pointillée entre pt1 et pt2.
+    - pt1, pt2 : tuples (x, y)
+    - dash_length : longueur d’un segment (pixels)
+
+    # Exemple d'utilisation
+    cX, cY = 100, 100
+    endX, endY = 300, 250
+    img = np.zeros((400, 400, 3), dtype=np.uint8)
+    draw_dashed_line(img, (cX, cY), (endX, endY), (0, 255, 0), thickness=2, dash_length=15)
+    cv2.imshow("Dashed line", img)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    """
+    pt1 = np.array(pt1)
+    pt2 = np.array(pt2)
+    line_vec = pt2 - pt1
+    line_len = np.linalg.norm(line_vec)
+    line_dir = line_vec / line_len
+    num_dashes = int(line_len / dash_length / 2)
+
+    for i in range(num_dashes):
+        start = pt1 + line_dir * (2 * i * dash_length)
+        end = pt1 + line_dir * ((2 * i + 1) * dash_length)
+        cv2.line(img, tuple(start.astype(int)), tuple(end.astype(int)), color, thickness)
+
+def get_color_BGR(name):
+    """
+    Retourne la couleur BGR correspondant au nom donné.
+    """
+    colors = {
+        "rouge":       (0, 0, 255),
+        "vert":        (0, 255, 0),
+        "bleu":        (255, 0, 0),
+        "cyan":        (255, 255, 0),
+        "magenta":     (255, 0, 255),
+        "orange":      (0, 165, 255),
+        "rose":        (203, 192, 255),
+        "blanc":       (255, 255, 255),
+        "gris":        (128, 128, 128),
+        "violet":      (211, 0, 148),
+        "jaune":       (0, 255, 255),
+        "turquoise":   (208, 224, 64),
+        "marron":      (42, 42, 165),
+        "olive":       (0, 128, 128),
+        "lavande":     (250, 230, 230),
+        "bleu_clair":  (255, 200, 100),
+        "vert_clair":  (144, 238, 144),
+        "rose_foncé":  (147, 20, 80),
+        "beige":       (220, 245, 245),
+        "noir":        (0, 0, 0)
+    }
+    return colors.get(name.lower(), (0, 0, 0))  # Retourne noir si non trouvé
 
 
 

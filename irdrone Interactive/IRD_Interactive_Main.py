@@ -19,13 +19,26 @@ sys.path.append(osp.join(osp.dirname(__file__), ".."))
 from pathlib import Path
 import json
 # ------------------PyQt6 Library -----------------------------------
-from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout,  QWidget, QPushButton, QLabel, QFrame, QProgressBar, QMessageBox
+from PyQt6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QVBoxLayout,
+    QHBoxLayout,
+    QWidget,
+    QPushButton,
+    QLabel,
+    QFrame,
+    QProgressBar,
+    QMessageBox,
+    QFileDialog,
+    QMessageBox,
+)
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap, QColor, QIcon
 # -------------- IRDrone Library ------------------------------------
 from IRD_Interactive_1 import Window_Load_TakeOff_Image, Window_create_file_structure
 from IRD_Interactive_2 import LoadVisNirImagesDialog
-from IRD_Interactive_3 import Dialog_extract_exif, Dialog_synchro_clock
+from IRD_Interactive_3_NEW import DialogSynchroAruco
 import IRD_Interactive_utils as Uti
 from IRD_Interactive_utils import Prefrence_Screen
 from IRD_Interactive_color_style import Style
@@ -157,6 +170,7 @@ class Main_Window(QMainWindow):
         self.main_layout.addWidget(self.progress_bar)
         self.progress_bar.setValue(0)
 
+
     # ===================================================================================
     #                   Button #1 click handlers
     #     Step 1 Define the mission
@@ -238,7 +252,7 @@ class Main_Window(QMainWindow):
                 if not coherent_answer: return
             else:
                 Uti.show_info_message("IRDrone", f"Choose the mission folder.", "")
-                folderMissionPath, coherent_answer = Uti.choose_mission_folder_phase_2(self, verbose=True)
+                folderMissionPath, coherent_answer = Uti.choose_mission_folder_phase_2(self, verbose=True, default_user_dir="C:\\Air-Mission")
                 if not coherent_answer: return
                 if folderMissionPath:
                     self.folderMissionPath = folderMissionPath
@@ -292,61 +306,29 @@ class Main_Window(QMainWindow):
     #     camera attitudes( yaw, pitch roll).
     # ===================================================================================
 
-
     def on_pre_process_images(self):
         """
-        preprocess_step 1  Extract and save Exif tags)
-        Open the dialog_extract_exif when the corresponding button (btn_pre_process_images) is clicked.
+        Phase 3 – VIS / NIR synchronization
         """
+        if not self.ensure_mission_parameters():
+            return
+
         try:
-            self.dialog_extract_exif = Dialog_extract_exif(self.mission_parameters)     # Instantiate Window dialog_extract_exif
-            self.dialog_extract_exif.data_signal_from_dialog_extract_exif_to_main_window.connect(self.handle_data_from_dialog_extract_exif)
-            self.dialog_extract_exif.show()
-            self.dialog_extract_exif.btn_preprocess_step1.clicked.connect(self.open_dialog_synchro_clock)  # Connect dialog_synchro_clock signal to Main_Window method
+            self.dialog_synchro_aruco = DialogSynchroAruco(self.mission_parameters)
+            self.dialog_synchro_aruco.data_signal_to_main.connect(
+                self.handle_data_from_dialog_synchro_aruco
+            )
+            self.dialog_synchro_aruco.show()
+
         except Exception as e:
-            print("Error in Main_Window open_dialog_extract_exif:", e)
+            print("Error in  class Main_Window(QMainWindow)   in on_pre_process_images     opening Dialog_Synchro_Aruco:", e)
 
-    def handle_data_from_dialog_extract_exif(self, validate: bool):
-        """
-        Handle data received from dialog_extract_exif .
-        Args: validate (bool): True if the user has validated the entries, False otherwise.
-        """
+    def handle_data_from_dialog_synchro_aruco(self, validate: bool):
         if validate:
-            self.list_dic_exif_xmp: list[dict] = self.dialog_extract_exif.list_dic_exif_xmp
-            self.folderMissionPath: Path = self.dialog_extract_exif.folderMissionPath
-            # print(f"TEST 0020  for Fly {self.folderMissionPath} Extraction built {len(self.list_dic_exif_xmp)} dictionary exif/xmp")
-            self.dialog_extract_exif.data_signal_from_dialog_extract_exif_to_main_window.disconnect()  # Disconnect the signal
+            print("Phase 3 completed successfully.")
         else:
-            print("The user has not validated his entries.")
+            print("Phase 3 cancelled by user.")
 
-    def open_dialog_synchro_clock(self):
-        """
-        preprocess_step 2  Synchro time-line NIR/VIS
-        Open the dialog_synchro_clock when called from dialog_extract_exif.
-        """
-        try:
-            self.dialog_synchro_clock = Dialog_synchro_clock(self.list_dic_exif_xmp, self.folderMissionPath)  # Instantiate dialog_synchro_clock
-            self.dialog_synchro_clock.data_signal_from_dialog_synchro_clock_to_main_window.connect(self.handle_data_from_dialog_synchro_clock)
-            self.dialog_synchro_clock.show()
-        except Exception as e:
-            print("Error in Main_Window open_dialog_synchro_clock:", e)
-
-
-    def handle_data_from_dialog_synchro_clock(self, validate: bool):
-        """
-        Handle data received from dialog_synchro_clock and close parent windows.
-        Args: validate (bool): True if the user has validated the entries, False otherwise.
-        """
-        if validate:
-            self.list_dic_exif_xmp = self.dialog_extract_exif.list_dic_exif_xmp
-            # print(f"TEST 0009  Main sortie dialog_synchro_clock \n {self.list_dic_exif_xmp[-1]}")
-            print(f"TEST 0010 The clock offset is : {self.dialog_synchro_clock.delta_clock} s. \n END PREPROCESS")
-            self.dialog_synchro_clock.data_signal_from_dialog_synchro_clock_to_main_window.disconnect()  # Disconnect the signal
-            self.dialog_synchro_clock.close()  # Close dialog_synchro_clock
-        else:
-            print("The user has not validated his entries.")
-        self.dialog_extract_exif.close()
-        pass
 
 
     # ===================================================================================
@@ -368,6 +350,56 @@ class Main_Window(QMainWindow):
     def on_help(self):
         Uti.show_info_message("IRDrone", "Currently being implemented ...", "")
         pass
+
+
+    # ====================================================================================
+    #                  Méthodes de la class main_windows
+    # ===================================================================================
+
+    def ensure_mission_parameters(self) -> bool:
+        """
+        Ensure that mission_parameters are available.
+        If not, ask the user to select an existing mission folder
+        and load mission_parameters from disk.
+
+        Returns
+        -------
+        bool
+            True if mission_parameters are available, False otherwise.
+        """
+        try:
+            if self.mission_parameters is not None:
+                return True
+
+            # Ask user to select a mission folder
+            folderMissionPath, ok = Uti.choose_mission_folder_phase_2(self, default_user_dir="C:\\Air-Mission")
+
+            if not ok:
+                return False
+            folderMissionPath = Path(folderMissionPath)
+        except Exception as e:
+            print(f'DEBUG  in ensure_mission_parameters  {e}  ')
+
+        try:
+            mission_json = Uti.safe_path(folderMissionPath / "FlightAnalytics" / "mission_parameters.json")
+            if not mission_json.exists():
+                raise FileNotFoundError("mission_parameters.json not found")
+
+            with open(mission_json, "r", encoding="utf-8") as f:
+                self.mission_parameters = json.load(f)
+
+            # Inject mission path explicitly
+            self.mission_parameters["folderMissionPath"] = folderMissionPath
+
+            return True
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Mission loading error",
+                f"Unable to load mission parameters:\n{e}"
+            )
+            return False
 
 
 def main():

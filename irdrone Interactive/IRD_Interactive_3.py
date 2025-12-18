@@ -32,7 +32,7 @@ import config as global_config
 
 
 
-class Dialog_extract_exif(QDialog):
+class Dialog_Detection_Aruco(QDialog):
     # Creates a class signal to transmit the data to the parent which will here be an instance of the main window class
     # Here the return is a boolean (click on OK True or False and the dictionary containing the answers to the questionnaire)
     data_signal_from_dialog_extract_exif_to_main_window = pyqtSignal(bool)

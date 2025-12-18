@@ -396,26 +396,6 @@ class LoadVisNirImagesDialog(QDialog):
         except Exception as e:
             print("Error in step2 init_GUI:", e)
 
-
-    @classmethod
-    def reset_flags(cls):
-        """
-        Class method of class LoadVisNirImagesDialog(QDialog)
-            used by def on_load_images_VIS_and_NIR(self) of class class MainWindow(QMainWindow):
-            with the instruction load_Vis_Nir_images.LoadVisNirImagesDialog.reset_flags()
-
-            Allows you to reset the flag and dir when the set of reference images is complete
-            We can then make the “load all images” button visible.
-        """
-        cls.flags = [False] * cls.num_images
-        cls.currentUserDir = os.path.join(os.path.abspath('/'), "Air-Mission")
-
-    @classmethod
-    def reset_flag_AllImageOK(cls):
-        cls.flagAllImageOK = False
-        cls.currentUserDir = os.path.join(os.path.abspath('/'), "Air-Mission")
-
-
     def closeEvent(self, event: QCloseEvent):
         try:
             if LoadVisNirImagesDialog.flagAllImageOK:
@@ -859,7 +839,6 @@ class LoadVisNirImagesDialog(QDialog):
                                         pgsbar0: int,
                                         pgrbar1: int) -> List[str]:
         """
-
         Returns:
         """
         listFileName = []
@@ -1389,6 +1368,24 @@ class LoadVisNirImagesDialog(QDialog):
         frame_name: str = os.path.splitext(os.path.basename(imgPath))[0]
         frame_index: int = int(frame_name.split("_")[-1])
         return frame_index, frame_name
+
+    @classmethod
+    def reset_flags(cls):
+        """
+        Class method of class LoadVisNirImagesDialog(QDialog)
+            used by def on_load_images_VIS_and_NIR(self) of class class MainWindow(QMainWindow):
+            with the instruction load_Vis_Nir_images.LoadVisNirImagesDialog.reset_flags()
+
+            Allows you to reset the flag and dir when the set of reference images is complete
+            We can then make the “load all images” button visible.
+        """
+        cls.flags = [False] * cls.num_images
+        cls.currentUserDir = os.path.join(os.path.abspath('/'), "Air-Mission")
+
+    @classmethod
+    def reset_flag_AllImageOK(cls):
+        cls.flagAllImageOK = False
+        cls.currentUserDir = os.path.join(os.path.abspath('/'), "Air-Mission")
 
 
 
