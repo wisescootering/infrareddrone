@@ -97,7 +97,8 @@ class LoadVisNirImagesDialog(QDialog):
                  suffix: str = None,
                  folderMission: Optional[Path] = None,
                  path_image_takeoff: Optional[Path] = None,
-                 original_path_image_takeoff: Optional[Path] = None):
+                 original_path_image_takeoff: Optional[Path] = None,
+                 verbose=False):
         super().__init__()
 
         if folderMission is None or not folderMission.exists():
@@ -111,6 +112,7 @@ class LoadVisNirImagesDialog(QDialog):
         self.target_screen_index: int = self.pref_screen.defaultScreenID
         self.screen_adjust: float = self.pref_screen.screenAdjust
         self.window_display_size: tuple[int, int] = self.pref_screen.windowDisplaySize
+        self.verbose = verbose
 
         # ---- spectral_band and image suffix
         # First mission image | First image of the Sync sequence | Last image of the Sync sequence | First Fly image | Last Fly image
@@ -141,7 +143,7 @@ class LoadVisNirImagesDialog(QDialog):
                     self._set_image_flags_from_info(self.info_dng)
                     self.info_vis_dng_available = True
                 else:
-                    print(Style.YELLOW + f'⚠  transfer_info_VIS_dng.json n\'a pas été détecté ...' + Style.RESET)
+                    if self.verbose: print(Style.YELLOW + f'⚠  transfer_info_VIS_dng.json n\'a pas été détecté ...' + Style.RESET)
             elif self.spectral_band.lower() in ("nir", "ir", "near infrared"):
                 self.img_suffix = "dng"
                 self.spectral_band = "NIR"
@@ -152,7 +154,7 @@ class LoadVisNirImagesDialog(QDialog):
                     self._set_image_flags_from_info(self.info_dng)
                     self.info_nir_dng_available = True
                 else:
-                    print(Style.YELLOW + f'⚠  transfer_info_NIR_dng.json n\'a pas été détecté ...' + Style.RESET)
+                    if self.verbose: print(Style.YELLOW + f'⚠  transfer_info_NIR_dng.json n\'a pas été détecté ...' + Style.RESET)
             else:
                 self.img_suffix = "jpg"
                 print(Style.YELLOW + f'⚠  suffix jpg non pris en charge ...' + Style.RESET)
@@ -187,8 +189,6 @@ class LoadVisNirImagesDialog(QDialog):
         self.progress_bar: Optional[QProgressBar] = None
 
         # ---- Load previous transfer info if available
-        verbose = True
-
         self.timeline: list[dict] = []
         self.path_image_takeoff: Optional[Path] = path_image_takeoff   # Take-off image path
         self.original_path_image_takeoff = original_path_image_takeoff  # Original take-off image path
@@ -1073,13 +1073,17 @@ class LoadVisNirImagesDialog(QDialog):
         """
         try:
             flags = self.flags
-            self.user_dir = self.currentUserDir
             self.user_dir = Uti.safe_path(self.folderMissionPath / "AerialPhotography" / self.spectral_band)
             self.new_user_dir = self.user_dir
-            if all(elem is False for elem in self.flags) or not os.path.exists(self.user_dir):
+            if not os.path.exists(self.user_dir):
+                self.user_dir = os.path.abspath('/')
+                self.new_user_dir = self.user_dir
+            elif all(elem is False for elem in self.flags) and not os.path.exists(self.user_dir):
                 self.user_dir = os.path.abspath('/')
                 self.new_user_dir = self.user_dir
             self.new_user_dir = self.user_dir
+
+            print(f'debug 002  self.user_dir = {self.user_dir}')
 
             file_path, _ = QFileDialog.getOpenFileName(None, f"Select an image {img_suffix}", str(self.user_dir),
                                                        f"Images (*.{img_suffix});;All files (*)")

@@ -110,7 +110,6 @@ def process_aruco_images(
         folderMissionPath, spectral_band, suffix_image, section="sync"
     )
 
-    print(f'DEBUG 0001 outputFolder = {outputFolder}    listImages ={listImages}')
 
     folder_images = folderMissionPath / name_folder
 
@@ -927,24 +926,24 @@ def best_thread_count(io_bound: bool = True) -> int:
     return cpu_count
 
 def abstract_time_line_alignement(time_shift, omega, metrics):
-    print(
-        f"Time alignment results:\n"
-        f"  Estimated time shift      : {time_shift:.3f} s\n"
-        f"  Angular velocity (NIR)    : {omega:.6f} deg/s\n"
-        f"  Number of VIS points      : {metrics['n_vis']}\n"
-        f"  Number of NIR points      : {metrics['n_nir']}\n"
-        f"  NIR linear fit R²         : {metrics['r2_nir']:.6f}\n"
-        f"  Δt interquartile range    : {metrics['dt_iqr']:.4f} s\n"
-        f"  Δt standard deviation     : {metrics['dt_std']:.4f} s\n"
-    )
+    msg_1 = f"Time alignment results:\n" \
+          f"  Estimated time shift      : {time_shift:.3f} s\n" \
+          f"  Angular velocity (NIR)    : {omega/6:.4f} rpm\n" \
+          f"  Number of VIS points      : {metrics['n_vis']}\n" \
+          f"  Number of NIR points      : {metrics['n_nir']}\n" \
+          f"  NIR linear fit R²         : {metrics['r2_nir']:.6f}\n" \
+          f"  Δt interquartile range    : {metrics['dt_iqr']:.4f} s\n" \
+          f"  Δt standard deviation     : {metrics['dt_std']:.4f} s\n"
+    print(Style.GREEN + msg_1 + Style.RESET)
 
     if metrics.get("omega_vis") is not None:
-        print(
-            f"  Angular velocity (VIS)    : {metrics['omega_vis']:.6f} deg/s\n"
-            f"  Relative Δomega           : {(100.0 * metrics['rel_delta_omega']):.2e} %"
+        msg_2 = f"  Angular velocity (VIS)    : {metrics['omega_vis']/6:.4f} rpm\n" \
+                f"  Relative Δomega           : {(100.0 * metrics['rel_delta_omega']):.2e} %"
+        print(Style.GREEN + msg_2 + Style.RESET
         )
     else:
         print("  VIS angular velocity      : not estimated (single VIS point)")
+    return msg_1 + msg_2
         
 def plot_angles_alignement_time_line(
     time: Union[Sequence[float], Sequence[Sequence[float]]],

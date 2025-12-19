@@ -34,6 +34,7 @@ import matplotlib.pyplot as plt
 
 # -------------- IRDrone Library ------------------------------------
 import IRD_Interactive_utils as Uti
+from IRD_Interactive_utils import interpolate_scalar_with_extrapolation
 from IRD_Interactive_utils import safe_path
 import IRD_interactive_geo as Geo
 from IRD_Interactive_color_style import Style
@@ -84,15 +85,320 @@ else:
 #
 # --------------------------------------------------------------------------------------------
 
+class ImagePairingWorkerSignals(QObject):
+    progress = pyqtSignal(int)   # progress bar
+    stage = pyqtSignal(str)      # textual stage
+    finished = pyqtSignal(dict)  # pairing result
+    error = pyqtSignal(str)
+
+
+class ImagePairingWorker(QRunnable):
+    def __init__(self, time_shift: float, folderMissionPath: Path, control_mode: bool = False):
+        super().__init__()
+        QObject.__init__(self)
+        self.time_shift = time_shift
+        self.folderMissionPath = safe_path(folderMissionPath)
+        self.control_mode = control_mode
+
+        self.dics_VIS = None
+        self.dics_NIR = None
+        self.time_line_VIS = None
+        self.time_line_NIR = None
+
+        self.signals = ImagePairingWorkerSignals()
+
+    def run(self):
+        try:
+            self.signals.stage.emit("Image pairing – initializing")
+            self.signals.progress.emit(1)
+
+            # ---------------------------------------------------
+            self.dics_VIS, self.time_line_VIS = self.load_images_exif(safe_path(self.folderMissionPath / "AerialPhotography" / "VIS"), "dng")
+            self.dics_NIR, self.time_line_NIR = self.load_images_exif(safe_path(self.folderMissionPath / "AerialPhotography" / "NIR"), "dng")
+
+            pairs = self.pairing_img()
+
+            shoot_points = self.build_shoot_points(
+                pairs,
+                self.dics_VIS,
+                self.dics_NIR,
+            )
+            # version partielle sans les données NIR non interpolée
+            pairing_result = self.build_pairing_result(shoot_points)
+
+            for key in self.build_list_interpol_key():
+                self.interpolate_nir_scalar(shoot_points, key)
+
+            # Sauvegarde du JSON
+            if pairing_result is None:
+                pairing_result = {}
+
+            self.save_shoot_points(pairing_result)
+
+            # -----------------------------------------------------
+
+            self.signals.progress.emit(100)
+            self.signals.stage.emit("Image pairing – completed")
+            self.signals.finished.emit(pairing_result)
+
+        except Exception as e:
+            self.signals.error.emit(str(e))
+
+    def pairing_img(self):
+        t_VIS = np.array(self.time_line_VIS)
+        t_NIR = np.array(self.time_line_NIR) + self.time_shift
+        n_VIS = len(t_VIS)
+        n_NIR = len(t_NIR)
+
+        dt_matrix = np.abs(t_VIS[:, None] - t_NIR[None, :])
+        nearest_idx = np.argsort(dt_matrix, axis=1)[:, :2]
+        nearest_dt = np.take_along_axis(dt_matrix, nearest_idx, axis=1)
+
+        pairs = []
+        for i in range(n_VIS):
+            pairs.append({
+                "idx_VIS": i,
+                "idx_NIR_1": int(nearest_idx[i, 0]),
+                "idx_NIR_2": int(nearest_idx[i, 1]),
+                "t_VIS": float(t_VIS[i]),
+                "t_NIR_1_shifted": float(t_NIR[nearest_idx[i, 0]]),
+                "t_NIR_2_shifted": float(t_NIR[nearest_idx[i, 1]]),
+                "dt_1": float(nearest_dt[i, 0]),
+                "dt_2": float(nearest_dt[i, 1]),
+            })
+
+            # Progress update (linear in pairing step)
+            percent = int((i + 1) / max(1, n_VIS) * 100)
+            self.signals.progress.emit(percent)
+            self.signals.stage.emit(f"Pairing images")
+
+        return pairs
+
+    def load_images_exif(self, folder: Path, suffix: str = "dng"):
+        """
+        Lit tous les fichiers exif JSON dans le dossier correspondant aux images
+        suffixées (VIS ou NIR), renvoie liste de dictionnaires et time line.
+        """
+        folder = Path(folder)
+        list_dic = []
+        time_line = []
+        files = sorted(folder.glob(f"*.{suffix}"))
+        n_files = len(files)
+
+        for i, img_file in enumerate(files):
+            exif_file = folder / f"{img_file.stem}.exif"
+            if exif_file.exists():
+                with open(exif_file, "r") as f:
+                    dic = json.load(f)
+                    list_dic.append(dic)
+
+                    t = dic.get("RelativeTimeLine", 0.0)
+                    try:
+                        t = float(t)
+                    except ValueError:
+                        t = 0.0
+                    time_line.append(t)
+
+            # Update progress bar for this folder
+            percent = int((i + 1) / max(1, n_files) * 100)
+            self.signals.progress.emit(percent)
+            self.signals.stage.emit(f"Loading {suffix.upper()} images)")
+
+        return list_dic, time_line
+
+    def build_pairing_result(self, shoot_points):
+        pairing_result = {
+            "mission_path": str(self.folderMissionPath),
+            "time_shift": self.time_shift,
+            "n_VIS": len(self.dics_VIS),
+            "n_NIR": len(self.dics_NIR),
+            "pairing_method": "nearest_time",
+            "created_at": datetime.utcnow().isoformat(),
+            "schema_version": "1.0",
+            "shoot_points": shoot_points,
+        }
+        return pairing_result
+
+    def build_shoot_points(self, pairs, dics_VIS, dics_NIR):
+        shoot_points = []
+        try:
+            for p in pairs:
+                i_VIS = p["idx_VIS"]
+                i_NIR_1 = p["idx_NIR_1"]
+                i_NIR_2 = p["idx_NIR_2"]
+
+                dic_VIS = dics_VIS[i_VIS]
+                dic_NIR_1 = dics_NIR[i_NIR_1]
+                dic_NIR_2 = dics_NIR[i_NIR_2]
+
+                shoot_point = {
+                    "VIS": {
+                        "idx": i_VIS,
+                        "FileName": dic_VIS.get("FileName"),
+                        "Directory": dic_VIS.get("Directory"),
+                        "DateTimeOriginal": dic_VIS.get("DateTimeOriginal"),
+                        "RelativeTimeLine": dic_VIS.get("RelativeTimeLine"),
+
+                        "DroneLatitude": dic_VIS.get("DroneLatitude"),
+                        "DroneLongitude": dic_VIS.get("DroneLongitude"),
+                        "GroundAltitude": dic_VIS.get("GroundAltitude"),
+                        "DroneAltitudeSeaLevel": dic_VIS.get("DroneAltitudeSeaLevel"),
+                        "DroneAltitudeGround": dic_VIS.get("DroneAltitudeGround"),
+                        "UTM_x": dic_VIS.get("UTM_x"),
+                        "UTM_y": dic_VIS.get("UTM_y"),
+                        "UTM_zone": dic_VIS.get("UTM_zone"),
+
+                        "FlightYawDegree": dic_VIS.get("FlightYawDegree"),
+                        "FlightPitchDegree": dic_VIS.get("FlightPitchDegree"),
+                        "FlightRollDegree": dic_VIS.get("FlightRollDegree"),
+                        "GimbalYawDegree": dic_VIS.get("GimbalYawDegree"),
+                        "GimbalPitchDegree": dic_VIS.get("GimbalPitchDegree"),
+                        "GimbalRollDegree": dic_VIS.get("GimbalRollDegree"),
+
+                        "DistanceToLastPoint": dic_VIS.get("DistanceToLastPoint"),
+                        "CapToLastPoint": dic_VIS.get("CapToLastPoint"),
+                        "CumulDistance": dic_VIS.get("CumulDistance"),
+                    },
+                    "NIR": [
+                        {
+                            "rank": 1,
+                            "idx": i_NIR_1,
+                            "FileName": dic_NIR_1.get("FileName"),
+                            "Directory": dic_NIR_1.get("Directory"),
+                            "DateTimeOriginal": dic_NIR_1.get("DateTimeOriginal"),
+                            "RelativeTimeLine_shifted": p["t_NIR_1_shifted"],
+                            "dt": p["dt_1"],
+                        },
+                        {
+                            "rank": 2,
+                            "idx": i_NIR_2,
+                            "FileName": dic_NIR_2.get("FileName"),
+                            "Directory": dic_NIR_2.get("Directory"),
+                            "DateTimeOriginal": dic_NIR_2.get("DateTimeOriginal"),
+                            "RelativeTimeLine_shifted": p["t_NIR_2_shifted"],
+                            "dt": p["dt_2"],
+                        },
+                    ],
+                }
+
+                shoot_points.append(shoot_point)
+        except Exception as e:
+            print(f'error in build_shoot_points  {e}')
+
+        return shoot_points
+
+    def prepare_vis_arrays(self, shoot_points, key):
+        x_vis = np.array([float(sp["VIS"][key]) for sp in shoot_points], dtype=float)
+        t_vis = np.array([float(sp["VIS"]["RelativeTimeLine"]) for sp in shoot_points], dtype=float)
+        return t_vis, x_vis
+
+    def interpolate_nir_scalar(self, shoot_points, key):
+        """
+        Version semi-vectorisée de interpolate_nir_scalar.
+        Interpole (ou extrapole) une grandeur scalaire VIS vers NIR.
+
+        Parameters
+        ----------
+        key : str
+            Clé VIS à interpoler (ex: 'DroneLatitude')
+        """
+        t_vis, x_vis = self.prepare_vis_arrays(shoot_points, key)
+
+        # Collecte tous les t_nir dans un seul array
+        t_nir_list = []
+        nir_refs = []  # tuples (sp_index, nir_index) pour remettre les valeurs
+        for sp_idx, sp in enumerate(shoot_points):
+            for nir_idx, nir in enumerate(sp["NIR"]):
+                t_nir_list.append(float(nir["RelativeTimeLine_shifted"]))
+                nir_refs.append((sp_idx, nir_idx))
+        t_nir_arr = np.array(t_nir_list, dtype=float)
+
+        # Recherche des indices pour interpolation/extrapolation
+        idx_upper = np.searchsorted(t_vis, t_nir_arr, side='right')
+        idx_lower = idx_upper - 1
+
+        # Extrapolation avant/arriére
+        idx_lower[idx_lower < 0] = 0
+        idx_upper[idx_upper >= len(t_vis)] = len(t_vis) - 1
+
+        t0 = t_vis[idx_lower]
+        t1 = t_vis[idx_upper]
+        x0 = x_vis[idx_lower]
+        x1 = x_vis[idx_upper]
+
+        # Calcul des alpha pour interpolation linéaire
+        with np.errstate(divide='ignore', invalid='ignore'):
+            alpha = (t_nir_arr - t0) / (t1 - t0)
+            alpha[np.isnan(alpha)] = 0.0  # cas t1==t0
+            alpha = np.clip(alpha, 0, 1)  # clip pour extrapolation
+
+        values = (1 - alpha) * x0 + alpha * x1
+        methods = np.where(t_nir_arr < t_vis[0], 'extrap_before',
+                           np.where(t_nir_arr > t_vis[-1], 'extrap_after', 'linear_VIS'))
+
+        # Remettre dans shoot_points
+        for (sp_idx, nir_idx), val, mode in zip(nir_refs, values, methods):
+            nir = shoot_points[sp_idx]["NIR"][nir_idx]
+            nir.setdefault("Interpolated", {})
+            nir["Interpolated"][key] = val
+            if self.control_mode:
+                nir["Interpolated"][f"{key}_method"] = mode
+
+
+    def build_list_interpol_key(self):
+        list_key = [
+                "DroneLatitude",
+                "DroneLongitude",
+                "DroneAltitudeSeaLevel",
+                "GroundAltitude",
+                "DroneAltitudeGround",
+                "UTM_x",
+                "UTM_y",
+                "FlightYawDegree",
+                "FlightPitchDegree",
+                "FlightRollDegree",
+                "GimbalYawDegree",
+                "GimbalPitchDegree",
+                "GimbalRollDegree",
+                "DistanceToLastPoint",
+                "CapToLastPoint",
+                "CumulDistance"
+            ]
+        return list_key
+
+    def save_shoot_points(self, pairing_result):
+        """
+        Sauvegarde le dictionnaire pairing_result (incluant shoot_points)
+        dans un fichier JSON dans le dossier AerialPhotography.
+        """
+        try:
+            folder = safe_path(self.folderMissionPath / "AerialPhotography")
+            folder.mkdir(parents=True, exist_ok=True)  # Juste au cas où
+
+            file_path = folder / "shoot_points.json"
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(pairing_result, f, indent=4, ensure_ascii=False)
+
+            return file_path
+        except Exception as e:
+            self.signals.error.emit(f"Failed to save shoot_points.json: {e}")
+            return None
+
+
+# ============================================================================================
+
 class TimeShiftWorkerSignals(QObject):
+    def __init__(self):
+        super().__init__()
     progress = pyqtSignal(int)  # pour la progress bar
     stage = pyqtSignal(str)
-    finished = finished = pyqtSignal(float,   # time_shift
-                                     list,    # time_line_VIS
-                                     list,    # angles_VIS
-                                     list,    # time_line_NIR
-                                     list     # angles_NIR
-                                     )  # remonter les données car interdit de tracer avec pyplot à ce niveau dans un worker
+    finished = pyqtSignal(float,   # time_shift
+                          list,    # time_line_VIS
+                          list,    # angles_VIS
+                          list,    # time_line_NIR
+                          list,    # angles_NIR
+                          str      # abstract
+                          )  # remonter les données car interdit de tracer avec pyplot à ce niveau dans un worker
     error = pyqtSignal(str)
 
 class TimeShiftWorker(QRunnable):
@@ -109,6 +415,7 @@ class TimeShiftWorker(QRunnable):
         self.nir_y = nir_y
         self.signals = TimeShiftWorkerSignals()
         self.abstract = True
+        self.msg_abstract = " "
 
     def run(self):
         try:
@@ -123,13 +430,14 @@ class TimeShiftWorker(QRunnable):
                 use_median=True,
             )
             if self.abstract:
-                Aru.abstract_time_line_alignement(time_shift, omega, metrics)
+              msg_abstract = Aru.abstract_time_line_alignement(time_shift, omega, metrics)
 
             self.signals.finished.emit(time_shift,
                                        time_line_VIS,
                                        angles_unwrapped_VIS,
                                        time_line_NIR,
                                        angles_unwrapped_NIR,
+                                       msg_abstract
                                        )
 
         except Exception as e:
@@ -169,8 +477,9 @@ class TimeShiftWorker(QRunnable):
 
         return timeline, angles
 
-
 class ArucoWorkerSignals(QObject):
+    def __init__(self):
+        super().__init__()
     progress = pyqtSignal(int)  # pour la progress bar
     stage = pyqtSignal(str)
     finished = pyqtSignal(list, list, list)  # results, x_vals, y_vals
@@ -221,18 +530,6 @@ class ArucoWorker(QRunnable):
 
         except Exception as e:
             self.signals.error.emit(str(e))
-
-
-
-
-
-
-
-
-
-
-# -------  Persistent ExifTool wrapper (pyExifTool-like)  ----------
-
 
 class ExifToolPersist:
     """
@@ -384,7 +681,6 @@ class ExifToolPersist:
     def __exit__(self, exc_type, exc, tb):
         self.close()
 
-
 class CreateExif(QtCore.QObject):
     """
     Worker that scans a folder of DNG files and creates cleaned .exif JSON
@@ -502,12 +798,9 @@ class CreateExif(QtCore.QObject):
 
             Uti.save_time_line_json(self.folder_to_scan, dic_timeline)
 
-            print(f'DEBUG len(dic_timeline) = {len(dic_timeline)}')
             for idx, pt in enumerate(dic_timeline[self.spectral_band]):
                 my_path = Path(list_dic_exif[idx]["Directory"]) / f'{Path(list_dic_exif[idx]["FileName"]).stem}.exif'
-                print(f'DEBUG my_path = {my_path}   {type(my_path)}')
                 my_timeline = pt["relative_timeline"]
-                print(f'DEBUG  time line  = {my_timeline}')
             for idx, pt in enumerate(dic_timeline[self.spectral_band]):
                 my_path = (
                         Path(list_dic_exif[idx]["Directory"])
@@ -529,7 +822,6 @@ class CreateExif(QtCore.QObject):
 
         except Exception as ex:
             self.error.emit(str(ex))
-
 
 class Transfer_VIS(QtCore.QObject):
     """
@@ -599,7 +891,6 @@ class Transfer_VIS(QtCore.QObject):
         except Exception as e:
             print("Error in WorkerTransfer_VIS.run:", e)
             self.error.emit(str(e))
-
 
 class Transfer_NIR(QtCore.QObject):
     """
@@ -707,7 +998,6 @@ class Transfer_NIR(QtCore.QObject):
             print("Error in WorkerTransfer_NIR.run:", e)
             self.error.emit(str(e))
 
-
 class Alti_GPS(QtCore.QObject):
     """
 
@@ -766,7 +1056,6 @@ class Alti_GPS(QtCore.QObject):
                     "UTM_y": exif_dict.get("UTM_y"),
                 })
 
-                # Pour debug
                 if self.verbose:
                     print(f'[DEBUG] name = {Path(exif_path).stem} '
                           f'Latitude : {exif_dict.get("DroneLatitude")}°'
@@ -783,7 +1072,6 @@ class Alti_GPS(QtCore.QObject):
             lon = np.array([d["lon"] for d in gps_list])
             alt_tkoff = np.array([d["alt_tkoff"] for d in gps_list])
             list_pts = [(lat[i], lon[i]) for i in range(len(gps_list))]
-            # print(f'[DEBUG] list_pts = {list_pts}')
 
             # ------------------- altitudes du sol
             # Utilise API IGN (Institut Géographique National. France) ou bien OpenTopoData (Monde)
@@ -864,7 +1152,6 @@ class Alti_GPS(QtCore.QObject):
                 # altitudes normalisées
                 alt_ground_norm = alt_ground - alt_ground_min
                 alt_sea_level_norm = alt_sea_level - alt_ground_min
-                # print(f'[DEBUG]  distance_cum = {distance_cum[30]}   alt_ground_norm = {alt_ground_norm[30]}  alt_sea_level_norm = {alt_sea_level_norm[30]}')
             except Exception as e:
                 print(f'error  dans CALCUL GRAPHIQUE {e}')
             # ======== EMISSION Signal vers le MAIN THREAD ========

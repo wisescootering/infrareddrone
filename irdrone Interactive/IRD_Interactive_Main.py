@@ -38,7 +38,7 @@ from PyQt6.QtGui import QPixmap, QColor, QIcon
 # -------------- IRDrone Library ------------------------------------
 from IRD_Interactive_1 import Window_Load_TakeOff_Image, Window_create_file_structure
 from IRD_Interactive_2 import LoadVisNirImagesDialog
-from IRD_Interactive_3_NEW import DialogSynchroAruco
+from IRD_Interactive_3 import DialogSynchroAruco
 import IRD_Interactive_utils as Uti
 from IRD_Interactive_utils import Prefrence_Screen
 from IRD_Interactive_color_style import Style
@@ -251,8 +251,12 @@ class Main_Window(QMainWindow):
                                                                                )
                 if not coherent_answer: return
             else:
+                if self.folderMissionPath:
+                    default_user_dir = Uti.safe_path(self.folderMissionPath /"AerialPhotography")
+                else:
+                    default_user_dir = r"C:\\Air-Mission"
                 Uti.show_info_message("IRDrone", f"Choose the mission folder.", "")
-                folderMissionPath, coherent_answer = Uti.choose_mission_folder_phase_2(self, verbose=True, default_user_dir="C:\\Air-Mission")
+                folderMissionPath, coherent_answer = Uti.choose_mission_folder_phase_2(self, verbose=True, default_user_dir=default_user_dir)
                 if not coherent_answer: return
                 if folderMissionPath:
                     self.folderMissionPath = folderMissionPath
@@ -280,7 +284,8 @@ class Main_Window(QMainWindow):
                                             height,
                                             spectral_band="NIR",
                                             suffix="dng",
-                                            folderMission=folderMissionPath)
+                                            folderMission=folderMissionPath,
+                                            path_image_takeoff=self.pathImageTakeoff)
         dialog_NIR.exec()
         dialog_NIR.reset_flags()
 

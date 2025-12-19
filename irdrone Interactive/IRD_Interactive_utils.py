@@ -1070,6 +1070,73 @@ def interpolationCameraCenterVis(x, k, dt, timelapse_Vis):
 
     return DeltaCvis
 
+
+
+import numpy as np
+
+
+def interpolate_scalar_with_extrapolation(
+    t_vis,
+    x_vis,
+    t_target,
+):
+    """
+    Interpolation ou extrapolation linéaire d'une grandeur scalaire.
+
+    - interpolation si t_target ∈ [t_vis[0], t_vis[-1]]
+    - extrapolation linéaire sinon (bords)
+
+    Parameters
+    ----------
+    t_vis : array-like (n,)
+        Timeline VIS strictement croissante
+    x_vis : array-like (n,)
+        Valeurs VIS correspondantes
+    t_target : float
+        Temps cible
+
+    Returns
+    -------
+    value : float
+    mode : str
+        'interpolation', 'extrapolation_left', 'extrapolation_right'
+    """
+    t_vis = np.asarray(t_vis, dtype=float)
+    x_vis = np.asarray(x_vis, dtype=float)
+
+    n = len(t_vis)
+    if n < 2:
+        return None, "invalid"
+
+    # ---- extrapolation gauche
+    if t_target <= t_vis[0]:
+        t0, t1 = t_vis[0], t_vis[1]
+        x0, x1 = x_vis[0], x_vis[1]
+        mode = "extrapolation_left"
+
+    # ---- extrapolation droite
+    elif t_target >= t_vis[-1]:
+        t0, t1 = t_vis[-2], t_vis[-1]
+        x0, x1 = x_vis[-2], x_vis[-1]
+        mode = "extrapolation_right"
+
+    # ---- interpolation
+    else:
+        i1 = np.searchsorted(t_vis, t_target)
+        i0 = i1 - 1
+        t0, t1 = t_vis[i0], t_vis[i1]
+        x0, x1 = x_vis[i0], x_vis[i1]
+        mode = "interpolation"
+
+    if t1 == t0:
+        return x0, mode
+
+    alpha = (t_target - t0) / (t1 - t0)
+    value = (1.0 - alpha) * x0 + alpha * x1
+
+    return float(value), mode
+
+
 # ----------------------time line
 
 

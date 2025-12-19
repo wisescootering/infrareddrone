@@ -75,7 +75,7 @@ class ShootPoint:
     def __str__(self):
         """
         Formatting class data for printing on screen.
-        Pour l'affichage des vitesse  on suppose que la fréquence de prise de vue des images du DJI  est 2.02 s
+        Pour l'affichage des vitesses  on suppose que la fréquence de prise de vue des images du DJI  est 2.02 s
         ToDo:  utiliser pour la fréquence de prise de vue des images du DJI la variable calculée
         :return:
         """

@@ -711,7 +711,10 @@ class Window_create_file_structure(QDialog):
             plt.grid(True)
             plt.legend()
             plt.tight_layout()
-            plt.show()
+            out_file_path = Uti.safe_path(Path(self.missionFolder) / "FlightAnalytics" / "fly_vertical_profil.png")
+            plt.savefig(out_file_path, dpi=150)
+            plt.close()
+            print(Style.GREEN + f'Fly vertical profil saved successfully in  {out_file_path}' + Style.RESET)
         except Exception as e:
             print(f"[ERROR] in on_alti_plot_data: {e}")
 
