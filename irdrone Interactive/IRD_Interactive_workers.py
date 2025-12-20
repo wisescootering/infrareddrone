@@ -148,6 +148,8 @@ class ImagePairingWorker(QRunnable):
             self.signals.finished.emit(pairing_result)
 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             self.signals.error.emit(str(e))
 
     def pairing_img(self):
@@ -294,8 +296,26 @@ class ImagePairingWorker(QRunnable):
         return shoot_points
 
     def prepare_vis_arrays(self, shoot_points, key):
-        x_vis = np.array([float(sp["VIS"][key]) for sp in shoot_points], dtype=float)
-        t_vis = np.array([float(sp["VIS"]["RelativeTimeLine"]) for sp in shoot_points], dtype=float)
+        # Cleanup None values by replacing them with the nearest valid value
+        cleaned_values = []
+        for sp in shoot_points:
+            value = sp["VIS"].get(key)
+            if value is None:
+                # Replace None with the last valid value or 0.0 if no valid value exists
+                value = cleaned_values[-1] if cleaned_values else 0.0
+            cleaned_values.append(float(value))
+
+        x_vis = np.array(cleaned_values, dtype=float)
+        
+
+        cleaned_values = []
+        for sp in shoot_points:
+            value = sp["VIS"].get("RelativeTimeLine")
+            if value is None:
+                # Replace None with the last valid value or 0.0 if no valid value exists
+                value = cleaned_values[-1] if cleaned_values else 0.0
+            cleaned_values.append(float(value))
+        t_vis = np.array(cleaned_values, dtype=float)
         return t_vis, x_vis
 
     def interpolate_nir_scalar(self, shoot_points, key):
