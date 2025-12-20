@@ -31,6 +31,9 @@ class ShootPoint:
         self.NirDirectory = f'C:\\Air-Mission\\FLY-20010101-0101_Vide\\AerialPhotography'
         self.NirShootNum = 3
         self.NirTimeLine = 0.
+        # Convert non-ISO date formats to ISO 8601
+        visDate = visDate.replace(':', '-', 2) if ':' in visDate[:10] else visDate
+        nirDate = nirDate.replace(':', '-', 2) if ':' in nirDate[:10] else nirDate
         self.dateVis = datetime.fromisoformat(visDate)
         self.dateNir = datetime.fromisoformat(nirDate)
         self.timeLine = timeLine

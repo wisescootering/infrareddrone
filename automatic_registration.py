@@ -363,6 +363,7 @@ def process_raw_pairs(
         os.mkdir(out_dir)
     motion_model_list = []
     for index_pair, (vis_pth, nir_pth) in enumerate(sync_pairs):
+        vis_pth, nir_pth = str(vis_pth), str(nir_pth)
         if angles is None:
             yaw_init, pitch_init, roll_init = 0., 0., 0.
         else:
