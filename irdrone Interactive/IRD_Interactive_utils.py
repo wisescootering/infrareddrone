@@ -32,7 +32,7 @@ import matplotlib.pyplot as plt
 import copy
 
 from IRD_Interactive_color_style import Style
-
+from config import OUTPUT_FOLDER_NAME
 
 
 # -------------------- Exif Library -------------------------------
@@ -58,6 +58,7 @@ class Prefrence_Screen:
         self.current_directory = os.getcwd()
         # print("TEST  Current Directory:", self.current_directory)
         self.directory = os.path.abspath('/')
+        self.directory = Path("~").expanduser().as_posix()
         # print("TEST  directory", self.directory)
         self.default_app_dir = os.path.join(self.directory, "Program Files", "IRdrone")
         self.default_user_dir = os.path.join(self.directory, "Air-Mission")
@@ -1284,7 +1285,7 @@ def choose_folder_mission(
 
 def choose_mission_folder_phase_2(
     parent: Optional[QWidget] = None,
-    default_user_dir: str = r"C:\Air-Mission",
+    default_user_dir: str = OUTPUT_FOLDER_NAME,
     verbose: bool = False
 ):
     """
@@ -1301,7 +1302,7 @@ def choose_mission_folder_phase_2(
         folder = QFileDialog.getExistingDirectory(
             parent,
             "Select Mission Folder",
-            default_user_dir,
+            str(default_user_dir),
             QFileDialog.Option.ShowDirsOnly
         )
 
@@ -1355,6 +1356,8 @@ def choose_mission_folder_phase_2(
 
     except Exception as e:
         print("Error in choose_mission_folder_phase_2:", e)
+        import traceback
+        traceback.print_exc()
         return None, False
 
 def validate_mission_structure_phase_2(mission_path: Path) -> tuple[bool, str]:
@@ -1700,7 +1703,7 @@ def list_files_with_suffix(suffix: str, folder: str) -> List[Path]:
         raise FileNotFoundError(f"Folder not found: {folder}")
 
     # Use glob to find files matching the suffix and sort them
-    return sorted(folder_path.glob(f"*.{suffix}"))
+    return sorted(folder_path.glob(f"*.{suffix.upper()}"))
 
 def rename_file_VIS(input_img_name: str) -> str:
     """

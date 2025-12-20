@@ -50,6 +50,8 @@ if os.name == 'nt':
     )
 else:
     EXIFTOOLPATH = "exiftool"
+    EXIFTOOLPATH = "/usr/bin/exiftool"  # path on my linux machine
+assert Path(EXIFTOOLPATH).exists()
 if os.name == 'nt' and not osp.exists(EXIFTOOLPATH):
     print(f"[WARNING] ExifTool not found at {EXIFTOOLPATH}")
 
@@ -64,6 +66,8 @@ if os.name == 'nt':
     )
 else:
     SJCONVERTERPATH = "sjcam_raw2dng"
+    SJCONVERTERPATH = "/home/bneveu/sjcam_raw2dng_v1.2.0_linux_amd64/sjcam_raw2dng"
+assert Path(SJCONVERTERPATH).exists()
 if os.name == 'nt' and not osp.exists(SJCONVERTERPATH):
     print(f"[WARNING] SJCam RAW converter not found at {SJCONVERTERPATH}")
 
@@ -77,6 +81,8 @@ if os.name == 'nt':
         "Please install raw therapee first http://www.rawtherapee.com/downloads/5.8/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
 else:
     RAWTHERAPEEPATH = "rawtherapee-cli"
+    RAWTHERAPEEPATH = "/usr/bin/rawtherapee-cli"
+assert Path(RAWTHERAPEEPATH).exists(), "Please install raw therapee first http://www.rawtherapee.com/downloads/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
 
 
 # --------------------------------------------------------------------------------------------
@@ -842,7 +848,10 @@ class Transfer_VIS(QtCore.QObject):
 
     def run(self) -> None:
         try:
+            assert self.input_dir.exists(), f"Input directory does not exist: {self.input_dir}"
+            print(f"{self.input_dir}")
             list_file = Uti.list_files_with_suffix("dng", self.input_dir)
+            print(f"!! {list_file}")
             n = len(list_file)
 
             # --- progress bar : début ---
