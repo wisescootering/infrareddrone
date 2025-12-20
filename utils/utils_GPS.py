@@ -12,7 +12,7 @@ import math
 import re
 import json
 import requests
-from irdrone.irdrone.utils import Style
+from irdrone.utils import Style
 import os
 
 

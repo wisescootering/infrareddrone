@@ -41,9 +41,9 @@ from typing import List, Optional
 
 import config as cf
 sys.path.append(osp.join(osp.dirname(__file__), '..'))
-import irdrone.irdrone.utils as ut
-import irdrone.irdrone.process as pr
-from irdrone.irdrone.utils import Style
+import utils as ut
+import irdrone.process as pr
+from irdrone.utils import Style
 
 import utils.angles_analyzis as analys
 import utils.utils_GPS as uGPS

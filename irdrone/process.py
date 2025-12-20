@@ -19,7 +19,7 @@ import logging
 from os import mkdir
 import utils.utils_IRdrone as IRd
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
-from irdrone.irdrone.utils import Style, conversionGPSdms2dd, get_polar_shading_map, contrast_stretching
+from irdrone.utils import Style, conversionGPSdms2dd, get_polar_shading_map, contrast_stretching
 import config as cf
 import subprocess
 from pathlib import Path
