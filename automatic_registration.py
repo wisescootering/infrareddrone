@@ -19,7 +19,7 @@ import argparse
 from pathlib import Path
 from copy import deepcopy
 from config import CROP
-
+from registration.pyramid_wrapper import pyramid_reduce
 try:
     conda_env_name = os.environ['CONDA_DEFAULT_ENV']
 except:
@@ -164,8 +164,8 @@ def coarse_alignment(ref_full, mov_full, cals, yaw_main, pitch_main, roll_main, 
     msr_ref_full = rigid.multispectral_representation(ref_full, mode=msr_mode, sigma_gaussian=3.).astype(np.float32)
     # @TODO: re-use MSR of full res!
     msr_mov_full = rigid.multispectral_representation(mov_w_full, mode=msr_mode, sigma_gaussian=1.).astype(np.float32)
-    msr_ref = transform.pyramid_reduce(msr_ref_full, downscale=ds, multichannel=True).astype(np.float32)
-    msr_mov = transform.pyramid_reduce(msr_mov_full, downscale=ds, multichannel=True).astype(np.float32)
+    msr_ref = pyramid_reduce(msr_ref_full, downscale=ds)
+    msr_mov = pyramid_reduce(msr_mov_full, downscale=ds)
     pad_y = (msr_mov.shape[0]-msr_ref.shape[0])//2
     pad_x = (msr_mov.shape[1]-msr_ref.shape[1])//2
     align_config = rigid.AlignmentConfig(num_patches=1, search_size=pad_x, mode=msr_mode)
@@ -375,7 +375,7 @@ def process_raw_pairs(
             logging.info(f"INIT ANGLES FROM EXIF: yaw {yaw_init}, pitch {pitch_init}, roll {roll_init}")
         angles = [yaw_init, pitch_init, roll_init]
         # RELOAD PREVIOUSLY COMPUTED MOTION FILE
-        motion_model_file = osp.join(out_dir, osp.basename(vis_pth[:-4])+"_motion_model")
+        motion_model_file = osp.join(out_dir, osp.basename(str(vis_pth)[:-4]) + "_motion_model")
         if not osp.exists(motion_model_file + ".npy"):
             motion_model_file = None
         else:
