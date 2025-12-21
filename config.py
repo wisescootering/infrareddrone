@@ -1,3 +1,5 @@
+from pathlib import Path
+import os
 __version__ = 1.30
 
 #  Expert User Settings ! -------------------------------------------------------------------------------------
@@ -32,3 +34,9 @@ NIR_FILTER_MODEL = 830             # cut wavelength ( in nanometers nm) of the N
 COPYRIGHT = "Copyright"
 ARTIST = "Artist"
 
+# Default folders
+OUTPUT_FOLDER_NAME = os.environ.get("IRDRONE_WORKING_DIR", r"C://Air-Mission")
+OUTPUT_FOLDER_NAME = Path(OUTPUT_FOLDER_NAME)
+assert (
+    OUTPUT_FOLDER_NAME.exists()
+), f"Output folder does not exist: {OUTPUT_FOLDER_NAME} Use export IRDRONE_WORKING_DIR=your_path_to_folder to set it."
