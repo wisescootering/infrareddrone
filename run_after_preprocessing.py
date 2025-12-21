@@ -7,14 +7,17 @@ from utils.utils_odm import create_odm_folder, odm_mapping_optim
 from config import CROP
 
 
-def run_postprocessing(preprocessed_folder: Path, max_points: int = None):
+def run_postprocessing(
+    preprocessed_folder: Path, start_index: int = 0, end_index: int = None
+):
     json_file = preprocessed_folder / "AerialPhotography" / "shoot_points.json"
     assert json_file.exists(), f"JSON file does not exist: {json_file}"
     with open(json_file, "r") as f:
         shoot_points = json.load(f)
     paired_points = shoot_points["shoot_points"]
-    if max_points is not None:
-        paired_points = paired_points[:max_points]
+    if end_index is None:
+        end_index = len(paired_points)
+    paired_points = paired_points[start_index : min(end_index, len(paired_points))]
     shoot_point_list = []
 
     for point in paired_points:
@@ -72,31 +75,6 @@ def run_postprocessing(preprocessed_folder: Path, max_points: int = None):
         for nir in point["NIR"]
         if nir["rank"] == 1
     ]
-
-    # Sanity check for VIS and NIR files
-    for point in paired_points:
-        vis_path = Path(point["VIS"]["Directory"]) / point["VIS"]["FileName"]
-        nir_path = next(
-            (
-                Path(nir["Directory"]) / nir["FileName"]
-                for nir in point["NIR"]
-                if nir["rank"] == 1
-            ),
-            None,
-        )
-
-        if not vis_path.exists():
-            vis_path = (
-                preprocessed_folder
-                / "AerialPhotography"
-                / "VIS"
-                / point["VIS"]["FileName"]
-            )
-            assert vis_path.exists(), f"VIS file does not exist: {vis_path}"
-
-        if nir_path and not nir_path.exists():
-            nir_path = preprocessed_folder / "AerialPhotography" / "NIR" / nir_path.name
-            assert nir_path.exists(), f"NIR file does not exist: {nir_path}"
     # Define required variables
     out_dir = preprocessed_folder / "PostProcessed"
     traces = ["vis", "nir"]  # Example traces
@@ -133,12 +111,10 @@ if __name__ == "__main__":
         help="Path to the folder containing preprocessed data.",
     )
     parser.add_argument(
-        "-n",
-        "--max-points",
-        dest="max_points",
-        type=int,
-        default=None,
-        help="Maximum number of points to process.",
+        "--start", dest="start_index", type=int, default=0, help="Start index."
+    )
+    parser.add_argument(
+        "--end", dest="end_index", type=int, default=None, help="End index."
     )
     args = parser.parse_args()
 
@@ -147,4 +123,6 @@ if __name__ == "__main__":
         preprocessed_folder.exists()
     ), f"Mission folder does not exist: {preprocessed_folder}"
 
-    run_postprocessing(preprocessed_folder, max_points=args.max_points)
+    run_postprocessing(
+        preprocessed_folder, start_index=args.start_index, end_index=args.end_index
+    )
