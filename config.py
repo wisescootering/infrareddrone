@@ -37,6 +37,45 @@ ARTIST = "Artist"
 # Default folders
 OUTPUT_FOLDER_NAME = os.environ.get("IRDRONE_WORKING_DIR", r"C://Air-Mission")
 OUTPUT_FOLDER_NAME = Path(OUTPUT_FOLDER_NAME)
-assert (
-    OUTPUT_FOLDER_NAME.exists()
-), f"Output folder does not exist: {OUTPUT_FOLDER_NAME} Use export IRDRONE_WORKING_DIR=your_path_to_folder to set it."
+
+
+# ------------------------------------------------------
+# ExifTool path detection (Windows / Linux / macOS)
+# ------------------------------------------------------
+if os.name == 'nt':
+    EXIFTOOLPATH = os.path.join(
+        os.path.dirname(__file__),
+        "..", "thirdparty", "exiftool", "exiftool.exe"
+    )
+else:
+    EXIFTOOLPATH = os.environ.get("EXIFTOOLPATH", "/usr/bin/exiftool")
+    assert Path(EXIFTOOLPATH).exists(), "Use environment variable EXIFTOOLPATH to set the exiftool path."
+assert Path(EXIFTOOLPATH).exists()
+if os.name == 'nt' and not os.path.exists(EXIFTOOLPATH):
+    print(f"[WARNING] ExifTool not found at {EXIFTOOLPATH}")
+
+
+# ------------------------------------------------------
+# SJCam RAW→DNG converter path
+# ------------------------------------------------------
+if os.name == 'nt':
+    SJCONVERTERPATH = os.path.join(
+        os.path.dirname(__file__),
+        "..", "thirdparty", "sjcam_raw2dng", "sjcam_raw2dng.exe"
+    )
+else:
+    SJCONVERTERPATH = os.environ.get("SJCONVERTERPATH", "sjcam_raw2dng")
+if os.name == 'nt' and not os.path.exists(SJCONVERTERPATH):
+    print(f"[WARNING] SJCam RAW converter not found at {SJCONVERTERPATH}")
+
+# ------------------------------------------------------
+#     RAWTHERAPEEPATH    convert dng  to tif 16:8 bits  jpg  png ...
+# ------------------------------------------------------
+
+if os.name == 'nt':
+    RAWTHERAPEEPATH = r"C:\Program Files\RawTherapee\5.8\rawtherapee-cli.exe"
+    assert os.path.exists(RAWTHERAPEEPATH), \
+        "Please install raw therapee first http://www.rawtherapee.com/downloads/5.8/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
+else:
+    RAWTHERAPEEPATH = "rawtherapee-cli" # For docker
+    RAWTHERAPEEPATH = os.environ.get("RAWTHERAPEEPATH", "/usr/bin/rawtherapee-cli")

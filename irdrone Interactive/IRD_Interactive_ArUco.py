@@ -27,16 +27,8 @@ import IRD_Interactive_utils as Uti
 from IRD_Interactive_utils import safe_path
 from IRD_Interactive_color_style import Style
 
-
-if os.name == 'nt':
-    RAWTHERAPEEPATH = r"C:\Program Files\RawTherapee\5.8\rawtherapee-cli.exe"
-    assert osp.exists(RAWTHERAPEEPATH), "Please install raw therapee first http://www.rawtherapee.com/downloads/5.8/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
-    EXIFTOOLPATH = osp.join(osp.dirname(__file__), "..", "thirdparty", "exiftool", "exiftool.exe")
-    assert osp.exists(EXIFTOOLPATH), "Requires exif tool at {} from https://exiftool.org/".format(EXIFTOOLPATH)
-
-else:
-    RAWTHERAPEEPATH = "rawtherapee-cli"
-    EXIFTOOLPATH = "exiftool"
+from config import RAWTHERAPEEPATH
+assert Path(RAWTHERAPEEPATH).exists(), "Please install raw therapee first http://www.rawtherapee.com/downloads/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
 
 
 # ----------------------

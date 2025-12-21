@@ -73,17 +73,6 @@ from IRD_Interactive_color_style import Style
 #     Third party codes
 # ----------------------------------------------------
 
-if os.name == 'nt':
-    RAWTHERAPEEPATH = r"C:\Program Files\RawTherapee\5.8\rawtherapee-cli.exe"
-    assert osp.exists(RAWTHERAPEEPATH), "Please install raw therapee first http://www.rawtherapee.com/downloads/5.8/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
-    EXIFTOOLPATH = osp.join(osp.dirname(__file__), "..", "thirdparty", "exiftool", "exiftool.exe")
-    assert osp.exists(EXIFTOOLPATH), "Requires exif tool at {} from https://exiftool.org/".format(EXIFTOOLPATH)
-
-else:
-    RAWTHERAPEEPATH = "rawtherapee-cli"
-    EXIFTOOLPATH = "exiftool"
-
-
 class DialogSynchroAruco(QDialog):
     """
     Dialog for VIS / NIR timeline synchronization using ArUco-based angle estimation.

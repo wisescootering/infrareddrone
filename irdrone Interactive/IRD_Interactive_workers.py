@@ -39,50 +39,8 @@ from IRD_Interactive_utils import safe_path
 import IRD_interactive_geo as Geo
 from IRD_Interactive_color_style import Style
 import IRD_Interactive_ArUco as Aru
-
-# ------------------------------------------------------
-# ExifTool path detection (Windows / Linux / macOS)
-# ------------------------------------------------------
-if os.name == 'nt':
-    EXIFTOOLPATH = osp.join(
-        osp.dirname(__file__),
-        "..", "thirdparty", "exiftool", "exiftool.exe"
-    )
-else:
-    EXIFTOOLPATH = "exiftool"
-    EXIFTOOLPATH = "/usr/bin/exiftool"  # path on my linux machine
-assert Path(EXIFTOOLPATH).exists()
-if os.name == 'nt' and not osp.exists(EXIFTOOLPATH):
-    print(f"[WARNING] ExifTool not found at {EXIFTOOLPATH}")
-
-
-# ------------------------------------------------------
-# SJCam RAW→DNG converter path
-# ------------------------------------------------------
-if os.name == 'nt':
-    SJCONVERTERPATH = osp.join(
-        osp.dirname(__file__),
-        "..", "thirdparty", "sjcam_raw2dng", "sjcam_raw2dng.exe"
-    )
-else:
-    SJCONVERTERPATH = "sjcam_raw2dng"
-    SJCONVERTERPATH = "/home/bneveu/sjcam_raw2dng_v1.2.0_linux_amd64/sjcam_raw2dng"
-assert Path(SJCONVERTERPATH).exists()
-if os.name == 'nt' and not osp.exists(SJCONVERTERPATH):
-    print(f"[WARNING] SJCam RAW converter not found at {SJCONVERTERPATH}")
-
-# ------------------------------------------------------
-#     RAWTHERAPEEPATH    convert dng  to tif 16:8 bits  jpg  png ...
-# ------------------------------------------------------
-
-if os.name == 'nt':
-    RAWTHERAPEEPATH = r"C:\Program Files\RawTherapee\5.8\rawtherapee-cli.exe"
-    assert osp.exists(RAWTHERAPEEPATH), \
-        "Please install raw therapee first http://www.rawtherapee.com/downloads/5.8/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
-else:
-    RAWTHERAPEEPATH = "rawtherapee-cli"
-    RAWTHERAPEEPATH = "/usr/bin/rawtherapee-cli"
-assert Path(RAWTHERAPEEPATH).exists(), "Please install raw therapee first http://www.rawtherapee.com/downloads/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
+from config import SJCONVERTERPATH
+assert Path(SJCONVERTERPATH).exists(), f"SJCam RAW converter not found at {SJCONVERTERPATH}, Use environment variable SJCONVERTERPATH to set the path."
 
 
 # --------------------------------------------------------------------------------------------

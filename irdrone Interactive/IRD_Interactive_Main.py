@@ -43,6 +43,9 @@ import IRD_Interactive_utils as Uti
 from IRD_Interactive_utils import Prefrence_Screen
 from IRD_Interactive_color_style import Style
 from config import OUTPUT_FOLDER_NAME
+assert (
+    OUTPUT_FOLDER_NAME.exists()
+), f"Output folder does not exist: {OUTPUT_FOLDER_NAME} Use export IRDRONE_WORKING_DIR=your_path_to_folder to set it."
 
 
 class Main_Window(QMainWindow):

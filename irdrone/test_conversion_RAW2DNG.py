@@ -239,18 +239,7 @@ def convert_raw_to_dng_parallel(
 
 
 if __name__ == "__main__":
-    if os.name == 'nt':
-        RAWTHERAPEEPATH = r"C:\Program Files\RawTherapee\5.8\rawtherapee-cli.exe"
-        assert osp.exists(RAWTHERAPEEPATH), "Please install raw therapee first http://www.rawtherapee.com/downloads/5.8/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
-    else:
-        RAWTHERAPEEPATH = "rawtherapee-cli"
-
-    if os.name == 'nt':
-        EXIFTOOLPATH = osp.join(osp.dirname(__file__), "..", "thirdparty", "exiftool", "exiftool.exe")
-        assert osp.exists(EXIFTOOLPATH), "Requires exif tool at {} from https://exiftool.org/".format(EXIFTOOLPATH)
-
-    else:
-        EXIFTOOLPATH = "exiftool"
+    from config import EXIFTOOLPATH
 
     # Chemin vers l'exécutable
 
