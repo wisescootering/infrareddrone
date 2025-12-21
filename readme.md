@@ -17,7 +17,7 @@
   * convert RAW files to linear RGB files
   * align NIR images with the visible RGB images
 * postprocess for cartography
-  * prepare tiles to be stitched in [opendronemap](https://opendronemap.org) 
+  * prepare tiles to be stitched in [OpenDroneMap](https://OpenDroneMap.org) 
   * and later visualize under [QGIS](https://www.qgis.org) with overlay on top of Google maps / IGN maps for instance.
 
 
@@ -58,7 +58,7 @@ Note:
 * [install.bat](/bat_helpers/install.bat) will set up the right python environment for you. 
 * you have to install [raw therapee](https://www.rawtherapee.com) software at the default windows location.
 * Download our sample folder [FLY_TEST](https://drive.google.com/drive/folders/1khi0WdWyZ6H7Z7Lc5Q_i-Mm0Xq2sgpd1?usp=sharing)
-* To use ODM ([open drone map](https://opendronemap.org/)), install docker and make sure you have it running correctly
+* To use ODM ([OpenDroneMap](https://OpenDroneMap.org/)), install docker and make sure you have it running correctly
 ------------
 ## 🔨 Hardware
 ------------
@@ -147,12 +147,12 @@ Note:
 
 ### 🗺️ Third party maps software
 Original metadata from the DJI drone are copied into the output file therefore these images are ready to be re-used in thirdparty software. 
-We'll prepare tiles to be stitched in [opendronemap](https://opendronemap.org) and later allow you to visualize under [QGIS](https://www.qgis.org) with access to maps.
+We'll prepare tiles to be stitched in [OpenDroneMap](https://OpenDroneMap.org) and later allow you to visualize under [QGIS](https://www.qgis.org) with access to maps.
 
 
 
-#### 🗺️Open Drone Map
-You'll need to have 🐋 Docker running to be able to stitch maps using open drone maps.  
+#### 🗺️OpenDroneMap
+You'll need to have 🐋 Docker running to be able to stitch maps using OpenDroneMaps.  
 * Next to `ImgIRdrone` folder, you can find a folder named `mapping_MULTI` . 
 * inside this folder, we have prepared everything you need to run the ODM stitching:
   * images with correct overlap and correct exif
@@ -395,7 +395,7 @@ Refer to the calibration documents
 ## [v1.2](https://github.com/wisescootering/infrareddrone/milestone/1)
 * August 28, 2022
 * Docker support (linux or basically any platform)
-* Feature #10 Output data compatibility with Open Drone Map (document, bat helpers to run ODM)
+* Feature #10 Output data compatibility with OpenDroneMap (document, bat helpers to run ODM)
 * Remove intermediate TIF to save storage using `--clean-proxy` option.
 * Bugs fixed: #19 #20 features #10 #16 #13 #12
 
