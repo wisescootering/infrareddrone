@@ -3,7 +3,9 @@ from pathlib import Path
 import json
 from utils.utils_IRdrone_Class import ShootPoint
 import automatic_registration
+from utils.utils_odm import create_odm_folder, odm_mapping_optim
 from config import CROP
+
 
 def run_postprocessing(preprocessed_folder: Path, max_points: int = None):
     json_file = preprocessed_folder / "AerialPhotography" / "shoot_points.json"
@@ -13,8 +15,6 @@ def run_postprocessing(preprocessed_folder: Path, max_points: int = None):
     paired_points = shoot_points["shoot_points"]
     if max_points is not None:
         paired_points = paired_points[:max_points]
-    print(paired_points)
-    # print(shoot_points["shoot_points"][0].keys())
     shoot_point_list = []
 
     for point in paired_points:
@@ -102,6 +102,11 @@ def run_postprocessing(preprocessed_folder: Path, max_points: int = None):
     traces = ["vis", "nir"]  # Example traces
     skip = False
     # Call automatic_registration.process_raw_pairs
+    odm_image_directory = create_odm_folder(
+        preprocessed_folder,
+        multispectral_modality="MULTI",
+        extra_options=["--skip-band-alignment"],
+    )
     automatic_registration.process_raw_pairs(
         matched_paths,
         out_dir=out_dir,
@@ -109,7 +114,7 @@ def run_postprocessing(preprocessed_folder: Path, max_points: int = None):
         listPts=shoot_point_list,
         option_alti="sealevel",  # Example altitude option
         clean_proxy=False,  # Example clean_proxy value
-        multispectral_folder=None,  # Example multispectral folder
+        multispectral_folder=odm_image_directory,  # Example multispectral folder
         traces=traces,
         skip=skip,
         # debug=True
