@@ -206,7 +206,6 @@ class Window_create_file_structure(QDialog):
             self.mission_parameters: dict[str, Any] = {}
             self.date_label = None
             self.date_field = None
-
             self.py_date_time = datetime.strptime(self.mission_parameters_light['Date Exif'], "%Y:%m:%d %H:%M:%S")
             self.py_date = self.py_date_time.date()
             self.py_time = self.py_date_time.time()
@@ -459,7 +458,7 @@ class Window_create_file_structure(QDialog):
 
 
     def start_transfer_NIR(self, done, *args):
-        # print("[PIPE] Starting NIR transfer")
+        print("[PIPE] Starting NIR transfer")
         self.progress_bar.setValue(0)
         self.phase_label.setText(f"Waiting …")
 
@@ -595,7 +594,7 @@ class Window_create_file_structure(QDialog):
                             cb(meta_dict, msg)
                         except Exception as e:
                             # don't let one failing callback kill the sequence — log and continue
-                            print(f"[ERROR] callback {i} for EXIF {band} raised: {e}")
+                            print(f"[ERROR] start_exif_worker  callback {i} for EXIF {band} raised: {e}")
 
                 QtCore.QTimer.singleShot(0, _run_callbacks)
 
@@ -620,7 +619,7 @@ class Window_create_file_structure(QDialog):
         self.progress_bar.setValue(pct)
 
     def on_exif_error(self, band: str, msg: str):
-        print(f"[ERROR] EXIF {band}: {msg}")
+        print(f"[ERROR] in on_exif_error     EXIF {band}: {msg}")
         Uti.show_info_message("IRDrone", f"Erreur EXIF {band}", msg)
         self.close()
 

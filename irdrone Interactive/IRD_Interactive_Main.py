@@ -252,7 +252,7 @@ class Main_Window(QMainWindow):
                 if not coherent_answer: return
             else:
                 if self.folderMissionPath:
-                    default_user_dir = Uti.safe_path(self.folderMissionPath /"AerialPhotography")
+                    default_user_dir = Uti.safe_path(self.folderMissionPath)
                 else:
                     default_user_dir = r"C:\\Air-Mission"
                 Uti.show_info_message("IRDrone", f"Choose the mission folder.", "")

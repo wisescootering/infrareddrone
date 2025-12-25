@@ -376,6 +376,11 @@ class ImagePairingWorker(QRunnable):
             folder.mkdir(parents=True, exist_ok=True)  # Juste au cas où
 
             file_path = folder / "shoot_points.json"
+            pairing_result_json_safe = {
+                k: Uti.to_json_safe(v)
+                for k, v in pairing_result.items()
+            }
+
             with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(pairing_result, f, indent=4, ensure_ascii=False)
 
@@ -397,7 +402,9 @@ class TimeShiftWorkerSignals(QObject):
                           list,    # angles_VIS
                           list,    # time_line_NIR
                           list,    # angles_NIR
-                          str      # abstract
+                          str,     # abstract
+                          bool,    # angle abs
+                          bool     # angle image
                           )  # remonter les données car interdit de tracer avec pyplot à ce niveau dans un worker
     error = pyqtSignal(str)
 
@@ -416,11 +423,114 @@ class TimeShiftWorker(QRunnable):
         self.signals = TimeShiftWorkerSignals()
         self.abstract = True
         self.msg_abstract = " "
+        self.angle_abs_for_shift_time = False
+        self.angle_img_for_shift_time = False
 
     def run(self):
+        """
+        Execute the VIS/NIR temporal alignment based on ArUco angle measurements.
+
+        This method performs the complete alignment pipeline:
+        - extraction of relative timelines and raw angular measurements,
+        - angle unwrapping performed *after* extraction and in a strictly identical
+          manner for VIS and NIR,
+        - estimation of the temporal shift and angular velocity using an L2 criterion.
+
+        Important implementation notes
+        -------------------------------
+        1) Separation between extraction and unwrapping
+           The function `extract_timeline_and_angles` intentionally returns *raw*
+           angle values (no unwrapping). Angle unwrapping is performed afterwards
+           using `unwrap_from_end`.
+
+           This is mandatory for algorithmic consistency: VIS and NIR image streams
+           are not processed in exactly the same order nor under identical internal
+           conditions. Performing unwrapping inside the extraction step may therefore
+           lead to different phase histories and incorrect synchronization results.
+
+        2) Identical unwrapping strategy for VIS and NIR
+           Both VIS and NIR angles are unwrapped using the same reference strategy
+           (`unwrap_from_end`) and the same unwrapping function (`Aru.unwrap_angles`).
+           This guarantees that both angle sequences share a consistent phase
+           reference before time-shift estimation.
+
+        3) Absolute angles versus image-relative angles
+           By default, absolute angles (`angle_abs`) are used whenever available.
+           These angles are invariant with respect to drone yaw and therefore more
+           robust to small pilot-induced yaw motions during acquisition.
+
+           Image-relative angles (`angle_img`), measured in the image frame, are
+           used as a fallback solution only when absolute angles are not sufficiently
+           available.
+
+        4) Minimum number of samples for L2 time-shift estimation
+           The L2-based time-shift estimation requires:
+           - at least two NIR angle samples to define a reference angular evolution
+             (a minimum of two points is required to define a line),
+           - at least one VIS angle sample to project VIS measurements onto the
+             NIR reference during the L2 optimization.
+
+           These constraints are enforced through the constants:
+           - `min_NIR_pts = 2`
+           - `min_VIS_pts = 1`
+
+        5) Time-shift estimation
+           The temporal offset and angular velocity are estimated using
+           `Aru.compute_time_shift_L2`, with a median-based strategy for increased
+           robustness to outliers.
+
+        If insufficient data are available, the method exits gracefully and emits
+        a warning through the `finished` signal with a NaN time shift.
+
+        Any exception raised during the process is caught and forwarded through
+        the error signal.
+        """
+
+        time_line_VIS = []
+        angles_unwrapped_VIS = []
+        time_line_NIR = []
+        angles_unwrapped_NIR = []
+        self.angle_abs_for_shift_time = False
+        self.angle_img_for_shift_time = False
+        min_NIR_pts = 2
+        min_VIS_pts = 1
+
         try:
-            time_line_VIS, angles_unwrapped_VIS = self.extract_timeline_and_angles(self.VIS_results, unwrap_func=Aru.unwrap_angles)
-            time_line_NIR, angles_unwrapped_NIR = self.extract_timeline_and_angles(self.NIR_results, unwrap_func=Aru.unwrap_angles)
+
+            timeline_abs_VIS, angles_abs_VIS = self.extract_timeline_and_angles(self.VIS_results, key="angle_abs")
+            timeline_img_VIS, angles_img_VIS = self.extract_timeline_and_angles(self.VIS_results, key="angle_img")
+            timeline_abs_NIR, angles_abs_NIR = self.extract_timeline_and_angles(self.NIR_results, key="angle_abs")
+            timeline_img_NIR, angles_img_NIR = self.extract_timeline_and_angles(self.NIR_results, key="angle_img")
+
+            # Data integrity check
+            if len(angles_abs_NIR) >= min_NIR_pts and len(angles_abs_VIS) >= min_VIS_pts:
+                self.angle_abs_for_shift_time = True
+                angles_unwrapped_VIS = self.unwrap_from_end(angles_abs_VIS, Aru.unwrap_angles)
+                angles_unwrapped_NIR = self.unwrap_from_end(angles_abs_NIR, Aru.unwrap_angles)
+                time_line_VIS = timeline_abs_VIS
+                time_line_NIR = timeline_abs_NIR
+            elif len(angles_img_NIR) >= min_NIR_pts and len(angles_img_VIS) >= min_VIS_pts:
+                self.angle_img_for_shift_time = True
+                angles_unwrapped_VIS = self.unwrap_from_end(angles_img_VIS, Aru.unwrap_angles)
+                angles_unwrapped_NIR = self.unwrap_from_end(angles_img_NIR, Aru.unwrap_angles)
+                time_line_VIS = timeline_img_VIS
+                time_line_NIR = timeline_img_NIR
+            else:
+                msg_abstract = ("WARNING\n"
+                                "Insufficient data to automatically align VIS and NIR camera timelines.")
+                print(Style.RED + msg_abstract + Style.RESET)
+                time_shift = float("nan")
+                self.signals.finished.emit(time_shift,
+                                           time_line_VIS,
+                                           angles_unwrapped_VIS,
+                                           time_line_NIR,
+                                           angles_unwrapped_NIR,
+                                           msg_abstract,
+                                           self.angle_abs_for_shift_time,
+                                           self.angle_img_for_shift_time
+                                           )
+                return
+
 
             time_shift, omega, metrics = Aru.compute_time_shift_L2(
                 time_line_VIS,
@@ -437,13 +547,15 @@ class TimeShiftWorker(QRunnable):
                                        angles_unwrapped_VIS,
                                        time_line_NIR,
                                        angles_unwrapped_NIR,
-                                       msg_abstract
+                                       msg_abstract,
+                                       self.angle_abs_for_shift_time,
+                                       self.angle_img_for_shift_time
                                        )
 
         except Exception as e:
             self.signals.error.emit(str(e))
 
-    def extract_timeline_and_angles(self, results, unwrap_func=None):
+    def extract_timeline_and_angles(self, results, key="angle_abs"):
         """
         Extract relative timeline and (optionally unwrapped) angle values
         from ArUco results.
@@ -453,29 +565,43 @@ class TimeShiftWorker(QRunnable):
         results : list of dict
             Output of ArUco detection.
         unwrap_func : callable or None
-            Function applied to angle list (e.g. Aru.unwrap_angles).
-            If None, angles are returned as-is.
+            Function applied to angle list
 
         Returns
         -------
         timeline : list
             Relative timeline values.
         angles : list
-            Angle values (possibly unwrapped).
+            Angle values .
         """
         timeline = []
         angles = []
-
+        ignored = 0
         for r in results:
-            if r.get("relative_timeline") is not None:
+            angle = r.get(key)
+            if angle is not None and r.get("relative_timeline") is not None:
+                angles.append(angle)
                 timeline.append(r["relative_timeline"])
-            if r.get("angle_img") is not None:
-                angles.append(r["angle_img"])
+            else:
+                ignored += 1
 
-        if unwrap_func is not None and angles:
-            angles = unwrap_func(angles)
+        if ignored > 0:
+            print(Style.YELLOW + f"Warning: {ignored} images skipped because fixed or mobile ArUco not detected" + Style.RESET)
 
         return timeline, angles
+
+    def unwrap_from_end(self, angles, unwrap_func):
+        """
+        Unwrap angles starting from the last sample.
+        """
+        if len(angles) < 2:
+            return angles
+
+        angles_rev = angles[::-1]
+        angles_unwrapped_rev = unwrap_func(angles_rev)
+        return angles_unwrapped_rev[::-1]
+
+
 
 class ArucoWorkerSignals(QObject):
     def __init__(self):
@@ -710,19 +836,22 @@ class CreateExif(QtCore.QObject):
             print(f"[ERROR] CreateExif __init__: {e1}")
 
     def update_exif_json(self, exif_path: Path, key: str, value):
-        if not exif_path.exists():
-            raise FileNotFoundError(exif_path)
+        try:
+            if not exif_path.exists():
+                raise FileNotFoundError(exif_path)
 
-        with exif_path.open("r", encoding="utf-8") as f:
-            data = json.load(f)
+            with exif_path.open("r", encoding="utf-8") as f:
+                data = json.load(f)
 
-        if not isinstance(data, dict):
-            raise ValueError("EXIF JSON is not a dictionary")
+            if not isinstance(data, dict):
+                raise ValueError("EXIF JSON is not a dictionary")
 
-        data[key] = value
+            data[key] = value
 
-        with exif_path.open("w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
+            with exif_path.open("w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4, ensure_ascii=False)
+        except Exception as e2:
+            print(f"[ERROR] in update_exif_json: {e2}")
 
     # =================================================================== #
     #                               RUN
@@ -1057,7 +1186,7 @@ class Alti_GPS(QtCore.QObject):
                 })
 
                 if self.verbose:
-                    print(f'[DEBUG] name = {Path(exif_path).stem} '
+                    print(f'[INFO] name = {Path(exif_path).stem} '
                           f'Latitude : {exif_dict.get("DroneLatitude")}°'
                           f'Longitude {exif_dict.get("DroneLongitude")}°'
                           f', Altitude/take off :  {exif_dict.get("DroneAltitudeTakeOff")} m')

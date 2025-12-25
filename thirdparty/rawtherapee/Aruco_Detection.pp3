@@ -8,15 +8,24 @@ ColorManagementWorkingProfile=none
 ColorManagementOutputProfile=none
 
 [Exposure]
-Auto=false
+Enabled=true
 ExposureCompensation=0
-Clip=0
+Contrast=65
+Brightness=0
+Black=0
+HighlightCompression=0
 
 [ToneCurve]
-Enabled=false
+Enabled=true
+Curve=0;0; 32;20; 128;140; 224;235; 255;255
 
 [Sharpening]
-Enabled=false
+Enabled=true
+Method=RLDeconvolution
+Radius=0.6
+Amount=120
+Threshold=20
+
 
 [Contrast]
 Contrast=0
@@ -24,8 +33,7 @@ Microcontrast=0
 Clarity=0
 
 [NoiseReduction]
-Luma=0
-Chroma=0
+Enabled=false
 
 [WhiteBalance]
 Setting=Custom
@@ -40,6 +48,15 @@ Vibrance=0
 [Defringing]
 Enabled=false
 
+[ImpulseDenoise]
+Enabled=false
+
+[FilmGrain]
+Enabled=false
+
+[DynamicRangeCompression]
+Enabled=false
+
 [HLRecovery]
 Enabled=false
 
@@ -51,4 +68,21 @@ UseDistortion=false
 UseVignette=false
 UseCA=false
 UseLCP=false
+
+[ColorToning]
+Enabled=false
+
+[RGBGray]
+Enabled=true
+Method=Weighted
+R=0.33
+G=0.34
+B=0.33
+
+[LocalContrast]
+Enabled=true
+Amount=20
+Radius=80
+
+
 
