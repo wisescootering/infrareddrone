@@ -255,7 +255,7 @@ class Main_Window(QMainWindow):
                 if not coherent_answer: return
             else:
                 if self.folderMissionPath:
-                    default_user_dir = Uti.safe_path(self.folderMissionPath /"AerialPhotography")
+                    default_user_dir = Uti.safe_path(self.folderMissionPath)
                 else:
                     default_user_dir = OUTPUT_FOLDER_NAME
                     default_user_dir.mkdir(parents=True, exist_ok=True)

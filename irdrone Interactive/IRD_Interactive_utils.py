@@ -179,18 +179,19 @@ def folder_name_consistency_analysis(folderMissionPath: str) -> bool:
         time_part = match.group(2)    # Extract the time parts from the match
         try:
             # Check if the date part is a valid date
+            # print(f'debug  in utils folder_name_consistency_analysis  date_part = {date_part} ')
             datetime.strptime(date_part, "%Y%m%d")
             # Check if the time part is a valid time
             if 0 <= int(time_part) <= 2359 and int(time_part[2:]) < 60:
                 coherent_response = True
             else:
-                # print("Invalid time part in folder name.")
+                print("Error in folder_name_consistency_analysis   Invalid time part in folder name.")
                 pass
         except ValueError:
-            # print("Invalid date part in folder name.")
+            print("Error in folder_name_consistency_analysis    Invalid date part in folder name.")
             pass
     else:
-        # print("Folder name does not match the expected pattern.")
+        print("Error in folder_name_consistency_analysis     Folder name does not match the expected pattern.")
         pass
 
     return coherent_response
@@ -1072,10 +1073,6 @@ def interpolationCameraCenterVis(x, k, dt, timelapse_Vis):
     return DeltaCvis
 
 
-
-import numpy as np
-
-
 def interpolate_scalar_with_extrapolation(
     t_vis,
     x_vis,
@@ -1285,7 +1282,7 @@ def choose_folder_mission(
 
 def choose_mission_folder_phase_2(
     parent: Optional[QWidget] = None,
-    default_user_dir: str = OUTPUT_FOLDER_NAME,
+    default_user_dir: Union[str, Path] = OUTPUT_FOLDER_NAME,
     verbose: bool = False
 ):
     """
@@ -1299,6 +1296,8 @@ def choose_mission_folder_phase_2(
     """
 
     try:
+
+
         folder = QFileDialog.getExistingDirectory(
             parent,
             "Select Mission Folder",
@@ -1975,6 +1974,17 @@ def read_exif_json(path_exif: Path) -> dict:
     """Load JSON content from a .exif file."""
     with open(path_exif, "r", encoding="utf-8") as f:
         return json.load(f)
+
+def to_json_safe(obj):
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, np.generic):
+        return obj.item()
+    if isinstance(obj, dict):
+        return {k: to_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [to_json_safe(v) for v in obj]
+    return obj
 
 def list_tempo_time_line(
         folder: Path,

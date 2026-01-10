@@ -273,76 +273,146 @@ class DialogSynchroAruco(QDialog):
             self._log(f"Error starting time shift worker: {e}")
         self.progress_bar.setValue(50)
 
+    from typing import List, Optional
+    from pathlib import Path
+    from PyQt6.QtWidgets import QDialog
+
     def _on_timeshift_finished(
             self,
             time_shift: float,
-            time_line_VIS,
-            angles_VIS,
-            time_line_NIR,
-            angles_NIR,
-            msg_abstract
-    ):
-        self._log(f"Time shift computed successfully : {time_shift} s")
-        self._log(f"{msg_abstract}")
+            time_line_VIS: List[float],
+            angles_VIS: List[float],
+            time_line_NIR: List[float],
+            angles_NIR: List[float],
+            msg_abstract: str,
+            angle_abs_for_shift_time: bool,
+            angle_img_for_shift_time: bool
+    ) -> None:
+        """
+        Finalize time-shift computation between VIS and NIR image sequences.
 
-        # ------------------------------------------------------------
-        # 1) Sauvegarde des graphiques
-        # ------------------------------------------------------------
-        output_dir = safe_path(Path(self.folderMissionPath) / "Synchro")
-        filename = "check_time_before_alignment.png"
-        xlim = self.compute_x_limits(time_line_VIS, time_line_NIR, time_shift=time_shift)
-        plot_before = self.save_timeshift_plot(
-            output_dir=output_dir,
-            time_line_VIS=time_line_VIS,
-            angles_VIS=angles_VIS,
-            time_line_NIR=time_line_NIR,
-            angles_NIR=angles_NIR,
-            time_shift=time_shift,
-            filename=filename,
-            xlim=xlim,
-        )
-        filename = "check_time_alignment.png"
+        This method handles three cases:
+        1) Time shift successfully computed using absolute angles.
+        2) Time shift computed using relative (image-based) angles.
+        3) Time shift could not be computed and must be entered manually by the operator.
 
-        time_NIR_shifted = [t + time_shift for t in time_line_NIR]
+        It optionally generates diagnostic plots (before/after alignment),
+        displays them in the GUI, and stores the resulting synchronization state.
 
-        plot_after = self.save_timeshift_plot(
-            output_dir=output_dir,
-            time_line_VIS=time_line_VIS,
-            angles_VIS=angles_VIS,
-            time_line_NIR=time_NIR_shifted,
-            angles_NIR=angles_NIR,
-            time_shift=time_shift,
-            filename=filename,
-            xlim=xlim,
-        )
+        Parameters
+        ----------
+        time_shift : float
+            Computed (or proposed) time shift in seconds.
+        time_line_VIS : list of float
+            Relative timeline for VIS images.
+        angles_VIS : list of float
+            Angle values for VIS images.
+        time_line_NIR : list of float
+            Relative timeline for NIR images.
+        angles_NIR : list of float
+            Angle values for NIR images.
+        msg_abstract : str
+            Summary message produced by the time-shift computation stage.
+        angle_abs_for_shift_time : bool
+            True if the time shift was computed using absolute angles.
+        angle_img_for_shift_time : bool
+            True if the time shift was computed using image-based angles.
+        """
 
+        # ------------------------------------------------------------------
+        # Logging of computation outcome
+        # ------------------------------------------------------------------
+        if angle_abs_for_shift_time:
+            self._log(f"Time shift computed successfully with absolute angles: {time_shift} s")
+        elif angle_img_for_shift_time:
+            self._log(f"Time shift computed successfully with relative angles: {time_shift} s")
+        else:
+            self._log(f"Time shift not computed. Use an operator value: {time_shift} s")
+        self._log(msg_abstract)
 
-        # ------------------------------------------------------------
-        # 2) Chargement et affichage du PNG dans le GUI
-        # ------------------------------------------------------------
-        try:
+        # ------------------------------------------------------------------
+        # Manual input if automatic computation failed
+        # ------------------------------------------------------------------
+        if not (angle_abs_for_shift_time or angle_img_for_shift_time):
 
-            self.animate_timeshift_plot(plot_before=plot_before, plot_after=plot_after)
-        except Exeception as e:
-            print(f'error in animate_timeshift_plot  {e}')
+            dialog = TimeShiftInputDialog(self, default_value=0.0)
 
-        # ------------------------------------------------------------
-        # 3) Stockage état interne (si nécessaire)
-        # ------------------------------------------------------------
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                time_shift = dialog.value()
+                self._log(f"Manual time shift entered by operator: {time_shift} s")
+                final_message = (f"Manual time shift entered by operator: {time_shift} s")
+            else:
+                time_shift = 0.0
+                self._log("Manual time shift cancelled. Using default value: 0.0 s")
+                final_message = ("Manual time shift cancelled. Using default value: 0.0 s")
+        else:
+            final_message = "Time shift successfully computed."
 
+            # ------------------------------------------------------------------
+            # 1) Save diagnostic plots (before / after alignment)
+            # ------------------------------------------------------------------
+            output_dir = safe_path(Path(self.folderMissionPath) / "Synchro")
+
+            # Compute common x-limits (robust to empty timelines)
+            xlim = self.compute_x_limits(
+                time_line_VIS,
+                time_line_NIR,
+                time_shift=time_shift
+            )
+
+            # Before alignment
+            plot_before = self.save_timeshift_plot(
+                output_dir=output_dir,
+                time_line_VIS=time_line_VIS,
+                angles_VIS=angles_VIS,
+                time_line_NIR=time_line_NIR,
+                angles_NIR=angles_NIR,
+                time_shift=time_shift,
+                filename="check_time_before_alignment.png",
+                xlim=xlim,
+            )
+
+            # After alignment
+            time_NIR_shifted = [t + time_shift for t in time_line_NIR]
+
+            plot_after = self.save_timeshift_plot(
+                output_dir=output_dir,
+                time_line_VIS=time_line_VIS,
+                angles_VIS=angles_VIS,
+                time_line_NIR=time_NIR_shifted,
+                angles_NIR=angles_NIR,
+                time_shift=time_shift,
+                filename="check_time_alignment.png",
+                xlim=xlim,
+            )
+
+            # ------------------------------------------------------------------
+            # 2) Load and animate plots in the GUI
+            # ------------------------------------------------------------------
+            try:
+                self.animate_timeshift_plot(
+                    plot_before=plot_before,
+                    plot_after=plot_after
+                )
+            except Exception as e:
+                print(f"Error in animate_timeshift_plot: {e}")
+
+        # ------------------------------------------------------------------
+        # 3) Store internal synchronization state
+        # ------------------------------------------------------------------
         self.time_shift = time_shift
         self.time_line_VIS = time_line_VIS
         self.angles_VIS = angles_VIS
         self.time_line_NIR = time_line_NIR
         self.angles_NIR = angles_NIR
 
-        # ------------------------------------------------------------
-        # 4) UI finale
-        # ------------------------------------------------------------
-
+        # ------------------------------------------------------------------
+        # 4) Final UI update
+        # ------------------------------------------------------------------
         self.progress_bar.setValue(100)
-        self.progress_label.setText("Time shift successfully computed.")
+        self.progress_label.setText(final_message)
         self.btn_image_pairing.setEnabled(True)
+
 
     # ------------------------------------------------------------------
     #       image pairing
@@ -360,7 +430,7 @@ class DialogSynchroAruco(QDialog):
         self.progress_label.setText("Image pairing – initializing")
         self.progress_bar.setValue(0)
 
-        # --- Worker instantiation (empty shell for now) ---
+        # --- Worker instantiation
         self.image_pairing_worker = ImagePairingWorker(
             time_shift=self.time_shift,
             folderMissionPath=self.folderMissionPath)
@@ -604,7 +674,7 @@ class ArucoOrchestrator:
             spectral_band=spectral_band,
             suffix_image="dng",
             save_check_detection_img=True,
-            verbose=False,
+            verbose=True,
             use_aruco_cache=self.use_aruco_cache,
             multi_thread=self.multi_thread
         )
@@ -636,5 +706,75 @@ class ArucoOrchestratorSignals(QObject):
     stage = pyqtSignal(str)   # "VIS" ou "NIR"
     all_finished = pyqtSignal()
     error = pyqtSignal(str)
+
+from PyQt6.QtWidgets import (
+    QDialog,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QDoubleSpinBox,
+)
+from PyQt6.QtCore import Qt
+
+
+class TimeShiftInputDialog(QDialog):
+    """
+    Modal dialog allowing the operator to manually enter a time shift value.
+
+    The dialog returns a floating-point value expressed in seconds.
+    """
+
+    def __init__(self, parent=None, default_value: float = 0.0):
+        super().__init__(parent)
+
+        self.setWindowTitle("Manual Time Shift")
+        self.setModal(True)
+
+        # ------------------------------------------------------------
+        # Widgets
+        # ------------------------------------------------------------
+        label = QLabel(
+            "Automatic VIS/NIR time alignment failed.\n\n"
+            "Please enter a manual time shift value (in seconds):"
+        )
+        label.setWordWrap(True)
+
+        self.spinbox = QDoubleSpinBox(self)
+        self.spinbox.setDecimals(3)
+        self.spinbox.setRange(-600.0, 600.0)
+        self.spinbox.setSingleStep(0.1)
+        self.spinbox.setValue(default_value)
+        self.spinbox.setSuffix(" s")
+        self.spinbox.setAlignment(Qt.AlignmentFlag.AlignRight)
+
+        btn_ok = QPushButton("OK", self)
+        btn_cancel = QPushButton("Cancel", self)
+
+        btn_ok.clicked.connect(self.accept)
+        btn_cancel.clicked.connect(self.reject)
+
+        # ------------------------------------------------------------
+        # Layouts (CRITICAL for Qt stability)
+        # ------------------------------------------------------------
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        button_layout.addWidget(btn_ok)
+        button_layout.addWidget(btn_cancel)
+
+        main_layout = QVBoxLayout()
+        main_layout.addWidget(label)
+        main_layout.addWidget(self.spinbox)
+        main_layout.addLayout(button_layout)
+
+        self.setLayout(main_layout)
+
+    def value(self) -> float:
+        """
+        Return the manually entered time shift value (in seconds).
+        """
+        return float(self.spinbox.value())
+
+
 
 
