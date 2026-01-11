@@ -5,6 +5,7 @@ import numpy as np
 from registration.newton import newton_iter, quadric_approximation
 from irdrone.register import geometric_rigid_transform_estimation
 from registration.warp_flow import warp_from_sparse_vector_field
+from registration.pyramid_wrapper import pyramid_gaussian
 # from irdrone.utils import c2g, g2c
 import matplotlib.pyplot as plt
 import logging
@@ -12,7 +13,7 @@ from registration.cost import compute_cost_surfaces_with_traces, AlignmentConfig
 from registration.constants import LAPLACIAN_ENERGIES, GRAY_SCALE, COLORED, SSD, NTG
 import irdrone.process as pr
 import cv2
-from skimage import transform
+
 from os import mkdir
 import time
 
@@ -190,7 +191,7 @@ def compute_pyramid(img, scales_list):
     """Returns pyramid dictionary"""
     img_pyr = {}
 
-    for (ids, resized) in enumerate(transform.pyramid_gaussian(img, downscale=2, multichannel=True)):
+    for (ids, resized) in enumerate(pyramid_gaussian(img, downscale=2)):
         if 2**ids in scales_list:
             img_pyr[2**ids] = resized.astype(np.float32)
             logging.info("Storing pyramid level {}".format(2**ids, resized.shape))
