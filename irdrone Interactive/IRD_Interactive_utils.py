@@ -135,18 +135,24 @@ def center_on_screen(widget, screen_Id: int = 0, screen_adjust=(1, 1), window_di
                 widget.resize(new_width, max_image_height)
 
             try:
-                x = (screen_geometry.width() - widget.width()) // 2 + screen_geometry.left()
-                y = (screen_geometry.height() - widget.height()) // 2 + screen_geometry.top() - screen_adjust[1]/2
-                widget.move(x, y)
+                x = int((screen_geometry.width() - widget.width()) // 2 + screen_geometry.left())
+                y = int((screen_geometry.height() - widget.height()) // 2 + screen_geometry.top() - (screen_adjust[1] // 2))
+                try:
+                    widget.move(x, y)
+                except TypeError:
+                    widget.move(int(x), int(y))
             except Exception as e:
                 print("error 1  in center_on_screen :", e)
         else:
             print(f"Warning: Screen {active_screen_id} not found. Defaulting to primary screen.")
             screen_geometry = QApplication.primaryScreen().availableGeometry()
             try:
-                x = (screen_geometry.width() - widget.width()) // 2
-                y = (screen_geometry.height() - widget.height()) // 2
-                widget.move(x, y)
+                x = int((screen_geometry.width() - widget.width()) // 2)
+                y = int((screen_geometry.height() - widget.height()) // 2)
+                try:
+                    widget.move(x, y)
+                except TypeError:
+                    widget.move(int(x), int(y))
             except Exception as e:
                 print("error 1  in center_on_screen :", e)
     except Exception as e:
