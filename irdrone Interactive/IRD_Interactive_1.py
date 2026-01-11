@@ -46,6 +46,7 @@ assert OUTPUT_FOLDER_NAME.exists(), f"Output folder does not exist: {OUTPUT_FOLD
 class Window_create_file_structure(QDialog):
     """
     Creation of the mission file structure
+    OUTPUT_FOLDER_NAME/
     C:/Air-Mission/
         └── FLY-YYYYMMDD-hhmm-<txt>/
             │
@@ -1609,9 +1610,6 @@ class Window_Load_TakeOff_Image(QDialog):
         self.name_image_takeoff: str = None
         self.suffix_image_takeoff: str = None
 
-        # self.default_app_dir = os.path.join("C:/", "Program Files", "IRdrone")
-        # self.default_user_dir = os.path.join("C:/", "Air-Mission")
-        # self.default_user_dir = Path("~/Air-Mission").expanduser()
         self.default_user_dir = OUTPUT_FOLDER_NAME
         assert self.default_user_dir.exists(), f"User directory does not exist: {self.default_user_dir}"
         # self.default_user_dir.mkdir(parents=True, exist_ok=True)

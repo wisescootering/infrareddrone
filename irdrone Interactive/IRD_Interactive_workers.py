@@ -818,6 +818,8 @@ class CreateExif(QtCore.QObject):
 
         except Exception as e1:
             print(f"[ERROR] CreateExif __init__: {e1}")
+            import traceback
+            traceback.print_exc()
 
     def update_exif_json(self, exif_path: Path, key: str, value):
         try:

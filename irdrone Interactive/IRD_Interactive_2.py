@@ -36,7 +36,7 @@ from PyQt6.QtCore import Qt
 import IRD_Interactive_utils as Uti
 from IRD_Interactive_utils import center_on_screen
 from IRD_Interactive_color_style import Style
-
+from config import OUTPUT_FOLDER_NAME
 
 """
       This code allows you to choose the reference images for a mission and then distribute the different images in the
@@ -1384,12 +1384,12 @@ class LoadVisNirImagesDialog(QDialog):
             We can then make the “load all images” button visible.
         """
         cls.flags = [False] * cls.num_images
-        cls.currentUserDir = os.path.join(os.path.abspath('/'), "Air-Mission")
+        cls.currentUserDir = OUTPUT_FOLDER_NAME
 
     @classmethod
     def reset_flag_AllImageOK(cls):
         cls.flagAllImageOK = False
-        cls.currentUserDir = os.path.join(os.path.abspath('/'), "Air-Mission")
+        cls.currentUserDir = OUTPUT_FOLDER_NAME
 
 
 

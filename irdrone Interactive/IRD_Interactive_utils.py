@@ -61,7 +61,7 @@ class Prefrence_Screen:
         self.directory = Path("~").expanduser().as_posix()
         # print("TEST  directory", self.directory)
         self.default_app_dir = os.path.join(self.directory, "Program Files", "IRdrone")
-        self.default_user_dir = os.path.join(self.directory, "Air-Mission")
+        self.default_user_dir = cf.OUTPUT_FOLDER_NAME
         self.verbose = True
         # setting to manage multiple screens
         self.defaultScreenID: int = 1  # Set to 0 for screen 1, 1 for screen 2, and so on

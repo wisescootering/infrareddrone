@@ -24,11 +24,11 @@ class ShootPoint:
         super().__init__()
         self.num = numero
         self.Vis = nameVis
-        self.VisDirectory = f'C:\\Air-Mission\\FLY-20010101-0201_Vide\\AerialPhotography'
+        self.VisDirectory = r'C:\\Air-Mission\\FLY-20010101-0201_Vide\\AerialPhotography'
         self.VisShootNum = 1
         self.VisTimeLine = timeLine
         self.Nir = nameNir
-        self.NirDirectory = f'C:\\Air-Mission\\FLY-20010101-0101_Vide\\AerialPhotography'
+        self.NirDirectory = r'C:\\Air-Mission\\FLY-20010101-0101_Vide\\AerialPhotography'
         self.NirShootNum = 3
         self.NirTimeLine = 0.
         # Convert non-ISO date formats to ISO 8601
@@ -411,12 +411,12 @@ def newPpoint(numero):
             'Img':
                 {"num": numero,
                  "Vis": "HYPERLAPSE_" + nimgDNG + ".DNG",
-                 "VisDirectory": f'C:\\Air-Mission\\FLY-20010101-0201_Vide\\AerialPhotography',
+                 "VisDirectory": r'C:\\Air-Mission\\FLY-20010101-0201_Vide\\AerialPhotography',
                  "dateVis": datetime.fromisoformat('2022-01-25 11:45:17'),
                  "VisShootNum": 130 + numero,
                  "VisTimeLine": numero * (1 + 0.01987),
                  "Nir": "2022_0125_125011_" + nimgRAW + ".RAW",
-                 "NirDirectory": f'C:\\Air-Mission\\FLY-20010101-0201_Vide\\AerialPhotography',
+                 "NirDirectory": r'C:\\Air-Mission\\FLY-20010101-0201_Vide\\AerialPhotography',
                  "dateNir": datetime.fromisoformat('2022-01-25 12:35:07'),
                  "NirShootNum": int(round(numero * 3/2)),
                  "NirTimeLine": numero * (1 + 0.01987) + 200.5 * (1 + 0.01),
