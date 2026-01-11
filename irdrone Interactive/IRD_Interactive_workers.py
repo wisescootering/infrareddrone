@@ -39,7 +39,8 @@ from IRD_Interactive_utils import safe_path
 import IRD_interactive_geo as Geo
 from IRD_Interactive_color_style import Style
 import IRD_Interactive_ArUco as Aru
-from config import SJCONVERTERPATH
+from config import SJCONVERTERPATH, EXIFTOOLPATH
+assert Path(EXIFTOOLPATH).exists(), f"ExifTool not found at {EXIFTOOLPATH}, Use environment variable EXIFTOOLPATH to set the path."
 assert Path(SJCONVERTERPATH).exists(), f"SJCam RAW converter not found at {SJCONVERTERPATH}, Use environment variable SJCONVERTERPATH to set the path."
 
 
