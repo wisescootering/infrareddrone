@@ -43,7 +43,7 @@ def run_postprocessing(
             shoot_point.altGeo = vis_data.get("DroneAltitudeSeaLevel", 0.0)
             shoot_point.altTakeOff = vis_data.get("DroneAltitudeGround", 0.0)
             shoot_point.yawDrone = float(
-                vis_data.get("FlightYawDegree", "0").replace("+", "")
+                str(vis_data.get("FlightYawDegree", 0.0)).replace("+", "")
             )
             shoot_point.pitchDrone = vis_data.get("FlightPitchDegree", 0.0)
             shoot_point.rollDrone = float(
