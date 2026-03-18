@@ -42,7 +42,10 @@ from IRD_Interactive_3 import DialogSynchroAruco
 import IRD_Interactive_utils as Uti
 from IRD_Interactive_utils import Prefrence_Screen
 from IRD_Interactive_color_style import Style
-
+from config import OUTPUT_FOLDER_NAME
+assert (
+    OUTPUT_FOLDER_NAME.exists()
+), f"Output folder does not exist: {OUTPUT_FOLDER_NAME} Use export IRDRONE_WORKING_DIR=your_path_to_folder to set it."
 
 
 class Main_Window(QMainWindow):
@@ -254,7 +257,8 @@ class Main_Window(QMainWindow):
                 if self.folderMissionPath:
                     default_user_dir = Uti.safe_path(self.folderMissionPath)
                 else:
-                    default_user_dir = r"C:\\Air-Mission"
+                    default_user_dir = OUTPUT_FOLDER_NAME
+                    default_user_dir.mkdir(parents=True, exist_ok=True)
                 Uti.show_info_message("IRDrone", f"Choose the mission folder.", "")
                 folderMissionPath, coherent_answer = Uti.choose_mission_folder_phase_2(self, verbose=True, default_user_dir=default_user_dir)
                 if not coherent_answer: return
@@ -377,7 +381,8 @@ class Main_Window(QMainWindow):
                 return True
 
             # Ask user to select a mission folder
-            folderMissionPath, ok = Uti.choose_mission_folder_phase_2(self, default_user_dir="C:\\Air-Mission")
+            default_user_dir = OUTPUT_FOLDER_NAME
+            folderMissionPath, ok = Uti.choose_mission_folder_phase_2(self, default_user_dir=str(default_user_dir))
 
             if not ok:
                 return False

@@ -32,7 +32,8 @@ import IRD_interactive_geo as Geo
 from IRD_Interactive_utils import Prefrence_Screen
 import IRD_Interactive_workers as Worker
 from IRD_Interactive_color_style import Style
-
+from config import OUTPUT_FOLDER_NAME
+assert OUTPUT_FOLDER_NAME.exists(), f"Output folder does not exist: {OUTPUT_FOLDER_NAME} Use export IRDRONE_WORKING_DIR=your_path_to_folder to set it."
 
 # --------------------------------------------------------------------------------------------
 #
@@ -45,6 +46,7 @@ from IRD_Interactive_color_style import Style
 class Window_create_file_structure(QDialog):
     """
     Creation of the mission file structure
+    OUTPUT_FOLDER_NAME/
     C:/Air-Mission/
         └── FLY-YYYYMMDD-hhmm-<txt>/
             │
@@ -370,7 +372,8 @@ class Window_create_file_structure(QDialog):
             # Directories VIS
             self.input_dir_VIS = Path(self.mission_parameters.get("original File path take-off")).parent
             self.output_dir_VIS = Path(self.mission_parameters["File path mission"]) / "AerialPhotography" / "VIS"
-
+            assert self.input_dir_VIS.exists(), f"Input VIS directory does not exist: {self.input_dir_VIS}"
+            assert self.output_dir_VIS.exists(), f"Output VIS directory does not exist: {self.output_dir_VIS}"
             # --- Launch pipeline ---
             self.start_mission_pipeline()
 
@@ -418,7 +421,7 @@ class Window_create_file_structure(QDialog):
 
 
     def start_transfer_VIS(self, done, *args):
-        # print("[PIPE] Starting VIS transfer")
+        print("[PIPE] !!!!! Starting VIS transfer")
 
         self.thread_vis = QtCore.QThread()
         self.worker_vis = Worker.Transfer_VIS(self.input_dir_VIS, self.output_dir_VIS)
@@ -595,6 +598,8 @@ class Window_create_file_structure(QDialog):
                         except Exception as e:
                             # don't let one failing callback kill the sequence — log and continue
                             print(f"[ERROR] start_exif_worker  callback {i} for EXIF {band} raised: {e}")
+                            import traceback
+                            traceback.print_exc()
 
                 QtCore.QTimer.singleShot(0, _run_callbacks)
 
@@ -1290,7 +1295,7 @@ class Window_create_file_structure(QDialog):
         except Exception as e:
             print("error _init_NIR_filter : ", e)
 
-    def update_image_takeoff(self, verbose: bool = False) -> None:
+    def update_image_takeoff(self, verbose: bool = True) -> None:
         """
         Copies the take-off image to the exact destination path provided
         in mission_parameters["path mission image take-off"].
@@ -1334,8 +1339,10 @@ class Window_create_file_structure(QDialog):
                 raise RuntimeError(f"Erreur pendant la copie : {exc}") from exc
         except Exception as e1:
             print(f'error in update_image_takeoff: {e1}')
+            import traceback
+            traceback.print_exc()
 
-    def update_transfert_info_VIS_dng_json(self, verbose: bool = False) -> None:
+    def update_transfert_info_VIS_dng_json(self, verbose: bool = True) -> None:
         """
         Initialise ou met à jour le fichier transfer_info_VIS_dng.json
         dans <missionFolder>/FlightAnalytics.
@@ -1603,8 +1610,9 @@ class Window_Load_TakeOff_Image(QDialog):
         self.name_image_takeoff: str = None
         self.suffix_image_takeoff: str = None
 
-        self.default_app_dir = os.path.join("C:/", "Program Files", "IRdrone")
-        self.default_user_dir = os.path.join("C:/", "Air-Mission")
+        self.default_user_dir = OUTPUT_FOLDER_NAME
+        assert self.default_user_dir.exists(), f"User directory does not exist: {self.default_user_dir}"
+        # self.default_user_dir.mkdir(parents=True, exist_ok=True)
 
         self.prefScreen = Uti.Prefrence_Screen()  # Initializing screen preferences
 
@@ -1876,6 +1884,7 @@ class Window_Load_TakeOff_Image(QDialog):
 
         except Exception as e:
             print("error 1 in on_load_Image_take_off:", e)
+
 
         try:
             self.Date_Exif = str(date_time_excif)

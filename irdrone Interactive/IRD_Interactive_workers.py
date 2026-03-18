@@ -39,44 +39,9 @@ from IRD_Interactive_utils import safe_path
 import IRD_interactive_geo as Geo
 from IRD_Interactive_color_style import Style
 import IRD_Interactive_ArUco as Aru
-
-# ------------------------------------------------------
-# ExifTool path detection (Windows / Linux / macOS)
-# ------------------------------------------------------
-if os.name == 'nt':
-    EXIFTOOLPATH = osp.join(
-        osp.dirname(__file__),
-        "..", "thirdparty", "exiftool", "exiftool.exe"
-    )
-else:
-    EXIFTOOLPATH = "exiftool"
-if os.name == 'nt' and not osp.exists(EXIFTOOLPATH):
-    print(f"[WARNING] ExifTool not found at {EXIFTOOLPATH}")
-
-
-# ------------------------------------------------------
-# SJCam RAW→DNG converter path
-# ------------------------------------------------------
-if os.name == 'nt':
-    SJCONVERTERPATH = osp.join(
-        osp.dirname(__file__),
-        "..", "thirdparty", "sjcam_raw2dng", "sjcam_raw2dng.exe"
-    )
-else:
-    SJCONVERTERPATH = "sjcam_raw2dng"
-if os.name == 'nt' and not osp.exists(SJCONVERTERPATH):
-    print(f"[WARNING] SJCam RAW converter not found at {SJCONVERTERPATH}")
-
-# ------------------------------------------------------
-#     RAWTHERAPEEPATH    convert dng  to tif 16:8 bits  jpg  png ...
-# ------------------------------------------------------
-
-if os.name == 'nt':
-    RAWTHERAPEEPATH = r"C:\Program Files\RawTherapee\5.8\rawtherapee-cli.exe"
-    assert osp.exists(RAWTHERAPEEPATH), \
-        "Please install raw therapee first http://www.rawtherapee.com/downloads/5.8/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
-else:
-    RAWTHERAPEEPATH = "rawtherapee-cli"
+from config import SJCONVERTERPATH, EXIFTOOLPATH
+assert Path(EXIFTOOLPATH).exists(), f"ExifTool not found at {EXIFTOOLPATH}, Use environment variable EXIFTOOLPATH to set the path."
+assert Path(SJCONVERTERPATH).exists(), f"SJCam RAW converter not found at {SJCONVERTERPATH}, Use environment variable SJCONVERTERPATH to set the path."
 
 
 # --------------------------------------------------------------------------------------------
@@ -142,6 +107,8 @@ class ImagePairingWorker(QRunnable):
             self.signals.finished.emit(pairing_result)
 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             self.signals.error.emit(str(e))
 
     def pairing_img(self):
@@ -288,8 +255,26 @@ class ImagePairingWorker(QRunnable):
         return shoot_points
 
     def prepare_vis_arrays(self, shoot_points, key):
-        x_vis = np.array([float(sp["VIS"][key]) for sp in shoot_points], dtype=float)
-        t_vis = np.array([float(sp["VIS"]["RelativeTimeLine"]) for sp in shoot_points], dtype=float)
+        # Cleanup None values by replacing them with the nearest valid value
+        cleaned_values = []
+        for sp in shoot_points:
+            value = sp["VIS"].get(key)
+            if value is None:
+                # Replace None with the last valid value or 0.0 if no valid value exists
+                value = cleaned_values[-1] if cleaned_values else 0.0
+            cleaned_values.append(float(value))
+
+        x_vis = np.array(cleaned_values, dtype=float)
+        
+
+        cleaned_values = []
+        for sp in shoot_points:
+            value = sp["VIS"].get("RelativeTimeLine")
+            if value is None:
+                # Replace None with the last valid value or 0.0 if no valid value exists
+                value = cleaned_values[-1] if cleaned_values else 0.0
+            cleaned_values.append(float(value))
+        t_vis = np.array(cleaned_values, dtype=float)
         return t_vis, x_vis
 
     def interpolate_nir_scalar(self, shoot_points, key):
@@ -834,6 +819,8 @@ class CreateExif(QtCore.QObject):
 
         except Exception as e1:
             print(f"[ERROR] CreateExif __init__: {e1}")
+            import traceback
+            traceback.print_exc()
 
     def update_exif_json(self, exif_path: Path, key: str, value):
         try:
@@ -971,7 +958,10 @@ class Transfer_VIS(QtCore.QObject):
 
     def run(self) -> None:
         try:
+            assert self.input_dir.exists(), f"Input directory does not exist: {self.input_dir}"
+            print(f"{self.input_dir}")
             list_file = Uti.list_files_with_suffix("dng", self.input_dir)
+            print(f"!! {list_file}")
             n = len(list_file)
 
             # --- progress bar : début ---

@@ -14,7 +14,7 @@ from matplotlib.patches import Polygon
 import sys
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
 import utils.utils_IRdrone as IRd
-from irdrone.irdrone.utils import Style
+from irdrone.utils import Style
 import config as cf
 
 columnNbr = 5

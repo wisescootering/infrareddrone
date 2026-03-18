@@ -32,7 +32,7 @@ import matplotlib.pyplot as plt
 import copy
 
 from IRD_Interactive_color_style import Style
-
+from config import OUTPUT_FOLDER_NAME
 
 
 # -------------------- Exif Library -------------------------------
@@ -58,9 +58,10 @@ class Prefrence_Screen:
         self.current_directory = os.getcwd()
         # print("TEST  Current Directory:", self.current_directory)
         self.directory = os.path.abspath('/')
+        self.directory = Path("~").expanduser().as_posix()
         # print("TEST  directory", self.directory)
         self.default_app_dir = os.path.join(self.directory, "Program Files", "IRdrone")
-        self.default_user_dir = os.path.join(self.directory, "Air-Mission")
+        self.default_user_dir = cf.OUTPUT_FOLDER_NAME
         self.verbose = True
         # setting to manage multiple screens
         self.defaultScreenID: int = 1  # Set to 0 for screen 1, 1 for screen 2, and so on
@@ -134,18 +135,24 @@ def center_on_screen(widget, screen_Id: int = 0, screen_adjust=(1, 1), window_di
                 widget.resize(new_width, max_image_height)
 
             try:
-                x = (screen_geometry.width() - widget.width()) // 2 + screen_geometry.left()
-                y = (screen_geometry.height() - widget.height()) // 2 + screen_geometry.top() - screen_adjust[1]/2
-                widget.move(x, y)
+                x = int((screen_geometry.width() - widget.width()) // 2 + screen_geometry.left())
+                y = int((screen_geometry.height() - widget.height()) // 2 + screen_geometry.top() - (screen_adjust[1] // 2))
+                try:
+                    widget.move(x, y)
+                except TypeError:
+                    widget.move(int(x), int(y))
             except Exception as e:
                 print("error 1  in center_on_screen :", e)
         else:
             print(f"Warning: Screen {active_screen_id} not found. Defaulting to primary screen.")
             screen_geometry = QApplication.primaryScreen().availableGeometry()
             try:
-                x = (screen_geometry.width() - widget.width()) // 2
-                y = (screen_geometry.height() - widget.height()) // 2
-                widget.move(x, y)
+                x = int((screen_geometry.width() - widget.width()) // 2)
+                y = int((screen_geometry.height() - widget.height()) // 2)
+                try:
+                    widget.move(x, y)
+                except TypeError:
+                    widget.move(int(x), int(y))
             except Exception as e:
                 print("error 1  in center_on_screen :", e)
     except Exception as e:
@@ -1281,7 +1288,7 @@ def choose_folder_mission(
 
 def choose_mission_folder_phase_2(
     parent: Optional[QWidget] = None,
-    default_user_dir: Union[str, Path] = r"C:\Air-Mission",
+    default_user_dir: Union[str, Path] = OUTPUT_FOLDER_NAME,
     verbose: bool = False
 ):
     """
@@ -1354,6 +1361,8 @@ def choose_mission_folder_phase_2(
 
     except Exception as e:
         print("Error in choose_mission_folder_phase_2:", e)
+        import traceback
+        traceback.print_exc()
         return None, False
 
 def validate_mission_structure_phase_2(mission_path: Path) -> tuple[bool, str]:
@@ -1699,7 +1708,7 @@ def list_files_with_suffix(suffix: str, folder: str) -> List[Path]:
         raise FileNotFoundError(f"Folder not found: {folder}")
 
     # Use glob to find files matching the suffix and sort them
-    return sorted(folder_path.glob(f"*.{suffix}"))
+    return sorted(folder_path.glob(f"*.{suffix.upper()}"))
 
 def rename_file_VIS(input_img_name: str) -> str:
     """
