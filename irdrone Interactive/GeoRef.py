@@ -1,27 +1,29 @@
 # -*- coding: utf-8 -*-
 
 import sys
-print("Python utilisé :", sys.executable)
-print("\n".join(sys.path))
+print(f"✔ Python utilisé : {sys.executable}")
+print(f"✔", "\n✔ ".join(sys.path))
 import numpy as np
-print("Version NumPy :", np.__version__)
+print(f"✔ Version NumPy : {np.__version__}")
+import math
 try:
     from osgeo import gdal
     gdal.UseExceptions()
-    print("Version GDAL :", gdal.__version__)
-    print("Fichier GDAL :", gdal.__file__)
+    print(f"✔ Version GDAL : {gdal.__version__}")
+    print(f"✔ Fichier GDAL : {gdal.__file__}")
 except Exception as e:
-    print("Erreur GDAL :", e)
+    print(f"✖ Erreur GDAL : {e}")
 
 import os
 import os.path as osp
+import shlex
 from pathlib import Path
 import argparse
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, simpledialog, messagebox
 import cv2
+print(f"✔ Version cv2 : {cv2.__version__}")
 import re
-import csv
 import matplotlib.pyplot as plt
 from scipy.signal import savgol_filter
 from scipy.interpolate import RectBivariateSpline
@@ -31,11 +33,12 @@ from scipy.interpolate import griddata
 from scipy.ndimage import map_coordinates
 from affine import Affine
 
-from typing import Optional
-import pprint
+
+from typing import Any, Dict, Optional, Tuple, List, Union, Sequence, Iterable
 import json
 import subprocess
 import rasterio
+print(f"✔ Version rasterio : {rasterio.__version__}")
 from rasterio.transform import Affine, from_origin
 from rasterio.warp import reproject, Resampling, calculate_default_transform
 from rasterio.enums import ColorInterp
@@ -46,13 +49,8 @@ from osgeo import gdal, ogr, osr
 from datetime import datetime
 import time
 
-from IRD_Interactive_utils import safe_path
-import IRD_interactive_geo
-from IRD_interactive_geo import UTM2geo
-from IRD_interactive_geo import data_sig
 
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+from IRD_interactive_geo import data_sig
 
 
 
@@ -67,17 +65,109 @@ else:
     RAWTHERAPEEPATH = "rawtherapee-cli"
     EXIFTOOLPATH = "exiftool"
 
+# ============================================================
+#  CLASS
+# ============================================================
+
+class CliLogger:
+    def __init__(self, use_color=None):
+        # Détection automatique si non précisé
+        if use_color is None:
+            self.use_color = sys.stdout.isatty() and os.getenv("TERM") != "dumb"
+        else:
+            self.use_color = use_color
+
+        # Symboles Unicode
+        self.symbols = {
+            "ok": "\u2714",           # ✔
+            "error": "\u2716",        # ✖
+            "warn": "\u26A0\uFE0F",   # ⚠️  (⚠ + variation selector)
+            "info": "\u2139\uFE0F",   # ℹ️  (ℹ + variation selector)
+            "timer": "\u23F1",        # ⏱
+            "hourglass": "\u23F3",    # ⏳
+            "tech": "\U0001F527",     # 🔧
+            "search": "\U0001F50D",   # 🔍
+            "compute": "\U0001F5A5\uFE0F",  # 🖥️  (desktop computer + VS16)
+            "rocket": "\U0001F680",      # 🚀
+            "checklist": "\U0001F4CB",   # 📋
+            "fire": "\U0001F525",        # 🔥
+            "bug": "\U0001F41B",         # 🐛  python
+            "gear": "\U00002699\uFE0F",  # ⚙️
+        }
+
+        # Couleurs ANSI
+        self.colors = {
+            "reset": "\033[0m",
+            "bold": "\033[1m",
+            "underline": "\033[4m ",
+
+            # Standard (safe)
+            "black": "\033[30m",
+            "red": "\033[31m",
+            "green": "\033[32m",
+            "yellow": "\033[33m",
+            "blue": "\033[34m",
+            "magenta": "\033[35m",
+            "cyan": "\033[36m",
+            "white": "\033[37m",  # gray
+            "bright_white": "\033[97m",
+
+            # Bonus (moins universels)
+            "orange": "\033[38;5;208m",
+            "bright_red": "\033[91m",
+            "bright_green": "\033[92m",
+            "bright_yellow": "\033[93m",
+            "bright_blue": "\033[94m",
+            "bright_magenta": "\033[95m",
+            "bright_cyan": "\033[96m",
+        }
+
+    def _format(self, level, message, _bold=False, _underline=False):
+        symbol = self.symbols[level]
+
+        if not self.use_color:
+            return f"{symbol} {message}"
+
+        color_map = {
+            "ok": "green",
+            "info": "bright_white",
+            "error": "red",
+            "warn": "yellow",
+            "timer": "blue",
+            "tech": "reset"
+        }
+
+        color = self.colors[color_map[level]]
+        reset = self.colors["reset"]
+        if _bold:
+            return f"{color}{symbol} {self.colors['bold']}{message}{reset}"
+        elif _underline:
+            return f"{color}{symbol} {self.colors['underline']}{message}{reset}"
+        else:
+            return f"{color}{symbol} {message}{reset}"
 
 
+    def ok(self, message):
+        print(self._format("ok", message))
 
+    def error(self, message):
+        print(self._format("error", message), file=sys.stderr)
 
+    def warn(self, message):
+        print(self._format("warn", message))
+
+    def info(self, message, _bold=False, _underline=False):
+        print(self._format("info", message, _bold=_bold, _underline=_underline))
+
+    def timer(self, message):
+        print(self._format("timer", message))
+
+    def tech(self, message):
+        print(self._format("tech", message))
 
 # ============================================================
 #  FONCTION PRINCIPALE
 # ============================================================
-
-
-
 
 def georeference_tiff_MNT(tif_path,
                           raw_exif,
@@ -97,10 +187,11 @@ def georeference_tiff_MNT(tif_path,
                           view_graphic=False,
                           save_graphic=True,
                           comp_error_rms=False,
-                          carte_topo=True,
                           tol_MC=0.01,
                           bitdepth="float32",
-                          topo_style="IGN"
+                          topo_style="IGN",
+                          carte_topo=True,
+                          raster_topo=False,
                           ):
     """
     Géoréférencement nadir et orthorectification complète
@@ -129,10 +220,10 @@ def georeference_tiff_MNT(tif_path,
     Ny_raw, Nx_raw = img_raw.shape[:2]
     bands = 1 if img_raw.ndim == 2 else img_raw.shape[2]
     if verbose:
-        print(f' image brute : Ny_raw = {Ny_raw} Nx_raw= {Nx_raw}  bands = {bands}')
+        logger.info(f' image brute : Ny_raw = {Ny_raw} Nx_raw= {Nx_raw}  bands = {bands}')
 
     t1 = time.perf_counter()
-    print(f"[time] EXIF : {t1 - t0:.3f} s")
+    logger.timer(f" EXIF : {t1 - t0:.3f} s")
 
     # ---1.02 Géométrie image (GSD)
 
@@ -165,14 +256,15 @@ def georeference_tiff_MNT(tif_path,
     else:
         img = img_raw
 
+
     t1 = time.perf_counter()
-    print(f"[time] Tag image : {t1 - t0:.3f} s")
+    logger.timer(f" Tag image : {t1 - t0:.3f} s")
 
     fov_x, fov_y = 2 * np.arctan(Nx / (2 * fx)), 2 * np.arctan(Ny / (2 * fy))
     gsd_x, gsd_y = 2 * Z_cam_nadir * np.tan(fov_x / 2) / Nx, 2 * Z_cam_nadir * np.tan(fov_y / 2) / Ny
 
     if info:
-        print(f"[INFO] -----------------------------------------\n"
+        logger.info(f"-----------------------------------------\n"
               f"{txt}\n"
               f"taille : {Nx} x {Ny}\n"
               f"focales: fx = {fx:.3f} fy = {fy:.3f}  \n"
@@ -200,7 +292,7 @@ def georeference_tiff_MNT(tif_path,
 
     # crs_utm = f"EPSG:{32600 + zoneUTM}"
     zone = 32600 + zoneUTM
-    crs_utm = CRS.from_epsg(zone)  # UTM Nord
+    crs_utm = CRS.from_epsg(int(zone))  # UTM Nord
     Z0 = 0
 
     # ------------------------------------------------------------
@@ -229,7 +321,7 @@ def georeference_tiff_MNT(tif_path,
 
     N_mesh_x, N_mesh_y = next_odd(15), next_odd(15)  # next_odd donne l'entier pair supérieur le plus proche
     if verbose:
-        print(f'[INFO] Mesh =  {N_mesh_x} x {N_mesh_y}')
+        logger.info(f' Mesh =  {N_mesh_x} x {N_mesh_y}')
 
     # ampli est le facteur d'amplification de l'emprise de l'image sur sol plan
 
@@ -252,10 +344,10 @@ def georeference_tiff_MNT(tif_path,
                          view_graphic=view_graphic
                          )
     if verbose:
-        # print(f"[INFO] Centre grille MNT :{Xg_IGN[ N_mesh_y// 2,  N_mesh_x // 2]} , {Yg_IGN[ N_mesh_y // 2, N_mesh_x // 2]}")
+        # logger.info(f" Centre grille MNT :{Xg_IGN[ N_mesh_y// 2,  N_mesh_x // 2]} , {Yg_IGN[ N_mesh_y // 2, N_mesh_x // 2]}")
         pass
     t1 = time.perf_counter()
-    print(f"[time] Total  mesh IGN : {t1 - t0:.3f} s")
+    logger.timer(f" Total  mesh IGN : {t1 - t0:.3f} s")
 
     # --- construction du MNT "continu" (spline)
 
@@ -269,7 +361,7 @@ def georeference_tiff_MNT(tif_path,
     altitude = build_MNT_interpolator(Xg_IGN, Yg_IGN, Zg_IGN - z_ground, method="RectBivariateSpline_quadratic")
 
     t1 = time.perf_counter()
-    print(f"[time] Build_MNT_interpolator : {t1 - t0:.3f} s")
+    logger.timer(f" Build_MNT_interpolator : {t1 - t0:.3f} s")
 
 
     if graphic_3D or save_graphic:
@@ -280,7 +372,7 @@ def georeference_tiff_MNT(tif_path,
                         nx_subdiv=160, ny_subdiv=120, title=r"$MNT (source\,IGN^{\circledR})$")
 
         t1 = time.perf_counter()
-        print(f"[time] Graphic MNT : {t1 - t0:.3f} s")
+        logger.timer(f" Graphic MNT : {t1 - t0:.3f} s")
 
     # print(f'[DEBUG]  Xg_IGN  {type(Xg_IGN)}\n'
     #       f' {Xg_IGN}\n'
@@ -304,7 +396,7 @@ def georeference_tiff_MNT(tif_path,
     Xo_grid, Yo_grid = np.meshgrid(Xo, Yo)
 
     t1 = time.perf_counter()
-    print(f"[time] Construction grille ortho GIS  : {t1 - t0:.3f} s")
+    logger.timer(f" Construction grille ortho GIS  : {t1 - t0:.3f} s")
 
     # -----------------------------------------------------------------
     # 3.02-3) altitude du terrain
@@ -318,7 +410,7 @@ def georeference_tiff_MNT(tif_path,
     Zg_grid = altitude(Xo_grid, Yo_grid)  # altitude relative par rapport au Nadir
 
     t1 = time.perf_counter()
-    print(f"[time] Calcul altitude grid : {t1 - t0:.3f} s")
+    logger.timer(f" Calcul altitude grid : {t1 - t0:.3f} s")
 
     # --------------------------------------------------
     # 3.02-4) projection terrain → image
@@ -348,34 +440,35 @@ def georeference_tiff_MNT(tif_path,
     mask = ((u >= 0) & (u < W - 1) & (v >= 0) & (v < H - 1) & (Zc < 0))
 
     t1 = time.perf_counter()
-    print(f"[time] Projection terrain → image : {t1 - t0:.3f} s")
+    logger.timer(f" Projection terrain → image : {t1 - t0:.3f} s")
 
 
     # ------------------------------------------------------------
     # 3.02-5) resampling image
     # ------------------------------------------------------------
 
+    # ------------------------------------------------------------
+    # 3.02-5) resampling image
+    # ------------------------------------------------------------
     t0 = time.perf_counter()
-
+    img = img.astype(np.float32)  # ⚠️pour interpolation propre
     ortho = np.zeros((*u.shape, 3), dtype=img.dtype)
-
+    dark_pixels = np.all(ortho < 10, axis=2)
+    ortho[dark_pixels] = 10
     for c in range(3):
         v_img = (H - 1) - v  # ← conversion caméra → numpy image. Fondamental pour retour Rasterio et QGIs
-
-        band = map_coordinates(
-            img[..., c],
-            [v_img.ravel(), u.ravel()],
-            order=1,
-            mode='constant',
-            cval=0
-        ).reshape(u.shape)
-
+        band = map_coordinates(img[..., c],
+                                [v_img.ravel(), u.ravel()],
+                                order=1,
+                                mode='constant',
+                                cval=0).reshape(u.shape)
         ortho[..., c] = band
 
     ortho[~mask] = 0  # transformation des zones périphériques noires en zones transparentes
 
     t1 = time.perf_counter()
-    print(f"[time] Resampling image : {t1 - t0:.3f} s")
+    logger.timer(f" Resampling image : {t1 - t0:.3f} s")
+
 
     # ---------------------------------------------------------------
     # 3.02-6) affine SIMPLE GIS. Remarque: -gsd_y pour north-up GIS
@@ -404,7 +497,7 @@ def georeference_tiff_MNT(tif_path,
                 view_graphic=view_graphic, save_graphic=save_graphic, graphic_ortho=graphic_ortho)  # BGR 2 RGB  pour QGIS
 
     t1 = time.perf_counter()
-    print(f"[time] Affine SIMPLE GIS. : {t1 - t0:.3f} s")
+    logger.timer(f" Affine SIMPLE GIS. : {t1 - t0:.3f} s")
 
     # ---------------------------------------
     # cartes d'erreur  (gps, mnt, yaw, alti drone ...)
@@ -412,7 +505,7 @@ def georeference_tiff_MNT(tif_path,
     if comp_error_rms:
         error_method = "Monte Carlo"
 
-        print(f'[INFO]  Compute RMS error .  Method : {error_method}')
+        logger.info(f' Compute RMS error .  Method : {error_method}')
 
         xi_yaw = xi_Y + offset_xi_Y
         sigma_yaw_deg = 0.3  # °   ~ 0.2° et 1°  Précision cap du drone DJI.
@@ -445,7 +538,7 @@ def georeference_tiff_MNT(tif_path,
         write_geotiff_affine(error_path, error_rms.astype(np.float32), transform, crs_utm, no_data=np.nan)
 
         t1 = time.perf_counter()
-        print(f"[time] Error RMS. Method {error_method}: {t1 - t0:.3f} s")
+        logger.timer(f" Cimpute error RMS. Method {error_method}: {t1 - t0:.3f} s")
 
     # ---------------------------------------
     # cartes togographique
@@ -455,10 +548,10 @@ def georeference_tiff_MNT(tif_path,
         # Chaque pixel représente l'altitude du pixel. Altitude terrain au dessus du niveau de la mer
         map_topo = P_sol[..., 2] + (Z_cam_sealevel - Z_cam_nadir)
         map_topo[~mask] = np.nan
-
-        # Génération d'une image raster des altitudes   (.tif)  pour QGIS
-        topo_path = get_unique_path(folder_input / "geo_ref" / f"{img_name}_topo.tif")
-        write_geotiff_affine(topo_path, map_topo.astype(np.float32), transform, crs_utm, no_data=np.nan)
+        if raster_topo:
+            # Génération d'une image raster des altitudes   (.tif)  pour QGIS
+            topo_path = get_unique_path(folder_input / "geo_ref" / f"{img_name}_topo.tif")
+            write_geotiff_affine(topo_path, map_topo.astype(np.float32), transform, crs_utm, no_data=np.nan)
 
         # Génération du fichier des lignes de niveau (.geojson)  pour QGIS
         contour_path = get_unique_path(folder_input / "geo_ref" / f"{img_name}_contours.geojson")
@@ -473,7 +566,7 @@ def georeference_tiff_MNT(tif_path,
         generate_qml_style_qgis(qml_path, style=topo_style, label_on_line=True)
 
         t1 = time.perf_counter()
-        print(f"[time] Carte topographique: {t1 - t0:.3f} s")
+        logger.timer(f" Carte topographique: {t1 - t0:.3f} s")
 
     # ------------------------------------------------------------------------------
     # 4) Sauvegarde GeoTIFF orthorectifié
@@ -490,16 +583,18 @@ def georeference_tiff_MNT(tif_path,
     geotif_affine = True
     if geotif_affine:
         write_geotiff_affine(geo_path, img_ortho, transform, crs_utm, bitdepth=bitdepth)
-        # print(f"[Info] GeoTIFF orthorectifié  file : {geo_path}\n")
+        new_geo_path = geo_path
+        # logger.info(f" GeoTIFF orthorectifié  file : {geo_path}\n")
     else:
-        print(f"ATTENTION : PAS DE CREATION DU GeoTIFF : {geo_path}")
+        logger.warn(f" PAS DE CREATION DU GeoTIFF : {geo_path}")
+        new_geo_path = None
 
     t1 = time.perf_counter()
-    print(f"[time] Sauvegarde GeoTIFF orthorectifié via rasterio : {t1 - t0:.3f} s")
+    logger.timer(f" Sauvegarde GeoTIFF orthorectifié via rasterio : {t1 - t0:.3f} s")
 
-    print(f"--------------------------------------\n"
-          f"[time] TOTAL : {t1 - t_global0:.3f} s \n\n"
-          f"--------------------------------------\n")
+    logger.timer(f" --- TOTAL Géoréférencement : {t1 - t_global0:.3f} s \n")
+
+    return new_geo_path
 
 
 # ============================================================
@@ -510,6 +605,12 @@ def next_odd(N_mesh):
     n = np.ceil(N_mesh).astype(int)
     return n + (n % 2 == 0)
 
+def safe_path(path: Union[str, Path]) -> Path:
+    try:
+        return Path(path).resolve()
+    except Exception as e:
+        logger.error(f" Invalid path {path} : {e}")
+        return Path(path)
 
 def estimate_ground_bbox_from_camera(Nx, Ny, R_Cam2Gnd, Cam_Center, fx, fy, cx, cy, Z0, altitude, ampli=1.0):
     """
@@ -617,14 +718,23 @@ def dng2tiff(folder, img_name, suffix="dng", bit=16):
         "-c", str(dng_file)
     ]
 
-    print("Running:", " ".join(cmd))
-    subprocess.run(cmd, check=True)
+    logger.tech(f"Running: {shlex.join(cmd)}")
+    result = subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    for line in result.stdout.splitlines():
+        logger.tech(f"{line}")
 
 
-def load_companion_exif(folder, img_name):
+def load_companion_exif(folder, img_name, suffix="dng", alti_takeoff=None):
     exif_file = folder / f"{img_name}.exif"
+    img_file = folder / f"{img_name}.{suffix}"
     if not exif_file.exists():
-        raise FileNotFoundError(exif_file)
+        logger.warn(f"Absence du fichier exif compagnon {img_name}.exif dans le dossier {folder}")
+        try:
+            read_exif_and_write_json(img_file, exif_file, alti_takeoff=alti_takeoff)
+        except Exception as e:
+            logger.error(f" Read_exif_and_write_json failed for {img_file}: {e}")
+            return {}
+
 
     with open(exif_file, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -644,10 +754,424 @@ def save_exif_companion(raw_exif, folder_input, img_name, verbose=False):
         json.dump(raw_exif, f, indent=4, ensure_ascii=False)
 
     if verbose:
-        print(f"\n--- FICHIER COMPAGNON MIS A JOUR ---")
-        print(f"Chemin : {exif_path}")
+        logger.ok(f"\n--- Fichier exif compagnon mis à jour {exif_path}")
 
     return exif_path
+
+
+def read_exif_and_write_json(dng_path: Path, exiftool_path: str,
+                             interactive: bool = True,  alti_takeoff = None) -> dict:
+    """
+    Extract selected EXIF/XMP metadata from a DNG file using ExifTool
+    and save a clean .exif JSON file next to the image.
+    """
+    try:
+        # 1) Run ExifTool
+        cmd = [EXIFTOOLPATH, "-json", str(dng_path)]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr)
+
+        metadata_list = json.loads(result.stdout)
+        if not metadata_list:
+            raise RuntimeError("ExifTool returned empty output")
+
+        full_metadata = metadata_list[0]
+
+        # 2) Keep only essential keys
+        essential_keys = [
+            "FileName", "Directory", "DateTimeOriginal",
+            "Make", "Model", "CameraSerialNumber",
+            "Orientation",
+            "ExposureTime", "FNumber", "ISO", "ExposureCompensation",
+            "FocalLength", "FOV", "FocalLengthIn35mmFormat",
+            "HyperfocalDistance",
+            "GPSLatitude", "GPSLongitude", "GPSAltitude", "GPSPosition",
+            "FlightYawDegree", "FlightPitchDegree", "FlightRollDegree",
+            "GimbalYawDegree", "GimbalPitchDegree", "GimbalRollDegree",
+            "DroneLatitude", "DroneLongitude", "DroneAltitudeTakeOff",
+            "DroneAltitudeSeaLevel", "DroneAltitudeGround", "GroundAltitude",
+            "UTM_x", "UTM_y", "UTM_zone", "TakeOffAltitudeSeaLevel",
+            "AltitudeTakeoffSource",
+        ]
+
+        # Special handling for GPSAltitude of Drone DJI
+        gps_alt = full_metadata.get("GPSAltitude")
+        if gps_alt:
+            alt_info = parse_and_normalize_gps_altitude(gps_alt)
+            meters = round(alt_info["meters"], 3)
+            full_metadata["DroneAltitudeTakeOff"] = meters
+            full_metadata["GPSAltitude"] = f"{meters} m Above Take Off"
+
+        gps_lat = full_metadata.get("GPSLatitude")
+        gps_lon = full_metadata.get("GPSLongitude")
+        if gps_lat and gps_lon:
+            full_metadata["DroneLatitude"] = gps_coordinate_to_float(gps_lat)
+            full_metadata["DroneLongitude"] = gps_coordinate_to_float(gps_lon)
+            UTM_x, UTM_y, UTM_zone = geo2UTM(gps_coordinate_to_float(gps_lat), gps_coordinate_to_float(gps_lon))
+            full_metadata["UTM_x"], full_metadata["UTM_y"], full_metadata["UTM_zone"] = UTM_x, UTM_y, UTM_zone
+            coordinates = [(gps_coordinate_to_float(gps_lat), gps_coordinate_to_float(gps_lon))]
+
+        # 3)
+
+
+        ground_Altitude = full_metadata.get("GroundAltitude")
+        if not ground_Altitude:
+            #  altitudes  du nadir de l'image par rapport au niveau de la mer. Utilisation de l'API IGN
+            if gps_lat and gps_lon:
+                dic_geo_list = data_sig(coordinates, geotag=False, verbose=True)
+            else:
+                dic_geo_list = None
+            if dic_geo_list is None or len(dic_geo_list) != 1:
+                raise ValueError("Erreur récupération altitudes MNT (API)")
+            logger.ok(f"ground_Altitude =  {dic_geo_list[0]['z']} m")
+            ground_Altitude = dic_geo_list[0]['z']
+            full_metadata["GroundAltitude"] = ground_Altitude
+
+        # 4)
+
+        drone_Altitude_SeaLevel = full_metadata.get("DroneAltitudeSeaLevel")
+
+        if not drone_Altitude_SeaLevel:
+
+            if "DroneAltitudeTakeOff" not in full_metadata:
+                raise ValueError("Impossible de calculer altitude drone sans DroneAltitudeTakeOff")
+
+            meters = full_metadata["DroneAltitudeTakeOff"]
+
+            # 🔍 0. recherche dans option de commande
+            if alti_takeoff:
+                takeoff_altitude = float(alti_takeoff)
+                logger.info(f"Altitude takeoff fournie par ligne de  commande {takeoff_altitude} m")
+                logger.ok(f"Altitude take off / sea level : {takeoff_altitude: .2f} m")
+
+            # 🔍 1. Recherche dans les exif existants
+            else:
+                folder = dng_path.parent
+                takeoff_altitude = find_takeoff_altitude_from_exif_folder(folder, logger)
+
+            # 🖥️ 2. Fallback GUI
+            if takeoff_altitude is None:
+                if interactive:
+                    logger.warn("Il manque l\'altitude du point de take off. ")
+                    logger.warn("Attention toutes les images traitées partageront le même point de décollage")
+                    prompt = f"Indiquez l'altitude du point de takeoff / sea level ?"
+                    takeoff_altitude = ask_takeoff_altitude_gui(prompt, default=ground_Altitude)
+                    logger.info(f"Altitude takeoff fournie par utilisateur {takeoff_altitude} m")
+                    logger.ok(f"Altitude take off / sea level : {takeoff_altitude: .2f} m")
+                else:
+                    raise ValueError("Altitude takeoff requise (mode non interactif)")
+
+            # 🧮 Calcul
+            drone_Altitude_SeaLevel = takeoff_altitude + meters
+
+            full_metadata["DroneAltitudeSeaLevel"] = drone_Altitude_SeaLevel
+            full_metadata["DroneAltitudeGround"] = drone_Altitude_SeaLevel - ground_Altitude
+            full_metadata["TakeOffAltitudeSeaLevel"] = takeoff_altitude
+            full_metadata["AltitudeTakeoffSource"] = "USER_INPUT"
+
+            logger.ok(f"Altitude drone / sea level = {drone_Altitude_SeaLevel: .2f} m")
+            logger.ok(f"Le fichier exif compagnon {str(dng_path.stem)}.exif a été reconstitué ")
+
+
+        # 4)
+        cleaned = {k: full_metadata.get(k) for k in essential_keys if k in full_metadata}
+
+            # 5) Write the companion .exif JSON
+        out_path = dng_path.with_suffix(".exif")
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(cleaned, f, indent=2)
+
+        return cleaned
+
+    except Exception as e:
+        logger.error(f" Read_exif_and_write_json failed for {dng_path}: {e}")
+        return {}
+
+
+def find_takeoff_altitude_from_exif_folder(folder: Path, logger) -> float:
+    """
+    Search for TakeOffAltitudeSeaLevel in existing .exif companion files.
+    """
+    exif_files = list(folder.glob("*.exif"))
+
+    if not exif_files:
+        logger.info("Aucun fichier .exif compagnon trouvé")
+        return None
+
+    for exif_file in exif_files:
+        try:
+            with open(exif_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            # 🥇 Cas direct
+            if "TakeOffAltitudeSeaLevel" in data:
+                alti_Takeoff = float(data["TakeOffAltitudeSeaLevel"])
+                logger.ok(f"Altitude take off / sea level : {alti_Takeoff: .2f} m (trouvée dans {exif_file.name})")
+                return alti_Takeoff
+
+            # 🥈 Cas calculable
+            if "DroneAltitudeSeaLevel" in data and "DroneAltitudeTakeOff" in data:
+                alti_Takeoff = float(data["DroneAltitudeSeaLevel"]) - float(data["DroneAltitudeTakeOff"])
+                logger.ok(f"Altitude take off / sea level : {alti_Takeoff: .2f} m  (déduite depuis {exif_file.name})")
+                return alti_Takeoff
+
+        except Exception as e:
+            logger.warn(f"Lecture exif échouée {exif_file.name}: {e}")
+
+    logger.warn("Aucune altitude takeoff trouvée dans les fichiers exif")
+    return None
+
+def ask_takeoff_altitude_gui(prompt: str, default=None) -> float:
+    """
+    Open a Tkinter dialog to ask user for takeoff ground altitude (meters AMSL).
+    Robust to comma/point decimal separators.
+    """
+    import tkinter as tk
+    from tkinter import simpledialog, messagebox
+
+    root = tk.Tk()
+    root.withdraw()
+
+    if default is not None:
+        prompt_full = f"{prompt}\n(Valeur suggérée : {round(default, 2)} m)"
+    else:
+        prompt_full = prompt
+
+    while True:
+        value = simpledialog.askstring(
+            "Altitude Takeoff",
+            prompt_full,
+            parent=root
+        )
+
+        # ❌ Annulation utilisateur
+        if value is None:
+            root.destroy()
+            raise ValueError("Saisie utilisateur annulée")
+
+        # 🔧 Normalisation
+        value = value.strip().replace(",", ".")
+
+        try:
+            altitude = float(value)
+        except ValueError:
+            messagebox.showerror(
+                "Erreur de saisie",
+                "Veuillez entrer un nombre valide.\nExemple : 563.8 ou 563,8"
+            )
+            continue
+
+        # 🔍 Validation physique
+        if altitude < -440 or altitude > 9000:
+            messagebox.showerror(
+                "Valeur invalide",
+                "Altitude hors plage réaliste (-440 m à 9000 m)"
+            )
+            continue
+
+        root.destroy()
+        return altitude
+
+def OLD_ask_takeoff_altitude_gui(prompt: str, default=None) -> float:
+    """
+    Open a Tkinter dialog to ask user for takeoff ground altitude (meters AMSL).
+    """
+    root = tk.Tk()
+    root.withdraw()  # cache la fenêtre principale
+
+    if default is not None:
+        prompt += f"\n(Valeur suggérée : {round(default, 2)} m)"
+
+    value = simpledialog.askstring(
+        "Altitude Takeoff",
+        prompt,
+        parent=root
+    )
+
+    root.destroy()
+
+    if value is None:
+        raise ValueError("Saisie utilisateur annulée")
+
+    try:
+        altitude = float(value)
+    except ValueError:
+        raise ValueError("Valeur non numérique")
+
+    if altitude < -440 or altitude > 9000:
+        raise ValueError("Altitude hors plage réaliste")
+
+    return altitude
+
+def parse_and_normalize_gps_altitude(value: str) -> dict:
+    """
+    Extract and normalize altitude like:
+        '0.6 m'
+        '0.6 m above sea level'
+        '350 ft'
+        '350 ft Above Take Off'
+    Returns a dict with value in meters and metadata.
+    """
+    s = value.strip().lower()
+
+    # Regex : capture  (nombre) (unité)
+    # ex: '120.5 m', '350 ft', '12.34m', '50ft'
+    match = re.search(r"([+-]?\d+(?:\.\d*)?)\s*(m|ft)\b", s)
+    if not match:
+        raise ValueError(f"Impossible d'extraire altitude et unité dans GPSAltitude: {value}")
+
+    number_str, unit = match.groups()
+    number = float(number_str)
+
+    # Conversion
+    meters = number if unit == "m" else number * 0.3048
+
+    return {
+        "original_value": number,
+        "original_unit": unit,
+        "meters": round(meters, 3),
+    }
+
+def gps_coordinate_to_float(gps_coordinate: str) -> float:
+    """
+    Convert a GPS coordinate (Exif dng DJI) in the format 'DD deg MM' SS.SS\" D' to a floating point number.
+    If the direction is N or W, the value is positive. If the direction is S or E, the value is negative.
+
+    Example usage:  coord_str = "45 deg 10' 12.74\" N"
+                    decimal_coord = gps_coordinate_to_float(coord_str)
+                    print(decimal_coord)   # 45.17020556
+    """
+    # Replacing 'deg' with space and splitting the string
+    parts = gps_coordinate.replace('deg', '').split()
+    if len(parts) != 4 or parts[1][-1] != '\'' or parts[2][-1] != '"' or parts[3] not in ('N', 'S', 'E', 'W'):
+        raise ValueError("Invalid GPS coordinate string format")
+
+    # Extracting degrees, minutes, seconds, and direction
+    degrees = float(parts[0])
+    minutes = float(parts[1][:-1])  # Removing the apostrophe '
+    seconds = float(parts[2][:-1])  # Removing the double quote "
+    direction = parts[3]
+
+    # Converting to float
+    decimal_coord = degrees + minutes / 60 + seconds / 3600
+
+    # Adjusting for direction
+    if direction in ['S', 'W']:
+        decimal_coord = -decimal_coord
+
+    return decimal_coord
+
+def geo2UTM(lat, lon):
+    """
+    param lat: latitude  point P  dd.ddddddd   (<0 si S  >0 si N )
+    param lon: longitude point P  dd.ddddddd   (<0 si W  >0 si E )
+    return: xUTM, yUTM  UTM coordinates in m
+
+    Conversion of geocentric coordinates to UTM coordinates.
+    They are accurate to around a millimeter within 3000 km of the central meridian.
+    https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system
+
+    Values for test
+                lat = 5°50'51"     lon= 45°09'33"
+                lat= 5.8475 °      lon= 45.1591667°
+                fuseau 31  [0°, 6°]   lamb0=3°
+                lamb-lamb0= 0.0496983 rad
+                AA= 0.0350442107
+                BB= 1.00169
+                C= 0.0033510263
+                T= 1.01117395
+                S= 0.784340804
+                xUTM= 723.80393 km  yUTM= 5004.57704 km
+                xUTM= 723803.93 m   yUTM= 5004577.04 m
+    """
+    a = 6378137.000  # equatorial radius in meter
+    f = 1. / 298.257223563
+    K0 = 0.9996
+
+    zoneUTM = math.floor((lon + 180.) / 6.) + 1  # N° zone UTM
+    phi = np.deg2rad(lat)  # convert Degrees to Radians
+    if phi >= 0.:
+        N0 = 0
+    else:
+        N0 = 10000000.
+
+    lamb = np.deg2rad(lon)
+    lamb0 = np.deg2rad((zoneUTM - 30) * 6. - 3.)  # longitude of the center of the UTM zone
+    E0 = 500000  # in meter
+    n = f / (2 - f)
+    A = (a / (1. + n)) * (1. + 1. / 4 * n ** 2 + 1. / 64 * n ** 4)
+    t = np.sinh(np.arctanh(np.sin(phi))
+                - (2. * np.sqrt(n) / (1. + n)) * np.arctanh((2. * np.sqrt(n) / (1. + n)) * np.sin(phi))
+                )
+    zeta = np.arctan(t / np.cos(lamb - lamb0))
+    eta = np.arctanh(np.sin(lamb - lamb0) / np.sqrt(1. + t ** 2))
+
+    x0 = E0 + K0 * A * eta
+    x1 = (1. / 2 * n - 2. / 3 * n ** 2 + 5. / 16 * n ** 3) * np.cos(2 * zeta) * np.sinh(2 * eta)
+    x2 = (13. / 48 * n ** 2 - 3. / 5 * n ** 3) * np.cos(4 * zeta) * np.sinh(4 * eta)
+    x3 = (61. / 240 * n ** 3) * np.cos(6 * zeta) * np.sinh(6 * eta)
+    y0 = N0 + K0 * A * zeta
+    y1 = (1. / 2 * n - 2. / 3 * n ** 2 + 5. / 16 * n ** 3) * np.sin(2 * zeta) * np.cosh(2 * eta)
+    y2 = (13. / 48 * n ** 2 - 3. / 5 * n ** 3) * np.sin(4 * zeta) * np.cosh(4 * eta)
+    y3 = (61. / 240 * n ** 3) * np.sin(6 * zeta) * np.cosh(6 * eta)
+
+    xUTM = round(x0 + K0 * A * (x1 + x2 + x3), 3)    # mm
+    yUTM = round(y0 + K0 * A * (y1 + y2 + y3), 3)    # mm
+
+    return xUTM, yUTM, zoneUTM
+
+def UTM2geo(xUTM, yUTM, zoneUTM):
+    """
+    param:  xUTM     in m
+    param:  yUTM     in m
+    param:  zoneUTM
+    return:  lat    Latitude in DD.ddddd°
+    return:  lon    Longitude in DD.ddddd°
+
+
+    These formulae are truncated version of Transverse Mercator:
+    flattening series, which were originally derived by Johann Heinrich Louis Krüger in 1912.
+    They are accurate to around a millimeter within 3000 km of the central meridian.
+    https://en.wikipedia.org/wiki/Universal_Transverse_Mercator_coordinate_system
+
+     phi <=>  long
+     lamb <=> lat
+    """
+    a = 6378137.000  # equatorial radius in m
+    f = 1. / 298.257223563
+    K0 = 0.9996
+    N0 = 0  #
+    E0 = 500000  # in meter
+    n = f / (2 - f)
+    A = (a / (1. + n)) * (1. + 1. / 4 * n ** 2 + 1. / 64 * n ** 4 + 1. / 256 * n ** 6)
+    #
+    zeta0 = (yUTM - N0) / (K0 * A)
+    eta0 = (xUTM - E0) / (K0 * A)
+
+    zeta1 = (1. / 2 * n - 2. / 3 * n ** 2 + 37. / 96 * n ** 3) * np.sin(2 * zeta0) * np.cosh(2 * eta0)
+    eta1 = (1. / 2 * n - 2. / 3 * n ** 2 + 37. / 96 * n ** 3) * np.cos(2 * zeta0) * np.sinh(2 * eta0)
+    zeta2 = (1. / 48 * n ** 2 + 1. / 15 * n ** 3) * np.sin(4 * zeta0) * np.cosh(4 * eta0)
+    eta2 = (1. / 48 * n ** 2 + 1. / 15 * n ** 3) * np.cos(4 * zeta0) * np.sinh(4 * eta0)
+    zeta3 = (17. / 480 * n ** 3) * np.sin(6 * zeta0) * np.cosh(6 * eta0)
+    eta3 = (17. / 480 * n ** 3) * np.cos(6 * zeta0) * np.sinh(6 * eta0)
+
+    zeta = zeta0 - (zeta1 + zeta2 + zeta3)
+    eta = eta0 - (eta1 + eta2 + eta3)
+
+    phi0 = np.arcsin(np.sin(zeta) / np.cosh(eta))
+    phi1 = (2. * n - 2. / 3 * n ** 2 - 2. * n ** 3) * np.sin(2 * phi0)
+    phi2 = (7. / 3 * n ** 2 - 8. / 5 * n ** 3) * np.sin(4 * phi0)
+    phi3 = (56. / 15 * n ** 3) * np.sin(6 * phi0)
+    phi = phi0 + phi1 + phi2 + phi3
+
+    lamb0 = np.deg2rad(zoneUTM * 6 - 183)
+    lamb = lamb0 + np.arctan(np.sinh(eta) / np.cos(zeta))
+
+    lat = np.rad2deg(phi)
+    lon = np.rad2deg(lamb)
+    return lat, lon
 
 
 def DJI2IRDrone(raw_exif, verbose=True):
@@ -845,7 +1369,7 @@ def compute_MNT_mesh(
     # bound_pix = [(pt0), (pt1), (pt2), (pt3), (pt4), (pt5), (pt6), (pt7), (pt8)]
 
     if verbose:
-        print(f"[INFO] Facteur d\'amplification de l\'emprise terrain  {ampli} ")
+        logger.info(f" Facteur d\'amplification de l\'emprise terrain  {ampli} ")
 
     # --- Projection des limites sur plan horizontal
     # Remarque importante : même si la projection pinhole est "oblique" la limite sur un plan horizontal
@@ -939,7 +1463,7 @@ def compute_MNT_mesh(
     dic_geo_list = data_sig(coordinates, geotag=False, verbose=True)
 
     t1 = time.perf_counter()
-    print(f"[time] Querying IGN : {t1 - t0:.3f} s")
+    logger.timer(f" Querying IGN : {t1 - t0:.3f} s")
     t0 = time.perf_counter()
 
     if dic_geo_list is None or len(dic_geo_list) != n_pts:
@@ -1144,7 +1668,7 @@ def generate_contours_dual(
     out_ds = None
     ds = None
 
-    print(f"[Info] Contours générés : {output_path}")
+    logger.ok(f" Contours générés : {output_path}")
 
 
 
@@ -1281,16 +1805,16 @@ def generate_qml_style_qgis(qml_path, style="IGN", label_on_line=True):
     with open(qml_path, "w", encoding="utf-8") as f:
         f.write(qml)
 
-    print(f"[Info] Pref .QML généré : {qml_path}")
+    logger.ok(f" Pref .QML généré : {qml_path}")
 
 
 # ------------------------------------------------------------------------
 #      modules géo référencement
 # ------------------------------------------------------------------------
-def get_unique_path(path):
+def get_unique_path(path, verbose=False):
 
     if not path.exists():
-        print(f'[Info] Save file in {path}')
+        logger.info(f' Save file in {path}')
         return path
 
     stem = path.stem
@@ -1301,8 +1825,9 @@ def get_unique_path(path):
     while True:
         new_path = parent / f"{stem}_{i}{suffix}"
         if not new_path.exists():
-            print(f'[Info] File {stem}{path.suffix} protected ou open in QGIS\n'
-                  f'       Save file in {new_path}')
+            if verbose:
+                logger.warn(f' File {stem}{path.suffix} protected or open in QGIS')
+            logger.ok(f' Save file in {new_path}')
             return new_path
         i += 1
 
@@ -1494,9 +2019,9 @@ def project_ground_to_camera_batch(
     # CHECK GEOMETRIQUE
     # ---------------------
     if verbose:
-        print(f"[INFO] Zc stats : {np.min(Zcam)} , {np.max(Zcam)}")
+        logger.info(f" Zc stats : {np.min(Zcam)} , {np.max(Zcam)}")
         if np.any(Zcam >= 0):
-            print("⚠ points derrière caméra")
+            logger.warn(" points derrière caméra")
 
     # ------------------------------------------
     # Projection perspective (modèle pinhole)
@@ -1660,7 +2185,7 @@ def build_MNT_interpolator(Xg, Yg, Zg, method="RectBivariateSpline_quadratic", t
     else:
         regular = (type_grid == "regular")
 
-    print(f"[INFO] regular grid = {regular}")
+    logger.info(f" regular grid = {regular}")
 
     # choix de la méthode d'interpolation du MNT
     # options possibles :
@@ -1677,8 +2202,8 @@ def build_MNT_interpolator(Xg, Yg, Zg, method="RectBivariateSpline_quadratic", t
         x = Xg[0, :]
         y = Yg[:, 0]
 
-        print(f"[INFO] interpolation method {method}\n"
-              f"[INFO] grid size = {len(x)} x {len(y)}")
+        logger.info(f" interpolation method :  {method}\n"
+                    f"            grid size : {len(x)} x {len(y)}")
 
         # -------------------------------------------------
         # Interpolation bicubique
@@ -1874,7 +2399,7 @@ def plot_terrain_3d(Xg_abs, Yg_abs, Zg_abs, X0, Y0, Z0, xi_Yaw, N_mesh_x, N_mesh
     # --- sauvegarde éventuelle ---
     if save_graphic:
         fig.savefig(geo_path, dpi=300, bbox_inches="tight")
-        print(f"[INFO] Save graphic in : {geo_path}")
+        logger.ok(f" Save graphic in : {geo_path}")
 
     # --- affichage éventuel ---
     if view_graphic:
@@ -2012,7 +2537,7 @@ def graph_mesh_2D(Xg_abs, Yg_abs, X_Bound_abs, Y_Bound_abs, UTM_x, UTM_y, xi_Yaw
     # --- sauvegarde éventuelle ---
     if save_graphic:
         fig.savefig(geo_path, dpi=300, bbox_inches="tight")
-        print(f"[INFO] graphic saved : {geo_path}")
+        logger.ok(f" graphic saved : {geo_path}")
 
     # --- affichage éventuel ---
     if view_graphic:
@@ -2040,7 +2565,7 @@ def graph_ortho(ortho_display, xo, yo, ortho_path, graphic_ortho=False, view_gra
         # --- sauvegarde éventuelle ---
         if save_graphic:
             fig.savefig(ortho_path, dpi=300, bbox_inches="tight")
-            print(f"[INFO] graphic saved : {ortho_path}")
+            logger.ok(f" graphic saved : {ortho_path}")
         # --- affichage éventuel ---
         if view_graphic:
             print(f'DEBUG  view_graphic ={view_graphic}')
@@ -2201,7 +2726,7 @@ def choose_images():
 
     filepaths = filedialog.askopenfilenames(
         title="Sélectionner les images",
-        filetypes=[("Images DNG", "*.dng"), ("All files", "*.*")]
+        filetypes=[("Images DNG, TIF", "*.dng  *.tif"), ("All files", "*.*")]
     )
 
     if not filepaths:
@@ -2211,10 +2736,11 @@ def choose_images():
     paths = [Path(p) for p in filepaths]
 
     folder_input = paths[0].parent
-    list_img_name = sorted([p.stem for p in paths])
+    list_path = sorted(paths)
+    list_img = sorted([p.name for p in paths])  # name + suffix
+    list_img_name = sorted([p.stem for p in paths])  # name
 
-    return folder_input, list_img_name
-
+    return folder_input, list_img_name, list_img, list_path
 
 # --------------------------------------------------
 # traitement d'une image
@@ -2222,13 +2748,21 @@ def choose_images():
 
 def process_image(folder_input, img_name, args, zhang_dic, tol_MC=0.01):
 
-    print(f"\n--- Traitement {img_name}.{args.suffix}")
+    logger.info(f"--- Traitement {img_name}.{args.suffix}")
 
     geo_tif = folder_input / "geo_ref" / f"{img_name}_geo.tif"
 
     try:
 
-        dng2tiff(folder_input, img_name)
+        if args.suffix.lower() == "dng":
+            dng2tiff(folder_input, img_name)
+        elif args.suffix.lower() == "tif":
+            logger.warn(f'  le suffix {args.suffix} est pris en charge pour 3 bandes spectrales')
+
+        else:
+            logger.error(f' le suffix {args.suffix} n\'est pas pris en charge.')
+            sys.exit(1)
+
 
         tif_path = folder_input / "geo_ref" / f"{img_name}.tif"
 
@@ -2239,18 +2773,19 @@ def process_image(folder_input, img_name, args, zhang_dic, tol_MC=0.01):
 
         h, w = img.shape[:2]
 
-        raw_exif = load_companion_exif(folder_input, img_name)
+        raw_exif = load_companion_exif(folder_input, img_name, alti_takeoff=args.altitakeoff)
 
         if raw_exif is None:
             raise RuntimeError("EXIF manquant")
 
-        georeference_tiff_MNT(
+        new_geo_path = \
+            georeference_tiff_MNT(
             tif_path,
             raw_exif,
             geo_tif,
             folder_input,
             img_name,
-            offset_xi_Y=np.deg2rad(args.offset_yaw),
+            offset_xi_Y=np.deg2rad(args.offsetyaw),
             zhang_dic=zhang_dic,
             cache=False,
             verbose=args.verbose,
@@ -2263,14 +2798,19 @@ def process_image(folder_input, img_name, args, zhang_dic, tol_MC=0.01):
             save_graphic=args.save_graphic,
             comp_error_rms=args.comp_error_rms,
             tol_MC=tol_MC,
-            topo_style=args.topo_style
+            topo_style=args.topo_style,
+            raster_topo=args.raster_topo,
+            carte_topo=args.carte_topo,
         )
 
-        print(f"✔ Géoréférencement terminé : {geo_tif}")
+        if new_geo_path:
+            logger.ok(f"Géoréférencement terminé : {new_geo_path}")
+        else:
+            logger.warn(f" Process terminé sans génération du fichier georef")
 
     except Exception as e:
 
-        print(f"✖ Erreur sur {img_name}: {e}")
+        logger.error(f" Erreur sur {img_name}: {e}")
 
 # pour ligne de commande
 
@@ -2292,12 +2832,12 @@ def add_bool_arg(parser, name, default, help_text):
 
 if __name__ == "__main__":
 
+    logger = CliLogger(use_color=True)
+
     parser = argparse.ArgumentParser(description="Orthorectification GeoRef")
 
-    parser.add_argument("--directory", help="dossier racine missions")
-    parser.add_argument("--mission",
-                        help="nom dossier mission (sinon mode interactif)")
-    parser.add_argument("--images", nargs="+", help="liste images")
+    parser.add_argument("--input_dir", help="dossier images (ex: .../VIS)")
+    parser.add_argument("--images", nargs="+", help="liste images sans extension")
     parser.add_argument("--suffix", default="dng")
     parser.add_argument("--topo_style", default="IGN")
 
@@ -2306,10 +2846,14 @@ if __name__ == "__main__":
                         choices=["float32", "uint8"],
                         help="type image sortie")
 
-    parser.add_argument("--offset_yaw",
+    parser.add_argument("--offsetyaw",
                         type=float,
                         default=0,
                         help="offset yaw en degrés")
+
+    parser.add_argument("--altitakeoff",
+                        default=None,
+                        help="altitude du point de decollage")
 
     add_bool_arg(parser, "verbose", False, "mode verbose")
     add_bool_arg(parser, "tag_img", False, "ajouter tag image")
@@ -2320,43 +2864,10 @@ if __name__ == "__main__":
     add_bool_arg(parser, "save_graphic", True, "save graphic")
     add_bool_arg(parser, "comp_error_rms", False, "calcul erreur position")
     add_bool_arg(parser, "carte_topo", True, "carte topographique")
+    add_bool_arg(parser, "raster_topo", False, "raster topographique")
+
 
     args = parser.parse_args()
-
-    # --------------------------------------------------
-    # MODE LIGNE DE COMMANDE
-    # --------------------------------------------------
-
-    if args.mission:
-
-        directory = Path(args.directory) if args.directory else Path(r"C:\Air-Mission")
-
-        folder_input = directory / args.mission / "AerialPhotography" / "VIS"
-
-        if not folder_input.exists():
-            print("Dossier introuvable :", folder_input)
-            sys.exit(1)
-
-        if args.images:
-            list_img_name = args.images
-        else:
-            list_img_name = sorted(p.stem for p in folder_input.glob(f"*.{args.suffix}"))
-
-    # --------------------------------------------------
-    # MODE INTERACTIF
-    # --------------------------------------------------
-
-    else:
-
-        print("Mode interactif : sélection des images")
-        folder_input, list_img_name = choose_images()
-
-        # forcage des arguments pour le développement ...
-        args.offset_yaw = -8  # angle d'offset lacet en degré. Positif vers l'est.
-        args.comp_error_rms = False
-
-    print("\nDossier :", folder_input)
-    print("Images :", list_img_name)
 
     # --------------------------------------------------
     # calibration caméra
@@ -2379,22 +2890,77 @@ if __name__ == "__main__":
         "camera": "DJI_RAW"
     }
 
-
-
     tolerence_Monte_Carlo = 0.0025
 
+
     # --------------------------------------------------
-    # boucle traitement
+    # MODE LIGNE DE COMMANDE
     # --------------------------------------------------
 
-    for img_name in list_img_name:
-        process_image(
-            folder_input,
-            img_name,
-            args,
-            zhang_dic,
-            tol_MC=tolerence_Monte_Carlo
-        )
+    if args.input_dir:
+
+        folder_input = Path(args.input_dir)
+
+        if not folder_input.exists():
+            logger.error(f'Dossier introuvable : {folder_input}')
+            sys.exit(1)
+
+        if args.images:
+            list_img_name = args.images
+        else:
+            list_img_name = sorted(p.stem for p in folder_input.glob(f"*.{args.suffix}"))
+
+        logger.ok(f'\nFolder : {folder_input} \n'
+                  f'Images : {list_img_name}')
+
+        # --------------------------------------------------
+        # boucle traitement
+        # --------------------------------------------------
+
+        for img_name in list_img_name:
+            process_image(
+                folder_input,
+                img_name,
+                args,
+                zhang_dic,
+                tol_MC=tolerence_Monte_Carlo
+            )
+
+
+    # --------------------------------------------------
+    # MODE INTERACTIF
+    # Les types dng et tif peuvent être panachés
+    # --------------------------------------------------
+
+    else:
+        logger.info(f"Mode interactif : sélection des images ...\n", _bold=True)
+
+        folder_input, list_img_name, list_img, list_path = choose_images()
+
+        logger.info(f'Dossier des images : {folder_input} ')
+        logger.info(f'{len(list_img_name)} images à traiter : {list_img_name}')
+
+        # forcage des arguments pour le développement ...
+        args.offsetyaw = -8  # angle d'offset lacet en degré. Positif vers l'est.
+        logger.warn(f'forcage des arguments pour le développement ...\n'
+                    f'      offset yaw = {args.offsetyaw}°')
+        args.comp_error_rms = False
+
+        # --------------------------------------------------
+        # boucle traitement
+        # --------------------------------------------------
+        # args.verbose = True
+
+        for img_path in list_path:
+            img_name = img_path.stem
+            args.suffix = img_path.suffix.lstrip('.')
+            process_image(
+                folder_input,
+                img_name,
+                args,
+                zhang_dic,
+                tol_MC=tolerence_Monte_Carlo
+            )
 
 
 
