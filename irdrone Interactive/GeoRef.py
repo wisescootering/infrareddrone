@@ -24,6 +24,7 @@ from tkinter import filedialog, simpledialog, messagebox
 import cv2
 print(f"✔ Version cv2 : {cv2.__version__}")
 import re
+from collections import defaultdict
 import matplotlib.pyplot as plt
 from scipy.signal import savgol_filter
 from scipy.interpolate import RectBivariateSpline
@@ -32,7 +33,6 @@ from scipy.interpolate import RBFInterpolator
 from scipy.interpolate import griddata
 from scipy.ndimage import map_coordinates
 from affine import Affine
-
 
 from typing import Any, Dict, Optional, Tuple, List, Union, Sequence, Iterable
 import json
@@ -45,14 +45,10 @@ from rasterio.enums import ColorInterp
 from rasterio.crs import CRS
 from osgeo import gdal, ogr, osr
 
-
 from datetime import datetime
 import time
 
-
 from IRD_interactive_geo import data_sig
-
-
 
 
 if os.name == 'nt':
@@ -92,7 +88,8 @@ class CliLogger:
             "checklist": "\U0001F4CB",   # 📋
             "fire": "\U0001F525",        # 🔥
             "bug": "\U0001F41B",         # 🐛  python
-            "gear": "\U00002699\uFE0F",  # ⚙️
+            "debug": "\U00002699\uFE0F",  # ⚙
+            "botanique": "🌿",            # 🌿️
         }
 
         # Couleurs ANSI
@@ -134,6 +131,7 @@ class CliLogger:
             "error": "red",
             "warn": "yellow",
             "timer": "blue",
+            "debug": "orange",
             "tech": "reset"
         }
 
@@ -165,6 +163,9 @@ class CliLogger:
     def tech(self, message):
         print(self._format("tech", message))
 
+    def debug(self, message):
+        print(self._format("debug", message))
+
 # ============================================================
 #  FONCTION PRINCIPALE
 # ============================================================
@@ -192,6 +193,7 @@ def georeference_tiff_MNT(tif_path,
                           topo_style="IGN",
                           carte_topo=True,
                           raster_topo=False,
+                          img_override=None,
                           ):
     """
     Géoréférencement nadir et orthorectification complète
@@ -208,15 +210,20 @@ def georeference_tiff_MNT(tif_path,
     latitude, longitude, z_ground, Z_cam_nadir, Z_cam_sealevel, UTM_x, UTM_y, zoneUTM, xi_Y, xi_P, xi_R = DJI2IRDrone(raw_exif, verbose=False)
     Cam_Center = (UTM_x, UTM_y, Z_cam_nadir)
 
+
     # ------------------------------------------------------------------------------
     # 1 ) Image  brute
     # ------------------------------------------------------------------------------
 
     # ---1.01 Lecture image brute
 
-    img_raw = cv2.imread(str(tif_path), cv2.IMREAD_UNCHANGED)
-    if img_raw is None:
-        raise FileNotFoundError(tif_path)
+    if img_override is not None:
+        img_raw = img_override
+    else:
+        img_raw = cv2.imread(str(tif_path), cv2.IMREAD_UNCHANGED)
+        if img_raw is None:
+            raise FileNotFoundError(tif_path)
+
     Ny_raw, Nx_raw = img_raw.shape[:2]
     bands = 1 if img_raw.ndim == 2 else img_raw.shape[2]
     if verbose:
@@ -227,25 +234,46 @@ def georeference_tiff_MNT(tif_path,
 
     # ---1.02 Géométrie image (GSD)
 
-    if zhang_dic is not None:
+    if zhang_dic is not None and bands == 3:
 
-        # --- 1.02-1 Valeurs Undistortion Zhang si fournies
+        # --- 1.02-1 Valeurs Undistorsion Zhang si fournies et image RGB
 
         Nx, Ny = Nx_raw, Ny_raw
         fx, fy = zhang_dic["mtx"][0][0], zhang_dic["mtx"][1][1]
         cx, cy = zhang_dic["mtx"][0][2], zhang_dic["mtx"][1][2]
-        txt = "Undistortion Zhang disponible."
+        txt = "Correction Zhang disponible."
         dist = np.array(zhang_dic["dist"][0] if isinstance(zhang_dic["dist"][0], list)
                         else zhang_dic["dist"],
                         dtype=np.float64)
         K = np.array(zhang_dic["mtx"], dtype=np.float64)
 
     else:
-        # --- 1.02-2 Valeurs par défaut
-        Ny, Nx = img.shape[:2]
-        focal_pix = raw_exif.get("focal_pix", 2898.5)
+        # --- 1.02-2 Valeurs par défaut pour image multispectrale 1 bands ou 4 bandes
+        # Pour ce type d'image la correction de Zhang à déjà été faite dans IRDrone
+        Ny, Nx = img_raw.shape[:2]
+        fov_x = raw_exif.get("FOV")
+
+        try:
+            fov_x = raw_exif.get("FOV")
+
+            if fov_x is not None:
+                if isinstance(fov_x, str):
+                    fov_x = fov_x.lower().replace("deg", "").strip()
+                fov_x = float(fov_x)
+
+        except Exception:
+            logger.warn("FOV invalide → fallback focal_pix=2918")
+            fov_x = None
+
+        if fov_x:
+            focal_pix = Nx / (2 * np.tan(np.deg2rad(fov_x/2)))
+            logger.info(f' FOV de la caméra IRDrone multispectrale  {fov_x}°')
+        else:
+
+            focal_pix = 2918
+            logger.warn(f' FOV IRDrone  par défaut.')
         fx, fy, cx, cy = focal_pix, focal_pix, Nx / 2, Ny / 2
-        txt = "Image avec distortion optique."
+        txt = "Image avec distorsion optique corrigée."
         dist = None
 
     # --- 1.03 Marquage de l'image brute  (avec sauvegarde)
@@ -256,31 +284,33 @@ def georeference_tiff_MNT(tif_path,
     else:
         img = img_raw
 
-
     t1 = time.perf_counter()
     logger.timer(f" Tag image : {t1 - t0:.3f} s")
 
     fov_x, fov_y = 2 * np.arctan(Nx / (2 * fx)), 2 * np.arctan(Ny / (2 * fy))
     gsd_x, gsd_y = 2 * Z_cam_nadir * np.tan(fov_x / 2) / Nx, 2 * Z_cam_nadir * np.tan(fov_y / 2) / Ny
 
-    if info:
-        logger.info(f"-----------------------------------------\n"
-              f"{txt}\n"
-              f"taille : {Nx} x {Ny}\n"
-              f"focales: fx = {fx:.3f} fy = {fy:.3f}  \n"
-              f"centre : cx = {cx:.3f} cy = {cy:.3f}   \n"
-              f"écart sur x = {int(Nx / 2 - cx)} pix ({100 * (Nx / 2 - int(cx)) / Nx:.2f}%)  | sur y = {int(Ny / 2 - cy)} pix ({100 * (Ny / 2 - int(cy)) / Ny:.2f}%) \n"
-              f"fov_x = {np.rad2deg(fov_x):.4f} °  ; fov_y = {np.rad2deg(fov_y):.4f} ° \n"
-              f"GSD X = {gsd_x:.4f} m/px  ;  Y={gsd_y:.4f} m/px\n"
-              f"offset Yaw = {np.rad2deg(offset_xi_Y) : .2f}°\n"
-              f"------------------------------------------------"
-              )
+
+    logger.info(f"-----------------------------------------\n"
+          f"{txt}\n"
+          f"bands : {bands}\n"      
+          f"taille : {Nx} x {Ny}\n"
+          f"focales: fx = {fx:.3f} fy = {fy:.3f}  \n"
+          f"centre : cx = {cx:.3f} cy = {cy:.3f}   \n"
+          f"écart sur x = {int(Nx / 2 - cx)} pix ({100 * (Nx / 2 - int(cx)) / Nx:.2f}%)  | sur y = {int(Ny / 2 - cy)} pix ({100 * (Ny / 2 - int(cy)) / Ny:.2f}%) \n"
+          f"fov_x = {np.rad2deg(fov_x):.4f} °  ; fov_y = {np.rad2deg(fov_y):.4f} ° \n"
+          f"GSD X = {gsd_x:.4f} m/px  ;  Y={gsd_y:.4f} m/px\n"
+          f"offset Yaw = {np.rad2deg(offset_xi_Y) : .2f}°\n"
+          f"------------------------------------------------"
+          )
 
     # ------------------------------------------------------------------------------
     # 2) Matrices de changement de repère; repère  Image vers repère Géographique
     # ------------------------------------------------------------------------------
 
+
     R_Img2Gnd = R_yaw(xi_Y + offset_xi_Y)
+
 
     # ------------------------------------------------------------------------------
     #
@@ -310,14 +340,13 @@ def georeference_tiff_MNT(tif_path,
     # 3.02-1)   Définition des points de référence pour le MNT  et des limites
     # --------------------------------------------------------------------------------------------------
     # MNT avec des vrais points IGN qui sont nécessairement
-    # en nombre limités. C'est à partir de ces points que l'on va construire le MNT avec par
-    # une fonction spline et ensuite faire une grille terrain, trouver les altitudes
-    # et remonter les points sur le capteur  (ou autre méthode ?)
+    # en nombre limités. C'est à partir de ces points que l'on va construire le MNT avec
+    # une fonction spline et ensuite faire une grille terrain, trouver les altitudes,
+    #  mettre l'image sur le terrain puis remonter les points sur les pixels du  capteur
     # Xg_IGN, Yg_IGN, Zg_IGN  sont les positions des points de référence en coordonnées UTM
     # Altitudes Zg_IGN par rapport au niveau de la mer.
-    #  grille maxi 19 x 15  pts  (soit 18 x 14 mailles)
-    #  grille 17 x 13 pts (soit 16 x 12  mailles  respecte le rapport 4/3)
-    #  grille 11 x 9  acceptable
+    #  grille 15 x 15 pts  donne mailles carré
+    #  grille 9 x 9  acceptable si terrrain "plat"
 
     N_mesh_x, N_mesh_y = next_odd(15), next_odd(15)  # next_odd donne l'entier pair supérieur le plus proche
     if verbose:
@@ -343,9 +372,7 @@ def georeference_tiff_MNT(tif_path,
                          graphic_2D=graphic_2D,
                          view_graphic=view_graphic
                          )
-    if verbose:
-        # logger.info(f" Centre grille MNT :{Xg_IGN[ N_mesh_y// 2,  N_mesh_x // 2]} , {Yg_IGN[ N_mesh_y // 2, N_mesh_x // 2]}")
-        pass
+
     t1 = time.perf_counter()
     logger.timer(f" Total  mesh IGN : {t1 - t0:.3f} s")
 
@@ -424,6 +451,17 @@ def georeference_tiff_MNT(tif_path,
 
     R_Gnd2Cam = R_Img2Gnd.T  # rotation inverse Gnd -> Cam
 
+    # Attention la distorsion des images mono bande .tif provenant de IRDrone
+    # on déjà été corrigée dans le process multispectral.
+
+    if img.ndim == 2:
+        img = img[:, :, np.newaxis]
+
+    H, W, spectral_band = img.shape
+
+    if spectral_band == 1 or spectral_band == 4:
+        dist = None
+
     u, v, Zc = project_ground_to_camera_batch(
         P_sol,
         R_Gnd2Cam,
@@ -431,37 +469,29 @@ def georeference_tiff_MNT(tif_path,
         fx, fy,
         cx, cy,
         dist=dist,  # zhang_dic["dist"][0],
-        verbose=False
+        verbose=True
     )
-
-    H, W, _ = img.shape
-    # print(f"[DEBUG] u range : {np.min(u)}, {np.max(u)} |v range : {np.min(v)}, {np.max(v)}  | image W,H : {W}, {H}")
 
     mask = ((u >= 0) & (u < W - 1) & (v >= 0) & (v < H - 1) & (Zc < 0))
 
     t1 = time.perf_counter()
     logger.timer(f" Projection terrain → image : {t1 - t0:.3f} s")
 
-
-    # ------------------------------------------------------------
-    # 3.02-5) resampling image
-    # ------------------------------------------------------------
-
     # ------------------------------------------------------------
     # 3.02-5) resampling image
     # ------------------------------------------------------------
     t0 = time.perf_counter()
     img = img.astype(np.float32)  # ⚠️pour interpolation propre
-    ortho = np.zeros((*u.shape, 3), dtype=img.dtype)
-    dark_pixels = np.all(ortho < 10, axis=2)
-    ortho[dark_pixels] = 10
-    for c in range(3):
+    ortho = np.zeros((*u.shape, spectral_band), dtype=img.dtype)
+
+    for c in range(spectral_band):
         v_img = (H - 1) - v  # ← conversion caméra → numpy image. Fondamental pour retour Rasterio et QGIs
         band = map_coordinates(img[..., c],
                                 [v_img.ravel(), u.ravel()],
                                 order=1,
                                 mode='constant',
-                                cval=0).reshape(u.shape)
+                                cval=0
+                               ).reshape(u.shape)
         ortho[..., c] = band
 
     ortho[~mask] = 0  # transformation des zones périphériques noires en zones transparentes
@@ -571,7 +601,6 @@ def georeference_tiff_MNT(tif_path,
     # ------------------------------------------------------------------------------
     # 4) Sauvegarde GeoTIFF orthorectifié
     # ------------------------------------------------------------------------------
-
     t0 = time.perf_counter()
 
     if tag_img:
@@ -580,21 +609,12 @@ def georeference_tiff_MNT(tif_path,
         geo_path_0 = folder_input / "geo_ref" / f"{img_name}_georef.tif"
     geo_path = get_unique_path(geo_path_0)
 
-    geotif_affine = True
-    if geotif_affine:
-        write_geotiff_affine(geo_path, img_ortho, transform, crs_utm, bitdepth=bitdepth)
-        new_geo_path = geo_path
-        # logger.info(f" GeoTIFF orthorectifié  file : {geo_path}\n")
-    else:
-        logger.warn(f" PAS DE CREATION DU GeoTIFF : {geo_path}")
-        new_geo_path = None
-
+    write_geotiff_affine(geo_path, img_ortho, transform, crs_utm, bitdepth=bitdepth)
     t1 = time.perf_counter()
     logger.timer(f" Sauvegarde GeoTIFF orthorectifié via rasterio : {t1 - t0:.3f} s")
-
     logger.timer(f" --- TOTAL Géoréférencement : {t1 - t_global0:.3f} s \n")
 
-    return new_geo_path
+    return geo_path
 
 
 # ============================================================
@@ -723,6 +743,8 @@ def dng2tiff(folder, img_name, suffix="dng", bit=16):
     for line in result.stdout.splitlines():
         logger.tech(f"{line}")
 
+    return tiff_file
+
 
 def load_companion_exif(folder, img_name, suffix="dng", alti_takeoff=None):
     exif_file = folder / f"{img_name}.exif"
@@ -760,7 +782,7 @@ def save_exif_companion(raw_exif, folder_input, img_name, verbose=False):
 
 
 def read_exif_and_write_json(dng_path: Path, exiftool_path: str,
-                             interactive: bool = True,  alti_takeoff = None) -> dict:
+                             interactive: bool = True,  alti_takeoff=None) -> dict:
     """
     Extract selected EXIF/XMP metadata from a DNG file using ExifTool
     and save a clean .exif JSON file next to the image.
@@ -800,15 +822,15 @@ def read_exif_and_write_json(dng_path: Path, exiftool_path: str,
         gps_alt = full_metadata.get("GPSAltitude")
         if gps_alt:
             alt_info = parse_and_normalize_gps_altitude(gps_alt)
-            meters = round(alt_info["meters"], 3)
-            full_metadata["DroneAltitudeTakeOff"] = meters
+            meters = np.round(alt_info["meters"], 3)
+            full_metadata["DroneAltitudeTakeOff"] = f'{np.round(meters, 3): .3f}'
             full_metadata["GPSAltitude"] = f"{meters} m Above Take Off"
 
         gps_lat = full_metadata.get("GPSLatitude")
         gps_lon = full_metadata.get("GPSLongitude")
         if gps_lat and gps_lon:
-            full_metadata["DroneLatitude"] = gps_coordinate_to_float(gps_lat)
-            full_metadata["DroneLongitude"] = gps_coordinate_to_float(gps_lon)
+            full_metadata["DroneLatitude"] = f'{np.round(gps_coordinate_to_float(gps_lat), 6): .6f}'
+            full_metadata["DroneLongitude"] = f'{np.round(gps_coordinate_to_float(gps_lon), 6): .6f}'
             UTM_x, UTM_y, UTM_zone = geo2UTM(gps_coordinate_to_float(gps_lat), gps_coordinate_to_float(gps_lon))
             full_metadata["UTM_x"], full_metadata["UTM_y"], full_metadata["UTM_zone"] = UTM_x, UTM_y, UTM_zone
             coordinates = [(gps_coordinate_to_float(gps_lat), gps_coordinate_to_float(gps_lon))]
@@ -827,7 +849,7 @@ def read_exif_and_write_json(dng_path: Path, exiftool_path: str,
                 raise ValueError("Erreur récupération altitudes MNT (API)")
             logger.ok(f"ground_Altitude =  {dic_geo_list[0]['z']} m")
             ground_Altitude = dic_geo_list[0]['z']
-            full_metadata["GroundAltitude"] = ground_Altitude
+            full_metadata["GroundAltitude"] = f'{np.round(ground_Altitude, 3): .3f}'
 
         # 4)
 
@@ -838,13 +860,13 @@ def read_exif_and_write_json(dng_path: Path, exiftool_path: str,
             if "DroneAltitudeTakeOff" not in full_metadata:
                 raise ValueError("Impossible de calculer altitude drone sans DroneAltitudeTakeOff")
 
-            meters = full_metadata["DroneAltitudeTakeOff"]
+            meters = float(full_metadata["DroneAltitudeTakeOff"])
 
             # 🔍 0. recherche dans option de commande
             if alti_takeoff:
                 takeoff_altitude = float(alti_takeoff)
-                logger.info(f"Altitude takeoff fournie par ligne de  commande {takeoff_altitude} m")
-                logger.ok(f"Altitude take off / sea level : {takeoff_altitude: .2f} m")
+                logger.info(f"Altitude takeoff fournie par ligne de  commande {takeoff_altitude: .3f} m")
+                logger.ok(f"Altitude take off / sea level : {takeoff_altitude: .3f} m")
 
             # 🔍 1. Recherche dans les exif existants
             else:
@@ -858,27 +880,27 @@ def read_exif_and_write_json(dng_path: Path, exiftool_path: str,
                     logger.warn("Attention toutes les images traitées partageront le même point de décollage")
                     prompt = f"Indiquez l'altitude du point de takeoff / sea level ?"
                     takeoff_altitude = ask_takeoff_altitude_gui(prompt, default=ground_Altitude)
-                    logger.info(f"Altitude takeoff fournie par utilisateur {takeoff_altitude} m")
-                    logger.ok(f"Altitude take off / sea level : {takeoff_altitude: .2f} m")
+                    logger.info(f"Altitude takeoff fournie par utilisateur {takeoff_altitude: .3f} m")
+                    logger.ok(f"Altitude take off / sea level : {takeoff_altitude: .3f} m")
                 else:
                     raise ValueError("Altitude takeoff requise (mode non interactif)")
 
             # 🧮 Calcul
             drone_Altitude_SeaLevel = takeoff_altitude + meters
 
-            full_metadata["DroneAltitudeSeaLevel"] = drone_Altitude_SeaLevel
-            full_metadata["DroneAltitudeGround"] = drone_Altitude_SeaLevel - ground_Altitude
-            full_metadata["TakeOffAltitudeSeaLevel"] = takeoff_altitude
+            full_metadata["DroneAltitudeSeaLevel"] = f'{np.round(drone_Altitude_SeaLevel, 3): .3f}'
+            full_metadata["DroneAltitudeGround"] = f'{np.round(drone_Altitude_SeaLevel - ground_Altitude , 3): .3f}'
+            full_metadata["TakeOffAltitudeSeaLevel"] = f'{np.round(takeoff_altitude): .3f}'
             full_metadata["AltitudeTakeoffSource"] = "USER_INPUT"
 
-            logger.ok(f"Altitude drone / sea level = {drone_Altitude_SeaLevel: .2f} m")
+            logger.ok(f"Altitude drone / sea level = {drone_Altitude_SeaLevel: .3f} m")
             logger.ok(f"Le fichier exif compagnon {str(dng_path.stem)}.exif a été reconstitué ")
 
 
         # 4)
         cleaned = {k: full_metadata.get(k) for k in essential_keys if k in full_metadata}
 
-            # 5) Write the companion .exif JSON
+        # 5) Write the companion .exif JSON
         out_path = dng_path.with_suffix(".exif")
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(cleaned, f, indent=2)
@@ -914,7 +936,7 @@ def find_takeoff_altitude_from_exif_folder(folder: Path, logger) -> float:
             # 🥈 Cas calculable
             if "DroneAltitudeSeaLevel" in data and "DroneAltitudeTakeOff" in data:
                 alti_Takeoff = float(data["DroneAltitudeSeaLevel"]) - float(data["DroneAltitudeTakeOff"])
-                logger.ok(f"Altitude take off / sea level : {alti_Takeoff: .2f} m  (déduite depuis {exif_file.name})")
+                logger.ok(f"Altitude take off / sea level : {alti_Takeoff: .3f} m  (déduite depuis {exif_file.name})")
                 return alti_Takeoff
 
         except Exception as e:
@@ -1197,6 +1219,8 @@ def DJI2IRDrone(raw_exif, verbose=True):
         L'option  option_Yaw permet de choisir entre :
             - option_Yaw = "Flight":     xi_Y = - np.deg2rad(float(raw_exif['FlightYawDegree']))
             - option_Yaw == "Gimbal":    xi_Y = - np.deg2rad(float(raw_exif['GimbalYawDegree']))
+        Il est délicat de choisir cette option. Il semble (mais ce n'est pas certain !) que l'option "Flight" soit
+        plus fiable ... Il faut  faire des test terrain.
 
     :param raw_exif:
     :param verbose:
@@ -1212,18 +1236,12 @@ def DJI2IRDrone(raw_exif, verbose=True):
     UTM_y = float(raw_exif['UTM_y'])
     zoneUTM = int(raw_exif['UTM_zone'])
 
-    option_Yaw = "Gimbal"
+    option_Yaw = "Flight"
 
     if option_Yaw == "Flight":
         xi_Y = - np.deg2rad(float(raw_exif['FlightYawDegree']))
     elif option_Yaw == "Gimbal":
         xi_Y = - np.deg2rad(float(raw_exif['GimbalYawDegree']))
-    elif option_Yaw == "TEST":
-        xi_Y = 0
-        print(f'DEBUG   \n'
-              f'$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$     \n'
-              f'$      ATTENTION xi_Y = {xi_Y}  \n'
-              f'$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$')
     else:
         print(f'error in DJI2IRDrone :      option Yaw inconnue !')
 
@@ -1234,7 +1252,7 @@ def DJI2IRDrone(raw_exif, verbose=True):
     gamma_Cap_Nav = cap_nav(gamma_Cap)  # en radian
 
     if verbose:
-        print(f"--------------------------------------------------------------------------\n"
+        logger.info(f"--------------------------------------------------------------------------\n"
               f" Altitude Drone/ground  Z_cam_nadir    = {Z_cam_nadir: .2f} m\n"
               f" Drone/sea level        Z_cam_sealevel = {Z_cam_sealevel: .2f} m\n"
               f" Yaw xi_Y = {np.rad2deg(xi_Y)} ° | Pitch xi_P = {np.rad2deg(xi_P)} ° | Roll xi_R = {np.rad2deg(xi_R)} °\n"
@@ -1348,7 +1366,7 @@ def compute_MNT_mesh(
     # -------------------------------------------------------------------
     # 1) Emprise terrain sur plan horizontal
     #   Les limites du capteur rectangulaire sont définies à partir du centre optique.
-    #  Le centre optique après correction de la distortion par la calibration de Zhang
+    #  Le centre optique après correction de la distorsion par la calibration de Zhang
     #  n'est pas exactement au centre géométrique du capteur (variation ~<1%)
     #  Le schéma ci dessous montre les 9 points définissant les limtes du capteur.
     #         7        6              5
@@ -1831,6 +1849,7 @@ def get_unique_path(path, verbose=False):
             return new_path
         i += 1
 
+
 def write_geotiff_affine(path_out, img, transform, crs, no_data=0, compress=True, bitdepth="float32"):
 
 
@@ -1838,16 +1857,16 @@ def write_geotiff_affine(path_out, img, transform, crs, no_data=0, compress=True
     bands = 1 if img.ndim == 2 else img.shape[2]
 
     if img.ndim == 3 and img.shape[2] == 3:
-        img_rgb = img[..., ::-1]  # plus rapide que cv2.cvtColor(img, cv2.COLOR_BGR2RGB) car tab numpy
+        img_out = img[..., ::-1]  # plus rapide que cv2.cvtColor(img, cv2.COLOR_BGR2RGB) car tab numpy
     else:
-        img_rgb = img
+        img_out = img
 
     profile = {
         "driver": "GTiff",
         "height": h,
         "width": w,
         "count": bands,
-        "dtype": img_rgb.dtype,
+        "dtype": img_out.dtype,
         "crs": crs,
         "transform": transform,
         "nodata": no_data,
@@ -1860,23 +1879,44 @@ def write_geotiff_affine(path_out, img, transform, crs, no_data=0, compress=True
         "blockxsize": 256,
         "blockysize": 256
     }
-
     if compress:
+        predictor = 3 if np.issubdtype(img_out.dtype, np.floating) else 2
+        # option pour "compress"  "deflate"  "lzw" (compression moins effficace mais lègérement plus rapide)
         profile.update({
             "compress": "deflate",
-            "predictor": 2,
-            "zlevel": 6
+            "predictor": predictor,
+            "zlevel": 4
         })
 
     with rasterio.open(path_out, "w", **profile) as dst:
 
         if bitdepth == "uint8":
-            img_rgb = (img_rgb * 65535.0 / 255.0).astype(np.uint8)
+            img_out = (img_out * 255).astype(np.uint8)
+            logger.info(f'sortie rasterio bitdepth ={bitdepth}')
+
         if bands == 1:
-            dst.write(img_rgb, 1)
+            if img_out.ndim == 3:
+                img_out = img_out[:, :, 0]
+            dst.write(img_out, 1)
+
         else:
-            # écriture vectorisée des 3 bandes
-            dst.write(np.moveaxis(img_rgb, -1, 0))
+            dst.write(np.moveaxis(img_out, -1, 0))
+
+        if bands == 4:
+            dst.set_band_description(1, "Red")
+            dst.set_band_description(2, "Green")
+            dst.set_band_description(3, "Blue")
+            dst.set_band_description(4, "NIR")
+            dst.update_tags(4, wavelength="NIR")
+
+        elif bands == 3:
+            dst.set_band_description(1, "Red")
+            dst.set_band_description(2, "Green")
+            dst.set_band_description(3, "Blue")
+
+        elif bands == 1:
+            dst.set_band_description(1, "Gray")
+
 
 def project_camera_to_horizontal_plane(
         pix,
@@ -1996,7 +2036,7 @@ def project_ground_to_camera_batch(
         fx, fy,
         cx, cy,
         dist=None,
-        verbose=True):
+        verbose=False):
     # -----------------------------------------------------------------------------
     # SOL -> CAMERA
     # P_sol coordonnées UTM d'un point dans repère R_Gnd
@@ -2018,10 +2058,10 @@ def project_ground_to_camera_batch(
     # ---------------------
     # CHECK GEOMETRIQUE
     # ---------------------
-    if verbose:
-        logger.info(f" Zc stats : {np.min(Zcam)} , {np.max(Zcam)}")
-        if np.any(Zcam >= 0):
-            logger.warn(" points derrière caméra")
+
+    # logger.warn(f" Zc stats : {np.min(Zcam)} , {np.max(Zcam)}")
+    if np.any(Zcam >= 0):
+        logger.warn(" points derrière caméra")
 
     # ------------------------------------------
     # Projection perspective (modèle pinhole)
@@ -2033,6 +2073,7 @@ def project_ground_to_camera_batch(
     # ----------------------------------------------
     # DISTORSION LENTILLE (modèle Zhang / OpenCV)
     # ----------------------------------------------
+
     if dist is not None:
         k1, k2, p1, p2, k3 = dist
 
@@ -2746,45 +2787,65 @@ def choose_images():
 # traitement d'une image
 # --------------------------------------------------
 
-def process_image(folder_input, img_name, args, zhang_dic, tol_MC=0.01):
+def process_image(folder_input, img_name, args, zhang_dic, tol_MC=0.01, img_override=None, tif_override=None):
 
-    logger.info(f"--- Traitement {img_name}.{args.suffix}")
 
-    geo_tif = folder_input / "geo_ref" / f"{img_name}_geo.tif"
+    geo_ref_dir = folder_input / "geo_ref"
+
+    if not geo_ref_dir.exists():
+        geo_ref_dir.mkdir(parents=True, exist_ok=True)
+        logger.ok(f"Création du dossier : {geo_ref_dir}")
+
+    if args.mode == "raw_DJI":
+        logger.info(f"--- Traitement {img_name}.{args.suffix}")
+        geo_tif = folder_input / "geo_ref" / f"{img_name}_geo.tif"
+
+    elif args.mode == "multispectral":
+        base_name = img_name.rsplit("_", 1)[0]  # enlève _1 de la bande N°1
+        logger.info(f"--- Traitement {base_name}")
+        geo_tif = folder_input / "geo_ref" / f"{base_name}_0_geo.tif"
 
     try:
 
-        if args.suffix.lower() == "dng":
-            dng2tiff(folder_input, img_name)
-        elif args.suffix.lower() == "tif":
-            logger.warn(f'  le suffix {args.suffix} est pris en charge pour 3 bandes spectrales')
+        if img_override is not None:
+            # --- multispectral : image déjà chargée ---
+            img = img_override
+            tif_path = None  # ⚠️ pas de fichier source
 
         else:
-            logger.error(f' le suffix {args.suffix} n\'est pas pris en charge.')
-            sys.exit(1)
+            # --- mode raw_DJI ---
+            if args.suffix.lower() == "dng":
+                tif_path = dng2tiff(folder_input, img_name)
+            elif args.suffix.lower() == "tif":
+                logger.warn(f'  le suffix {args.suffix} n\'est pas pris en charge en mode raw DJI')
+                sys.exit(1)
+            else:
+                logger.error(f' le suffix {args.suffix} n\'est pas pris en charge.')
+                sys.exit(1)
 
+            img = cv2.imread(str(tif_path), cv2.IMREAD_UNCHANGED)
 
-        tif_path = folder_input / "geo_ref" / f"{img_name}.tif"
+        # h, w = img.shape[:2]
 
-        img = cv2.imread(str(tif_path), cv2.IMREAD_UNCHANGED)
-
-        if img is None:
-            raise RuntimeError("Impossible de lire l'image")
-
-        h, w = img.shape[:2]
-
-        raw_exif = load_companion_exif(folder_input, img_name, alti_takeoff=args.altitakeoff)
+        raw_exif = load_companion_exif(folder_input, img_name, suffix=args.suffix, alti_takeoff=args.altitakeoff)
 
         if raw_exif is None:
             raise RuntimeError("EXIF manquant")
 
+        tif_ref = tif_override if tif_override is not None else tif_path
+
+        output_name = img_name
+
+        if args.mode == "multispectral":
+            output_name = img_name.rsplit("_", 1)[0] + "_0"
+
         new_geo_path = \
             georeference_tiff_MNT(
-            tif_path,
+            tif_ref,
             raw_exif,
             geo_tif,
             folder_input,
-            img_name,
+            output_name,
             offset_xi_Y=np.deg2rad(args.offsetyaw),
             zhang_dic=zhang_dic,
             cache=False,
@@ -2801,6 +2862,7 @@ def process_image(folder_input, img_name, args, zhang_dic, tol_MC=0.01):
             topo_style=args.topo_style,
             raster_topo=args.raster_topo,
             carte_topo=args.carte_topo,
+            img_override=img,
         )
 
         if new_geo_path:
@@ -2812,7 +2874,9 @@ def process_image(folder_input, img_name, args, zhang_dic, tol_MC=0.01):
 
         logger.error(f" Erreur sur {img_name}: {e}")
 
-# pour ligne de commande
+# --------------------------------------------------
+# ligne de commande
+# --------------------------------------------------
 
 def add_bool_arg(parser, name, default, help_text):
     group = parser.add_mutually_exclusive_group()
@@ -2825,20 +2889,16 @@ def add_bool_arg(parser, name, default, help_text):
 
     parser.set_defaults(**{name: default})
 
-
-# --------------------------------------------------
-# programme principal
-# --------------------------------------------------
-
-if __name__ == "__main__":
-
-    logger = CliLogger(use_color=True)
-
+def parse_args():
     parser = argparse.ArgumentParser(description="Orthorectification GeoRef")
 
     parser.add_argument("--input_dir", help="dossier images (ex: .../VIS)")
     parser.add_argument("--images", nargs="+", help="liste images sans extension")
     parser.add_argument("--suffix", default="dng")
+    parser.add_argument("--mode",
+                        default="raw_DJI",
+                        choices=["raw_DJI", "multispectral"],
+                        help="type image entrée")
     parser.add_argument("--topo_style", default="IGN")
 
     parser.add_argument("--bitdepth",
@@ -2868,11 +2928,9 @@ if __name__ == "__main__":
 
 
     args = parser.parse_args()
+    return args
 
-    # --------------------------------------------------
-    # calibration caméra
-    # --------------------------------------------------
-
+def calib_cam_DJI():
     zhang_dic = {
         "mtx": [
             [2898.4683237896006, 0.0, 2032.1512913688591],
@@ -2890,77 +2948,313 @@ if __name__ == "__main__":
         "camera": "DJI_RAW"
     }
 
+    return zhang_dic
+
+# -----------------------------------------------------------------
+# multispectral
+#   détection automatique du mode de traitement
+#    > "raw_DJI" :    raw dng du DJI
+#    > "miltispectral" : quadruplet R\G\B\NIR de tif de IRDrone
+# ------------------------------------------------------------------
+
+def detect_mode(paths, args_mode):
+
+    if not paths:
+        raise ValueError("Aucun fichier fourni")
+
+    suffixes = {p.suffix.lower() for p in paths}
+
+    has_dng = any(s == ".dng" for s in suffixes)
+    has_tif = any(s in [".tif", ".tiff"] for s in suffixes)
+
+    # --- cas invalide : mélange ---
+    if has_dng and has_tif:
+        raise ValueError(
+            "Mélange de fichiers DNG et TIF détecté.\n"
+            "Veuillez sélectionner uniquement des images RAW DJI (.dng)\n"
+            "ou uniquement des images multispectrales (.tif)."
+        )
+
+    # --- cas RAW DJI ---
+    if has_dng:
+        return "raw_DJI"
+
+    # --- cas multispectral ---
+    if has_tif:
+        return "multispectral"
+
+    # --- cas non supporté ---
+    raise ValueError(f"Format non supporté : {suffixes}")
+
+def group_multispectral(paths, logger):
+    pattern = re.compile(r"(.+?)_(\d)\.(tif|tiff)$", re.IGNORECASE)
+
+    groups = defaultdict(dict)
+
+    for p in paths:
+        m = pattern.match(p.name)
+        if not m:
+            continue
+
+        base, band, _ = m.groups()
+        groups[base][int(band)] = p
+
+    valid = {}
+    rejected = {}
+
+    for base, bands in groups.items():
+        if set(bands.keys()) == {1, 2, 3, 4}:
+            valid[base] = bands
+        else:
+            rejected[base] = bands
+            logger.warn(f"{base} rejeté. Bandes présentes: {sorted(bands.keys())}")
+
+    logger.info(f'quadruplets valides = {len(valid)}')
+    if len(rejected) != 0: logger.warn(f'quadruplets rejetés = {rejected}')
+
+    return valid, rejected
+
+def process_multispectral(folder_input, base, band_paths, args, zhang_dic, tol_MC=0.01):
+
+    # --- sécurité ---
+    expected = {1, 2, 3, 4}
+    if set(band_paths.keys()) != expected:
+        raise ValueError(f"{base} bandes invalides : {band_paths.keys()}")
+
+    # --- lecture des 4 bandes spectrales séparées ---
+    img_r = cv2.imread(str(band_paths[1]), cv2.IMREAD_UNCHANGED)
+    img_g = cv2.imread(str(band_paths[2]), cv2.IMREAD_UNCHANGED)
+    img_b = cv2.imread(str(band_paths[3]), cv2.IMREAD_UNCHANGED)
+    img_nir = cv2.imread(str(band_paths[4]), cv2.IMREAD_UNCHANGED)
+
+    # --- validation dimensions des bandes ---
+    if not (img_r.shape == img_g.shape == img_b.shape == img_nir.shape):
+        raise ValueError(f"{base} bandes spectrales incohérentes")
+
+    # --- stack ---
+    # normalisation globale des 4 bandes spectrales
+    def normalize(img):
+        return (img - img.min()) / (img.max() - img.min() + 1e-6)
+
+    img_r = normalize(img_r)
+    img_g = normalize(img_g)
+    img_b = normalize(img_b)
+    img_nir = normalize(img_nir)
+
+    # image multispectrale   R|G|B|NIR
+
+    img = np.stack([img_r, img_g, img_b, img_nir], axis=-1)
+
+    # --- suffix pour sortie compatible georef QGIS---
+    args.suffix = "tif"
+
+    ref_path = band_paths[1]  # ex: HYPERLAPSE_0271_1.tif
+    ref_name = ref_path.stem  # ex: HYPERLAPSE_0271_1
+
+    # --- pipeline ---
+    process_image(
+        folder_input,
+        ref_name,
+        args,
+        zhang_dic,
+        tol_MC=tol_MC,
+        img_override=img,  # injection directe de l'image 4 couches
+    )
+
+
+# ================================================================
+# programme principal
+# ================================================================
+
+
+if __name__ == "__main__":
+
+    logger = CliLogger(use_color=True)
+
+    args = parse_args()  # arguments ligne de commande
+
+    zhang_dic = calib_cam_DJI()   # calibration caméra DJI
+
     tolerence_Monte_Carlo = 0.0025
 
-
-    # --------------------------------------------------
+    # ==================================================
     # MODE LIGNE DE COMMANDE
-    # --------------------------------------------------
-
+    # ==================================================
     if args.input_dir:
 
         folder_input = Path(args.input_dir)
 
-        if not folder_input.exists():
-            logger.error(f'Dossier introuvable : {folder_input}')
+        if not folder_input.exists() or not folder_input.is_dir():
+            logger.error(f"Dossier invalide : {folder_input}")
             sys.exit(1)
 
+        # ----------------------------------------------
+        # Construction de paths
+        # ----------------------------------------------
         if args.images:
-            list_img_name = args.images
+            paths = []
+
+            for name in args.images:
+                # --- test DNG ---
+                if args.mode == "raw_DJI":
+                    dng_path = folder_input / f"{name}.dng"
+                    if dng_path.exists():
+                        paths.append(dng_path)
+                        continue
+
+                # --- test multispectral ---
+                elif args.mode == "multispectral":
+                    for i in range(1, 5):
+                        tif_path = folder_input / f"{name}_{i}.tif"
+                        if tif_path.exists():
+                            paths.append(tif_path)
+                else:
+                    pass
+
+            if not paths:
+                logger.error("Aucune image trouvée correspondant à --images")
+                sys.exit(1)
+
         else:
-            list_img_name = sorted(p.stem for p in folder_input.glob(f"*.{args.suffix}"))
-
-        logger.ok(f'\nFolder : {folder_input} \n'
-                  f'Images : {list_img_name}')
-
-        # --------------------------------------------------
-        # boucle traitement
-        # --------------------------------------------------
-
-        for img_name in list_img_name:
-            process_image(
-                folder_input,
-                img_name,
-                args,
-                zhang_dic,
-                tol_MC=tolerence_Monte_Carlo
+            # scan auto
+            logger.info(f'Scan automatique du dossier {folder_input}')
+            paths = (
+                list(folder_input.glob("*.dng")) +
+                list(folder_input.glob("*.tif")) +
+                list(folder_input.glob("*.tiff"))
             )
 
+        if not paths:
+            logger.error("Aucune image trouvée dans le dossier")
+            sys.exit(1)
 
-    # --------------------------------------------------
+
+        # ----------------------------------------------
+        # Détection du mode
+        # ----------------------------------------------
+
+
+        try:
+            mode = detect_mode(paths, args.mode)
+        except ValueError as e:
+            logger.error(str(e))
+            sys.exit(1)
+        logger.info(f"Mode détecté : {mode}")
+
+        # ----------------------------------------------
+        # RAW DJI
+        # ----------------------------------------------
+        if mode == "raw_DJI":
+
+            list_img_name = sorted(p.stem for p in paths if p.suffix.lower() == ".dng")
+
+            logger.info(f"{len(list_img_name)} images DNG à traiter")
+
+            for img_name in list_img_name:
+                process_image(
+                    folder_input,
+                    img_name,
+                    args,
+                    zhang_dic,
+                    tol_MC=tolerence_Monte_Carlo
+                )
+
+        # ----------------------------------------------
+        # MULTISPECTRAL
+        # ----------------------------------------------
+        elif mode == "multispectral":
+
+            tif_paths = [p for p in paths if p.suffix.lower() in [".tif", ".tiff"]]
+
+            valid, rejected = group_multispectral(tif_paths, logger)
+
+            for base, bands in valid.items():
+
+                process_multispectral(
+                    folder_input,
+                    base,
+                    bands,
+                    args,
+                    zhang_dic,
+                    tolerence_Monte_Carlo
+                )
+
+    # ==================================================
     # MODE INTERACTIF
-    # Les types dng et tif peuvent être panachés
-    # --------------------------------------------------
-
+    # ==================================================
     else:
+
         logger.info(f"Mode interactif : sélection des images ...\n", _bold=True)
 
         folder_input, list_img_name, list_img, list_path = choose_images()
 
-        logger.info(f'Dossier des images : {folder_input} ')
-        logger.info(f'{len(list_img_name)} images à traiter : {list_img_name}')
+        if not list_path:
+            logger.error("Aucune image sélectionnée")
+            sys.exit(1)
 
-        # forcage des arguments pour le développement ...
-        args.offsetyaw = -8  # angle d'offset lacet en degré. Positif vers l'est.
-        logger.warn(f'forcage des arguments pour le développement ...\n'
-                    f'      offset yaw = {args.offsetyaw}°')
-        args.comp_error_rms = False
+        try:
+            args.mode = None
+            mode = detect_mode(list_path, args.mode)
+        except ValueError as e:
+            logger.error(str(e))
+            sys.exit(1)
 
-        # --------------------------------------------------
-        # boucle traitement
-        # --------------------------------------------------
-        # args.verbose = True
+        # --- réglages developpement ---
+        if args.offsetyaw == 0:
+            args.offsetyaw = 7.2
+        logger.warn(
+            f'forcage des arguments pour le développement ...\n'
+            f'      offset yaw = {args.offsetyaw}°'
+        )
 
-        for img_path in list_path:
-            img_name = img_path.stem
-            args.suffix = img_path.suffix.lstrip('.')
-            process_image(
-                folder_input,
-                img_name,
-                args,
-                zhang_dic,
-                tol_MC=tolerence_Monte_Carlo
-            )
+
+        logger.info(f"Mode détecté : {mode}")
+
+
+        # ----------------------------------------------
+        # RAW DJI
+        # ----------------------------------------------
+        if mode == "raw_DJI":
+            args.mode = "raw_DJI"
+            args.suffix = "dng"
+            logger.info(f'Dossier : {folder_input}')
+            logger.info(f'{len(list_img_name)} images à traiter : {list_img_name}')
+
+            args.comp_error_rms = False
+
+            for img_path in list_path:
+                img_name = img_path.stem
+
+                process_image(
+                    folder_input,
+                    img_name,
+                    args,
+                    zhang_dic,
+                    tol_MC=tolerence_Monte_Carlo
+                )
+
+        # ----------------------------------------------
+        # MULTISPECTRAL
+        # ----------------------------------------------
+        elif mode == "multispectral":
+            args.mode = "multispectral"
+            valid, rejected = group_multispectral(list_path, logger)
+
+            for base, bands in valid.items():
+                logger.info(f"Traitement multispectral : {base}")
+
+                process_multispectral(
+                    folder_input,
+                    base,
+                    bands,
+                    args,
+                    zhang_dic,
+                    tolerence_Monte_Carlo
+                )
+
+    sys.exit(0)
+
+
 
 
 

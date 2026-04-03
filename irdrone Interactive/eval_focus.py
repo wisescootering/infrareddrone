@@ -242,7 +242,7 @@ def plot_focus_overlay(
     """
     fig, ax = plt.subplots(figsize=(9, 6))
 
-    markers = ["o", "s", "^", "D", "v", "x"]
+    markers = ["o", "s", "^", "+", "v", "x"]
     linestyles = ["-", "--", "-.", ":"]
 
     for i, (name, sharpness) in enumerate(results.items()):
@@ -252,8 +252,8 @@ def plot_focus_overlay(
             sharp_norm,
             linestyle=linestyles[i % len(linestyles)],
             marker=markers[i % len(markers)],
-            markersize=5,
-            linewidth=1.8,
+            markersize=3,
+            linewidth=1.5,
             label=name
         )
 
@@ -263,7 +263,7 @@ def plot_focus_overlay(
         ax.plot(
             peak["x_interp"],
             peak["y_interp"],
-            linewidth=2.5,
+            linewidth=1.5,
             alpha=0.9
         )
 
@@ -272,9 +272,9 @@ def plot_focus_overlay(
             peak["x_local"],
             peak["y_local"],
             "o",
-            markersize=8,
+            markersize=7,
             markerfacecolor="none",
-            markeredgewidth=2
+            markeredgewidth=1.
         )
 
         # position raffinée
@@ -287,8 +287,13 @@ def plot_focus_overlay(
 
     ax.set_xlabel("Position")
     ax.set_ylabel("Netteté normalisée")
+    if len(results.items()) == 1:
+        titre = "Focus"
+    else:
+        titre = "Focus_comparison_normalized"
+
     ax.set_title(
-        f"Comparaison des métriques de netteté — images {', '.join(sorted(suffixes))}"
+        f"{titre} — images {', '.join(sorted(suffixes))}"
     )
     ax.grid(True)
     ax.legend()
@@ -296,7 +301,7 @@ def plot_focus_overlay(
 
     if save:
         suffix_str = "_".join(sorted(suffixes))
-        out = folder / f"focus_comparison_normalized_{suffix_str}.png"
+        out = folder / f"{titre}_{suffix_str}.png"
         fig.savefig(out, dpi=150, bbox_inches="tight")
         print(f"Comparaison sauvegardée : {out}")
 
@@ -312,9 +317,16 @@ def save_csv(positions, sharpness, folder: Path) -> None:
 
     print(f"\nRésultats sauvegardés dans {csv_file}")
 
+# -------------------------------------------------------------------------------------------
+#
+#                          Main
+#
+# -------------------------------------------------------------------------------------------
 
 # --- Répertoire des images ---
-folder = Path(r"G:\MOP SJCam Optics Concept\Photo\MOP_serie2")
+
+
+folder = Path(r"G:\MOP SJCam Optics Concept\Photo\MOP_serie3")
 suffixes = {"tiff"}
 
 image_files = sorted(
@@ -329,9 +341,10 @@ if not image_files:
 positions = np.array([extract_position(p.name) for p in image_files])
 
 # --- Métriques ---
-# metrics = {"laplacian": focus_laplacian,"tenengrad": focus_tenengrad,"brenner": focus_brenner,"gradvar": focus_gradient_variance,}
+metrics = {"Laplacian": focus_laplacian, "Tenengrad": focus_tenengrad, "Gradvar": focus_gradient_variance, }
+# "Brenner": focus_brenner,
 
-metrics = {"tenengrad": focus_tenengrad,}
+# metrics = {"Tenengrad": focus_tenengrad,}
 
 # --- Calcul + tracé ---
 results = {}
@@ -340,7 +353,7 @@ for name, metric in metrics.items():
     sharpness = []
 
     for f in image_files:
-        img = load_grayscale_image(f, channel='G')  # channel= 'R', 'G', 'B' , None
+        img = load_grayscale_image(f, channel=None)  # channel= 'R', 'G', 'B' , None
         sharpness.append(metric(img))
         print(f'{f.name}   metric : {name}      sharpness = {metric(img):.2f}')
 
