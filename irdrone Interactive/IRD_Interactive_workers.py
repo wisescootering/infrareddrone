@@ -482,10 +482,10 @@ class TimeShiftWorker(QRunnable):
 
         try:
 
-            timeline_abs_VIS, angles_abs_VIS = self.extract_timeline_and_angles(self.VIS_results, key="angle_abs")
-            timeline_img_VIS, angles_img_VIS = self.extract_timeline_and_angles(self.VIS_results, key="angle_img")
-            timeline_abs_NIR, angles_abs_NIR = self.extract_timeline_and_angles(self.NIR_results, key="angle_abs")
-            timeline_img_NIR, angles_img_NIR = self.extract_timeline_and_angles(self.NIR_results, key="angle_img")
+            timeline_abs_VIS, angles_abs_VIS, ignored_abs_VIS = self.extract_timeline_and_angles(self.VIS_results, key="angle_abs")
+            timeline_img_VIS, angles_img_VIS, ignored_VIS = self.extract_timeline_and_angles(self.VIS_results, key="angle_img")
+            timeline_abs_NIR, angles_abs_NIR, ignored_abs_NIR = self.extract_timeline_and_angles(self.NIR_results, key="angle_abs")
+            timeline_img_NIR, angles_img_NIR, ignored_NIR = self.extract_timeline_and_angles(self.NIR_results, key="angle_img")
 
             # Data integrity check
             if len(angles_abs_NIR) >= min_NIR_pts and len(angles_abs_VIS) >= min_VIS_pts:
@@ -494,12 +494,22 @@ class TimeShiftWorker(QRunnable):
                 angles_unwrapped_NIR = self.unwrap_from_end(angles_abs_NIR, Aru.unwrap_angles)
                 time_line_VIS = timeline_abs_VIS
                 time_line_NIR = timeline_abs_NIR
+                print(Style.GREEN + f"Time shift calculated using absolute angles" + Style.RESET)
+                if ignored_abs_VIS > 0:
+                    print(Style.YELLOW + f"⚠  {ignored_abs_VIS} images VIS skipped because fixed or mobile ArUco not detected" + Style.RESET)
+                if ignored_abs_NIR > 0:
+                    print(Style.YELLOW + f"⚠  {ignored_abs_NIR} images NIR skipped because fixed or mobile ArUco not detected" + Style.RESET)
             elif len(angles_img_NIR) >= min_NIR_pts and len(angles_img_VIS) >= min_VIS_pts:
                 self.angle_img_for_shift_time = True
                 angles_unwrapped_VIS = self.unwrap_from_end(angles_img_VIS, Aru.unwrap_angles)
                 angles_unwrapped_NIR = self.unwrap_from_end(angles_img_NIR, Aru.unwrap_angles)
                 time_line_VIS = timeline_img_VIS
                 time_line_NIR = timeline_img_NIR
+                print(Style.GREEN + f"Time shift calculated using relative angles" + Style.RESET)
+                if ignored_VIS > 0:
+                    print(Style.YELLOW + f"⚠  {ignored_VIS} images VIS skipped because fixed or mobile ArUco not detected" + Style.RESET)
+                if ignored_NIR > 0:
+                    print(Style.YELLOW + f"⚠  {ignored_NIR} images NIR skipped because fixed or mobile ArUco not detected" + Style.RESET)
             else:
                 msg_abstract = ("WARNING\n"
                                 "Insufficient data to automatically align VIS and NIR camera timelines.")
@@ -570,10 +580,7 @@ class TimeShiftWorker(QRunnable):
             else:
                 ignored += 1
 
-        if ignored > 0:
-            print(Style.YELLOW + f"Warning: {ignored} images skipped because fixed or mobile ArUco not detected" + Style.RESET)
-
-        return timeline, angles
+        return timeline, angles, ignored
 
     def unwrap_from_end(self, angles, unwrap_func):
         """
@@ -959,9 +966,9 @@ class Transfer_VIS(QtCore.QObject):
     def run(self) -> None:
         try:
             assert self.input_dir.exists(), f"Input directory does not exist: {self.input_dir}"
-            print(f"{self.input_dir}")
+            print(Style.GREEN + f"extract images in folder {self.input_dir}" + Style.RESET)
             list_file = Uti.list_files_with_suffix("dng", self.input_dir)
-            print(f"!! {list_file}")
+            # print(f"!! {list_file}")
             n = len(list_file)
 
             # --- progress bar : début ---
@@ -1045,6 +1052,9 @@ class Transfer_NIR(QtCore.QObject):
     def run(self) -> None:
         try:
             self.output_folder.mkdir(parents=True, exist_ok=True)
+
+            assert self.input_folder.exists(), f"Input directory does not exist: {self.input_folder}"
+            print(Style.GREEN + f"extract images in folder {self.input_folder}" + Style.RESET)
 
             # RAW list
             raw_files = sorted([str(p) for p in self.input_folder.glob("*.RAW")])
@@ -1209,7 +1219,7 @@ class Alti_GPS(QtCore.QObject):
                 start = b * chunk_size
                 end = min(start + chunk_size, n)
                 pts_batch = list_pts[start:end]
-                print(f"[INFO] Traitement batch {b + 1}/{n_batches} ({len(pts_batch)} points)")
+                print(Style.GREEN + f"Traitement batch {b + 1}/{n_batches} ({len(pts_batch)} points)" + Style.RESET)
 
                 try:
                     dic_pts_geo = Geo.extract_alti_IGN(pts_batch, verbose=True, bypass=False)

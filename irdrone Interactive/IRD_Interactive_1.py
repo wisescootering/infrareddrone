@@ -423,7 +423,7 @@ class Window_create_file_structure(QDialog):
 
 
     def start_transfer_VIS(self, done, *args):
-        print("[PIPE] !!!!! Starting VIS transfer")
+        print("[PIPE] Starting VIS transfer")
 
         self.thread_vis = QtCore.QThread()
         self.worker_vis = Worker.Transfer_VIS(self.input_dir_VIS, self.output_dir_VIS)
@@ -467,7 +467,7 @@ class Window_create_file_structure(QDialog):
         self.progress_bar.setValue(0)
         self.phase_label.setText(f"Waiting …")
 
-        Uti.show_info_message("IRDrone", "Choose the image folder", "Near Infrared (NIR)")
+        Uti.show_info_message("IRDrone", "Choose the first image", "Near Infrared (NIR)")
         src_nir_folder = self.load_NIR_directory()
 
         dest_nir_folder = Path(self.mission_parameters["File path mission"]) / "AerialPhotography" / "NIR"
@@ -499,7 +499,7 @@ class Window_create_file_structure(QDialog):
             self.nir_started = False
             self.btn_1221.setEnabled(True)
             mission_folder = Path(self.mission_parameters["File path mission"]).name
-            print(f'[INFO] NIR transfer finished: {msg}')
+            print(Style.GREEN + f'NIR transfer finished: {msg}' + Style.RESET)
             Uti.show_info_message(
                 "IRDrone",
                 "Mission creation completed",
@@ -545,7 +545,7 @@ class Window_create_file_structure(QDialog):
                 sample_image_NIR = file_path
                 return folder
 
-            print("[INFO] NIR selection cancelled by user.")
+            print(Style.YELLOW + f"⚠  NIR selection cancelled by user." + Style.RESET)
             return None
 
         except Exception as e:
@@ -621,7 +621,7 @@ class Window_create_file_structure(QDialog):
 
     def on_exif_progress(self, band: str, pct: int):
         verbose = False
-        if verbose: print(f"[INF0]   [EXIF {band}] progress = {pct}%")
+        if verbose: print(Style.GREEN + f"[INF0]   [EXIF {band}] progress = {pct}%" + Style.RESET)
         self.phase_label.setText(f"EXIF {band} : {pct}%")
         self.progress_bar.setValue(pct)
 
@@ -649,7 +649,7 @@ class Window_create_file_structure(QDialog):
         try:
             folder = getattr(self, "output_dir_NIR", None)
             if folder is None:
-                print("[WARN] start_exif_NIR_step: no output_dir_NIR set")
+                print(Style.YELLOW + f"⚠   start_exif_NIR_step: no output_dir_NIR set" + Style.RESET)
                 done({}, "No NIR folder")
                 return
             cb = lambda exif_data, msg: done(exif_data, msg)
@@ -953,9 +953,6 @@ class Window_create_file_structure(QDialog):
             try:
                 change_icon = True
                 icon_dir = Path(self.pref.default_app_dir) / "Icon"
-                # test
-                print(f'test icon_dir {icon_dir}    self.pref.default_app_dir {self.pref.default_app_dir}')
-                # test
 
                 if change_icon:
                     Uti.change_icon(base_dir, icon_dir / "IRdrone_appli.ico")
@@ -1324,17 +1321,17 @@ class Window_create_file_structure(QDialog):
 
             # --- Sanity checks ------------------------------------------------------
             if not src_path.exists():
-                raise RuntimeError(Style.YELLOW + f"Le fichier source n'existe pas : {src_path}" + Style.RESET)
+                raise RuntimeError(Style.YELLOW + f"⚠  Le fichier source n'existe pas : {src_path}" + Style.RESET)
 
             if not src_path.is_file():
-                raise RuntimeError(Style.YELLOW + f"Le chemin source n'est pas un fichier : {src_path}" + Style.RESET)
+                raise RuntimeError(Style.YELLOW + f"⚠  Le chemin source n'est pas un fichier : {src_path}" + Style.RESET)
 
             dst_dir = dst_path.parent
             if not dst_dir.exists():
-                raise RuntimeError(Style.YELLOW + f"Le dossier de destination n'existe pas : {dst_dir}" + Style.RESET)
+                raise RuntimeError(Style.YELLOW + f"⚠  Le dossier de destination n'existe pas : {dst_dir}" + Style.RESET)
 
             if not dst_dir.is_dir():
-                raise RuntimeError(Style.YELLOW + f"Le chemin parent de destination n'est pas un dossier : {dst_dir}" + Style.RESET)
+                raise RuntimeError(Style.YELLOW + f"⚠  Le chemin parent de destination n'est pas un dossier : {dst_dir}" + Style.RESET)
 
             # --- Effective copy -----------------------------------------------------
             try:
@@ -1362,11 +1359,11 @@ class Window_create_file_structure(QDialog):
         required_keys = ["File path mission"]
         for key in required_keys:
             if key not in self.mission_parameters:
-                print(f"DEBUG: Clé manquante dans mission_parameters : {key}")
+                print(f"⚠ Clé manquante dans mission_parameters : {key}")
                 return
 
         if "name image take-off" not in self.mission_parameters_light:
-            print("[DEBUG]: clé 'name image take-off' absente dans mission_parameters_light")
+            print("⚠ clé 'name image take-off' absente dans mission_parameters_light")
             return
 
         # ----------------------------------------------------------
@@ -1409,7 +1406,7 @@ class Window_create_file_structure(QDialog):
                 with open(json_file, "r", encoding="utf-8") as f:
                     old_dic = json.load(f)
             except Exception as exc:
-                if verbose: print(Style.YELLOW + f"ERREUR: Impossible de lire {json_file}\n{exc}" + Style.RESET)
+                if verbose: print(Style.YELLOW + f"⚠ Impossible de lire {json_file}\n{exc}" + Style.RESET)
                 old_dic = None
 
             if isinstance(old_dic, dict):
@@ -1434,28 +1431,28 @@ class Window_create_file_structure(QDialog):
                 # Comparaison complète sur spectral_band / img_suffix
                 for key in ["spectral_band", "img_suffix"]:
                     if not same_value(key):
-                        print(Style.YELLOW + f'DEBUG  ECART lors de Comparaison complète sur spectral_band / img_suffix")' + Style.RESET)
+                        print(Style.YELLOW + f'⚠  ECART lors de Comparaison complète sur spectral_band / img_suffix")' + Style.RESET)
                         all_same = False
                         break
 
                 # Comparaison SEULEMENT outputFolder pour sync / fly
                 if all_same and not same_output_folder("sync"):
-                    print(Style.YELLOW + "DEBUG: Modifications détectées → same_output_folder(sync)." + Style.RESET)
+                    print(Style.YELLOW + f"⚠ Modifications détectées → same_output_folder(sync)." + Style.RESET)
                     print(Style.YELLOW + f'NEUTRALISE' + Style.RESET)
                     all_same = True  # False
                     return
 
                 if all_same and not same_output_folder("fly"):
-                    print(Style.YELLOW + "DEBUG: Modifications détectées → same_output_folder(fly)." + Style.RESET)
+                    print(Style.YELLOW + f"⚠ Modifications détectées → same_output_folder(fly)." + Style.RESET)
                     print(Style.YELLOW + f'NEUTRALISE' + Style.RESET)
                     all_same = True  # False
                     return
 
                 if all_same:
-                    if verbose: print("DEBUG: Aucun changement détecté → fichier conservé tel quel.")
+                    if verbose: print(Style.GREEN + f"Aucun changement détecté → fichier conservé tel quel."+ Style.RESET)
                     return
 
-                print(Style.YELLOW + "DEBUG: Modifications détectées → réécriture du fichier JSON." + Style.RESET)
+                print(Style.YELLOW + f"⚠ Modifications détectées → réécriture du fichier JSON." + Style.RESET)
 
         # ----------------------------------------------------------
         # Écriture du fichier (nouveau ou mise à jour)
@@ -1464,7 +1461,7 @@ class Window_create_file_structure(QDialog):
             with open(json_file, "w", encoding="utf-8") as f:
                 json.dump(dic_light, f, indent=4, ensure_ascii=False)
 
-            if verbose: print(f"DEBUG: Fichier écrit/mis à jour : {json_file}")
+            if verbose: print(Style.GREEN + f"Fichier écrit/mis à jour : {json_file}"+Style.RESET)
 
         except Exception as exc:
             print(f"ERREUR: Impossible d'écrire le fichier JSON : {json_file}\n{exc}")

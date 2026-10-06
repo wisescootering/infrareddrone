@@ -160,7 +160,7 @@ def get_altitudes(coordinates, verbose=False, bypass=False):
         return dico_coordinates_GPS
 
     if verbose:
-        print( Style.GREEN + "[INFO]  Querying IGN..." +  Style.RESET)
+        print( Style.GREEN + "Querying IGN ..." +  Style.RESET)
     dico_coordinates_GPS = get_altitudes_IGN(coordinates)
 
     # Check if IGN completely failed
@@ -188,7 +188,7 @@ def get_altitudes(coordinates, verbose=False, bypass=False):
                     p.update({"z": 0, "acc": "unavailable"})
 
     if verbose:
-        print(Style.GREEN + "[INFO]  Querying IGN OK" +  Style.RESET)
+        print(Style.GREEN + "Querying IGN OK" + Style.RESET)
 
     return dico_coordinates_GPS
 
@@ -826,7 +826,7 @@ def writeGPX(listPts, dirNameVol, dateEtude, mute=True):
         Construction d'un fichier gpx contenant le tracé du plan de vol
         Il y a au début une tres grosse étiquette !!
     """
-    print( Style.GREEN + f'[INFO]  Write Garmin .gpx file' +  Style.RESET)
+    print( Style.GREEN + f'Write Garmin .gpx file' +  Style.RESET)
     #  mise en forme de la date pour le format gpx Garmin
     if dateEtude.month < 10:
         monthGpx = str('0' + str(dateEtude.month))
@@ -902,7 +902,7 @@ def writeGPX(listPts, dirNameVol, dateEtude, mute=True):
 
     dirpath = '%s\\TrkGpx-%s-%s-%i.gpx' % (dirNameVol, dayGpx, monthGpx, dateEtude.year)
 
-    if not mute: print( Style.GREEN + '[INFO]   Ecriture du fichier gpx %s' % dirpath)
+    if not mute: print( Style.GREEN + 'Ecriture du fichier gpx %s' % dirpath)
     if not os.path.isdir(dirNameVol):
         os.mkdir(dirNameVol)
     with open(dirpath, "w") as fichier:

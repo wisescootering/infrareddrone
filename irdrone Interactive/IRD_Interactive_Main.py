@@ -334,9 +334,9 @@ class Main_Window(QMainWindow):
 
     def handle_data_from_dialog_synchro_aruco(self, validate: bool):
         if validate:
-            print("Phase 3 completed successfully.")
+            print(Style.GREEN + "✔   Phase 3 completed successfully." + Style.RESET)
         else:
-            print("Phase 3 cancelled by user.")
+            print(Style.YELLOW + "⚠  Phase 3 cancelled by user." + Style.RESET)
 
 
 

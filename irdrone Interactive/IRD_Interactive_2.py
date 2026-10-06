@@ -361,22 +361,22 @@ class LoadVisNirImagesDialog(QDialog):
 
             # Load images if interactive sequence was already completed once
             if self.image_0_available:
-                print(Style.GREEN + '[INFO] Loading takeoff image' + Style.RESET)
+                print(Style.GREEN + 'Loading takeoff image' + Style.RESET)
                 self.open_takeOff_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 0)
             elif self.image_takeoff_available and self.spectral_band == "VIS":
                 self.open_takeoff_image(self.path_image_takeoff)
 
             if self.image_first_sync_available:
-                print(Style.GREEN + '[INFO] Loading first sync image' + Style.RESET)
+                print(Style.GREEN + 'Loading first sync image' + Style.RESET)
                 self.open_takeOff_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 1)
             if self.image_last_sync_available:
-                print(Style.GREEN + '[INFO] Loading last sync image VIS' + Style.RESET)
+                print(Style.GREEN + 'Loading last sync image VIS' + Style.RESET)
                 self.open_takeOff_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 2)
             if self.image_first_fly_available:
-                print(Style.GREEN + '[INFO] Loading first fly image VIS' + Style.RESET)
+                print(Style.GREEN + 'Loading first fly image VIS' + Style.RESET)
                 self.open_takeOff_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 3)
             if self.image_last_fly_available:
-                print(Style.GREEN + '[INFO] Loading last fly image VIS' + Style.RESET)
+                print(Style.GREEN + 'Loading last fly image VIS' + Style.RESET)
                 self.open_takeOff_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 4)
 
             if all(self.flags):
@@ -766,7 +766,7 @@ class LoadVisNirImagesDialog(QDialog):
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=4, ensure_ascii=False)
 
-            print(Style.GREEN + f"[INFO] JSON file saved: {json_path}" + Style.RESET)
+            print(Style.GREEN + f"JSON file saved: {json_path}" + Style.RESET)
             return json_path
         except Exception as e:
             print(f'error in save_phases_mission_info : {e}')
@@ -822,7 +822,7 @@ class LoadVisNirImagesDialog(QDialog):
             # Load JSON data
             with open(json_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            print(Style.GREEN + f"[INFO] JSON file loaded: {json_path}" + Style.RESET)
+            print(Style.GREEN + f"JSON file loaded: {json_path}" + Style.RESET)
             return data
 
         except Exception as e:
@@ -1083,7 +1083,7 @@ class LoadVisNirImagesDialog(QDialog):
                 self.new_user_dir = self.user_dir
             self.new_user_dir = self.user_dir
 
-            print(f'debug 002  self.user_dir = {self.user_dir}')
+            # print(f'debug 002  self.user_dir = {self.user_dir}')
 
             file_path, _ = QFileDialog.getOpenFileName(None, f"Select an image {img_suffix}", str(self.user_dir),
                                                        f"Images (*.{img_suffix});;All files (*)")

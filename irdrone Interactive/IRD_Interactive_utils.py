@@ -2121,7 +2121,7 @@ def time_line_analyser_images(list_dic_exif,
 
     # --- Total sequence duration ---
     total_duration = (dates[-1] - dates[0]).total_seconds()
-    print(f"⏱️ Total sequence duration : {total_duration:.3f} s ({str(dates[-1] - dates[0])})")
+    print(Style.GREEN + f"⏱️ Total shooting sequence duration : {total_duration:.3f} s ({str(dates[-1] - dates[0])})" + Style.RESET)
 
     # --- Method 1: Median ---
     periode_mediane = np.median(deltas)
@@ -2157,7 +2157,7 @@ def time_line_analyser_images(list_dic_exif,
     time_line = build_time_line(dates, sauts, true_record_period, numeros, list_file_path, verbose=False)
 
     # --- Overall summary ---
-    print(f"🕒 Timeline computed: {time_line[-1]:.3f} s up to the last image (n={len(time_line)})")
+    print(Style.GREEN + f"🕒 Computed timeline duration: {time_line[-1]:.3f} s up to the last image (n={len(time_line)})" + Style.RESET)
 
     dic_timeline = build_time_line_dictionnary(
         list_file_path=list_file_path,

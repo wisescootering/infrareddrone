@@ -111,7 +111,7 @@ def process_aruco_images(
     y_vals = []
 
     max_workers = best_thread_count(io_bound=True)
-    print(Style.CYAN + f"[INFO] Processing {len(listImages)} images using {max_workers} threads..." + Style.RESET)
+    print(Style.GREEN + f"Processing {len(listImages)} images using {max_workers} threads..." + Style.CYAN)
 
     # ------------------------------------------------------------
     # Worker function (one image per thread)
@@ -214,6 +214,7 @@ def process_aruco_images(
 
 
             for i, img_name in enumerate(listImages, start=1):
+
                 futures.append(executor.submit(process_one, i, img_name, folderMissionPath))
             for future in as_completed(futures):
                 i, img_name, result = future.result()
@@ -276,10 +277,11 @@ def detect_mobile_marker_absolute(image_cv=None,
 
     r = read_aruco_cache(img_path)
     if r and use_aruco_cache:
-        print(Style.GREEN + f'[INFO] Traitement AVEC CACHE de {img_path}' + Style.RESET)
+        print(Style.GREEN + f' Traitement AVEC CACHE de {img_path}' + Style.RESET)
         return r, None, None
     else:
-        print(Style.GREEN + f'[INFO] Détection des Aruco dans  {img_path}' + Style.RESET)
+        # print(Style.GREEN + f'Détection des Aruco dans  {img_path}' + Style.RESET)
+        pass
 
     img_cv_out = image_cv.copy() if image_cv is not None else None
 
@@ -318,7 +320,7 @@ def detect_mobile_marker_absolute(image_cv=None,
 
     if missing_fixed or mobile_missing:
         if missing_fixed:
-            if verbose: print(Style.YELLOW + f"⚠️Tous les marqueurs fixes ne sont pas détectés ! manquants = {missing_fixed}" + Style.RESET)
+            if verbose: print(Style.YELLOW + f"⚠️Tous les marqueurs fixes ne sont pas détectés ! manquants = {missing_fixed}" + Style.CYAN)
         if mobile_missing:
             if verbose: print(Style.RED + f"❌ Le marqueur mobile ({mobile_id}) n'est pas détecté !" + Style.RESET)
         write_aruco_cache(img_path, result)
@@ -382,7 +384,7 @@ def detect_aruco_marker(
         cY = int(np.mean(corners_array[:, 1]))
 
         if verbose:
-            print(f"ID {markerID}, angle={angle:.1f}°, centre=({cX},{cY})")
+            print(Style.GREEN + f"ID {markerID}, angle={angle:.1f}°, centre=({cX},{cY})" + Style.CYAN)
 
         marker_data.append((int(markerID), angle, (cX, cY), corners_array))
 
@@ -694,7 +696,7 @@ def load_relative_time_line(folderMissionPath, spectral_band):
 
         with open(json_path, "r", encoding="utf-8") as f:
             dic_relative_time_line = json.load(f)
-        print(Style.GREEN + "✔️ Relative timeline loaded successfully." + Style.RESET)
+        print(Style.GREEN + "Relative timeline loaded successfully.️ Relative timeline loaded successfully." + Style.RESET)
 
     except Exception as e:
         print(Style.RED + f"❌ Error loading timeline file: {e}" + Style.RESET)
@@ -750,7 +752,7 @@ def unwrap_angles(angle_list_deg):
 def print_marker_results(markers, image_type="VIS"):
     for marker in markers:
         markerID, angle, center, corners = marker
-        print(f"{image_type}: ID {markerID}, angle={angle:.1f}°, centre={center}")
+        print(Style.GREEN + f"{image_type}: ID {markerID}, angle={angle:.1f}°, centre={center}" + Style.CYAN)
 
 def get_aruco_dict(dict_name="DICT_4X4_50", verbose=False):
     """Retourne le dictionnaire ArUco compatible avec toutes les versions OpenCV."""
@@ -883,8 +885,8 @@ def abstract_time_line_alignement(time_shift, omega, metrics):
     print(Style.GREEN + msg_1 + Style.RESET)
 
     if metrics.get("omega_vis") is not None:
-        msg_2 = f"  Angular velocity (VIS)    : {metrics['omega_vis']/6:.4f} rpm\n" \
-                f"  Relative Δomega           : {(100.0 * metrics['rel_delta_omega']):.2e} %"
+        msg_2 = f" Angular velocity (VIS)    : {metrics['omega_vis']/6:.4f} rpm\n" \
+                f"  Relative Δ_Omega          : {(100.0 * metrics['rel_delta_omega']):.2e} %"
         print(Style.GREEN + msg_2 + Style.RESET)
         return msg_1 + msg_2
     else:
@@ -1392,8 +1394,8 @@ if __name__ == "__main__":
     time_line_NIR = [r['relative_timeline'] for r in NIR_results if r['relative_timeline'] is not None]
 
 
-    print(f'[INFO]   la détection des mires aruco pour les images VIS et NIR est terminée. \n'
-          f'.............................................................................\n')
+    print(Style.GREEN + f'la détection des mires aruco pour les images VIS et NIR est terminée. \n'
+          f'.............................................................................\n' + Style.RESET)
 
     # ------------------------------------------------------------
     # Synchronisation des time line VIS et NIR
