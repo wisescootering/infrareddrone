@@ -54,18 +54,20 @@ class Window_create_file_structure(QDialog):
             │       └── VIS/
             │             └──  [VIS_0001.dng, VIS_0002.dng, ...]
             │             └──  [VIS_0001.exif, VIS_0002.exif, ...]
-            │             └──  time_line.json
+            │             └──  time_line.json  (for VIS images only)
+            │             └──  transfer_info_VIS_dng.json (minimal version)
             │       └── NIR/
             │             └──  [NIR_0001.dng, NIR_0002.dng, ...]
             │             └──  [NIR_0001.exif, NIR_0002.exif, ...]
-            │             └──  time_line.json
+            │             └──  time_line.json   (for NIR images only)
+            │       └── shoot_points.json
             ├── Synchro/
             ├── ImgIRdrone/
             ├── mapping_MULTI/
             └── cameras/
             ├── FlightAnalytics/
-            │       └── mission_parameters.json              ( mission parameters )
-            │       └── transfer_info_VIS_dng.json (minimal version)
+            │       └── mission_parameters.json    ( mission parameters )
+            │       └── fly_vertical_profil.png
             └──
 
 
@@ -951,6 +953,9 @@ class Window_create_file_structure(QDialog):
             try:
                 change_icon = True
                 icon_dir = Path(self.pref.default_app_dir) / "Icon"
+                # test
+                print(f'test icon_dir {icon_dir}    self.pref.default_app_dir {self.pref.default_app_dir}')
+                # test
 
                 if change_icon:
                     Uti.change_icon(base_dir, icon_dir / "IRdrone_appli.ico")
@@ -1568,13 +1573,6 @@ class Window_create_file_structure(QDialog):
 
 
 
-
-    # =================================================================
-    #
-    #                  MODULES OBSOLETES ...
-    #
-    # =================================================================
-
 # --------------------------------------------------------------------------------------------
 #
 #              Window_Load_TakeOff_Image
@@ -1645,12 +1643,12 @@ class Window_Load_TakeOff_Image(QDialog):
 
             self.setStyleSheet("background-color: white; color: black;")
             self.setWindowTitle("Choose the image taken by the drone during takeoff.")
-            icon_path = os.path.join(self.default_app_dir, "Icon", "IRDrone.ico")
+            icon_path = os.path.join(self.prefScreen.default_app_dir, "Icon", "IRDrone.ico")
             if os.path.exists(icon_path):
                 icon = QIcon(icon_path)
                 self.setWindowIcon(icon)
         except Exception as e:
-            print("error   in initUI  ", e)
+            print("error   in initGUI  ", e)
 
         # Set layout and widgets
         # Create the central widget
@@ -1936,7 +1934,6 @@ class Window_Load_TakeOff_Image(QDialog):
             self.close()
         except Exception as e:
             print("error in Window_Load_TakeOff_Image   cancel_clicked :", e)
-
 
 
 

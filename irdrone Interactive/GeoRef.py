@@ -96,7 +96,7 @@ class CliLogger:
         self.colors = {
             "reset": "\033[0m",
             "bold": "\033[1m",
-            "underline": "\033[4m ",
+            "underline": "\033[4m",
 
             # Standard (safe)
             "black": "\033[30m",
@@ -151,8 +151,12 @@ class CliLogger:
     def error(self, message):
         print(self._format("error", message), file=sys.stderr)
 
-    def warn(self, message):
+
+    def warning(self, message):
         print(self._format("warn", message))
+
+    def warn(self, message):
+        self.warning(message)
 
     def info(self, message, _bold=False, _underline=False):
         print(self._format("info", message, _bold=_bold, _underline=_underline))
@@ -176,6 +180,8 @@ def georeference_tiff_MNT(tif_path,
                           folder_input,
                           img_name,
                           offset_xi_Y=0,
+                          offsetUTMx=0,
+                          offsetUTMy=0,
                           ampli=1.2,
                           zhang_dic=None,
                           cache=False,
@@ -208,6 +214,14 @@ def georeference_tiff_MNT(tif_path,
 
     #  Retour: Distances en mètre (m) Angles en RADIANS (rad)
     latitude, longitude, z_ground, Z_cam_nadir, Z_cam_sealevel, UTM_x, UTM_y, zoneUTM, xi_Y, xi_P, xi_R = DJI2IRDrone(raw_exif, verbose=False)
+
+    # correction de la position GPS du nadir
+    if offsetUTMx != 0 or offsetUTMy != 0:
+        logger.info(f'Correction position Nadir Est | Nord :  {offsetUTMx} m, {offsetUTMy} m')
+
+    UTM_x, UTM_y = UTM_x + offsetUTMx, UTM_y + offsetUTMy
+
+
     Cam_Center = (UTM_x, UTM_y, Z_cam_nadir)
 
 
@@ -220,6 +234,7 @@ def georeference_tiff_MNT(tif_path,
     if img_override is not None:
         img_raw = img_override
     else:
+        logger.debug(f'chargement de l\'image {tif_path} en mode raw_DJI')
         img_raw = cv2.imread(str(tif_path), cv2.IMREAD_UNCHANGED)
         if img_raw is None:
             raise FileNotFoundError(tif_path)
@@ -249,7 +264,11 @@ def georeference_tiff_MNT(tif_path,
 
     else:
         # --- 1.02-2 Valeurs par défaut pour image multispectrale 1 bands ou 4 bandes
-        # Pour ce type d'image la correction de Zhang à déjà été faite dans IRDrone
+        # ATTENTION :Pour ce type d'image la correction de Zhang à déjà été faite dans IRDrone
+        # On utilise les carctéristiques de la caméra virtuelle IRDrone qui prend en compte
+        # la correction de distorsion et du crop de l'image.
+        # Pour les images IRDrone le FOV de la caméra virtuelest donné dans les données exif des couches
+
         Ny, Nx = img_raw.shape[:2]
         fov_x = raw_exif.get("FOV")
 
@@ -261,8 +280,9 @@ def georeference_tiff_MNT(tif_path,
                     fov_x = fov_x.lower().replace("deg", "").strip()
                 fov_x = float(fov_x)
 
-        except Exception:
-            logger.warn("FOV invalide → fallback focal_pix=2918")
+
+        except (ValueError, TypeError):
+            logger.warning("FOV invalide → fallback focal_pix=2918")
             fov_x = None
 
         if fov_x:
@@ -277,6 +297,8 @@ def georeference_tiff_MNT(tif_path,
         dist = None
 
     # --- 1.03 Marquage de l'image brute  (avec sauvegarde)
+    # C'est une option utile en développement ou pour construire des images pédagogiques.
+
     t0 = time.perf_counter()
     if tag_img:
         tif_path_taged = folder_input / "geo_ref" / f"{img_name}_taged.tif"
@@ -300,14 +322,15 @@ def georeference_tiff_MNT(tif_path,
           f"écart sur x = {int(Nx / 2 - cx)} pix ({100 * (Nx / 2 - int(cx)) / Nx:.2f}%)  | sur y = {int(Ny / 2 - cy)} pix ({100 * (Ny / 2 - int(cy)) / Ny:.2f}%) \n"
           f"fov_x = {np.rad2deg(fov_x):.4f} °  ; fov_y = {np.rad2deg(fov_y):.4f} ° \n"
           f"GSD X = {gsd_x:.4f} m/px  ;  Y={gsd_y:.4f} m/px\n"
+          f"Correction manuelles :\n"
           f"offset Yaw = {np.rad2deg(offset_xi_Y) : .2f}°\n"
+          f"offset UTM Est= {offsetUTMx: .3f} m  Nord = {offsetUTMy: .3f} m\n"
           f"------------------------------------------------"
           )
 
     # ------------------------------------------------------------------------------
     # 2) Matrices de changement de repère; repère  Image vers repère Géographique
     # ------------------------------------------------------------------------------
-
 
     R_Img2Gnd = R_yaw(xi_Y + offset_xi_Y)
 
@@ -2783,96 +2806,7 @@ def choose_images():
 
     return folder_input, list_img_name, list_img, list_path
 
-# --------------------------------------------------
-# traitement d'une image
-# --------------------------------------------------
 
-def process_image(folder_input, img_name, args, zhang_dic, tol_MC=0.01, img_override=None, tif_override=None):
-
-
-    geo_ref_dir = folder_input / "geo_ref"
-
-    if not geo_ref_dir.exists():
-        geo_ref_dir.mkdir(parents=True, exist_ok=True)
-        logger.ok(f"Création du dossier : {geo_ref_dir}")
-
-    if args.mode == "raw_DJI":
-        logger.info(f"--- Traitement {img_name}.{args.suffix}")
-        geo_tif = folder_input / "geo_ref" / f"{img_name}_geo.tif"
-
-    elif args.mode == "multispectral":
-        base_name = img_name.rsplit("_", 1)[0]  # enlève _1 de la bande N°1
-        logger.info(f"--- Traitement {base_name}")
-        geo_tif = folder_input / "geo_ref" / f"{base_name}_0_geo.tif"
-
-    try:
-
-        if img_override is not None:
-            # --- multispectral : image déjà chargée ---
-            img = img_override
-            tif_path = None  # ⚠️ pas de fichier source
-
-        else:
-            # --- mode raw_DJI ---
-            if args.suffix.lower() == "dng":
-                tif_path = dng2tiff(folder_input, img_name)
-            elif args.suffix.lower() == "tif":
-                logger.warn(f'  le suffix {args.suffix} n\'est pas pris en charge en mode raw DJI')
-                sys.exit(1)
-            else:
-                logger.error(f' le suffix {args.suffix} n\'est pas pris en charge.')
-                sys.exit(1)
-
-            img = cv2.imread(str(tif_path), cv2.IMREAD_UNCHANGED)
-
-        # h, w = img.shape[:2]
-
-        raw_exif = load_companion_exif(folder_input, img_name, suffix=args.suffix, alti_takeoff=args.altitakeoff)
-
-        if raw_exif is None:
-            raise RuntimeError("EXIF manquant")
-
-        tif_ref = tif_override if tif_override is not None else tif_path
-
-        output_name = img_name
-
-        if args.mode == "multispectral":
-            output_name = img_name.rsplit("_", 1)[0] + "_0"
-
-        new_geo_path = \
-            georeference_tiff_MNT(
-            tif_ref,
-            raw_exif,
-            geo_tif,
-            folder_input,
-            output_name,
-            offset_xi_Y=np.deg2rad(args.offsetyaw),
-            zhang_dic=zhang_dic,
-            cache=False,
-            verbose=args.verbose,
-            tag_img=args.tag_img,
-            bitdepth=args.bitdepth,
-            graphic_3D=args.graphic_3D,
-            graphic_2D=args.graphic_2D,
-            graphic_ortho=args.graphic_ortho,
-            view_graphic=args.view_graphic,
-            save_graphic=args.save_graphic,
-            comp_error_rms=args.comp_error_rms,
-            tol_MC=tol_MC,
-            topo_style=args.topo_style,
-            raster_topo=args.raster_topo,
-            carte_topo=args.carte_topo,
-            img_override=img,
-        )
-
-        if new_geo_path:
-            logger.ok(f"Géoréférencement terminé : {new_geo_path}")
-        else:
-            logger.warn(f" Process terminé sans génération du fichier georef")
-
-    except Exception as e:
-
-        logger.error(f" Erreur sur {img_name}: {e}")
 
 # --------------------------------------------------
 # ligne de commande
@@ -2910,6 +2844,16 @@ def parse_args():
                         type=float,
                         default=0,
                         help="offset yaw en degrés")
+
+    parser.add_argument("--offsetUTMx",
+                        type=float,
+                        default=0,
+                        help="offset UTM vers EST en m")
+
+    parser.add_argument("--offsetUTMy",
+                        type=float,
+                        default=0,
+                        help="offset UTM vers Nord en m")
 
     parser.add_argument("--altitakeoff",
                         default=None,
@@ -2951,7 +2895,6 @@ def calib_cam_DJI():
     return zhang_dic
 
 # -----------------------------------------------------------------
-# multispectral
 #   détection automatique du mode de traitement
 #    > "raw_DJI" :    raw dng du DJI
 #    > "miltispectral" : quadruplet R\G\B\NIR de tif de IRDrone
@@ -2986,33 +2929,105 @@ def detect_mode(paths, args_mode):
     # --- cas non supporté ---
     raise ValueError(f"Format non supporté : {suffixes}")
 
-def group_multispectral(paths, logger):
-    pattern = re.compile(r"(.+?)_(\d)\.(tif|tiff)$", re.IGNORECASE)
+# --------------------------------------------------
+# traitement d'une image
+# --------------------------------------------------
 
-    groups = defaultdict(dict)
+def process_image(folder_input, img_name, args, zhang_dic, tol_MC=0.01, img_override=None, tif_override=None):
 
-    for p in paths:
-        m = pattern.match(p.name)
-        if not m:
-            continue
 
-        base, band, _ = m.groups()
-        groups[base][int(band)] = p
+    geo_ref_dir = folder_input / "geo_ref"
 
-    valid = {}
-    rejected = {}
+    if not geo_ref_dir.exists():
+        geo_ref_dir.mkdir(parents=True, exist_ok=True)
+        logger.ok(f"Création du dossier : {geo_ref_dir}")
 
-    for base, bands in groups.items():
-        if set(bands.keys()) == {1, 2, 3, 4}:
-            valid[base] = bands
+    if args.mode == "raw_DJI":
+        logger.info(f"--- Traitement {img_name}.{args.suffix}")
+        geo_tif = folder_input / "geo_ref" / f"{img_name}_geo.tif"
+
+    elif args.mode == "multispectral":
+        base_name = img_name.rsplit("_", 1)[0]  # enlève _1 de la bande N°1
+        logger.info(f"--- Traitement {base_name}")
+        geo_tif = folder_input / "geo_ref" / f"{base_name}_0_geo.tif"
+
+    try:
+
+        if img_override is not None:
+            # --- multispectral : image déjà chargée ---
+            img = img_override
+            tif_path = None  # ⚠️ pas de fichier source
+
         else:
-            rejected[base] = bands
-            logger.warn(f"{base} rejeté. Bandes présentes: {sorted(bands.keys())}")
+            # --- mode raw_DJI --- seul le nom de l'image est chargé à ce stade
+            if args.suffix.lower() == "dng":
+                tif_path = dng2tiff(folder_input, img_name)  # création d'une image .tif à partie de l'image .dng
+            elif args.suffix.lower() == "tif":
+                logger.warn(f'  le suffix {args.suffix} n\'est pas pris en charge en mode raw DJI')
+                sys.exit(1)
+            else:
+                logger.error(f' le suffix {args.suffix} n\'est pas pris en charge.')
+                sys.exit(1)
 
-    logger.info(f'quadruplets valides = {len(valid)}')
-    if len(rejected) != 0: logger.warn(f'quadruplets rejetés = {rejected}')
+            img = cv2.imread(str(tif_path), cv2.IMREAD_UNCHANGED)
+            if img is None:
+                raise FileNotFoundError(tif_path)
 
-    return valid, rejected
+        # --- recherche des données exif essentielles pour le géoréférencement et l'orthorectification.
+        # Coordonnées GPS de la prise de vue, attitude du drone (Yaw), altitude takeoff, altitude du nadir.
+
+        raw_exif = load_companion_exif(folder_input, img_name, suffix=args.suffix, alti_takeoff=args.altitakeoff)
+
+        if raw_exif is None:
+            raise RuntimeError("EXIF manquant")
+
+        tif_ref = tif_override if tif_override is not None else tif_path
+
+        output_name = img_name
+
+        if args.mode == "multispectral":
+            output_name = base_name + "_0"  # le nom est construit en remplaçant le numéro de bande spectrale (1,2,3,4) par 0
+
+        new_geo_path = \
+            georeference_tiff_MNT(
+            tif_ref,
+            raw_exif,
+            geo_tif,
+            folder_input,
+            output_name,
+            offset_xi_Y=np.deg2rad(args.offsetyaw),
+            offsetUTMx=args.offsetUTMx,
+            offsetUTMy=args.offsetUTMy,
+            zhang_dic=zhang_dic,
+            cache=False,
+            verbose=args.verbose,
+            tag_img=args.tag_img,
+            bitdepth=args.bitdepth,
+            graphic_3D=args.graphic_3D,
+            graphic_2D=args.graphic_2D,
+            graphic_ortho=args.graphic_ortho,
+            view_graphic=args.view_graphic,
+            save_graphic=args.save_graphic,
+            comp_error_rms=args.comp_error_rms,
+            tol_MC=tol_MC,
+            topo_style=args.topo_style,
+            raster_topo=args.raster_topo,
+            carte_topo=args.carte_topo,
+            img_override=img,
+        )
+
+        if new_geo_path:
+            logger.ok(f"Géoréférencement terminé : {new_geo_path}")
+        else:
+            logger.warn(f" Process terminé sans génération du fichier georef")
+
+    except Exception as e:
+
+        logger.error(f" Erreur sur {img_name}: {e}")
+
+# -----------------------------------------------------------------------
+# process multispectral
+# -----------------------------------------------------------------------
 
 def process_multispectral(folder_input, base, band_paths, args, zhang_dic, tol_MC=0.01):
 
@@ -3061,11 +3076,38 @@ def process_multispectral(folder_input, base, band_paths, args, zhang_dic, tol_M
         img_override=img,  # injection directe de l'image 4 couches
     )
 
+def group_multispectral(paths, logger):
+    pattern = re.compile(r"(.+?)_(\d)\.(tif|tiff)$", re.IGNORECASE)
+
+    groups = defaultdict(dict)
+
+    for p in paths:
+        m = pattern.match(p.name)
+        if not m:
+            continue
+
+        base, band, _ = m.groups()
+        groups[base][int(band)] = p
+
+    valid = {}
+    rejected = {}
+
+    for base, bands in groups.items():
+        if set(bands.keys()) == {1, 2, 3, 4}:
+            valid[base] = bands
+        else:
+            rejected[base] = bands
+            logger.warn(f"{base} rejeté. Bandes présentes: {sorted(bands.keys())}")
+
+    logger.info(f'quadruplets valides = {len(valid)}')
+    if len(rejected) != 0: logger.warn(f'quadruplets rejetés = {rejected}')
+
+    return valid, rejected
+
 
 # ================================================================
 # programme principal
 # ================================================================
-
 
 if __name__ == "__main__":
 
@@ -3201,10 +3243,16 @@ if __name__ == "__main__":
 
         # --- réglages developpement ---
         if args.offsetyaw == 0:
-            args.offsetyaw = 7.2
+            args.offsetyaw = 6.
+        if args.offsetUTMx == 0:
+            args.offsetUTMx = - 3.8
+        if args.offsetUTMy == 0:
+            args.offsetUTMy = 3.8
         logger.warn(
             f'forcage des arguments pour le développement ...\n'
-            f'      offset yaw = {args.offsetyaw}°'
+            f'      offset yaw = {args.offsetyaw}°\n'
+            f'      offset UTM vers Est = {args.offsetUTMx} m\n'
+            f'      offset UTM vers Nord = {args.offsetUTMy} m\n'
         )
 
 

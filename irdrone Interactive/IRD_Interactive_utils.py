@@ -56,11 +56,11 @@ class Prefrence_Screen:
     def __init__(self):
         super().__init__()
         self.current_directory = os.getcwd()
-        # print("TEST  Current Directory:", self.current_directory)
         self.directory = os.path.abspath('/')
         self.directory = Path("~").expanduser().as_posix()
-        # print("TEST  directory", self.directory)
-        self.default_app_dir = os.path.join(self.directory, "Program Files", "IRdrone")
+        self.default_app_dir = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "resources")
+        )
         self.default_user_dir = cf.OUTPUT_FOLDER_NAME
         self.verbose = True
         # setting to manage multiple screens

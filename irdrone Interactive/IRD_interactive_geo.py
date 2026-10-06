@@ -74,7 +74,7 @@ from IRD_Interactive_color_style import Style
 #  =============================================================
 
 
-def data_sig(coordinates: tuple[float, float]) -> Optional[dict[str, any]]:
+def data_sig(coordinates: tuple[float, float], geotag=True, verbose=False) -> Optional[dict[str, any]]:
     """
     Retrieve geographic and geocoding information for given coordinates.
 
@@ -94,8 +94,9 @@ def data_sig(coordinates: tuple[float, float]) -> Optional[dict[str, any]]:
     """
     dic_geo = []
     try:
-        dic_geo = extract_alti_IGN(coordinates)   # extracts the geographic altitude of the location (IGN API)
-        extract_geoTag(dic_geo, bypass=True)                   # extracts geocoding data (OpenStreetMap API)
+        dic_geo = extract_alti_IGN(coordinates, verbose=verbose)   # extracts the geographic altitude of the location (IGN API)
+        if geotag:
+            extract_geoTag(dic_geo, bypass=True)      # extracts geocoding data (OpenStreetMap API)
 
     except Exception as e:
         print("error", e)
@@ -366,14 +367,10 @@ def get_altitudes_OpenTopo(points, pause=0.3, batch_size=100, max_tries: int = 3
         time.sleep(pause)
     return results
 
-
-
-
 def extract_alti_IGN_From_API(coordinates: List[Tuple[float, float]], bypass: bool = False, verbose: bool = False) -> Optional[Dict[str, Optional[float]]]:
     dico_coordinates_GPS = get_altitudes(coordinates, verbose=True, bypass=False)
     dic_geo = {'elevations': dico_coordinates_GPS}   # enhanced dictionary
     return dic_geo
-
 
 def altitude_IGN(
     coordGPS: List[Tuple[float, float]],
@@ -425,8 +422,6 @@ def altitude_IGN(
 
     return altitude
 
-
-
 def force_sea_Level(coordinates, hlevel: float = 0.):
     dico_coordinates_IGN = {'elevations': []}
     for i in range(len(coordinates)):
@@ -436,7 +431,6 @@ def force_sea_Level(coordinates, hlevel: float = 0.):
                   'acc': 'force_sea_Level'}
         dico_coordinates_IGN['elevations'].append(dic_pt)
     return dico_coordinates_IGN
-
 
 def extract_geoTag(dic_geo: dict[str, Any],
                    max_retries: int = 3,
@@ -573,7 +567,6 @@ def extract_geoTag(dic_geo: dict[str, Any],
 
     return dic_geo
 
-
 def dstUTM(lat1, lon1, lat2, lon2):
     """
     param lat1: latitude  point P1  dd.ddddddd   ( < 0 si S  > 0 si N )
@@ -604,7 +597,6 @@ def dstUTM(lat1, lon1, lat2, lon2):
     x2, y2, zoneUTM1 = geo2UTM(lat2, lon2)
     dstUtm = ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
     return dstUtm
-
 
 def capUTM(lat1, lon1, lat2, lon2):
     """
@@ -640,7 +632,6 @@ def capUTM(lat1, lon1, lat2, lon2):
         else:
             pass
     return cap
-
 
 def geo2UTM(lat, lon):
     """
@@ -701,7 +692,6 @@ def geo2UTM(lat, lon):
 
     return xUTM, yUTM, zoneUTM
 
-
 def UTM2geo(xUTM, yUTM, zoneUTM):
     """
     param:  xUTM     in m
@@ -753,12 +743,10 @@ def UTM2geo(xUTM, yUTM, zoneUTM):
     lon = np.rad2deg(lamb)
     return lat, lon
 
-
 def segmentUTM(lat1, lon1, lat2, lon2):
     dstUtm = round(dstUTM(lat1, lon1, lat2, lon2), 4)
     capUtm = round(capUTM(lat1, lon1, lat2, lon2), 4)
     return dstUtm, capUtm
-
 
 def GPSdms2GPSdd(coord):
     """
@@ -770,7 +758,6 @@ def GPSdms2GPSdd(coord):
     """
     coordDD = coord[0] + coord[1] / 60 + coord[2] / 3600
     return coordDD
-
 
 def calcul_distance(latLongZ: list[[float, float, float]]):
     """
@@ -789,7 +776,6 @@ def calcul_distance(latLongZ: list[[float, float, float]]):
     distP0P1.append(0)  # no distance or cape to the next point for landing point!
     capP0P1.append(0)   # we set the value arbitrarily to 0
     return distP0P1, capP0P1
-
 
 def cumul_Dist(coordLatLongZ):
     """
