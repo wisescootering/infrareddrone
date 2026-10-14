@@ -66,7 +66,7 @@ class Prefrence_Screen:
         # setting to manage multiple screens
         self.defaultScreenID: int = 1  # Set to 0 for screen 1, 1 for screen 2, and so on
         self.screenAdjust = [0, 40]  # 40 for taskbar and
-        self.windowDisplaySize = (800, 640)
+        self.windowDisplaySize = (1200, 640)
         self.AerialPhotoFolder: str = "AerialPhotography"  # folder of images taken by VIS and NIR cameras
         self.AerialPhotoFolder_VIS: str = "AerialPhotography/VIS"  # folder of images taken by VIS and NIR cameras
         self.AerialPhotoFolder_NIR: str = "AerialPhotography/NIR"  # folder of images taken by VIS and NIR cameras

@@ -2,7 +2,7 @@
 # --------------------------------------------------------------------------------
 #   IR_drone interactive
 #   Main window of the interactive IRDrone GUI
-#   29/10/2023   V002
+#   10/09/2026   V003
 # ---------------------------------------------------------------------------------
 
 import warnings
@@ -31,14 +31,18 @@ from PyQt6.QtWidgets import (
     QProgressBar,
     QMessageBox,
     QFileDialog,
-    QMessageBox,
 )
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QPixmap, QColor, QIcon
+from PyQt6.QtGui import QPixmap, QColor, QIcon, QImage
+
+import rawpy
+import imageio
 # -------------- IRDrone Library ------------------------------------
 from IRD_Interactive_1 import Window_Load_TakeOff_Image, Window_create_file_structure
 from IRD_Interactive_2 import LoadVisNirImagesDialog
 from IRD_Interactive_3 import DialogSynchroAruco
+from IRD_Interactive_5 import DialogGeoRef
+from IRD_Interactive_GeoRef import georef_main
 import IRD_Interactive_utils as Uti
 from IRD_Interactive_utils import Prefrence_Screen
 from IRD_Interactive_color_style import Style
@@ -74,7 +78,11 @@ class Main_Window(QMainWindow):
         self.btn_load_images = None
         self.btn_pre_process_images = None
         self.btn_process_images = None
+        self.btn_post_process_images = None
         self.btn_help = None
+        self.btn_help_width = 40
+        self.nb_btn = 5
+        self.btn_width = int((self.pref_screen.windowDisplaySize[0]-self.btn_help_width)/self.nb_btn )
         self.command_layout = None
         self.image_label = QLabel(self)
         self.empty_pixmap = QPixmap(100, 100)
@@ -84,6 +92,7 @@ class Main_Window(QMainWindow):
         self.dialog_extract_exif = None
         self.folderMissionPath: Path = None
         self.dialog_synchro_clock = None
+
         self.init_GUI()
 
 
@@ -113,25 +122,34 @@ class Main_Window(QMainWindow):
         #  btn create_mission
         self.btn_create_mission = QPushButton("Step 1 : Define the mission", self)
         self.btn_create_mission.setStyleSheet("background-color: darkBlue; color: white;")
+        self.btn_create_mission.setFixedWidth(self.btn_width)
         self.btn_create_mission.clicked.connect(self.open_window_define_mission)
         #  btn load_images
         self.btn_load_images = QPushButton("Step 2 : Choice of reference image set.", self)
         self.btn_load_images.setAutoDefault(True)
         self.btn_load_images.setEnabled(True)   # (True) pour test  et (False) en prod !
         self.btn_load_images.setStyleSheet("background-color: purple; color: white;")  # color: darkGray;")
+        self.btn_load_images.setFixedWidth(self.btn_width)
         self.btn_load_images.clicked.connect(self.open_window_load_set_images)
         #  btn pre_process_images
         self.btn_pre_process_images = QPushButton("Step 3 : Image pre-processing", self)
         self.btn_pre_process_images.setStyleSheet("background-color: darkGray; color: white;")
+        self.btn_pre_process_images.setFixedWidth(self.btn_width)
         self.btn_pre_process_images.clicked.connect(self.on_pre_process_images)
         #  btn process_images
         self.btn_process_images = QPushButton("Step 4 : Image processing", self)
         self.btn_process_images.setStyleSheet("background-color: darkRed; color: white;")
+        self.btn_process_images.setFixedWidth(self.btn_width)
         self.btn_process_images.clicked.connect(self.on_process_images)
+        #  btn post process_images
+        self.btn_post_process_images = QPushButton("Step 5 : Image postprocessing", self)
+        self.btn_post_process_images.setStyleSheet("background-color: orange; color: white;")
+        self.btn_post_process_images.setFixedWidth(self.btn_width)
+        self.btn_post_process_images.clicked.connect(self.on_post_process_images)
         #  btn help
         self.btn_help = QPushButton("Help", self)
         self.btn_help.setStyleSheet("background-color: darkGreen; color: white;")
-        self.btn_help.setFixedWidth(60)
+        self.btn_help.setFixedWidth(self.btn_help_width)
         self.btn_help.clicked.connect(self.on_help)
 
         # Layout for command bar
@@ -140,6 +158,7 @@ class Main_Window(QMainWindow):
         self.command_layout.addWidget(self.btn_load_images)
         self.command_layout.addWidget(self.btn_pre_process_images)
         self.command_layout.addWidget(self.btn_process_images)
+        self.command_layout.addWidget(self.btn_post_process_images)
         self.command_layout.addWidget(self.btn_help)
 
         self.main_layout.addLayout(self.command_layout)
@@ -350,9 +369,42 @@ class Main_Window(QMainWindow):
         Uti.show_info_message("IRDrone", "Currently being implemented ...", "")
         pass
 
-
     # ===================================================================================
     #                   Button #5 click handlers
+    #     Step 5 post process images.  Georef, etc
+    # ===================================================================================
+
+    def on_post_process_images(self):
+        """
+        Phase 5 – Georef
+        """
+
+        if not self.ensure_mission_parameters():
+            return
+
+
+
+        try:
+
+            self.dialog_GeoRef = DialogGeoRef(self.mission_parameters)
+            self.dialog_GeoRef.data_signal_to_main.connect(
+                self.handle_data_from_dialog_GeoRef
+            )
+            self.dialog_GeoRef.show()
+
+        except Exception as e:
+            print("Error in  class Main_Window(QMainWindow)   in on_post_process_images     opening Dialog_GeoRef:", e)
+
+    def handle_data_from_dialog_GeoRef(self, validate: bool):
+        if validate:
+            print(Style.GREEN + "✔   Phase 5 completed successfully." + Style.RESET)
+        else:
+            print(Style.YELLOW + "⚠  Phase 5 cancelled by user." + Style.RESET)
+
+
+
+    # ===================================================================================
+    #                   Button #6 click handlers
     # ===================================================================================
 
 
@@ -378,9 +430,28 @@ class Main_Window(QMainWindow):
         """
         try:
             if self.mission_parameters is not None:
+                print("DEBUG Step 5 - mission_parameters :")
+                print(self.mission_parameters)
+
+                print(
+                    "DEBUG Step 5 - folderMissionPath :",
+                    self.mission_parameters.get("folderMissionPath")
+                )
+
+                print(
+                    "DEBUG Step 5 - File path mission :",
+                    self.mission_parameters.get("File path mission")
+                )
+
+
                 return True
 
             # Ask user to select a mission folder
+
+            QMessageBox.information(self, "Post Process. Géoréférencement",
+                                    "Sélectionnez le dossier de la mission \n"
+                                    "Format  FLY-YYYYMMDD-HHMM")
+
             default_user_dir = OUTPUT_FOLDER_NAME
             folderMissionPath, ok = Uti.choose_mission_folder_phase_2(self, default_user_dir=str(default_user_dir))
 

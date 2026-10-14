@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
 
 import sys
-print(f"✔ Python utilisé : {sys.executable}")
-print(f"✔", "\n✔ ".join(sys.path))
+# print(f"✔ Python utilisé : {sys.executable}")
+# print(f"✔", "\n✔ ".join(sys.path))
 import numpy as np
-print(f"✔ Version NumPy : {np.__version__}")
+# print(f"✔ Version NumPy : {np.__version__}")
 import math
 try:
     from osgeo import gdal
     gdal.UseExceptions()
-    print(f"✔ Version GDAL : {gdal.__version__}")
-    print(f"✔ Fichier GDAL : {gdal.__file__}")
+    # print(f"✔ Version GDAL : {gdal.__version__}")
+    # print(f"✔ Fichier GDAL : {gdal.__file__}")
 except Exception as e:
     print(f"✖ Erreur GDAL : {e}")
 
@@ -22,7 +22,7 @@ import argparse
 import tkinter as tk
 from tkinter import filedialog, simpledialog, messagebox
 import cv2
-print(f"✔ Version cv2 : {cv2.__version__}")
+# print(f"✔ Version cv2 : {cv2.__version__}")
 import re
 from collections import defaultdict
 import matplotlib.pyplot as plt
@@ -38,7 +38,7 @@ from typing import Any, Dict, Optional, Tuple, List, Union, Sequence, Iterable
 import json
 import subprocess
 import rasterio
-print(f"✔ Version rasterio : {rasterio.__version__}")
+# print(f"✔ Version rasterio : {rasterio.__version__}")
 from rasterio.transform import Affine, from_origin
 from rasterio.warp import reproject, Resampling, calculate_default_transform
 from rasterio.enums import ColorInterp
@@ -48,7 +48,35 @@ from osgeo import gdal, ogr, osr
 from datetime import datetime
 import time
 
+# ----------------------------------------------------
+#     bib PyQt 6
+# ----------------------------------------------------
+from PyQt6.QtGui import QPixmap
+from PyQt6.QtCore import (
+    Qt,
+    QThreadPool,
+    QObject,
+    pyqtSignal,
+    QThreadPool,
+    QTimer,
+)
+from PyQt6.QtWidgets import (
+    QMessageBox,
+    QApplication,
+    QWidget,
+    QFileDialog,
+    QDialog,
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QTextEdit,
+    QProgressBar,
+    QLabel,
+)
+
+
 from IRD_interactive_geo import data_sig
+import IRD_Interactive_utils as Uti
 
 
 if os.name == 'nt':
@@ -119,6 +147,8 @@ class CliLogger:
             "bright_cyan": "\033[96m",
         }
 
+        self.log_callback = None
+
     def _format(self, level, message, _bold=False, _underline=False):
         symbol = self.symbols[level]
 
@@ -145,30 +175,52 @@ class CliLogger:
             return f"{color}{symbol} {message}{reset}"
 
 
+    def _write(self, level, message, _bold=False, _underline=False):
+        """Write a log message to the console and the optional GUI."""
+        formatted_message = self._format(
+            level, message, _bold=_bold, _underline=_underline
+        )
+
+        # Keep the existing console output.
+        if level == "error":
+            print(formatted_message, file=sys.stderr)
+        else:
+            print(formatted_message)
+
+        # Forward a plain-text message to the GUI, if connected.
+        if self.log_callback is not None:
+            symbol = self.symbols[level]
+            self.log_callback(f"{symbol} {message}")
+
+
     def ok(self, message):
-        print(self._format("ok", message))
+        self._write("ok", message)
 
     def error(self, message):
-        print(self._format("error", message), file=sys.stderr)
-
+        self._write("error", message)
 
     def warning(self, message):
-        print(self._format("warn", message))
+        self._write("warn", message)
 
     def warn(self, message):
         self.warning(message)
 
     def info(self, message, _bold=False, _underline=False):
-        print(self._format("info", message, _bold=_bold, _underline=_underline))
+        self._write(
+            "info", message, _bold=_bold, _underline=_underline
+        )
 
     def timer(self, message):
-        print(self._format("timer", message))
+        self._write("timer", message)
 
     def tech(self, message):
-        print(self._format("tech", message))
+        self._write("tech", message)
 
     def debug(self, message):
-        print(self._format("debug", message))
+        self._write("debug", message)
+
+# Logger partagé par les fonctions du module
+logger = CliLogger(use_color=True)
 
 # ============================================================
 #  FONCTION PRINCIPALE
@@ -265,9 +317,9 @@ def georeference_tiff_MNT(tif_path,
     else:
         # --- 1.02-2 Valeurs par défaut pour image multispectrale 1 bands ou 4 bandes
         # ATTENTION :Pour ce type d'image la correction de Zhang à déjà été faite dans IRDrone
-        # On utilise les carctéristiques de la caméra virtuelle IRDrone qui prend en compte
+        # On utilise les caractéristiques de la caméra virtuelle IRDrone qui prend en compte
         # la correction de distorsion et du crop de l'image.
-        # Pour les images IRDrone le FOV de la caméra virtuelest donné dans les données exif des couches
+        # Pour les images IRDrone le FOV de la caméra virtuel est donné dans les données exif des couches
 
         Ny, Nx = img_raw.shape[:2]
         fov_x = raw_exif.get("FOV")
@@ -1019,37 +1071,6 @@ def ask_takeoff_altitude_gui(prompt: str, default=None) -> float:
         root.destroy()
         return altitude
 
-def OLD_ask_takeoff_altitude_gui(prompt: str, default=None) -> float:
-    """
-    Open a Tkinter dialog to ask user for takeoff ground altitude (meters AMSL).
-    """
-    root = tk.Tk()
-    root.withdraw()  # cache la fenêtre principale
-
-    if default is not None:
-        prompt += f"\n(Valeur suggérée : {round(default, 2)} m)"
-
-    value = simpledialog.askstring(
-        "Altitude Takeoff",
-        prompt,
-        parent=root
-    )
-
-    root.destroy()
-
-    if value is None:
-        raise ValueError("Saisie utilisateur annulée")
-
-    try:
-        altitude = float(value)
-    except ValueError:
-        raise ValueError("Valeur non numérique")
-
-    if altitude < -440 or altitude > 9000:
-        raise ValueError("Altitude hors plage réaliste")
-
-    return altitude
-
 def parse_and_normalize_gps_altitude(value: str) -> dict:
     """
     Extract and normalize altitude like:
@@ -1352,7 +1373,7 @@ def compute_MNT_mesh(
         UTM_x, UTM_y, Z0,
         z_ground,
         Cam_Center,
-        output_path,
+        folder_input,
         img_name,
         zoneUTM=31,
         ampli=1,
@@ -2918,6 +2939,7 @@ def detect_mode(paths, args_mode):
             "ou uniquement des images multispectrales (.tif)."
         )
 
+
     # --- cas RAW DJI ---
     if has_dng:
         return "raw_DJI"
@@ -2933,7 +2955,7 @@ def detect_mode(paths, args_mode):
 # traitement d'une image
 # --------------------------------------------------
 
-def process_image(folder_input, img_name, args, zhang_dic, tol_MC=0.01, img_override=None, tif_override=None):
+def process_image(folder_input, img_name, args, zhang_dic,  tol_MC=0.01, img_override=None, tif_override=None, logger=None, georef_success=0):
 
 
     geo_ref_dir = folder_input / "geo_ref"
@@ -3017,19 +3039,24 @@ def process_image(folder_input, img_name, args, zhang_dic, tol_MC=0.01, img_over
         )
 
         if new_geo_path:
-            logger.ok(f"Géoréférencement terminé : {new_geo_path}")
+            georef_success += 1
+            logger.ok(f"{georef_success} géoréférencement terminé : {new_geo_path}")
+
         else:
             logger.warn(f" Process terminé sans génération du fichier georef")
+        return georef_success
 
     except Exception as e:
 
+        # import traceback
         logger.error(f" Erreur sur {img_name}: {e}")
+        # traceback.print_exc()
 
 # -----------------------------------------------------------------------
 # process multispectral
 # -----------------------------------------------------------------------
 
-def process_multispectral(folder_input, base, band_paths, args, zhang_dic, tol_MC=0.01):
+def process_multispectral(folder_input, base, band_paths, args, zhang_dic, tol_MC=0.01, georef_success=0):
 
     # --- sécurité ---
     expected = {1, 2, 3, 4}
@@ -3067,14 +3094,17 @@ def process_multispectral(folder_input, base, band_paths, args, zhang_dic, tol_M
     ref_name = ref_path.stem  # ex: HYPERLAPSE_0271_1
 
     # --- pipeline ---
-    process_image(
-        folder_input,
-        ref_name,
-        args,
-        zhang_dic,
-        tol_MC=tol_MC,
-        img_override=img,  # injection directe de l'image 4 couches
-    )
+    georef_success = process_image(
+                                    folder_input,
+                                    ref_name,
+                                    args,
+                                    zhang_dic,
+                                    logger=logger,
+                                    tol_MC=tol_MC,
+                                    img_override=img,  # injection directe de l'image 4 couches
+                                    georef_success=georef_success
+                                )
+    return georef_success
 
 def group_multispectral(paths, logger):
     pattern = re.compile(r"(.+?)_(\d)\.(tif|tiff)$", re.IGNORECASE)
@@ -3105,11 +3135,232 @@ def group_multispectral(paths, logger):
     return valid, rejected
 
 
+def georef_main(image_callback=None):
+    logger = CliLogger(use_color=True)
+    logger.log_callback = globals()["logger"].log_callback
+
+
+    args = parse_args()  # arguments ligne de commande
+
+    zhang_dic = calib_cam_DJI()  # calibration caméra DJI
+
+    tolerence_Monte_Carlo = 0.0025
+
+    # ==================================================
+    # MODE LIGNE DE COMMANDE
+    # ==================================================
+    if args.input_dir:
+
+        folder_input = Path(args.input_dir)
+
+        if not folder_input.exists() or not folder_input.is_dir():
+            logger.error(f"Dossier invalide : {folder_input}")
+            sys.exit(1)
+
+        # ----------------------------------------------
+        # Construction de paths
+        # ----------------------------------------------
+        if args.images:
+            paths = []
+
+            for name in args.images:
+                # --- test DNG ---
+                if args.mode == "raw_DJI":
+                    dng_path = folder_input / f"{name}.dng"
+                    if dng_path.exists():
+                        paths.append(dng_path)
+                        continue
+
+                # --- test multispectral ---
+                elif args.mode == "multispectral":
+                    for i in range(1, 5):
+                        tif_path = folder_input / f"{name}_{i}.tif"
+                        if tif_path.exists():
+                            paths.append(tif_path)
+                else:
+                    pass
+
+            if not paths:
+                logger.error("Aucune image trouvée correspondant à --images")
+                sys.exit(1)
+
+        else:
+            # scan auto
+            logger.info(f'Scan automatique du dossier {folder_input}')
+            paths = (
+                    list(folder_input.glob("*.dng")) +
+                    list(folder_input.glob("*.tif")) +
+                    list(folder_input.glob("*.tiff"))
+            )
+
+        if not paths:
+            logger.error("Aucune image trouvée dans le dossier")
+            sys.exit(1)
+
+        # ----------------------------------------------
+        # Détection du mode
+        # ----------------------------------------------
+
+        try:
+            mode = detect_mode(paths, args.mode)
+        except ValueError as e:
+            logger.error(str(e))
+            sys.exit(1)
+        logger.info(f"Mode détecté : {mode}")
+
+        # ----------------------------------------------
+        # RAW DJI
+        # ----------------------------------------------
+        if mode == "raw_DJI":
+
+            list_img_name = sorted(p.stem for p in paths if p.suffix.lower() == ".dng")
+
+            logger.info(f"{len(list_img_name)} images DNG à traiter")
+            georef_sucsess = 0
+            for img_name in list_img_name:
+                 georef_success = process_image(
+                                            folder_input,
+                                            img_name,
+                                            args,
+                                            zhang_dic,
+                                            logger=logger,
+                                            tol_MC=tolerence_Monte_Carlo,
+                                            georef_sucsess=georef_unsucces
+                                        )
+            Uti.show_info_message("IRDrone", f"{georef_success }image géoréférencée avec succes ...", "")
+
+
+        # ----------------------------------------------
+        # MULTISPECTRAL
+        # ----------------------------------------------
+        elif mode == "multispectral":
+
+            tif_paths = [p for p in paths if p.suffix.lower() in [".tif", ".tiff"]]
+
+            valid, rejected = group_multispectral(tif_paths, logger)
+
+            for base, bands in valid.items():
+                process_multispectral(
+                    folder_input,
+                    base,
+                    bands,
+                    args,
+                    zhang_dic,
+                    tolerence_Monte_Carlo
+                )
+
+    # ==================================================
+    # MODE INTERACTIF
+    # ==================================================
+    else:
+
+        logger.info(f"Mode interactif : sélection des images ...\n", _bold=True)
+
+
+        folder_input, list_img_name, list_img, list_path = choose_images()
+
+        if not list_path:
+            logger.error("Aucune image sélectionnée")
+            sys.exit(1)
+
+        try:
+            args.mode = None
+            mode = detect_mode(list_path, args.mode)
+        except ValueError as e:
+            logger.error(str(e))
+            sys.exit(1)
+
+        # --- réglages developpement ---
+        if args.offsetyaw == 0:
+            args.offsetyaw = 6.
+        if args.offsetUTMx == 0:
+            args.offsetUTMx = - 3.8
+        if args.offsetUTMy == 0:
+            args.offsetUTMy = 3.8
+        logger.warn(
+            f'forcage des arguments pour le développement ...\n'
+            f'      offset yaw = {args.offsetyaw}°\n'
+            f'      offset UTM vers Est = {args.offsetUTMx} m\n'
+            f'      offset UTM vers Nord = {args.offsetUTMy} m\n'
+        )
+
+        logger.info(f"Mode détecté : {mode}")
+
+        # ----------------------------------------------
+        # RAW DJI
+        # ----------------------------------------------
+        if mode == "raw_DJI":
+            args.mode = "raw_DJI"
+            args.suffix = "dng"
+            logger.info(f'Dossier : {folder_input}')
+            logger.info(f'{len(list_img_name)} images à traiter : {list_img_name}')
+
+            args.comp_error_rms = False
+
+            georef_success = 0
+
+            for img_path in list_path:
+                img_name = img_path.stem
+
+                # gestion de l'affichage de l'image à géoréferencée. Envoie du chemin
+                if image_callback is not None:
+                    image_callback(str(img_path))
+
+
+                georef_success = process_image(
+                                                folder_input,
+                                                img_name,
+                                                args,
+                                                zhang_dic,
+                                                logger=logger,
+                                                tol_MC=tolerence_Monte_Carlo,
+                                                georef_success=georef_success
+                                            )
+            Uti.show_info_message("IRDrone", f"{georef_success} images géoréférencées avec succes ...", "")
+
+        # ----------------------------------------------
+        # MULTISPECTRAL
+        # ----------------------------------------------
+        elif mode == "multispectral":
+            args.mode = "multispectral"
+            valid, rejected = group_multispectral(list_path, logger)
+            logger.info(f"list_path : {list_path}")
+            georef_success = 0
+
+            for base, bands in valid.items():
+                logger.info(f"Traitement multispectral : {base}")
+
+                # Display the red spectral band in the GUI preview.
+                if image_callback is not None:
+                    red_band_path = bands[1]
+                    image_callback(str(red_band_path))
+
+
+                georef_success = process_multispectral(
+                                                        folder_input,
+                                                        base,
+                                                        bands,
+                                                        args,
+                                                        zhang_dic,
+                                                        tolerence_Monte_Carlo,
+                                                        georef_success=georef_success
+                                                    )
+
+            Uti.show_info_message("IRDrone", f"{georef_success} images multispectrales géoréférencées avec succes ...", "")
+
+
+
 # ================================================================
 # programme principal
 # ================================================================
 
 if __name__ == "__main__":
+
+    # georef_main()
+    # sys.exit(0)
+
+
+
 
     logger = CliLogger(use_color=True)
 
@@ -3192,14 +3443,20 @@ if __name__ == "__main__":
 
             logger.info(f"{len(list_img_name)} images DNG à traiter")
 
+            georef_success = 0
+
             for img_name in list_img_name:
-                process_image(
-                    folder_input,
-                    img_name,
-                    args,
-                    zhang_dic,
-                    tol_MC=tolerence_Monte_Carlo
-                )
+                georef_success = process_image(
+                                                folder_input,
+                                                img_name,
+                                                args,
+                                                zhang_dic,
+                                                logger=logger,
+                                                tol_MC=tolerence_Monte_Carlo,
+                                                georef_success=georef_success
+                                            )
+
+            Uti.show_info_message("IRDrone", f"{georef_success} images géoréférencées avec succes ...", "")
 
         # ----------------------------------------------
         # MULTISPECTRAL
@@ -3210,16 +3467,20 @@ if __name__ == "__main__":
 
             valid, rejected = group_multispectral(tif_paths, logger)
 
+            georef_success = 0
+
             for base, bands in valid.items():
 
-                process_multispectral(
-                    folder_input,
-                    base,
-                    bands,
-                    args,
-                    zhang_dic,
-                    tolerence_Monte_Carlo
-                )
+                georef_success = process_multispectral(
+                                                    folder_input,
+                                                    base,
+                                                    bands,
+                                                    args,
+                                                    zhang_dic,
+                                                    tolerence_Monte_Carlo,
+                                                    georef_success =georef_success
+                                                )
+            Uti.show_info_message("IRDrone", f"{georef_success} images géoréférencées avec succes ...", "")
 
     # ==================================================
     # MODE INTERACTIF
@@ -3270,16 +3531,20 @@ if __name__ == "__main__":
 
             args.comp_error_rms = False
 
+            georef_success = 0
+
             for img_path in list_path:
                 img_name = img_path.stem
 
-                process_image(
-                    folder_input,
-                    img_name,
-                    args,
-                    zhang_dic,
-                    tol_MC=tolerence_Monte_Carlo
-                )
+                georef_success= process_image(
+                                                folder_input,
+                                                img_name,
+                                                args,
+                                                zhang_dic,
+                                                logger=logger,
+                                                tol_MC=tolerence_Monte_Carlo,
+                                                georef_success = georef_success
+                                            )
 
         # ----------------------------------------------
         # MULTISPECTRAL
@@ -3291,14 +3556,15 @@ if __name__ == "__main__":
             for base, bands in valid.items():
                 logger.info(f"Traitement multispectral : {base}")
 
-                process_multispectral(
-                    folder_input,
-                    base,
-                    bands,
-                    args,
-                    zhang_dic,
-                    tolerence_Monte_Carlo
-                )
+                georef_success = process_multispectral(
+                                                        folder_input,
+                                                        base,
+                                                        bands,
+                                                        args,
+                                                        zhang_dic,
+                                                        tolerence_Monte_Carlo,
+                                                        georef_success=georef_success
+                                                    )
 
     sys.exit(0)
 

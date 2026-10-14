@@ -253,7 +253,7 @@ class LoadVisNirImagesDialog(QDialog):
 
             self.currentSpectralBand = self.spectral_band
             # Creating placeholders for images
-            self.image_labels = [QLabel() for _ in range(self.number_images_reference)]
+            self.image_labels = [QLabel() for i in range(self.number_images_reference)]
             # Creating placeholders for image captions
             self.img_legend = ["Take-off image:",
                                "First sync image.",
@@ -1040,7 +1040,7 @@ class LoadVisNirImagesDialog(QDialog):
 
             # --- Filename and legend information ---
             filename, file_suffix = os.path.splitext(os.path.basename(file_path))
-            self.image_name_labels[index].setText(f"{self.img_legend[0]}  : \n {filename}  {file_suffix}")
+            self.image_name_labels[index].setText(f"{self.img_legend[index]}  : \n {filename}  {file_suffix}")
             self.image_name_labels[index].setStyleSheet("color: darkBlue;")
 
             # --- Store input/output paths ---
