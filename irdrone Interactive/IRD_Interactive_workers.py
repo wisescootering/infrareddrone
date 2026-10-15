@@ -595,13 +595,14 @@ class TimeShiftWorker(QRunnable):
 
 
 
+
 class ArucoWorkerSignals(QObject):
-    def __init__(self):
-        super().__init__()
-    progress = pyqtSignal(int)  # pour la progress bar
+    progress = pyqtSignal(int)  # Progress bar
     stage = pyqtSignal(str)
     finished = pyqtSignal(list, list, list)  # results, x_vals, y_vals
     error = pyqtSignal(str)
+    log = pyqtSignal(str)  # Log message for the GUI
+
 
 class ArucoWorker(QRunnable):
     """
@@ -642,7 +643,8 @@ class ArucoWorker(QRunnable):
                 verbose=self.verbose,
                 use_aruco_cache=self.use_aruco_cache,
                 multi_thread=self.multi_thread,
-                progress_callback=self.signals.progress.emit
+                progress_callback=self.signals.progress.emit,
+                log_callback=self.signals.log.emit
             )
             self.signals.finished.emit(results, x_vals, y_vals)
 

@@ -55,7 +55,8 @@ def process_aruco_images(
         img_check_suffix="jpg",
         multi_thread=False,
         max_workers: int = 4,
-        progress_callback: Optional[Callable[[int], None]] = None
+        progress_callback: Optional[Callable[[int], None]] = None,
+        log_callback: Optional[Callable[[str], None]] = None
 ):
     """
     Multi-threaded processing of ArUco detections.
@@ -95,6 +96,13 @@ def process_aruco_images(
 
     """
 
+    def log_message(message: str) -> None:
+        """Print a message and optionally forward it to the GUI log."""
+        print(message)
+        if log_callback is not None:
+            log_callback(message)
+
+
     # 1) Retrieve list of images
     outputFolder, idMin, idMax, listImages = read_transfer_info(
         folderMissionPath, spectral_band, suffix_image, section="sync"
@@ -103,15 +111,17 @@ def process_aruco_images(
 
     folder_images = folderMissionPath / name_folder
 
-    dic_relative_time_line = load_relative_time_line(folderMissionPath, spectral_band)
-    # print(f'DEBUG  001 dic_relative_time_line = {dic_relative_time_line} ')
+    dic_relative_time_line = load_relative_time_line(folderMissionPath, spectral_band, log_message=log_message)
 
     results = []
     x_vals = []
     y_vals = []
 
     max_workers = best_thread_count(io_bound=True)
-    print(Style.GREEN + f"Processing {len(listImages)} images using {max_workers} threads..." + Style.CYAN)
+    if log_message is None:
+        print(Style.GREEN + f"ℹ Processing {len(listImages)} images using {max_workers} threads..." + Style.CYAN)
+    else:
+        log_message(f"ℹ Processing {len(listImages)} images using {max_workers} threads...")
 
     # ------------------------------------------------------------
     # Worker function (one image per thread)
@@ -120,17 +130,20 @@ def process_aruco_images(
         img_path = folder_images / img_name
         ext = img_name.lower().split('.')[-1]
 
-        # --------------------------------------------------------
+        # ------------------------------------------------------------
         # 1) FAST PATH : cache EXIF détecté → aucun chargement image
-        # --------------------------------------------------------
+        # ------------------------------------------------------------
         cached = read_aruco_cache(img_path)
         if cached and use_aruco_cache:
-            print(Style.YELLOW + f'[Warning]    USE CACHE {use_aruco_cache}' + Style.RESET)
+            if log_message is None:
+                print(Style.YELLOW + f'[Warning]  ⚠  USE CACHE {use_aruco_cache}' + Style.RESET)
+            else:
+                log_message(f'⚠   USE CACHE {use_aruco_cache}')
             return i, img_name, cached
 
-        # --------------------------------------------------------
+        # --------------------------------------------------------------------------------------------------
         # 2) SLOW PATH : pas de cache pour les données aruco de détection d'angle → chargement image normal
-        # --------------------------------------------------------
+        # --------------------------------------------------------------------------------------------------
         if ext == "dng" and spectral_band in ["VIS", "NIR"]:
             img_cv, _ = load_dng_for_aruco(str(img_path), folderMissionPath.parent)
         else:
@@ -152,6 +165,8 @@ def process_aruco_images(
             title=name_folder + " - " + img_name,
             verbose=verbose,
             use_aruco_cache=use_aruco_cache,
+            log_callback=log_callback,
+            log_message=log_message,
         )
         result["relative_timeline"] = extract_relative_time_line(dic_relative_time_line, Path(img_path).name, spectral_band, suffix_image)
         # --------------------------------------------------------
@@ -255,7 +270,9 @@ def detect_mobile_marker_absolute(image_cv=None,
                                   show=False,
                                   title="",
                                   verbose=True,
-                                  use_aruco_cache=False
+                                  use_aruco_cache=False,
+                                  log_callback: Optional[Callable[[str], None]] = None,
+                                  log_message=None,
                                   ):
     """
     Calcule l'angle et la position du marqueur mobile dans le repère défini par
@@ -276,11 +293,18 @@ def detect_mobile_marker_absolute(image_cv=None,
     """
 
     r = read_aruco_cache(img_path)
+
     if r and use_aruco_cache:
-        print(Style.GREEN + f' Traitement AVEC CACHE de {img_path}' + Style.RESET)
+        if log_message is None:
+            print(Style.GREEN + f'ℹ Traitement AVEC CACHE de {img_path}' + Style.RESET)
+        else:
+            log_message(f'ℹ  Traitement AVEC CACHE de {img_path}')
         return r, None, None
     else:
-        # print(Style.GREEN + f'Détection des Aruco dans  {img_path}' + Style.RESET)
+        if log_message is None:
+            print(Style.GREEN + f'ℹ Détection des Aruco dans  {img_path}' + Style.RESET)
+        else:
+            log_message(f'ℹ Détection des Aruco dans  {img_path}')
         pass
 
     img_cv_out = image_cv.copy() if image_cv is not None else None
@@ -289,11 +313,16 @@ def detect_mobile_marker_absolute(image_cv=None,
     if marker_data is None:
         if image_cv is None or arucoDict is None:
             raise ValueError(Style.YELLOW + "Soit marker_data doit être fourni, soit image_cv et arucoDict." + Style.RESET)
-        marker_data = detect_aruco_marker(image_cv.copy(), arucoDict, title=title, verbose=verbose)
+        marker_data = detect_aruco_marker(image_cv.copy(), arucoDict, title=title, verbose=verbose, log_message=log_message)
 
     if not marker_data:
-        if verbose: print(Style.YELLOW + "Aucun marqueur détecté !" + Style.RESET)
+        if verbose:
+            if log_message is None:
+                print(Style.YELLOW + "⚠ Aucun marqueur détecté !" + Style.RESET)
+            else:
+                log_message("⚠ Aucun marqueur détecté !")
         return None, img_cv_out, None
+
 
     # organiser les données par ID
     marker_data_ID = {int(entry[0]): {"angle_img": entry[1],
@@ -320,20 +349,33 @@ def detect_mobile_marker_absolute(image_cv=None,
 
     if missing_fixed or mobile_missing:
         if missing_fixed:
-            if verbose: print(Style.YELLOW + f"⚠️Tous les marqueurs fixes ne sont pas détectés ! manquants = {missing_fixed}" + Style.CYAN)
+            if verbose:
+                if log_message is None:
+                    print(Style.YELLOW + f"⚠️Tous les marqueurs fixes ne sont pas détectés ! manquants = {missing_fixed}" + Style.CYAN)
+                else:
+                    log_message(f"⚠️Tous les marqueurs fixes de {img_path.stem} ne sont pas détectés ! manquants = {missing_fixed}")
+
         if mobile_missing:
-            if verbose: print(Style.RED + f"❌ Le marqueur mobile ({mobile_id}) n'est pas détecté !" + Style.RESET)
-        write_aruco_cache(img_path, result)
+            if verbose:
+                if log_message is None:
+                    print(Style.RED + f"❌ Le marqueur mobile ({mobile_id}) de {img_path.stem} n'est pas détecté !" + Style.RESET)
+                else:
+                    log_message(f"❌ Le marqueur mobile ({mobile_id}) de {img_path.stem} n'est pas détecté !")
+        write_aruco_cache(img_path, result, log_message=log_message)
         return result, img_cv_out, marker_data_ID
 
     # --- calcul des coordonnées et de l'angle absolu
-    geom = compute_mobile_marker_geometry(marker_data_ID, fixed_ids, mobile_id)
+    geom = compute_mobile_marker_geometry(marker_data_ID, fixed_ids, mobile_id, log_message=log_message)
     if geom is not None:
         result.update(geom)
     else:
-        if verbose: print(Style.YELLOW + f"⚠  Impossible de calculer la géométrie absolue." + Style.RESET)
+        if verbose:
+            if log_message is None:
+                print(Style.YELLOW + f"⚠  Impossible de calculer la géométrie absolue pour {img_path.stem}." + Style.RESET)
+            else:
+                log_message(f"⚠  Impossible de calculer la géométrie absolue pour {img_path.stem}.")
 
-    write_aruco_cache(img_path, result)
+    write_aruco_cache(img_path, result, log_message=log_message)
     return result, img_cv_out, marker_data_ID
 
 
@@ -341,8 +383,9 @@ def detect_aruco_marker(
     image_cv: np.ndarray,
     arucoDict: "cv2.aruco_Dictionary",
     title: str = "",
-    verbose: bool = True
-) -> Tuple[List[Tuple[int, float, Tuple[int, int], np.ndarray]], np.ndarray]:
+    verbose: bool = True,
+    log_message=None
+) -> List[Tuple[int, float, Tuple[int, int], np.ndarray]]:
     """
     Détecte les marqueurs ArUco dans une image_cv (au format d'un tableau numpy compatible cv2).
 
@@ -351,8 +394,6 @@ def detect_aruco_marker(
     ⚠️ Aucun affichage, aucune GUI, aucun matplotlib.     Thread-safe.
 
     """
-
-    verbose = True
 
     try:
         arucoParams = cv2.aruco.DetectorParameters_create()
@@ -363,7 +404,10 @@ def detect_aruco_marker(
 
     if corners_list is None or len(corners_list) == 0:
         if verbose:
-            print(Style.YELLOW + "[WARNING] Aucun marqueur détecté" + Style.RESET)
+            if log_message is None:
+                print(Style.YELLOW + "[WARNING] Aucun marqueur détecté" + Style.RESET)
+            else:
+                log_message("⚠  Aucun marqueur détecté")
         return []
 
     ids = ids.flatten()
@@ -384,13 +428,16 @@ def detect_aruco_marker(
         cY = int(np.mean(corners_array[:, 1]))
 
         if verbose:
-            print(Style.GREEN + f"ID {markerID}, angle={angle:.1f}°, centre=({cX},{cY})" + Style.CYAN)
+            if log_message is None:
+                print(Style.GREEN + f"ℹ  ID {markerID}, angle={angle:.1f}°, centre=({cX},{cY})" + Style.CYAN)
+            else:
+                log_message(f"ℹ  ID {markerID}  | angle={angle:.1f}°  | centre=({cX},{cY})")
 
         marker_data.append((int(markerID), angle, (cX, cY), corners_array))
 
     return marker_data
 
-def write_aruco_cache(img_path: str, aruco_data: dict) -> bool:
+def write_aruco_cache(img_path: str, aruco_data: dict, log_message=None) -> bool:
     """
     Safely write ArUco analysis data into a companion .exif JSON file.
 
@@ -445,8 +492,14 @@ def write_aruco_cache(img_path: str, aruco_data: dict) -> bool:
 
         return True  # Success
 
+
     except Exception as e:
-        print(f"[ERROR] Failed to write EXIF cache for {img_path}: {e}")
+
+        if log_message is None:
+            print(f"[ERROR] Failed to write EXIF cache for {img_path}: {e}")
+        else:
+            log_message(f"❌ Failed to write EXIF cache for {img_path}: {e}")
+
         return False  # Failure
 
 def read_aruco_cache(img_path: str) -> Optional[Dict[str, Any]]:
@@ -534,7 +587,7 @@ def compute_angle_and_coords(u, x_ref, y_ref, mobile_center, origin, normX, norm
     delta_angle = (angle_abs - angle_img + 180) % 360 - 180
     return angle_abs, u_coord, v_coord, delta_angle
 
-def compute_mobile_marker_geometry(marker_data_ID, fixed_ids, mobile_id):
+def compute_mobile_marker_geometry(marker_data_ID, fixed_ids, mobile_id, log_message=None):
     """
     Calcul de toutes les grandeurs géométriques du marqueur mobile dans le repère absolu.
     """
@@ -567,6 +620,7 @@ def compute_mobile_marker_geometry(marker_data_ID, fixed_ids, mobile_id):
 
     except Exception as e:
         print(f"Erreur dans compute_mobile_marker_geometry : {e}")
+        log_message(f" ❌ Erreur dans compute_mobile_marker_geometry : {e}")
         return None
 
 # ----------------------
@@ -681,7 +735,7 @@ def compute_time_shift_L2(
 
 
 
-def load_relative_time_line(folderMissionPath, spectral_band):
+def load_relative_time_line(folderMissionPath, spectral_band, log_message=None):
     """
     Load the relative timeline JSON file into self.dic_relative_time_line.
     """
@@ -696,10 +750,16 @@ def load_relative_time_line(folderMissionPath, spectral_band):
 
         with open(json_path, "r", encoding="utf-8") as f:
             dic_relative_time_line = json.load(f)
-        print(Style.GREEN + "Relative timeline loaded successfully.️ Relative timeline loaded successfully." + Style.RESET)
+        if log_message is None:
+            print(Style.GREEN + "Relative timeline loaded successfully." + Style.RESET)
+        else:
+            log_message("Relative timeline loaded successfully.")
 
     except Exception as e:
-        print(Style.RED + f"❌ Error loading timeline file: {e}" + Style.RESET)
+        if log_message is None:
+            print(Style.RED + f"❌ Error loading timeline file: {e}" + Style.RESET)
+        else:
+            log_message(f"❌ Error loading timeline file: {e}")
         dic_relative_time_line = {}
     return dic_relative_time_line
 

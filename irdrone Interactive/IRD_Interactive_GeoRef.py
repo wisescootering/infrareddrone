@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import sys
-# print(f"✔ Python utilisé : {sys.executable}")
+# print(f"✔ Python used : {sys.executable}")
 # print(f"✔", "\n✔ ".join(sys.path))
 import numpy as np
 # print(f"✔ Version NumPy : {np.__version__}")
@@ -10,9 +10,9 @@ try:
     from osgeo import gdal
     gdal.UseExceptions()
     # print(f"✔ Version GDAL : {gdal.__version__}")
-    # print(f"✔ Fichier GDAL : {gdal.__file__}")
+    # print(f"✔ File GDAL : {gdal.__file__}")
 except Exception as e:
-    print(f"✖ Erreur GDAL : {e}")
+    print(f"✖ Error GDAL : {e}")
 
 import os
 import os.path as osp
@@ -94,14 +94,20 @@ else:
 # ============================================================
 
 class CliLogger:
+    """
+        Console logger with optional ANSI colors and GUI message forwarding.
+
+        Messages are printed to the console and can also be forwarded
+        to a GUI through the optional log_callback.
+    """
     def __init__(self, use_color=None):
-        # Détection automatique si non précisé
+        # Automatically detect whether color output is supported if not specified.
         if use_color is None:
             self.use_color = sys.stdout.isatty() and os.getenv("TERM") != "dumb"
         else:
             self.use_color = use_color
 
-        # Symboles Unicode
+        # Unicode symbols used in log messages.
         self.symbols = {
             "ok": "\u2714",           # ✔
             "error": "\u2716",        # ✖
@@ -120,13 +126,13 @@ class CliLogger:
             "botanique": "🌿",            # 🌿️
         }
 
-        # Couleurs ANSI
+        # ANSI color escape sequences.
         self.colors = {
             "reset": "\033[0m",
             "bold": "\033[1m",
             "underline": "\033[4m",
 
-            # Standard (safe)
+            # Standard colors (widely supported).
             "black": "\033[30m",
             "red": "\033[31m",
             "green": "\033[32m",
@@ -134,10 +140,10 @@ class CliLogger:
             "blue": "\033[34m",
             "magenta": "\033[35m",
             "cyan": "\033[36m",
-            "white": "\033[37m",  # gray
+            "white": "\033[37m",
             "bright_white": "\033[97m",
 
-            # Bonus (moins universels)
+            # Additional colors (not supported by all terminals).
             "orange": "\033[38;5;208m",
             "bright_red": "\033[91m",
             "bright_green": "\033[92m",
@@ -150,6 +156,7 @@ class CliLogger:
         self.log_callback = None
 
     def _format(self, level, message, _bold=False, _underline=False):
+        """Format a log message with its symbol and optional ANSI styling."""
         symbol = self.symbols[level]
 
         if not self.use_color:
@@ -174,9 +181,8 @@ class CliLogger:
         else:
             return f"{color}{symbol} {message}{reset}"
 
-
     def _write(self, level, message, _bold=False, _underline=False):
-        """Write a log message to the console and the optional GUI."""
+        """Write a formatted message to the console and optional GUI."""
         formatted_message = self._format(
             level, message, _bold=_bold, _underline=_underline
         )
@@ -192,32 +198,40 @@ class CliLogger:
             symbol = self.symbols[level]
             self.log_callback(f"{symbol} {message}")
 
-
     def ok(self, message):
+        """Log a successful operation."""
         self._write("ok", message)
 
     def error(self, message):
+        """Log an error message to the standard error stream."""
         self._write("error", message)
 
     def warning(self, message):
+        """Log a warning message."""
         self._write("warn", message)
 
     def warn(self, message):
+        """Alias for warning()."""
         self.warning(message)
 
     def info(self, message, _bold=False, _underline=False):
+        """Log an informational message with optional styling."""
         self._write(
             "info", message, _bold=_bold, _underline=_underline
         )
 
     def timer(self, message):
+        """Log a timing-related message."""
         self._write("timer", message)
 
     def tech(self, message):
+        """Log a technical message."""
         self._write("tech", message)
 
     def debug(self, message):
+        """Log a debugging message."""
         self._write("debug", message)
+
 
 # Logger partagé par les fonctions du module
 logger = CliLogger(use_color=True)
@@ -254,22 +268,70 @@ def georeference_tiff_MNT(tif_path,
                           img_override=None,
                           ):
     """
-    Géoréférencement nadir et orthorectification complète
-    Image -> Caméra VIS -> Drone -> Géographique (UTM)
+    Georeference and orthorectify an image using a digital terrain model (DTM).
+
+    Processing pipeline:
+        Image coordinates -> VIS camera coordinates -> Drone coordinates
+        -> Geographic coordinates (UTM).
+
+    The function interprets DJI EXIF metadata, establishes the camera geometry,
+    builds a terrain model from IGN elevation reference points, projects the
+    terrain grid into the source image, resamples the image, and saves the
+    orthorectified result as a georeferenced raster.
+
+    Optional outputs include diagnostic graphics, a Monte Carlo positional
+    error map, a topographic raster, and contour lines for QGIS.
+
+    Args:
+        tif_path: Path to the input TIFF image.
+        raw_exif: EXIF metadata used to determine the camera and drone geometry.
+        output_path: Output path parameter supplied by the caller.
+        folder_input: Input folder containing the image and output subfolders.
+        img_name: Base name used to identify generated files.
+        offset_xi_Y: Additional yaw correction, in radians.
+        offsetUTMx: Eastward correction to the nadir position, in meters.
+        offsetUTMy: Northward correction to the nadir position, in meters.
+        ampli: Scale factor applied to the estimated image footprint.
+        zhang_dic: Optional Zhang camera-calibration parameters.
+        cache: Cache-related option.
+        verbose: Enable additional diagnostic messages.
+        info: Information-display option.
+        tag_img: Save and use a diagnostic image with reference markings.
+        graphic_2D: Enable 2D diagnostic graphics.
+        graphic_3D: Enable 3D terrain graphics.
+        graphic_ortho: Enable display of the orthorectified image.
+        view_graphic: Display generated graphics.
+        save_graphic: Save generated graphics.
+        comp_error_rms: Compute a positional error map using Monte Carlo simulation.
+        tol_MC: Tolerance used by the Monte Carlo error calculation.
+        bitdepth: Output GeoTIFF data type.
+        topo_style: Topographic contour style.
+        carte_topo: Generate topographic contour data.
+        raster_topo: Save the topographic elevation raster.
+        img_override: Optional image array supplied instead of loading the TIFF.
+
+    Returns:
+        Path to the generated georeferenced GeoTIFF.
+
+    Raises:
+        FileNotFoundError: If the input image cannot be loaded.
     """
 
     t_global0 = time.perf_counter()
     # ------------------------------------------------------------------------------
-    # 0) Interprétation des Métadonnées du drone DJI
+    # 0) Interpret DJI drone metadata
     # ------------------------------------------------------------------------------
     t0 = time.perf_counter()
 
-    #  Retour: Distances en mètre (m) Angles en RADIANS (rad)
+    # Returns: distances in meters (m) and angles in radians (rad)
     latitude, longitude, z_ground, Z_cam_nadir, Z_cam_sealevel, UTM_x, UTM_y, zoneUTM, xi_Y, xi_P, xi_R = DJI2IRDrone(raw_exif, verbose=False)
 
-    # correction de la position GPS du nadir
+    # Correct the GPS position of the nadir
     if offsetUTMx != 0 or offsetUTMy != 0:
-        logger.info(f'Correction position Nadir Est | Nord :  {offsetUTMx} m, {offsetUTMy} m')
+        logger.info(
+            f"Nadir position correction East | North: "
+            f"{offsetUTMx} m, {offsetUTMy} m"
+        )
 
     UTM_x, UTM_y = UTM_x + offsetUTMx, UTM_y + offsetUTMy
 
@@ -278,15 +340,15 @@ def georeference_tiff_MNT(tif_path,
 
 
     # ------------------------------------------------------------------------------
-    # 1 ) Image  brute
+    #  1) Raw image
     # ------------------------------------------------------------------------------
 
-    # ---1.01 Lecture image brute
+    # --- 1.01 Load the raw image
 
     if img_override is not None:
         img_raw = img_override
     else:
-        logger.debug(f'chargement de l\'image {tif_path} en mode raw_DJI')
+        logger.debug(f"Loading image {tif_path} in raw_DJI mode")
         img_raw = cv2.imread(str(tif_path), cv2.IMREAD_UNCHANGED)
         if img_raw is None:
             raise FileNotFoundError(tif_path)
@@ -294,32 +356,32 @@ def georeference_tiff_MNT(tif_path,
     Ny_raw, Nx_raw = img_raw.shape[:2]
     bands = 1 if img_raw.ndim == 2 else img_raw.shape[2]
     if verbose:
-        logger.info(f' image brute : Ny_raw = {Ny_raw} Nx_raw= {Nx_raw}  bands = {bands}')
+        logger.info(f' raw image : Ny_raw = {Ny_raw} Nx_raw= {Nx_raw}  bands = {bands}')
 
     t1 = time.perf_counter()
     logger.timer(f" EXIF : {t1 - t0:.3f} s")
 
-    # ---1.02 Géométrie image (GSD)
+    # --- 1.02 Image geometry (GSD)
 
     if zhang_dic is not None and bands == 3:
 
-        # --- 1.02-1 Valeurs Undistorsion Zhang si fournies et image RGB
+        # --- 1.02-1 Zhang undistortion parameters, if available for an RGB image
 
         Nx, Ny = Nx_raw, Ny_raw
         fx, fy = zhang_dic["mtx"][0][0], zhang_dic["mtx"][1][1]
         cx, cy = zhang_dic["mtx"][0][2], zhang_dic["mtx"][1][2]
-        txt = "Correction Zhang disponible."
+        txt = "Zhang calibration available."
         dist = np.array(zhang_dic["dist"][0] if isinstance(zhang_dic["dist"][0], list)
                         else zhang_dic["dist"],
                         dtype=np.float64)
         K = np.array(zhang_dic["mtx"], dtype=np.float64)
 
     else:
-        # --- 1.02-2 Valeurs par défaut pour image multispectrale 1 bands ou 4 bandes
-        # ATTENTION :Pour ce type d'image la correction de Zhang à déjà été faite dans IRDrone
-        # On utilise les caractéristiques de la caméra virtuelle IRDrone qui prend en compte
-        # la correction de distorsion et du crop de l'image.
-        # Pour les images IRDrone le FOV de la caméra virtuel est donné dans les données exif des couches
+        # --- 1.02-2 Default parameters for single-band or four-band multispectral images
+        # NOTE: Zhang undistortion has already been applied to these images by IRDrone.
+        # Use the IRDrone virtual camera parameters, which account for
+        # lens-distortion correction and image cropping.
+        # For IRDrone images, the virtual camera FOV is stored in the layer EXIF metadata.
 
         Ny, Nx = img_raw.shape[:2]
         fov_x = raw_exif.get("FOV")
@@ -334,22 +396,22 @@ def georeference_tiff_MNT(tif_path,
 
 
         except (ValueError, TypeError):
-            logger.warning("FOV invalide → fallback focal_pix=2918")
+            logger.warning("Invalide FOV  → fallback focal_pix=2918")
             fov_x = None
 
         if fov_x:
             focal_pix = Nx / (2 * np.tan(np.deg2rad(fov_x/2)))
-            logger.info(f' FOV de la caméra IRDrone multispectrale  {fov_x}°')
+            logger.info(f' IRDrone multispectal camera FOV  {fov_x}°')
         else:
 
             focal_pix = 2918
-            logger.warn(f' FOV IRDrone  par défaut.')
+            logger.warn(f' IRDrone default   FOV.')
         fx, fy, cx, cy = focal_pix, focal_pix, Nx / 2, Ny / 2
-        txt = "Image avec distorsion optique corrigée."
+        txt = "Image with corrected optical distortion."
         dist = None
 
-    # --- 1.03 Marquage de l'image brute  (avec sauvegarde)
-    # C'est une option utile en développement ou pour construire des images pédagogiques.
+    # --- 1.03 Mark the raw image and save the result
+    # This option is useful for development and for creating educational images.
 
     t0 = time.perf_counter()
     if tag_img:
@@ -381,7 +443,7 @@ def georeference_tiff_MNT(tif_path,
           )
 
     # ------------------------------------------------------------------------------
-    # 2) Matrices de changement de repère; repère  Image vers repère Géographique
+    #  2) Coordinate transformation matrices: image frame to geographic frame
     # ------------------------------------------------------------------------------
 
     R_Img2Gnd = R_yaw(xi_Y + offset_xi_Y)
@@ -389,9 +451,9 @@ def georeference_tiff_MNT(tif_path,
 
     # ------------------------------------------------------------------------------
     #
-    #  3)                    GEO REFERENCEMENT
+    #   3) GEOREFERENCING
     #
-    # Cas 02 : orthorectification avec MNT IGN (modèle numérique de terrain)
+    #  Case 02: orthorectification using the IGN digital terrain model (DTM)
     #
     # ------------------------------------------------------------------------------
 
@@ -401,33 +463,34 @@ def georeference_tiff_MNT(tif_path,
     Z0 = 0
 
     # ------------------------------------------------------------
-    # 3.02 : orthorectification avec MNT IGN
+    # 3.02: Orthorectification using the IGN DTM
     # ------------------------------------------------------------
 
     t0 = time.perf_counter()
 
-    # La grille MNT doit être centrée sur le nadir
-    # autrement dit la projection du centre optique (pixel (cx,cy))
+    # The DTM grid must be centered on the nadir
+    # that is, the projection of the optical center (pixel (cx, cy))
 
     X0, Y0, Z0 = UTM_x, UTM_y, 0.0
 
     # --------------------------------------------------------------------------------------------------
-    # 3.02-1)   Définition des points de référence pour le MNT  et des limites
+    #  3.02-1) Define DTM reference points and boundaries
     # --------------------------------------------------------------------------------------------------
-    # MNT avec des vrais points IGN qui sont nécessairement
-    # en nombre limités. C'est à partir de ces points que l'on va construire le MNT avec
-    # une fonction spline et ensuite faire une grille terrain, trouver les altitudes,
-    #  mettre l'image sur le terrain puis remonter les points sur les pixels du  capteur
-    # Xg_IGN, Yg_IGN, Zg_IGN  sont les positions des points de référence en coordonnées UTM
-    # Altitudes Zg_IGN par rapport au niveau de la mer.
-    #  grille 15 x 15 pts  donne mailles carré
-    #  grille 9 x 9  acceptable si terrrain "plat"
+    # The DTM is based on a limited number of surveyed IGN reference points.
+    # These points are used to build a continuous terrain model using spline
+    # interpolation. A terrain grid is then generated, terrain elevations are
+    # evaluated, the image is projected onto the terrain, and the resulting
+    # terrain points are mapped back to sensor pixels.
+    # Xg_IGN, Yg_IGN, Zg_IGN are the reference point coordinates in UTM.
+    # Zg_IGN contains elevations relative to sea level.
+    # A 15 x 15 grid provides square cells.
+    # A 9 x 9 grid may be sufficient for relatively flat terrain.
 
-    N_mesh_x, N_mesh_y = next_odd(15), next_odd(15)  # next_odd donne l'entier pair supérieur le plus proche
+    N_mesh_x, N_mesh_y = next_odd(15), next_odd(15)  # next_odd returns the next odd integer.
     if verbose:
         logger.info(f' Mesh =  {N_mesh_x} x {N_mesh_y}')
 
-    # ampli est le facteur d'amplification de l'emprise de l'image sur sol plan
+    # ampli is the scale factor applied to the image footprint on a flat ground plane.
 
     Xg_IGN, Yg_IGN, Zg_IGN, bound_IGN_pix = \
         compute_MNT_mesh(N_mesh_x, N_mesh_y,
@@ -451,11 +514,11 @@ def georeference_tiff_MNT(tif_path,
     t1 = time.perf_counter()
     logger.timer(f" Total  mesh IGN : {t1 - t0:.3f} s")
 
-    # --- construction du MNT "continu" (spline)
+    # --- Build the continuous DTM using spline interpolation
 
     t0 = time.perf_counter()
-    # choix de la méthode d'interpolation du MNT
-    # options possibles :
+    # Select the DTM interpolation method
+    # Available options:
     # "RectBivariateSpline_cubic"
     # "RectBivariateSpline_quadratic"
     # "RectBivariateSpline_linear"
@@ -484,15 +547,15 @@ def georeference_tiff_MNT(tif_path,
     #       f' {bound_IGN_pix}')
 
     # --------------------------------------------------------------
-    # 3.02-2) Construction grille ortho GIS north-up
-    #     estimation emprise minimale
+    #  3.02-2) Build the north-up GIS orthorectification grid
+    #     Estimate the minimum footprint
     # --------------------------------------------------------------
     t0 = time.perf_counter()
 
     Xmin_est, Xmax_est, Ymin_est, Ymax_est = estimate_ground_bbox_from_camera(
         Nx, Ny, R_Img2Gnd, Cam_Center, fx, fy, cx, cy, Z0, altitude, ampli=1.025)
 
-    # Construction grille GIS réduite
+    # Build the reduced GIS grid
     Xo = np.arange(Xmin_est, Xmax_est, gsd_x)
     Yo = np.arange(Ymax_est, Ymin_est, -gsd_y)
     Xo_grid, Yo_grid = np.meshgrid(Xo, Yo)
@@ -501,24 +564,23 @@ def georeference_tiff_MNT(tif_path,
     logger.timer(f" Construction grille ortho GIS  : {t1 - t0:.3f} s")
 
     # -----------------------------------------------------------------
-    # 3.02-3) altitude du terrain
-    # attention ici c'est une simple projection orthogonale
-    # (normale par rapport au plan horizontal) des points de la grille
-    # régulière GIS sur le MNT
+    # 3.02-3) Terrain elevation
+    # NOTE: This is a simple orthogonal projection
+    # (perpendicular to the horizontal plane) of the grid points
+    # from the regular GIS grid onto the DTM
     # ------------------------------------------------------------------
 
     t0 = time.perf_counter()
 
-    Zg_grid = altitude(Xo_grid, Yo_grid)  # altitude relative par rapport au Nadir
+    Zg_grid = altitude(Xo_grid, Yo_grid)  # Elevation relative to the nadir altitude
 
     t1 = time.perf_counter()
-    logger.timer(f" Calcul altitude grid : {t1 - t0:.3f} s")
+    logger.timer(f" Compute altitude grid : {t1 - t0:.3f} s")
 
     # --------------------------------------------------
-    # 3.02-4) projection terrain → image
+    # 3.02-4) Project terrain points into the image
     # --------------------------------------------------
-    # La correction de la distorsion est effectuée en même temps
-    # que la projection
+    # Lens-distortion correction is performed at the same time as the projection
 
     t0 = time.perf_counter()
 
@@ -526,8 +588,8 @@ def georeference_tiff_MNT(tif_path,
 
     R_Gnd2Cam = R_Img2Gnd.T  # rotation inverse Gnd -> Cam
 
-    # Attention la distorsion des images mono bande .tif provenant de IRDrone
-    # on déjà été corrigée dans le process multispectral.
+    # NOTE: Lens distortion in single-band TIFF images from IRDrone
+    # has already been corrected during multispectral processing.
 
     if img.ndim == 2:
         img = img[:, :, np.newaxis]
@@ -553,14 +615,14 @@ def georeference_tiff_MNT(tif_path,
     logger.timer(f" Projection terrain → image : {t1 - t0:.3f} s")
 
     # ------------------------------------------------------------
-    # 3.02-5) resampling image
+    # 3.02-5) Resample the image
     # ------------------------------------------------------------
     t0 = time.perf_counter()
-    img = img.astype(np.float32)  # ⚠️pour interpolation propre
+    img = img.astype(np.float32)  # ⚠️ Convert to float32 for accurate interpolation
     ortho = np.zeros((*u.shape, spectral_band), dtype=img.dtype)
 
     for c in range(spectral_band):
-        v_img = (H - 1) - v  # ← conversion caméra → numpy image. Fondamental pour retour Rasterio et QGIs
+        v_img = (H - 1) - v  # Convert camera coordinates to NumPy image coordinates; essential for Rasterio and QGIS output
         band = map_coordinates(img[..., c],
                                 [v_img.ravel(), u.ravel()],
                                 order=1,
@@ -569,26 +631,27 @@ def georeference_tiff_MNT(tif_path,
                                ).reshape(u.shape)
         ortho[..., c] = band
 
-    ortho[~mask] = 0  # transformation des zones périphériques noires en zones transparentes
+    ortho[~mask] = 0  # Mark black peripheral areas as transparent
 
     t1 = time.perf_counter()
     logger.timer(f" Resampling image : {t1 - t0:.3f} s")
 
 
     # ---------------------------------------------------------------
-    # 3.02-6) affine SIMPLE GIS. Remarque: -gsd_y pour north-up GIS
+    # # 3.02-6) Simple GIS affine transform.
+    #  Note: use -gsd_y for north-up orientation
     # ---------------------------------------------------------------
     t0 = time.perf_counter()
 
-    # origine  réelle de l'ortho
+    # Actual origin of the orthorectified image
     X0 = Xo_grid[0, 0]
     Y0 = Yo_grid[0, 0]
 
     transform = Affine(gsd_x, 0.0, X0, 0.0, -gsd_y, Y0)
 
-    # correction dynamique des couleurs et BGR to RGB
-    # Si l'image est un tableau numpy en float32 Ok pour utilisation scientifique
-    # On normalise entre 0 et 1.
+    # Dynamic color adjustment and BGR-to-RGB conversion
+    # A float32 NumPy image is suitable for scientific use
+    # Normalize values to the [0, 1] range.
 
     if img_raw.dtype == np.uint16:
         img_ortho = ortho.astype(np.float32) / 65535.0
@@ -599,13 +662,13 @@ def georeference_tiff_MNT(tif_path,
 
     ortho_path = folder_input / "geo_ref" / f"{img_name}_graph_ortho.png"
     graph_ortho(img_ortho[..., ::-1], 0, 0, ortho_path,
-                view_graphic=view_graphic, save_graphic=save_graphic, graphic_ortho=graphic_ortho)  # BGR 2 RGB  pour QGIS
+                view_graphic=view_graphic, save_graphic=save_graphic, graphic_ortho=graphic_ortho)  # BGR to RGB conversion for QGIS
 
     t1 = time.perf_counter()
     logger.timer(f" Affine SIMPLE GIS. : {t1 - t0:.3f} s")
 
     # ---------------------------------------
-    # cartes d'erreur  (gps, mnt, yaw, alti drone ...)
+    #  Error maps (GPS, DTM, yaw, drone altitude, etc.)
     # ---------------------------------------
     if comp_error_rms:
         error_method = "Monte Carlo"
@@ -613,10 +676,11 @@ def georeference_tiff_MNT(tif_path,
         logger.info(f' Compute RMS error .  Method : {error_method}')
 
         xi_yaw = xi_Y + offset_xi_Y
-        sigma_yaw_deg = 0.3  # °   ~ 0.2° et 1°  Précision cap du drone DJI.
-        sigma_xy = 2         # m   ~ 1 - 3 m     Précision position GPS  XY-UTM du drone DJI.  +/- 1.5 m en stationnaire
-        sigma_z = 1.5        # m   ~ 0,5 - 2 m   Précision position GPS  Z du drone DJI.       +/- 0.5 m en stationnaire
-        sigma_z_mnt = 1      # m   ~ 0,5 - 3 m   Précision altitude du MNT (API IGN alti)
+
+        sigma_yaw_deg = 0.3     # °   ~ 0.2° to 1°   DJI drone heading accuracy.
+        sigma_xy = 2            # m   ~ 1–3 m        DJI drone GPS XY-UTM position accuracy. ±1.5 m when hovering.
+        sigma_z = 1.5           # m   ~ 0.5–2 m      DJI drone GPS Z-position accuracy. ±0.5 m when hovering.
+        sigma_z_mnt = 1         # m   ~ 0.5–3 m      DTM elevation accuracy (IGN elevation API).
 
 
         t0 = time.perf_counter()
@@ -639,42 +703,42 @@ def georeference_tiff_MNT(tif_path,
 
         error_path = get_unique_path(folder_input / "geo_ref" / f"{img_name}_error_rms.tif")
         error_rms[~mask] = np.nan
-        error_rms = np.clip(error_rms, 0, np.percentile(error_rms[mask], 98))  # clip visuel
+        error_rms = np.clip(error_rms, 0, np.percentile(error_rms[mask], 98))  # Visual clipping
         write_geotiff_affine(error_path, error_rms.astype(np.float32), transform, crs_utm, no_data=np.nan)
 
         t1 = time.perf_counter()
-        logger.timer(f" Cimpute error RMS. Method {error_method}: {t1 - t0:.3f} s")
+        logger.timer(f" Compute error RMS. Method {error_method}: {t1 - t0:.3f} s")
 
     # ---------------------------------------
-    # cartes togographique
+    # Topographic maps
     # ---------------------------------------
     if carte_topo:
         t0 = time.perf_counter()
-        # Chaque pixel représente l'altitude du pixel. Altitude terrain au dessus du niveau de la mer
+        # Each pixel stores the terrain elevation above sea level.
         map_topo = P_sol[..., 2] + (Z_cam_sealevel - Z_cam_nadir)
         map_topo[~mask] = np.nan
         if raster_topo:
-            # Génération d'une image raster des altitudes   (.tif)  pour QGIS
+            # Generate an elevation raster (.tif) for QGIS.
             topo_path = get_unique_path(folder_input / "geo_ref" / f"{img_name}_topo.tif")
             write_geotiff_affine(topo_path, map_topo.astype(np.float32), transform, crs_utm, no_data=np.nan)
 
-        # Génération du fichier des lignes de niveau (.geojson)  pour QGIS
+        # Generate a contour-line file (.geojson) for QGIS.
         contour_path = get_unique_path(folder_input / "geo_ref" / f"{img_name}_contours.geojson")
         generate_contours_dual(map_topo.astype(np.float32), transform, crs_utm, contour_path)
 
-        # Génération du fichier de style (.qml)  pour QGIS
-        # En utilisant le même nom ({img_name}_contours) que celui du fichier des lignes de niveau
-        # ce style sera appliqué automatiquement par QGIS au fichier des courbes de niveau.
-        # Style dispo "IGN" | "BW" | "SOFT"
+        # Generate a QGIS style file (.qml).
+        # Use the same base name ({img_name}_contours) as the contour-line file.
+        # QGIS will automatically apply this style to the contour-line file.
+        # Available styles: "IGN", "BW", "SOFT".
         topo_style = "IGN"
         qml_path = contour_path.with_suffix(".qml")
         generate_qml_style_qgis(qml_path, style=topo_style, label_on_line=True)
 
         t1 = time.perf_counter()
-        logger.timer(f" Carte topographique: {t1 - t0:.3f} s")
+        logger.timer(f" Topographic map: {t1 - t0:.3f} s")
 
     # ------------------------------------------------------------------------------
-    # 4) Sauvegarde GeoTIFF orthorectifié
+    # 4) Save the orthorectified GeoTIFF
     # ------------------------------------------------------------------------------
     t0 = time.perf_counter()
 
@@ -686,19 +750,34 @@ def georeference_tiff_MNT(tif_path,
 
     write_geotiff_affine(geo_path, img_ortho, transform, crs_utm, bitdepth=bitdepth)
     t1 = time.perf_counter()
-    logger.timer(f" Sauvegarde GeoTIFF orthorectifié via rasterio : {t1 - t0:.3f} s")
-    logger.timer(f" --- TOTAL Géoréférencement : {t1 - t_global0:.3f} s \n")
+    logger.timer(f" Save the orthorectified GeoTIFF using Rasterio : {t1 - t0:.3f} s")
+    logger.timer(f" --- TOTAL GEOREFERENCING TIME: {t1 - t_global0:.3f} s \n")
 
     return geo_path
 
 
 # ============================================================
-#  FONCTION AUXILLIAIRES
+#  AUXILIARY FUNCTIONS
 # ============================================================
 
 def next_odd(N_mesh):
+    """
+    Return the smallest odd integer greater than or equal to N_mesh
+    after rounding N_mesh up to the next integer.
+
+    This ensures that the mesh always contains an odd number of points,
+    allowing for a central point in the grid.
+
+    Examples
+    --------
+    8     -> 9
+    9     -> 9
+    9.2   -> 11
+    10.5  -> 11
+    """
     n = np.ceil(N_mesh).astype(int)
     return n + (n % 2 == 0)
+
 
 def safe_path(path: Union[str, Path]) -> Path:
     try:
@@ -707,73 +786,80 @@ def safe_path(path: Union[str, Path]) -> Path:
         logger.error(f" Invalid path {path} : {e}")
         return Path(path)
 
-def estimate_ground_bbox_from_camera(Nx, Ny, R_Cam2Gnd, Cam_Center, fx, fy, cx, cy, Z0, altitude, ampli=1.0):
-    """
-    Estime le rectangle minimal sur le sol à partir des coins du capteur.
-    Pour l'instant, plan horizontal (A=B=0), pas encore le MNT.
 
-    Paramètres
+def estimate_ground_bbox_from_camera(Nx, Ny, R_Cam2Gnd, Cam_Center,
+                                     fx, fy, cx, cy, Z0, altitude,
+                                     ampli=1.0):
+    """
+    Estimate the minimum ground footprint from the sensor corners.
+
+    For now, the ground is assumed to be horizontal (A = B = 0).
+    The terrain model (DTM) is not yet taken into account.
+
+    Parameters
     ----------
     Nx, Ny : int
-        Dimension du capteur (pixels)
-    R_Cam2Gnd : ndarray (3x3)
-        Matrice rotation Cam -> Gnd
+        Sensor dimensions in pixels.
+    R_Cam2Gnd : ndarray (3, 3)
+        Rotation matrix from the camera frame to the ground frame.
     Cam_Center : ndarray (3,)
-        Position caméra
+        Camera position.
     fx, fy : float
-        Focale
+        Focal lengths.
     cx, cy : float
-        Centre optique
+        Optical center coordinates.
     Z0 : float
-        Altitude de référence
+        Reference altitude.
     ampli : float
-        Facteur d’amplification pour marge de sécurité
+        Expansion factor providing a safety margin.
 
-    Retour
-    ------
+    Returns
+    -------
     bbox : tuple
-        (Xmin, Xmax, Ymin, Ymax) de l’emprise estimée
+        Estimated ground footprint bounds (Xmin, Xmax, Ymin, Ymax).
     """
     corners_pix = np.array([
-        [-cx, -cy],  # coin haut-gauche
-        [Nx - 1 - cx, -cy],  # coin haut-droite
-        [Nx - 1 - cx, Ny - 1 - cy],  # coin bas-droite
-        [-cx, Ny - 1 - cy]  # coin bas-gauche
+        [-cx, -cy],  # Top-left corner
+        [Nx - 1 - cx, -cy],  # Top-right corner
+        [Nx - 1 - cx, Ny - 1 - cy],  # Bottom-right corner
+        [-cx, Ny - 1 - cy]  # Bottom-left corner
     ])
 
-    # points au centre des bords
+    # Points at the midpoints of the sensor edges
     edge_centers_pix = np.array([
-        [0, -cy],  # milieu haut
-        [0, Ny - 1 - cy],  # milieu bas
-        [-cx, 0],  # milieu gauche
-        [Nx - 1 - cx, 0]  # milieu droite
+        [0, -cy],  # Top edge midpoint
+        [0, Ny - 1 - cy],  # Bottom edge midpoint
+        [-cx, 0],  # Left edge midpoint
+        [Nx - 1 - cx, 0]  # Right edge midpoint
     ])
 
-    # points au 1/4 des bords
+    # Points at one-quarter and three-quarters of the sensor edges
     edge_sup_pix = np.array([
         [-cx, -cy + Ny / 4], [-cx, -cy + 3 * Ny / 4],
-        [Nx - 1 - cx, -cy + Ny / 4], [Nx - 1 - cx, -cy + 3 * Ny / 4],
+        [Nx - 1 - cx, -cy + Ny / 4],
+        [Nx - 1 - cx, -cy + 3 * Ny / 4],
         [-cx + Nx / 4, -cy], [-cx + 3 * Nx / 4, -cy],
-        [-cx + Nx / 4, Ny - 1 - cy], [-cx + + 3 * Nx / 4, Ny - 1 - cy]
+        [-cx + Nx / 4, Ny - 1 - cy],
+        [-cx + + 3 * Nx / 4, Ny - 1 - cy]
     ])
 
     all_pix = np.vstack([corners_pix, edge_centers_pix, edge_sup_pix])
 
     Xc, Yc, Zc = project_camera_to_MNT(
-        all_pix,  # pixels du capteur à projeter, shape (N, 2)
-        Nx, Ny,  # taille capteur
-        R_Cam2Gnd,  # rotation caméra -> sol
-        Cam_Center,  # position caméra dans R_Gnd
-        fx, fy,  # focale
-        cx, cy,  # centre optique
-        altitude,  # fonction altitude(X, Y)
+        all_pix,  # Sensor pixels to project, shape (N, 2)
+        Nx, Ny,  # Sensor dimensions
+        R_Cam2Gnd,  # Camera-to-ground rotation matrix
+        Cam_Center,  # Camera position in the ground coordinate frame
+        fx, fy,  # Focal lengths
+        cx, cy,  # Optical center coordinates
+        altitude,  # Altitude function: altitude(X, Y)
         verbose=False
     )
 
     Xmin, Xmax = np.min(Xc), np.max(Xc)
     Ymin, Ymax = np.min(Yc), np.max(Yc)
 
-    # appliquer facteur d’amplification (optionnel)
+    # Apply the optional expansion factor
     Xc_center = 0.5 * (Xmin + Xmax)
     Yc_center = 0.5 * (Ymin + Ymax)
     Xmin = Xc_center + ampli * (Xmin - Xc_center)
@@ -785,7 +871,7 @@ def estimate_ground_bbox_from_camera(Nx, Ny, R_Cam2Gnd, Cam_Center, fx, fy, cx, 
 
 
 # -----------------------------------------------
-#  Image brute  conversion dng to tiff,  exif
+#  Raw image conversion: DNG to TIFF, with EXIF
 # -----------------------------------------------
 
 def dng2tiff(folder, img_name, suffix="dng", bit=16):
@@ -825,7 +911,9 @@ def load_companion_exif(folder, img_name, suffix="dng", alti_takeoff=None):
     exif_file = folder / f"{img_name}.exif"
     img_file = folder / f"{img_name}.{suffix}"
     if not exif_file.exists():
-        logger.warn(f"Absence du fichier exif compagnon {img_name}.exif dans le dossier {folder}")
+        logger.warn(
+            f"Companion EXIF file {img_name}.exif is missing from folder {folder}"
+        )
         try:
             read_exif_and_write_json(img_file, exif_file, alti_takeoff=alti_takeoff)
         except Exception as e:
@@ -841,7 +929,7 @@ def load_companion_exif(folder, img_name, suffix="dng", alti_takeoff=None):
 
 def save_exif_companion(raw_exif, folder_input, img_name, verbose=False):
     """
-    Sauvegarde raw_exif enrichi dans le fichier compagnon img_name.exif
+    Save the enriched raw_exif data to the companion file img_name.exif.
     """
 
     folder_input = Path(folder_input)
@@ -851,7 +939,7 @@ def save_exif_companion(raw_exif, folder_input, img_name, verbose=False):
         json.dump(raw_exif, f, indent=4, ensure_ascii=False)
 
     if verbose:
-        logger.ok(f"\n--- Fichier exif compagnon mis à jour {exif_path}")
+        logger.ok(f"\n--- Companion EXIF file updated: {exif_path}")
 
     return exif_path
 
@@ -893,7 +981,7 @@ def read_exif_and_write_json(dng_path: Path, exiftool_path: str,
             "AltitudeTakeoffSource",
         ]
 
-        # Special handling for GPSAltitude of Drone DJI
+        # Special handling of GPSAltitude for DJI drones
         gps_alt = full_metadata.get("GPSAltitude")
         if gps_alt:
             alt_info = parse_and_normalize_gps_altitude(gps_alt)
@@ -910,57 +998,69 @@ def read_exif_and_write_json(dng_path: Path, exiftool_path: str,
             full_metadata["UTM_x"], full_metadata["UTM_y"], full_metadata["UTM_zone"] = UTM_x, UTM_y, UTM_zone
             coordinates = [(gps_coordinate_to_float(gps_lat), gps_coordinate_to_float(gps_lon))]
 
-        # 3)
-
+        # 3) Retrieve the ground elevation
 
         ground_Altitude = full_metadata.get("GroundAltitude")
         if not ground_Altitude:
-            #  altitudes  du nadir de l'image par rapport au niveau de la mer. Utilisation de l'API IGN
+            #  Retrieve the ground elevation at the image nadir above sea level using the IGN API.
             if gps_lat and gps_lon:
                 dic_geo_list = data_sig(coordinates, geotag=False, verbose=True)
             else:
                 dic_geo_list = None
             if dic_geo_list is None or len(dic_geo_list) != 1:
-                raise ValueError("Erreur récupération altitudes MNT (API)")
+                raise ValueError("Error retrieving DTM elevations (API)")
             logger.ok(f"ground_Altitude =  {dic_geo_list[0]['z']} m")
             ground_Altitude = dic_geo_list[0]['z']
             full_metadata["GroundAltitude"] = f'{np.round(ground_Altitude, 3): .3f}'
 
-        # 4)
+        # 4) Calculate the drone altitude above sea level
 
         drone_Altitude_SeaLevel = full_metadata.get("DroneAltitudeSeaLevel")
 
         if not drone_Altitude_SeaLevel:
 
             if "DroneAltitudeTakeOff" not in full_metadata:
-                raise ValueError("Impossible de calculer altitude drone sans DroneAltitudeTakeOff")
+                raise ValueError(
+                    "Cannot calculate drone altitude without DroneAltitudeTakeOff"
+                )
 
             meters = float(full_metadata["DroneAltitudeTakeOff"])
 
-            # 🔍 0. recherche dans option de commande
+            # 🔍 0. Check the command-line option
             if alti_takeoff:
                 takeoff_altitude = float(alti_takeoff)
-                logger.info(f"Altitude takeoff fournie par ligne de  commande {takeoff_altitude: .3f} m")
-                logger.ok(f"Altitude take off / sea level : {takeoff_altitude: .3f} m")
+                logger.info(
+                    f"Takeoff altitude provided via command line: "
+                    f"{takeoff_altitude: .3f} m"
+                )
+                logger.ok(
+                    f"Takeoff altitude / sea level: {takeoff_altitude: .3f} m"
+                )
 
-            # 🔍 1. Recherche dans les exif existants
+            # 🔍 1. Search existing EXIF files
             else:
                 folder = dng_path.parent
                 takeoff_altitude = find_takeoff_altitude_from_exif_folder(folder, logger)
 
-            # 🖥️ 2. Fallback GUI
+            # 🖥️ 2. Fall back to the GUI
             if takeoff_altitude is None:
                 if interactive:
-                    logger.warn("Il manque l\'altitude du point de take off. ")
-                    logger.warn("Attention toutes les images traitées partageront le même point de décollage")
-                    prompt = f"Indiquez l'altitude du point de takeoff / sea level ?"
+                    logger.warn("The takeoff point altitude is missing.")
+                    logger.warn(
+                        "Warning: all processed images will share the same takeoff point.")
+                    prompt = "Enter the takeoff point altitude above sea level:"
                     takeoff_altitude = ask_takeoff_altitude_gui(prompt, default=ground_Altitude)
-                    logger.info(f"Altitude takeoff fournie par utilisateur {takeoff_altitude: .3f} m")
-                    logger.ok(f"Altitude take off / sea level : {takeoff_altitude: .3f} m")
+                    logger.info(
+                        f"Takeoff altitude provided by the user: "
+                        f"{takeoff_altitude: .3f} m"
+                    )
+                    logger.ok(
+                        f"Takeoff altitude / sea level: {takeoff_altitude: .3f} m"
+                    )
                 else:
-                    raise ValueError("Altitude takeoff requise (mode non interactif)")
+                    raise ValueError("Takeoff altitude required in non-interactive mode")
 
-            # 🧮 Calcul
+            # 🧮 Calculate the altitude
             drone_Altitude_SeaLevel = takeoff_altitude + meters
 
             full_metadata["DroneAltitudeSeaLevel"] = f'{np.round(drone_Altitude_SeaLevel, 3): .3f}'
@@ -968,11 +1068,15 @@ def read_exif_and_write_json(dng_path: Path, exiftool_path: str,
             full_metadata["TakeOffAltitudeSeaLevel"] = f'{np.round(takeoff_altitude): .3f}'
             full_metadata["AltitudeTakeoffSource"] = "USER_INPUT"
 
-            logger.ok(f"Altitude drone / sea level = {drone_Altitude_SeaLevel: .3f} m")
-            logger.ok(f"Le fichier exif compagnon {str(dng_path.stem)}.exif a été reconstitué ")
+            logger.ok(
+                f"Drone altitude / sea level = {drone_Altitude_SeaLevel: .3f} m"
+            )
+            logger.ok(
+                f"Companion EXIF file {str(dng_path.stem)}.exif has been reconstructed"
+            )
 
 
-        # 4)
+        #  Keep only the selected metadata
         cleaned = {k: full_metadata.get(k) for k in essential_keys if k in full_metadata}
 
         # 5) Write the companion .exif JSON
@@ -994,7 +1098,7 @@ def find_takeoff_altitude_from_exif_folder(folder: Path, logger) -> float:
     exif_files = list(folder.glob("*.exif"))
 
     if not exif_files:
-        logger.info("Aucun fichier .exif compagnon trouvé")
+        logger.info("No companion .exif files found")
         return None
 
     for exif_file in exif_files:
@@ -1002,22 +1106,28 @@ def find_takeoff_altitude_from_exif_folder(folder: Path, logger) -> float:
             with open(exif_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
-            # 🥇 Cas direct
+            # 🥇 Direct match
             if "TakeOffAltitudeSeaLevel" in data:
                 alti_Takeoff = float(data["TakeOffAltitudeSeaLevel"])
-                logger.ok(f"Altitude take off / sea level : {alti_Takeoff: .2f} m (trouvée dans {exif_file.name})")
+                logger.ok(
+                    f"Takeoff altitude / sea level: {alti_Takeoff: .2f} m "
+                    f"(found in {exif_file.name})"
+                )
                 return alti_Takeoff
 
-            # 🥈 Cas calculable
+            # 🥈 Derivable value
             if "DroneAltitudeSeaLevel" in data and "DroneAltitudeTakeOff" in data:
                 alti_Takeoff = float(data["DroneAltitudeSeaLevel"]) - float(data["DroneAltitudeTakeOff"])
-                logger.ok(f"Altitude take off / sea level : {alti_Takeoff: .3f} m  (déduite depuis {exif_file.name})")
+                logger.ok(
+                    f"Takeoff altitude / sea level: {alti_Takeoff: .3f} m "
+                    f"(derived from {exif_file.name})"
+                )
                 return alti_Takeoff
 
         except Exception as e:
-            logger.warn(f"Lecture exif échouée {exif_file.name}: {e}")
+            logger.warn(f"Failed to read EXIF file {exif_file.name}: {e}")
 
-    logger.warn("Aucune altitude takeoff trouvée dans les fichiers exif")
+    logger.warn("No takeoff altitude found in the EXIF files")
     return None
 
 def ask_takeoff_altitude_gui(prompt: str, default=None) -> float:
@@ -1032,39 +1142,39 @@ def ask_takeoff_altitude_gui(prompt: str, default=None) -> float:
     root.withdraw()
 
     if default is not None:
-        prompt_full = f"{prompt}\n(Valeur suggérée : {round(default, 2)} m)"
+        prompt_full = f"{prompt}\n(Suggested value: {round(default, 2)} m)"
     else:
         prompt_full = prompt
 
     while True:
         value = simpledialog.askstring(
-            "Altitude Takeoff",
+            "Takeoff Altitude",
             prompt_full,
             parent=root
         )
 
-        # ❌ Annulation utilisateur
+        # ❌  User cancelled the dialog
         if value is None:
             root.destroy()
-            raise ValueError("Saisie utilisateur annulée")
+            raise ValueError("User input cancelled")
 
-        # 🔧 Normalisation
+        # 🔧 Normalize the input
         value = value.strip().replace(",", ".")
 
         try:
             altitude = float(value)
         except ValueError:
             messagebox.showerror(
-                "Erreur de saisie",
-                "Veuillez entrer un nombre valide.\nExemple : 563.8 ou 563,8"
+                "Input Error",
+                "Please enter a valid number.\nExample: 563.8 or 563,8"
             )
             continue
 
-        # 🔍 Validation physique
+        # 🔍 Physical plausibility check
         if altitude < -440 or altitude > 9000:
             messagebox.showerror(
-                "Valeur invalide",
-                "Altitude hors plage réaliste (-440 m à 9000 m)"
+                "Invalid Value",
+                "Altitude outside the plausible range (-440 m to 9000 m)"
             )
             continue
 
@@ -1082,16 +1192,18 @@ def parse_and_normalize_gps_altitude(value: str) -> dict:
     """
     s = value.strip().lower()
 
-    # Regex : capture  (nombre) (unité)
-    # ex: '120.5 m', '350 ft', '12.34m', '50ft'
+    # Regex: capture a number followed by a unit
+    # Examples: '120.5 m', '350 ft', '12.34m', '50ft'
     match = re.search(r"([+-]?\d+(?:\.\d*)?)\s*(m|ft)\b", s)
     if not match:
-        raise ValueError(f"Impossible d'extraire altitude et unité dans GPSAltitude: {value}")
+        raise ValueError(
+            f"Cannot extract altitude and unit from GPSAltitude: {value}"
+        )
 
     number_str, unit = match.groups()
     number = float(number_str)
 
-    # Conversion
+    # Unit conversion
     meters = number if unit == "m" else number * 0.3048
 
     return {
@@ -1109,21 +1221,21 @@ def gps_coordinate_to_float(gps_coordinate: str) -> float:
                     decimal_coord = gps_coordinate_to_float(coord_str)
                     print(decimal_coord)   # 45.17020556
     """
-    # Replacing 'deg' with space and splitting the string
+    # Replace 'deg' with a space and split the string
     parts = gps_coordinate.replace('deg', '').split()
     if len(parts) != 4 or parts[1][-1] != '\'' or parts[2][-1] != '"' or parts[3] not in ('N', 'S', 'E', 'W'):
         raise ValueError("Invalid GPS coordinate string format")
 
-    # Extracting degrees, minutes, seconds, and direction
+    # Extract degrees, minutes, seconds, and direction
     degrees = float(parts[0])
-    minutes = float(parts[1][:-1])  # Removing the apostrophe '
-    seconds = float(parts[2][:-1])  # Removing the double quote "
+    minutes = float(parts[1][:-1])  # Remove the apostrophe
+    seconds = float(parts[2][:-1])  # Remove the double quote
     direction = parts[3]
 
-    # Converting to float
+    # Convert to decimal degrees
     decimal_coord = degrees + minutes / 60 + seconds / 3600
 
-    # Adjusting for direction
+    # Apply the sign according to the direction
     if direction in ['S', 'W']:
         decimal_coord = -decimal_coord
 
@@ -1242,40 +1354,68 @@ def UTM2geo(xUTM, yUTM, zoneUTM):
 
 def DJI2IRDrone(raw_exif, verbose=True):
     """
+    Interpret DJI metadata for use in IRDrone.
 
+    This function corrects the erroneous altitude definition provided by DJI
+    and maps the drone attitude angles reported by DJI to the IRDrone model
+    angles: xi_Y, xi_P, and xi_R.
 
-        Interprétation des données DJI pour utilisation dans IRDrone
-        Ici on corrige la définition erronée de l'altitude fournie par DJI.
-        On affecte les angles d'attitude du drone données par DJI aux angles du modèle IRDrone :
-        xi_Y, xi_P et xi_R
+    The IRDrone model uses only right-handed orthonormal coordinate frames.
 
-        Le modèle IRDrone ne considère que des repères orthonormés directs.
-        Repère géographique : {x_Gnd, y_Gnd, z_Gnd}  avec   x_Gnd W->E  y_gnd S->N   z_gnd vers le haut
-        Repère image : {{x_Img, y_Img, z_Img}}   avec x_Img gauche->droite  y_Img bas->haut  z_Img sol->capteur
+    Geographic frame:
+        {x_Gnd, y_Gnd, z_Gnd}
+        x_Gnd points west to east, y_Gnd points south to north,
+        and z_Gnd points upward.
 
-        Le images sont prises en mode "Gimbal-lock" autrement dit l'axe de visée caméra pointe vers le nadir.
-        Note : l'angle FlightYawDegree représente le cap [-180, +180] mesuré dans le sens des aiguilles d'une montre
-        (donc positif vers l'Est). Le cap est l'inverse de l'angle de lacet xi_Y considéré dans IRDrone qui donne l'angle entre le nord
-        \vec{y_Gnd} et \vec{y_Img}.
-        C'est la même règle pour GimbalYawDegree.
-        Si au décollage le pilote n'a pas aligné correctement sa caméra, càd  (GimbalYawDegree - FlightYawDegree) != 0
-        alors l'écart reste contant pendant tout le vol.
-        L'option  option_Yaw permet de choisir entre :
-            - option_Yaw = "Flight":     xi_Y = - np.deg2rad(float(raw_exif['FlightYawDegree']))
-            - option_Yaw == "Gimbal":    xi_Y = - np.deg2rad(float(raw_exif['GimbalYawDegree']))
-        Il est délicat de choisir cette option. Il semble (mais ce n'est pas certain !) que l'option "Flight" soit
-        plus fiable ... Il faut  faire des test terrain.
+    Image frame:
+        {x_Img, y_Img, z_Img}
+        x_Img points from left to right, y_Img points from bottom to top,
+        and z_Img points from the ground toward the sensor.
 
-    :param raw_exif:
-    :param verbose:
-    :return:   latitude, longitude, z_ground, Z_cam_nadir, Z_cam_sealevel, UTM_x, UTM_y, zoneUTM, xi_Y, xi_P, xi_R
+    Images are captured in "gimbal-lock" mode, meaning that the camera's
+    viewing axis points toward the nadir.
+
+    Note:
+        FlightYawDegree represents the heading, in the range [-180, +180],
+        measured clockwise (positive toward the east).
+        The heading is the opposite of the yaw angle xi_Y used in IRDrone,
+        which represents the angle between the geographic north axis
+        (y_Gnd) and the image vertical axis (y_Img).
+
+        The same convention applies to GimbalYawDegree.
+
+        If the pilot does not correctly align the camera at takeoff, i.e.
+        (GimbalYawDegree - FlightYawDegree) != 0, this angular difference
+        remains constant throughout the flight.
+
+    The option_Yaw setting selects the yaw source:
+        - option_Yaw = "Flight": xi_Y = -np.deg2rad(float(raw_exif['FlightYawDegree']))
+        - option_Yaw = "Gimbal": xi_Y = -np.deg2rad(float(raw_exif['GimbalYawDegree']))
+
+    Choosing between these options is not straightforward. The "Flight"
+    option appears to be more reliable, although this is not certain.
+    Field tests are needed to confirm this.
+
+    Parameters
+    ----------
+    raw_exif : dict
+        Dictionary containing the DJI metadata.
+    verbose : bool
+        If True, display the computed altitude, attitude angles, and UTM
+        coordinates.
+
+    Returns
+    -------
+    tuple
+        latitude, longitude, z_ground, Z_cam_nadir, Z_cam_sealevel,
+        UTM_x, UTM_y, zoneUTM, xi_Y, xi_P, xi_R
     """
 
     latitude = float(raw_exif['DroneLatitude'])
     longitude = float(raw_exif['DroneLongitude'])
-    z_ground = float(raw_exif['GroundAltitude'])  # altitude du sol par rapport au niveau de la mer
-    Z_cam_nadir = float(raw_exif['DroneAltitudeGround'])  # altitude du drone par rapport au niveau du sol (nadir)
-    Z_cam_sealevel = Z_cam_nadir + z_ground  # altitude du drone par rapport au niveau de la mer
+    z_ground = float(raw_exif['GroundAltitude'])  # Ground elevation above sea level
+    Z_cam_nadir = float(raw_exif['DroneAltitudeGround'])  # Drone altitude above ground level at the nadir
+    Z_cam_sealevel = Z_cam_nadir + z_ground  # Drone altitude above sea level
     UTM_x = float(raw_exif['UTM_x'])
     UTM_y = float(raw_exif['UTM_y'])
     zoneUTM = int(raw_exif['UTM_zone'])
@@ -1287,28 +1427,28 @@ def DJI2IRDrone(raw_exif, verbose=True):
     elif option_Yaw == "Gimbal":
         xi_Y = - np.deg2rad(float(raw_exif['GimbalYawDegree']))
     else:
-        print(f'error in DJI2IRDrone :      option Yaw inconnue !')
+        print("Error in DJI2IRDrone: unknown Yaw option!")
 
     xi_P = np.deg2rad(float(raw_exif['FlightPitchDegree']))
     xi_R = np.deg2rad(float(raw_exif['FlightRollDegree']))
 
     gamma_Cap = np.deg2rad(float(raw_exif['FlightYawDegree']))
-    gamma_Cap_Nav = cap_nav(gamma_Cap)  # en radian
+    gamma_Cap_Nav = cap_nav(gamma_Cap)  # In radians
 
     if verbose:
         logger.info(f"--------------------------------------------------------------------------\n"
-              f" Altitude Drone/ground  Z_cam_nadir    = {Z_cam_nadir: .2f} m\n"
-              f" Drone/sea level        Z_cam_sealevel = {Z_cam_sealevel: .2f} m\n"
-              f" Yaw xi_Y = {np.rad2deg(xi_Y)} ° | Pitch xi_P = {np.rad2deg(xi_P)} ° | Roll xi_R = {np.rad2deg(xi_R)} °\n"
-              f" Cap  = {np.rad2deg(gamma_Cap)} °  |  Cap navigation = {np.rad2deg(gamma_Cap_Nav)}\n"
-              f" UTM_x = {UTM_x : .2f} m  |   UTM_y = {UTM_y : .2f} m \n"
-              f" ")
+                    f" Drone altitude / ground level  Z_cam_nadir    = {Z_cam_nadir: .2f} m\n"
+                    f" Drone altitude / sea level     Z_cam_sealevel = {Z_cam_sealevel: .2f} m\n"
+                    f" Yaw xi_Y = {np.rad2deg(xi_Y)} ° | Pitch xi_P = {np.rad2deg(xi_P)} ° | Roll xi_R = {np.rad2deg(xi_R)} °\n"
+                    f" Heading = {np.rad2deg(gamma_Cap)} ° | Navigation heading = {np.rad2deg(gamma_Cap_Nav)} °\n"
+                    f" UTM_x = {UTM_x : .2f} m  |   UTM_y = {UTM_y : .2f} m \n"
+                    f" ")
 
     return latitude, longitude, z_ground, Z_cam_nadir, Z_cam_sealevel, UTM_x, UTM_y, zoneUTM, xi_Y, xi_P, xi_R
 
 
 # ---------------------------------------------
-#  ROTATIONS ELEMENTAIRES (repère géographique)
+#  ELEMENTARY ROTATIONS (geographic frame)
 # ---------------------------------------------
 
 def R_yaw(xi_Y):
@@ -1334,23 +1474,36 @@ def R_pitch(xi_R):
 
 def cap_nav(cap):
     """
-        A partir du cap dent [-Pi et +Pi] détermine le cap de navigation entre [0 et 2Pi]
-        Cap  0       (   0°)  <=> Nord   Cap navigation 0        0°
-        Cap +Pi/2    ( +90°)  <=> Est    Cap navigation Pi/2   +90°
-        Cap +Pi      (+180°)  <=> Sud    Cap navigation Pi     180°
-        Cap -Pi      (-180°)  <=> Sud    Cap navigation Pi     180°
-        Cap -Pi/2    ( -90°)  <=> Ouest  Cap navigation 3 Pi/2 270°
-        Cap  0       (   0°)  <=> Nord   Cap navigation 2 Pi   360°
+    Convert a heading angle in the range [-pi, +pi] to a navigation
+    heading in the range [0, 2*pi].
 
-        Attention dans un repère direct {O, x_Gnd, y_Gnd, z_gnd}  où
-        x_Gnd vecteur Ouest -> Est
-        y_Gnd vecteur Sud -> Nord
-        z_Gnd = x_Gnd ^ y_Gnd  bas -> haut
-        les angles de cap sont mesurés dans le sens des aiguilles d'une montre.
-        Le drone DJI donne :  gamma_Cap = FlightYawDegree
+    Heading and navigation-heading correspondence:
+        Heading  0       (   0°)  <=> North   Navigation heading 0       (  0°)
+        Heading +pi/2    ( +90°)  <=> East    Navigation heading pi/2   (+90°)
+        Heading +pi      (+180°)  <=> South   Navigation heading pi     (180°)
+        Heading -pi      (-180°)  <=> South   Navigation heading pi     (180°)
+        Heading -pi/2    ( -90°)  <=> West    Navigation heading 3*pi/2 (270°)
+        Heading  0       (   0°)  <=> North   Navigation heading 2*pi   (360°)
 
-        :param cap:  angle de cap en radian
-        :return: capNav    angle de cap navigation en radian
+    Important:
+        In a right-handed coordinate frame {O, x_Gnd, y_Gnd, z_Gnd}:
+            x_Gnd points west to east.
+            y_Gnd points south to north.
+            z_Gnd = x_Gnd cross y_Gnd, pointing downward to upward.
+
+        Heading angles are measured clockwise.
+
+        The DJI drone provides gamma_Cap = FlightYawDegree.
+
+    Parameters
+    ----------
+    cap : float
+        Heading angle in radians.
+
+    Returns
+    -------
+    capNav : float
+        Navigation heading angle in radians.
     """
     if cap >= 0:
         capNav = cap
@@ -1384,35 +1537,69 @@ def compute_MNT_mesh(
         save_graphic=True
 ):
     """
+    Build a terrain grid and retrieve its elevations from the IGN elevation API.
 
-    :param N_mesh_x, N_mesh_y: taille de la grille des points de référenc pour le MNT
-    :param xi_Yaw:    angle de rotation entre repère R_Gnd et R_Img
-    :param R_Img2Gnd: matrice de rotation  R_Img -> R_Gnd
-    :param Nx, Ny:  dimension capteur (en pixels)
-    :param fx, fy:  focale selon x et y capteur (en pixels)
-    :param cx, cy:  position du centre optique (en pixels)
-    :param UTM_x, UTM_y:  position du nadir (projection du centre optique) dans le repère R_Gnd (m)
-    :param Z0:
-    :param Cam_Center: coordonnées du drone à l'instant de la prise de vue
-    :param z_ground:  altitude du nadir par rapport au niveau de la mer
-    :param zoneUTM:
-    :param ampli: facteur d'amplification de la surface du capteur
-    :param txt:
-    :param verbose:
-    :param graphic_2D:  option de visualisation des grilles et du MNT
-    :return:
+    Parameters
+    ----------
+    N_mesh_x, N_mesh_y : int
+        Dimensions of the reference-point grid used to build the DTM.
+    xi_Yaw : float
+        Rotation angle between the geographic frame R_Gnd and the image frame R_Img.
+    R_Img2Gnd : ndarray
+        Rotation matrix from R_Img to R_Gnd.
+    Nx, Ny : int
+        Sensor dimensions in pixels.
+    fx, fy : float
+        Focal lengths along the sensor x and y axes, in pixels.
+    cx, cy : float
+        Optical center coordinates, in pixels.
+    UTM_x, UTM_y : float
+        Nadir position (projection of the optical center) in the R_Gnd
+        coordinate frame, in meters.
+    Z0 : float
+        Reference altitude.
+    Cam_Center : ndarray
+        Drone coordinates at the time of image capture.
+    z_ground : float
+        Nadir elevation above sea level.
+    folder_input : str or Path
+        Input folder used for generated outputs.
+    img_name : str
+        Image name used to identify generated outputs.
+    zoneUTM : int
+        UTM zone used for coordinate conversion.
+    ampli : float
+        Expansion factor applied to the sensor footprint.
+    txt : str
+        Description used for the generated graphics.
+    verbose : bool
+        Enable diagnostic messages.
+    view_graphic : bool
+        Display the generated graphics.
+    graphic_2D : bool
+        Enable 2D grid and DTM visualization.
+    save_graphic : bool
+        Save the generated graphics.
+
+    Returns
+    -------
+    Xg, Yg, Zg : ndarray
+        Grid coordinates and terrain elevations.
+    bound_pix : list
+        Pixel-coordinate boundary points used for the ground footprint.
     """
 
     # -------------------------------------------------------------------
-    # 0) Matrice de passage repère R_Gnd vers repère caméra R_Cam
+    # 0) Transformation matrix from the geographic frame R_Gnd
+    #    to the camera frame R_Cam
     R_Cam2Gnd = R_Img2Gnd
 
     # -------------------------------------------------------------------
-    # 1) Emprise terrain sur plan horizontal
-    #   Les limites du capteur rectangulaire sont définies à partir du centre optique.
-    #  Le centre optique après correction de la distorsion par la calibration de Zhang
-    #  n'est pas exactement au centre géométrique du capteur (variation ~<1%)
-    #  Le schéma ci dessous montre les 9 points définissant les limtes du capteur.
+    # 1) Ground footprint on a horizontal plane
+    # The rectangular sensor boundaries are defined relative to the optical center.
+    # After Zhang calibration corrects lens distortion, the optical center
+    # is not exactly at the geometric center of the sensor (variation of ~<1%).
+    # The diagram below shows the nine points defining the sensor boundaries.
     #         7        6              5
     #         x--------x--------------x
     #         |        |              |
@@ -1422,36 +1609,41 @@ def compute_MNT_mesh(
     #         x--------x--------------x
     #         1        2              3
     #
-    # Les limites du capteur sont "amplifiées" artificiellement pour étendre la zone du MNT
-    # Cette pratique peut permettre à moindre coût de résoudre partiellement le problème
-    # des terrains inclinés situés en  bordure d'emprise théorique et sous l'altitude du nadir.
-    # Toutefois une valeur proche de 1 ne garantie pas l'abscence de "coupure des coins".
-    # Une valeur trop grande va augmenter inutilement le nombre de points du sol en dehors de l'image.
+    # The sensor boundaries are artificially expanded to extend the DTM coverage.
+    # This can help partially address, at low computational cost, the problem
+    # of sloping terrain near the theoretical footprint boundary and below
+    # the nadir altitude.
+    # However, a value close to 1 does not guarantee that corner clipping
+    # will be avoided.
+    # An excessively large value increases the number of ground points
+    # outside the image unnecessarily.
     #
     # bound_pix = [(pt0), (pt1), (pt2), (pt3), (pt4), (pt5), (pt6), (pt7), (pt8)]
 
     if verbose:
-        logger.info(f" Facteur d\'amplification de l\'emprise terrain  {ampli} ")
+        logger.info(f" Ground footprint expansion factor: {ampli} ")
 
-    # --- Projection des limites sur plan horizontal
-    # Remarque importante : même si la projection pinhole est "oblique" la limite sur un plan horizontal
-    # reste un rectangle centré sur le nadir (car le capteur est lui aussi horizontal).
-    # X_Bound, Y_Bound sont les coordonnées UTM en m exprimées dans le repère R_Gnd.
-    # Un point de ce répère est repéré par :
-    # OM = X_Bound * \vec{x}_{Gnd} + Y_Bound * \vec{y}_{Gnd} + Z_Bound * \vec{z}_{Gnd}
+    # --- Project the sensor boundaries onto a horizontal plane
+    # Important note: although the pinhole projection is oblique,
+    # the footprint on a horizontal plane remains a rectangle centered
+    # on the nadir, because the sensor itself is also horizontal.
+    # X_Bound and Y_Bound are UTM coordinates in meters, expressed
+    # in the R_Gnd coordinate frame.
+    # A point in this frame is defined by:
+    # OM = X_Bound * x_Gnd + Y_Bound * y_Gnd + Z_Bound * z_Gnd
     #
 
+    # --- Build the ground grid on a horizontal plane
+    # The grid is centered on the nadir. The nadir altitude is Z = 0 m.
+    # These grid points serve as reference points for constructing
+    # the DTM interpolator.
+    # Expanded sensor boundaries
+    cx_a, cy_a = cx * ampli, cy * ampli  # Left and top boundaries
+    Nx_a, Ny_a = Nx * ampli, Ny * ampli  # Right and bottom boundaries
 
-    # ---  Construction grille "terrain" sur plan horizontal
-    # Grille centrée sur le nadir. Altitude du nadir Z = 0m
-    # Les points de cette grille servent de référence pour construire
-    # l'interpolateur du MNT.
-    # limtes augmentées du capteur
-    cx_a, cy_a = cx * ampli, cy * ampli  # limite gauche et haute
-    Nx_a, Ny_a = Nx * ampli, Ny * ampli  # limite droite et basse
-    # Symétrisation des limites
-    Nn_x = int(max(cx * ampli, (Nx - cx) * ampli - 1))  # limite gauche et droite
-    Nn_y = int(max(cy * ampli, (Ny - cy) * ampli - 1))  # limite haute et basse
+    # Make the boundaries symmetric
+    Nn_x = int(max(cx * ampli, (Nx - cx) * ampli - 1))  # Left and right boundaries
+    Nn_y = int(max(cy * ampli, (Ny - cy) * ampli - 1))  # Top and bottom boundaries
 
     bound_pix = [(0, 0),
                  (-Nn_x, -Nn_y), (0, -Nn_y), (Nn_x, -Nn_y),
@@ -1467,8 +1659,9 @@ def compute_MNT_mesh(
     Zg = Xg * 0
 
     if graphic_2D or save_graphic:
-        # --- limites du capteur.
-        # Cette limite est un rectangle centré sur le centre optique bound_capteur exprimé en pixel
+        # --- Sensor boundaries
+        # This boundary is a rectangle centered on the optical center,
+        # expressed in sensor pixel coordinates in bound_capteur.
 
         bound_capteur = [(0, 0),
                          (-cx, -cy), (0, -cy), (Nx - 1 - cx, -cy),
@@ -1483,30 +1676,30 @@ def compute_MNT_mesh(
                       folder_input, img_name,
                       txt=txt, view_graphic=view_graphic, save_graphic=save_graphic)
 
-    # 2) Construction de la liste des coordonnées GPS
+    # 2) Build the list of geographic coordinates
 
-    #  2.1   conversion UTM - GPS des corrdonnées (Xg, Yg)
+    # 2.1 Convert the coordinates (Xg, Yg) from UTM to geographic coordinates
     coordinates = []
-    index_map = []  # pour reconstruire la grille ensuite
+    index_map = []  # Used to reconstruct the grid later
 
-    # définition des indices de la grille
+    # Define the grid indices
     #
-    # i : indice de ligne terrain (direction Y)
-    # j : indice de colonne terrain (direction X)
+    # i: ground-grid row index (Y direction)
+    # j: ground-grid column index (X direction)
     #
-    # Convention utilisée :
-    #   j = 0       → (gauche)
-    #   j = Nx-1    → (droite)
+    # Convention used:
+    #   j = 0       -> left
+    #   j = Nx-1    -> right
     #
-    #   i = 0       → (bas)
-    #   i = Ny-1    → (haut)
+    #   i = 0       -> bottom
+    #   i = Ny-1    -> top
     #
-    # Donc :
-    #   (i,j) = (0,0) correspond au point  (coin bas gauche)
+    # Therefore:
+    #   (i, j) = (0, 0) corresponds to the bottom-left corner.
     #
-    # ATTENTION :
-    # cette convention est différente de la convention image
-    # où (0,0) correspond généralement au coin haut gauche.
+    # WARNING:
+    # This convention differs from the image-coordinate convention,
+    # where (0, 0) usually corresponds to the top-left corner.
 
     n_pts = 0
     for i in range(np.shape(Xg)[0]):
@@ -1518,18 +1711,18 @@ def compute_MNT_mesh(
 
             # print(f"[DEBUG]  (i,j) = ({i} , {j})   lat ={lat :.5f}  | lon ={lon :.5f}")
 
-    #  2.2   altitudes Zg des points de référence du MNT  Utilisation de l'API IGN
+    # 2.2 Retrieve the DTM reference-point elevations using the IGN API
 
     t0 = time.perf_counter()
 
     dic_geo_list = data_sig(coordinates, geotag=False, verbose=True)
 
     t1 = time.perf_counter()
-    logger.timer(f" Querying IGN : {t1 - t0:.3f} s")
+    logger.timer(f" IGN API query: {t1 - t0:.3f} s")
     t0 = time.perf_counter()
 
     if dic_geo_list is None or len(dic_geo_list) != n_pts:
-        raise ValueError("Erreur récupération altitudes MNT (API)")
+        raise ValueError("Error retrieving DTM elevations (API)")
 
     # print(f"[DEBUG]   dic_geo_list = {dic_geo_list} ")
 
@@ -2804,7 +2997,45 @@ def draw_square_outline(img, x_center, y_center, size, color, thickness=3):
 # sélection interactive des images
 # --------------------------------------------------
 
-def choose_images():
+
+def choose_images(folder_mission: Path):
+
+    root = tk.Tk()
+    root.withdraw()
+
+    filepaths = filedialog.askopenfilenames(
+        parent=root,
+        title="Sélectionner les images",
+        initialdir=str(folder_mission),
+        filetypes=[
+            ("Images DNG, TIF", "*.dng *.tif"),
+            ("All files", "*.*")
+        ]
+    )
+
+    root.destroy()
+
+    if not filepaths:
+        print("Aucune image sélectionnée.")
+        sys.exit(0)
+
+    paths = [Path(p) for p in filepaths]
+
+    folder_input = paths[0].parent
+    list_path = sorted(paths)
+    list_img = sorted([p.name for p in paths])
+    list_img_name = sorted([p.stem for p in paths])
+
+    return folder_input, list_img_name, list_img, list_path
+
+
+
+def choose_images_dev():
+    """
+    A conserver. Permet d'utiliser le lancement par ligne de commande
+    et d'accéder au mode interactif
+    :return:
+    """
 
     root = tk.Tk()
     root.withdraw()
@@ -3135,7 +3366,7 @@ def group_multispectral(paths, logger):
     return valid, rejected
 
 
-def georef_main(image_callback=None):
+def georef_main(image_callback=None, mission_parameters=None):
     logger = CliLogger(use_color=True)
     logger.log_callback = globals()["logger"].log_callback
 
@@ -3218,7 +3449,7 @@ def georef_main(image_callback=None):
             logger.info(f"{len(list_img_name)} images DNG à traiter")
             georef_sucsess = 0
             for img_name in list_img_name:
-                 georef_success = process_image(
+                georef_success = process_image(
                                             folder_input,
                                             img_name,
                                             args,
@@ -3256,8 +3487,13 @@ def georef_main(image_callback=None):
 
         logger.info(f"Mode interactif : sélection des images ...\n", _bold=True)
 
+        folder_mission = Path(
+            mission_parameters["File path mission"]
+        )
 
-        folder_input, list_img_name, list_img, list_path = choose_images()
+        folder_input, list_img_name, list_img, list_path = choose_images(
+            folder_mission
+        )
 
         if not list_path:
             logger.error("Aucune image sélectionnée")
@@ -3349,18 +3585,12 @@ def georef_main(image_callback=None):
             Uti.show_info_message("IRDrone", f"{georef_success} images multispectrales géoréférencées avec succes ...", "")
 
 
-
 # ================================================================
-# programme principal
+# programme principal pour le développement
+# ou utilisation en ligne de commande.
 # ================================================================
 
 if __name__ == "__main__":
-
-    # georef_main()
-    # sys.exit(0)
-
-
-
 
     logger = CliLogger(use_color=True)
 
@@ -3478,7 +3708,7 @@ if __name__ == "__main__":
                                                     args,
                                                     zhang_dic,
                                                     tolerence_Monte_Carlo,
-                                                    georef_success =georef_success
+                                                    georef_success=georef_success
                                                 )
             Uti.show_info_message("IRDrone", f"{georef_success} images géoréférencées avec succes ...", "")
 
@@ -3489,7 +3719,7 @@ if __name__ == "__main__":
 
         logger.info(f"Mode interactif : sélection des images ...\n", _bold=True)
 
-        folder_input, list_img_name, list_img, list_path = choose_images()
+        folder_input, list_img_name, list_img, list_path = choose_images_dev()
 
         if not list_path:
             logger.error("Aucune image sélectionnée")
@@ -3536,14 +3766,14 @@ if __name__ == "__main__":
             for img_path in list_path:
                 img_name = img_path.stem
 
-                georef_success= process_image(
+                georef_success = process_image(
                                                 folder_input,
                                                 img_name,
                                                 args,
                                                 zhang_dic,
                                                 logger=logger,
                                                 tol_MC=tolerence_Monte_Carlo,
-                                                georef_success = georef_success
+                                                georef_success=georef_success
                                             )
 
         # ----------------------------------------------
@@ -3552,6 +3782,8 @@ if __name__ == "__main__":
         elif mode == "multispectral":
             args.mode = "multispectral"
             valid, rejected = group_multispectral(list_path, logger)
+
+            georef_success = 0
 
             for base, bands in valid.items():
                 logger.info(f"Traitement multispectral : {base}")

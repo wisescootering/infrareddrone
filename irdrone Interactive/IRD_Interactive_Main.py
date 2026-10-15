@@ -133,7 +133,7 @@ class Main_Window(QMainWindow):
         self.btn_load_images.clicked.connect(self.open_window_load_set_images)
         #  btn pre_process_images
         self.btn_pre_process_images = QPushButton("Step 3 : Image pre-processing", self)
-        self.btn_pre_process_images.setStyleSheet("background-color: darkGray; color: white;")
+        self.btn_pre_process_images.setStyleSheet("background-color: #505050; color: white;")  # plus sombre #383838  plus clair #696969
         self.btn_pre_process_images.setFixedWidth(self.btn_width)
         self.btn_pre_process_images.clicked.connect(self.on_pre_process_images)
         #  btn process_images
@@ -143,7 +143,7 @@ class Main_Window(QMainWindow):
         self.btn_process_images.clicked.connect(self.on_process_images)
         #  btn post process_images
         self.btn_post_process_images = QPushButton("Step 5 : Image postprocessing", self)
-        self.btn_post_process_images.setStyleSheet("background-color: orange; color: white;")
+        self.btn_post_process_images.setStyleSheet("background-color: #C87800; color: white;")
         self.btn_post_process_images.setFixedWidth(self.btn_width)
         self.btn_post_process_images.clicked.connect(self.on_post_process_images)
         #  btn help
@@ -430,20 +430,7 @@ class Main_Window(QMainWindow):
         """
         try:
             if self.mission_parameters is not None:
-                print("DEBUG Step 5 - mission_parameters :")
-                print(self.mission_parameters)
-
-                print(
-                    "DEBUG Step 5 - folderMissionPath :",
-                    self.mission_parameters.get("folderMissionPath")
-                )
-
-                print(
-                    "DEBUG Step 5 - File path mission :",
-                    self.mission_parameters.get("File path mission")
-                )
-
-
+                folderMissionPath = self.mission_parameters.get("File path mission")
                 return True
 
             # Ask user to select a mission folder

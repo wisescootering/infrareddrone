@@ -87,7 +87,7 @@ class DialogGeoRef(QDialog):
     Dialog for géoréférencement.
 
     Phase 5 of the processing pipeline:
-          - post processing
+          - Post-processing
     """
 
     data_signal_to_main = pyqtSignal(bool)
@@ -111,9 +111,9 @@ class DialogGeoRef(QDialog):
             self.close()
             return
 
-        self.setWindowTitle("Phase 5 – Géoréférencement")
-        self.setMinimumSize(900, 600)  # exemple, avant c'était 700x450
-        self.resize(900, 900)  # taille initiale à l'ouverture
+        self.setWindowTitle("Phase 5 – Georeferencing")
+        self.setMinimumSize(900, 600)  # Minimum window size
+        self.resize(900, 900)  # Initial window size
 
         self._init_gui()
         self._connect_signals()
@@ -135,11 +135,11 @@ class DialogGeoRef(QDialog):
     def _init_gui(self) -> None:
         main_layout = QVBoxLayout(self)
 
-        # Titre en haut
-        title = QLabel("<b>Géoréférencement</b>")
+        # Title at the top
+        title = QLabel("<b>Georeferencing</b>")
         main_layout.addWidget(title)
 
-        # Fenêtre de log
+        # Log display area
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setMinimumHeight(120)
@@ -152,19 +152,19 @@ class DialogGeoRef(QDialog):
         btn_layout.addWidget(self.btn_run_GeoRef)
         main_layout.addLayout(btn_layout)
 
-        # Label de la progress bar (mettre en gras)
+        # Progress bar label (bold)
         self.progress_label = QLabel("Geo Ref ")
         self.progress_label.setStyleSheet("font-weight: bold;")
         main_layout.addWidget(self.progress_label)
 
-        # Progress bar juste au-dessus du bouton Close
+        # Progress bar above the Close button
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         main_layout.addWidget(self.progress_bar)
 
         # Image preview zone
-        self.image_preview_label = QLabel("Aucune image sélectionnée")
+        self.image_preview_label = QLabel("No image selected")
         self.image_preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_preview_label.setMinimumHeight(250)
         self.image_preview_label.setStyleSheet(
@@ -172,10 +172,10 @@ class DialogGeoRef(QDialog):
         )
         main_layout.addWidget(self.image_preview_label, stretch=1)
 
-        # Bouton Close en bas
+        # Close button at the bottom
         self.btn_close = QPushButton("Close")
 
-        # Stretch pour pousser le bouton Close en bas
+        # Stretch to push the Close button to the bottom
         main_layout.addStretch()
 
 
@@ -256,63 +256,34 @@ class DialogGeoRef(QDialog):
         self._log(f"Image preview loaded: {image_path}")
 
 
-    def _display_image_01(self, image_path: str) -> None:
-        """Display an image in the preview label while preserving its aspect ratio."""
-
-        if image_path.lower().endswith(".dng"):
-            # Decode the DNG image using rawpy.
-            with rawpy.imread(image_path) as raw:
-                rgb = raw.postprocess()
-
-            # Convert the RGB array to PNG bytes, then to QPixmap.
-            image_bytes = imageio.imsave(
-                imageio.RETURN_BYTES, rgb, format="png"
-            )
-            image = QImage.fromData(image_bytes)
-            pixmap = QPixmap.fromImage(image)
-
-        else:
-            # Load standard image formats directly.
-            pixmap = QPixmap(image_path)
-
-        if pixmap.isNull():
-            self._log(f"Unable to load image for preview: {image_path}")
-            return
-
-        # Scale the image to fit the preview label.
-        scaled_pixmap = pixmap.scaled(
-            self.image_preview_label.size(),
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation
-        )
-
-        self.image_preview_label.setPixmap(scaled_pixmap)
-        self._log(f"Image preview loaded: {image_path}")
-
-
 
     # ------------------------------------------------------------------
-    #       Géo référencement
+    #       Georeferencing
     # ------------------------------------------------------------------
 
 
     def on_run_GeoRef(self) -> None:
         """
-        Step 5.1 – Run Géoréférencement.
+        Step 5.1 – Run Georeferencing.
         """
         try:
-            self._log(f"En cours de développement ")
             self.progress_bar.setValue(0)
-            QMessageBox.information(self, "Geo Ref",
-                                    "Sélectionnez une ou plusieurs images\n"
-                                    "Attention elles doivent être du même type.\n"
-                                    "Type acceptés : dng (DJI) \n"
-                                    "                tiff  \n"
-                                    "                tif multispectral groupe de 4 images .\n"
-                                    "                Exemple HYPRLASE_0121_1.tif, HYPRLASE_0121_2.tif, HYPRLASE_0121_3.tif, HYPRLASE_0121_4.tif\n"
-                                    "                Dans ce dernier cas sélectionner le quadruplet d'images "
-                                    )
-            GeoRef.georef_main(image_callback=self.image_signal.emit)
+            QMessageBox.information(
+                self,
+                "GeoRef",
+                "Select one or more images.\n"
+                "Warning: all selected images must be of the same type.\n"
+                "Supported types:\n"
+                "    - DNG (DJI)\n"
+                "    - TIFF\n"
+                "    - Multispectral TIFF: groups of four images.\n"
+                "      Example: HYPRLASE_0121_1.tif, HYPRLASE_0121_2.tif, "
+                "HYPRLASE_0121_3.tif, HYPRLASE_0121_4.tif\n"
+                "    In the latter case, select all four images."
+            )
+            GeoRef.georef_main(
+                image_callback=self.image_signal.emit,
+                mission_parameters=self.mission_parameters)
 
 
         except Exception as e:
@@ -323,8 +294,8 @@ class DialogGeoRef(QDialog):
 
     def on_GeoRef_finished(self):
 
-        self.progress_label.setText("Geo ref has been successfully ")
-        self._log(f"Geo ref has been successfully")
+        self.progress_label.setText("Georeferencing completed successfully.")
+        self._log("Georeferencing completed successfully.")
         self.progress_bar.setValue(0)
 
 

@@ -18,6 +18,17 @@ from typing import List, Tuple, Optional, Sequence, Dict, Any, Union
 import copy
 
 # ----------------------------------------------------
+#     Resource paths
+# ----------------------------------------------------
+RESOURCE_ICON_DIR = (
+    Path(__file__).resolve().parent.parent
+    / "resources"
+    / "Icon"
+)
+
+IMAGE_ARUCO_PATH = RESOURCE_ICON_DIR / "Image_ArUco.jpg"
+
+# ----------------------------------------------------
 #     bib Multi Thread
 # ----------------------------------------------------
 
@@ -51,7 +62,9 @@ from PyQt6.QtWidgets import (
     QTextEdit,
     QProgressBar,
     QLabel,
+    QDoubleSpinBox,
 )
+
 
 # ----------------------------------------------------
 #     bib matplotlib
@@ -163,6 +176,20 @@ class DialogSynchroAruco(QDialog):
         self.timeshift_plot_label.setStyleSheet(
             "QLabel { background-color: #f5f5f5; border: 1px solid #cccccc; }"
         )
+
+        # Display the default ArUco image.
+        pixmap = QPixmap(str(IMAGE_ARUCO_PATH))
+
+        if not pixmap.isNull():
+            scaled_pixmap = pixmap.scaled(
+                self.timeshift_plot_label.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+            self.timeshift_plot_label.setPixmap(scaled_pixmap)
+        else:
+            self._log(f"Unable to load image: {IMAGE_ARUCO_PATH}")
+
         main_layout.addWidget(self.timeshift_plot_label)
 
         # Bouton Close en bas
@@ -205,6 +232,7 @@ class DialogSynchroAruco(QDialog):
             self.aruco_orchestrator = ArucoOrchestrator(Path(self.folderMissionPath) / "AerialPhotography", multi_thread=self.multi_thread, use_aruco_cache=self.use_aruco_cache)
             self.aruco_orchestrator.signals.all_finished.connect(self.on_all_aruco_finished)
             self.aruco_orchestrator.signals.error.connect(self._on_aruco_error)
+            self.aruco_orchestrator.signals.log.connect(self._log)
             max_workers = psutil.cpu_count(logical=False) or 1
             self._log(f"Starting ArUco detection (VIS + NIR) using {max_workers} threads ")
             self.aruco_orchestrator.signals.progress.connect(self.progress_bar.setValue)
@@ -680,9 +708,13 @@ class ArucoOrchestrator:
         )
         worker.signals.finished.connect(finished_callback)
         worker.signals.error.connect(self.signals.error.emit)
-        # ✅ RELAIS DE LA PROGRESSION
+        # Relay log messages from the worker to the orchestrator.
+        worker.signals.log.connect(self.signals.log.emit)
+
+        # Relay progress and stage.
         worker.signals.progress.connect(self.signals.progress.emit)
         worker.signals.stage.connect(self.signals.stage.emit)
+
         self.thread_pool.start(worker)
 
     def _on_vis_finished(self, results, x_vals, y_vals):
@@ -701,21 +733,14 @@ class ArucoOrchestrator:
 
         self.signals.all_finished.emit()
 
+
 class ArucoOrchestratorSignals(QObject):
     progress = pyqtSignal(int)
     stage = pyqtSignal(str)   # "VIS" ou "NIR"
     all_finished = pyqtSignal()
     error = pyqtSignal(str)
+    log = pyqtSignal(str)
 
-from PyQt6.QtWidgets import (
-    QDialog,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QDoubleSpinBox,
-)
-from PyQt6.QtCore import Qt
 
 
 class TimeShiftInputDialog(QDialog):

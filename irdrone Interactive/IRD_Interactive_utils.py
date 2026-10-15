@@ -262,18 +262,18 @@ def image_takeoff_available_test(mission_parameters: dict, default_user_dir: Pat
     """
     try:
         image_takeoff_available = False
-        path_image_mission = Path(default_user_dir)
+        folderMissionPath = Path(default_user_dir)
         try:
             if isinstance(mission_parameters, dict) and 'File path mission' in mission_parameters:
-                path_image_mission = Path(mission_parameters['File path mission'])
-                if path_image_mission.exists():
-                    coherent_response = folder_name_consistency_analysis(path_image_mission)
+                folderMissionPath = Path(mission_parameters['File path mission'])
+                if folderMissionPath.exists():
+                    coherent_response = folder_name_consistency_analysis(folderMissionPath)
                     if coherent_response:
                         image_takeoff_available = True
         except (TypeError, KeyError) as e:
             print("Error in image_takeoff_available", e)
             pass
-        return image_takeoff_available, path_image_mission
+        return image_takeoff_available, folderMissionPath
     except Exception as e:
         print("error   in image_takeoff_available", e)
 
