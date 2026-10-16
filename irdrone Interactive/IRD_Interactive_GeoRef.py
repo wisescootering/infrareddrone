@@ -1,4 +1,9 @@
 # -*- coding: utf-8 -*-
+# --------------------------------------------------------------------------------
+#   IR_drone interactive Phase 5
+#   Georeferencing images.  Process
+#   17/10/2026   V004
+# ---------------------------------------------------------------------------------
 
 import sys
 # print(f"✔ Python used : {sys.executable}")
@@ -237,7 +242,7 @@ class CliLogger:
 logger = CliLogger(use_color=True)
 
 # ============================================================
-#  FONCTION PRINCIPALE
+#   FUNCTION
 # ============================================================
 
 def georeference_tiff_MNT(tif_path,
@@ -534,7 +539,7 @@ def georeference_tiff_MNT(tif_path,
 
         plot_terrain_3d(Xg_IGN, Yg_IGN, Zg_IGN, UTM_x, UTM_y, z_ground, xi_Y + offset_xi_Y, N_mesh_x, N_mesh_y,
                         altitude, folder_input, img_name, view_graphic=view_graphic, save_graphic=save_graphic,
-                        nx_subdiv=160, ny_subdiv=120, title=r"$MNT (source\,IGN^{\circledR})$")
+                        nx_subdiv=160, ny_subdiv=120, title=r"$DTM (source\,IGN^{\circledR})$")
 
         t1 = time.perf_counter()
         logger.timer(f" Graphic MNT : {t1 - t0:.3f} s")
@@ -561,7 +566,7 @@ def georeference_tiff_MNT(tif_path,
     Xo_grid, Yo_grid = np.meshgrid(Xo, Yo)
 
     t1 = time.perf_counter()
-    logger.timer(f" Construction grille ortho GIS  : {t1 - t0:.3f} s")
+    logger.timer(f" Orthorectification grid construction: {t1 - t0:.3f} s")
 
     # -----------------------------------------------------------------
     # 3.02-3) Terrain elevation
@@ -612,7 +617,7 @@ def georeference_tiff_MNT(tif_path,
     mask = ((u >= 0) & (u < W - 1) & (v >= 0) & (v < H - 1) & (Zc < 0))
 
     t1 = time.perf_counter()
-    logger.timer(f" Projection terrain → image : {t1 - t0:.3f} s")
+    logger.timer(f" Ground-to-image projection: {t1 - t0:.3f} s")
 
     # ------------------------------------------------------------
     # 3.02-5) Resample the image
@@ -906,7 +911,6 @@ def dng2tiff(folder, img_name, suffix="dng", bit=16):
 
     return tiff_file
 
-
 def load_companion_exif(folder, img_name, suffix="dng", alti_takeoff=None):
     exif_file = folder / f"{img_name}.exif"
     img_file = folder / f"{img_name}.{suffix}"
@@ -926,7 +930,6 @@ def load_companion_exif(folder, img_name, suffix="dng", alti_takeoff=None):
 
     return data
 
-
 def save_exif_companion(raw_exif, folder_input, img_name, verbose=False):
     """
     Save the enriched raw_exif data to the companion file img_name.exif.
@@ -942,7 +945,6 @@ def save_exif_companion(raw_exif, folder_input, img_name, verbose=False):
         logger.ok(f"\n--- Companion EXIF file updated: {exif_path}")
 
     return exif_path
-
 
 def read_exif_and_write_json(dng_path: Path, exiftool_path: str,
                              interactive: bool = True,  alti_takeoff=None) -> dict:
@@ -1089,7 +1091,6 @@ def read_exif_and_write_json(dng_path: Path, exiftool_path: str,
     except Exception as e:
         logger.error(f" Read_exif_and_write_json failed for {dng_path}: {e}")
         return {}
-
 
 def find_takeoff_altitude_from_exif_folder(folder: Path, logger) -> float:
     """
@@ -1351,7 +1352,6 @@ def UTM2geo(xUTM, yUTM, zoneUTM):
     lon = np.rad2deg(lamb)
     return lat, lon
 
-
 def DJI2IRDrone(raw_exif, verbose=True):
     """
     Interpret DJI metadata for use in IRDrone.
@@ -1457,20 +1457,17 @@ def R_yaw(xi_Y):
                      [s, c, 0],
                      [0, 0, 1]])
 
-
 def R_roll(xi_P):
     c, s = np.cos(xi_P), np.sin(xi_P)
     return np.array([[c, 0, s],
                      [0, 1, 0],
                      [-s, 0, c]])
 
-
 def R_pitch(xi_R):
     c, s = np.cos(xi_R), np.sin(xi_R)
     return np.array([[1, 0, 0],
                      [0, c, -s],
                      [0, s, c]])
-
 
 def cap_nav(cap):
     """
@@ -1510,7 +1507,6 @@ def cap_nav(cap):
     else:
         capNav = 2 * np.pi + cap
     return capNav
-
 
 # --------------------------------------------
 #   MNT
@@ -1737,47 +1733,45 @@ def compute_MNT_mesh(
 
     return Xg, Yg, Zg, bound_pix
 
-
 def build_continuous_ground_mesh(XB, YB, Nx=11, Ny=9):
     """
-    Construit une grille terrain cartésienne régulière
-    centrée exactement sur le nadir.
+    Build a regular Cartesian ground grid
+    centered exactly on the nadir.
 
-    XB, YB : coordonnées projetées des limites (points du capteur)
-    Nx, Ny : doivent être impairs
+    XB, YB: projected coordinates of the boundaries (sensor footprint points)
+    Nx, Ny: must be odd
 
-    Retour
-    ------
-    Xg, Yg : arrays (Ny, Nx)
+    Returns
+    -------
+    Xg, Yg: arrays of shape (Ny, Nx)
     """
 
     if Nx % 2 == 0 or Ny % 2 == 0:
-        raise ValueError("Nx et Ny doivent être impairs pour centrer la grille sur le nadir")
+        raise ValueError("Nx and Ny must be odd to center the grid on the nadir")
 
-    # centre (nadir)
+    # Center (nadir)
     x0 = 0.5 * (np.min(XB) + np.max(XB))
     y0 = 0.5 * (np.min(YB) + np.max(YB))
 
-    # demi-largeurs
+    # Half-widths
     Lx = 0.5 * (np.max(XB) - np.min(XB))
     Ly = 0.5 * (np.max(YB) - np.min(YB))
 
-    # pas
+    # Grid spacing
     dx = 2 * Lx / (Nx - 1)
     dy = 2 * Ly / (Ny - 1)
 
-    # indices centrés
+    # Centered indices
     ix = np.arange(-(Nx // 2), Nx // 2 + 1)
     iy = np.arange(-(Ny // 2), Ny // 2 + 1)
 
-    # axes
+    # Axes
     x = x0 + ix * dx
     y = y0 + iy * dy
 
     Xg, Yg = np.meshgrid(x, y)
 
     return Xg, Yg
-
 
 def generate_contours(
     topo_array,
@@ -1788,13 +1782,13 @@ def generate_contours(
     fmt="GeoJSON"
 ):
     """
-    Génère des courbes de niveau vectorielles à partir d'un raster numpy
+    Generate vector contour lines from a NumPy raster.
     """
 
-    # dimensions
+    # Dimensions
     h, w = topo_array.shape
 
-    # --- création raster GDAL en mémoire
+    # --- Create an in-memory GDAL raster
     driver = gdal.GetDriverByName("MEM")
     ds = driver.Create("", w, h, 1, gdal.GDT_Float32)
 
@@ -1815,7 +1809,7 @@ def generate_contours(
     band.WriteArray(topo_array)
     band.SetNoDataValue(np.nan)
 
-    # --- création sortie vecteur
+    # --- Create the output vector dataset
     drv = ogr.GetDriverByName(fmt)
 
     if output_path.exists():
@@ -1824,27 +1818,26 @@ def generate_contours(
     out_ds = drv.CreateDataSource(str(output_path))
     layer = out_ds.CreateLayer("contours", srs, ogr.wkbLineString)
 
-    # champ altitude
+    # Elevation field
     field_defn = ogr.FieldDefn("elev", ogr.OFTReal)
     layer.CreateField(field_defn)
 
-    # --- génération des contours
+    # --- Generate contour lines
     gdal.ContourGenerate(
         band,
-        interval,     # intervalle (ex: 10m)
-        0,            # base
-        [],           # niveaux fixes
-        0,            # ignore nodata
+        interval,   # Interval (e.g. 10 m)
+        0,          # Base contour elevation
+        [],         # Fixed contour levels
+        0,          # Do not ignore NoData values
         0,
         layer,
-        0,            # ID
-        1             # champ elev
+        0,          # ID field
+        1           # Elevation field
     )
 
-    # cleanup
+    # Cleanup
     out_ds = None
     ds = None
-
 
 def generate_contours_dual(
     topo_array,
@@ -1854,19 +1847,19 @@ def generate_contours_dual(
     interval_minor=1.0,
     interval_major=10.0,
     fmt="GeoJSON",
-    label_every_curve=False  # si True, crée un label pour chaque courbe, sinon seulement pour les principales
+    label_every_curve=False  # If True, create a label for each contour line; otherwise, only for major contour lines
 ):
     """
-    Génère :
-    - courbes secondaires (1m)
-    - courbes principales (10m)
-    - champ 'type' : 1=minor, 10=major
-    - labels optionnels pour chaque courbe
+    Generate:
+    - Minor contour lines (1 m)
+    - Major contour lines (10 m)
+    - 'type' field: 1 = minor, 10 = major
+    - Optional labels for each contour line
     """
 
     h, w = topo_array.shape
 
-    # --- raster GDAL mémoire
+    # --- In-memory GDAL raster
     driver = gdal.GetDriverByName("MEM")
     ds = driver.Create("", w, h, 1, gdal.GDT_Float32)
 
@@ -1883,7 +1876,7 @@ def generate_contours_dual(
     band.WriteArray(topo_array)
     band.SetNoDataValue(np.nan)
 
-    # --- sortie vecteur
+    # --- Vector output
     drv = ogr.GetDriverByName(fmt)
 
     if output_path.exists():
@@ -1892,28 +1885,27 @@ def generate_contours_dual(
     out_ds = drv.CreateDataSource(str(output_path))
     layer = out_ds.CreateLayer("contours", srs, ogr.wkbLineString)
 
-    # champs
+    # Fields
+    layer.CreateField(ogr.FieldDefn("elev", ogr.OFTReal))  # Contour elevation
+    layer.CreateField(ogr.FieldDefn("type", ogr.OFTInteger))  # Contour type identifier
 
-    layer.CreateField(ogr.FieldDefn("elev", ogr.OFTReal))     # elevation de la courbe de niveau
-    layer.CreateField(ogr.FieldDefn("type", ogr.OFTInteger))  # ID de la courbe de niveau
-
-    # --- génération des courbes fines (1m)
+    # --- Generate minor contour lines (1 m)
     gdal.ContourGenerate(
         band,
         interval_minor,
-        0,          # base
-        [],         # niveaux fixes
-        0,          # ignore nodata
+        0,              # Base contour elevation
+        [],             # Fixed contour levels
+        0,              # Do not ignore NoData values
         0,
         layer,
-        1,          # champ elev = 1
-        0           # champ ID
+        1,              # Elevation field = 1
+        0               # ID field
     )
 
-    # --- mise à jour du champ 'type'
+    # --- Update the 'type' field
     for feat in layer:
         elev = feat.GetField("elev")
-        # Si multiple de interval_major → courbe majeure
+        # If the elevation is a multiple of interval_major, classify it as a major contour
         if np.isclose(elev % interval_major, 0, atol=0.001):
             feat.SetField("type", 10)
         else:
@@ -1923,24 +1915,22 @@ def generate_contours_dual(
     out_ds = None
     ds = None
 
-    logger.ok(f" Contours générés : {output_path}")
-
-
+    logger.ok(f" Contours generated: {output_path}")
 
 def generate_qml_style_qgis(qml_path, style="IGN", label_on_line=True):
     """
-    Génère un QML avec :
-    - symbologie courbes 1m / 10m
-    - labels :
-        - sur la ligne (avec buffer)
+    Generate a QML style file with:
+    - Symbology for 1 m and 10 m contour lines
+    - Labels:
+        - Along the contour line (with a buffer)
     """
 
     # ----------------------------------------
-    # Style des courbes et des labels
+    # Contour line and label styling
     # ----------------------------------------
 
     if style == "IGN":
-        placement = '2'  # sur la ligne
+        placement = '2'  # Along the line
         buffer_minor = "0.8"
         buffer_major = "2"
         color_minor = "205,86,2,255"
@@ -1955,7 +1945,7 @@ def generate_qml_style_qgis(qml_path, style="IGN", label_on_line=True):
         font_color_major = "179,79,7,255"
 
     elif style == "BW":
-        placement = '2'  # sur la ligne
+        placement = '2'  # Along the line
         buffer_minor = "0.5"
         buffer_major = "1"
         color_major = "0,0,0,255"
@@ -1970,7 +1960,7 @@ def generate_qml_style_qgis(qml_path, style="IGN", label_on_line=True):
         font_color_major = "0,0,0,255"
 
     elif style == "SOFT":
-        placement = '2'  # sur la ligne
+        placement = '2'  # Along the line
         buffer_minor = "0.5"
         buffer_major = "1"
         color_major = "120,120,120,255"
@@ -1984,20 +1974,21 @@ def generate_qml_style_qgis(qml_path, style="IGN", label_on_line=True):
         font_color_minor = "70,70,70,255"
         font_color_major = "50,50,50,255"
 
+
     else:
-        raise ValueError(f"Style inconnu pour la carte topographique : {style}")
+        raise ValueError(f"Unknown topographic map style: {style}")
 
 
     qml = f"""<qgis version="3.22.5-Białowieża" labelsEnabled="1">
   <renderer-v2 type="RuleRenderer">
     <rules key="root">
-      <!-- Courbes 10m -->
+      <!-- 10 m contour lines -->
       <rule key="rule_10m" filter="abs(round(&quot;elev&quot;) % 10) = 0" label="10 m" symbol="0"/>
-      <!-- Courbes 1m -->
+      <!-- 1 m contour lines -->
       <rule key="rule_1m" filter="NOT (abs(round(&quot;elev&quot;) % 10) = 0)" label="1 m" symbol="1"/>
     </rules>
     <symbols>
-      <!-- Symbole courbes 10m -->
+      <!-- 10 m contour line symbol -->
       <symbol name="0" type="line">
         <layer class="SimpleLine" pass="0" enabled="1">
           <prop k="line_color" v="{color_major}"/>
@@ -2005,7 +1996,7 @@ def generate_qml_style_qgis(qml_path, style="IGN", label_on_line=True):
           <prop k="line_style" v="solid"/>
         </layer>
       </symbol>
-      <!-- Symbole courbes 1m -->
+      <!-- 1 m contour line symbol -->
       <symbol name="1" type="line">
         <layer class="SimpleLine" pass="0" enabled="1">
           <prop k="line_color" v="{color_minor}"/>
@@ -2016,7 +2007,7 @@ def generate_qml_style_qgis(qml_path, style="IGN", label_on_line=True):
     </symbols>
   </renderer-v2>
 
-  <!-- Étiquetage rule-based -->
+  <!-- Rule-based labeling -->
   <labeling type="rule-based">
     <rules key="root_label">
       <!-- Courbes 10m -->
@@ -2060,12 +2051,13 @@ def generate_qml_style_qgis(qml_path, style="IGN", label_on_line=True):
     with open(qml_path, "w", encoding="utf-8") as f:
         f.write(qml)
 
-    logger.ok(f" Pref .QML généré : {qml_path}")
+    logger.ok(f" QML style file generated: {qml_path}")
 
 
 # ------------------------------------------------------------------------
-#      modules géo référencement
+#      Georeferencing modules
 # ------------------------------------------------------------------------
+
 def get_unique_path(path, verbose=False):
 
     if not path.exists():
@@ -2086,7 +2078,6 @@ def get_unique_path(path, verbose=False):
             return new_path
         i += 1
 
-
 def write_geotiff_affine(path_out, img, transform, crs, no_data=0, compress=True, bitdepth="float32"):
 
 
@@ -2094,7 +2085,7 @@ def write_geotiff_affine(path_out, img, transform, crs, no_data=0, compress=True
     bands = 1 if img.ndim == 2 else img.shape[2]
 
     if img.ndim == 3 and img.shape[2] == 3:
-        img_out = img[..., ::-1]  # plus rapide que cv2.cvtColor(img, cv2.COLOR_BGR2RGB) car tab numpy
+        img_out = img[..., ::-1]  # Faster than cv2.cvtColor(img, cv2.COLOR_BGR2RGB) because it uses NumPy array slicing
     else:
         img_out = img
 
@@ -2111,14 +2102,14 @@ def write_geotiff_affine(path_out, img, transform, crs, no_data=0, compress=True
         "interleave": "pixel",
         "BIGTIFF": "IF_SAFER",
 
-        # --- optimisations raster ---
+        # --- Raster optimizations ---
         "tiled": True,
         "blockxsize": 256,
         "blockysize": 256
     }
     if compress:
         predictor = 3 if np.issubdtype(img_out.dtype, np.floating) else 2
-        # option pour "compress"  "deflate"  "lzw" (compression moins effficace mais lègérement plus rapide)
+        # Compression options: "deflate" or "lzw" (less efficient compression, but slightly faster)
         profile.update({
             "compress": "deflate",
             "predictor": predictor,
@@ -2129,7 +2120,7 @@ def write_geotiff_affine(path_out, img, transform, crs, no_data=0, compress=True
 
         if bitdepth == "uint8":
             img_out = (img_out * 255).astype(np.uint8)
-            logger.info(f'sortie rasterio bitdepth ={bitdepth}')
+            logger.info(f'Rasterio output bit depth = {bitdepth}')
 
         if bands == 1:
             if img_out.ndim == 3:
@@ -2154,7 +2145,6 @@ def write_geotiff_affine(path_out, img, transform, crs, no_data=0, compress=True
         elif bands == 1:
             dst.set_band_description(1, "Gray")
 
-
 def project_camera_to_horizontal_plane(
         pix,
         R_Cam2Gnd,
@@ -2163,18 +2153,20 @@ def project_camera_to_horizontal_plane(
         Z0=0,
         verbose=False):
     """
+    Project camera rays onto a horizontal ground plane.
 
+    The intersection points are expressed in the ground reference frame.
     """
 
     X_s, Y_s, Z_s = [], [], []
     for u, v in pix:
-        # CAMERA -> SOL
-        # coordonnées du rayon issu de la caméra pinhole et passant par un pixel image
+        # CAMERA -> GROUND
+        # Coordinates of the ray originating from the pinhole camera and passing through an image pixel
         ray_Cam = np.array([u / fx, v / fy, -1])
-        ray_Cam /= np.linalg.norm(ray_Cam)  # normalisation du rayon
+        ray_Cam /= np.linalg.norm(ray_Cam)  # Normalize the ray
 
-        # calcul du point d'intersection  du rayon caméra avec le sol horizontal
-        # les coordonnées de ce point sont données dans le repère R_Gnd
+        # Compute the intersection of the camera ray with the horizontal ground plane
+        # The intersection point coordinates are expressed in the R_Gnd reference frame
 
         ray_Gnd = R_Cam2Gnd @ ray_Cam
         Xc, Yc, Zc = Cam_Center
@@ -2188,43 +2180,42 @@ def project_camera_to_horizontal_plane(
 
     return X_s, Y_s, Z_s
 
-
 def project_camera_to_MNT(
-        pix,  # pixels du capteur à projeter, shape (N, 2)
-        Nx, Ny,  # taille capteur
-        R_Cam2Gnd,  # rotation caméra -> sol
-        Cam_Center,  # position caméra dans R_Gnd
-        fx, fy,  # focale
-        cx, cy,  # centre optique
-        altitude,  # fonction altitude(X, Y)
+        pix,  # Sensor pixels to project, shape (N, 2)
+        Nx, Ny,  # Sensor dimensions
+        R_Cam2Gnd,  # Rotation from the camera frame to the ground frame
+        Cam_Center,  # Camera position in the R_Gnd reference frame
+        fx, fy,  # Focal lengths
+        cx, cy,  # Optical center coordinates
+        altitude,  # Altitude function altitude(X, Y)
         verbose=False
 ):
     """
-    Projet des rayons caméra sur le MNT via la fonction altitude.
+    Project camera rays onto the DTM using the altitude function.
 
-    Paramètres
+    Parameters
     ----------
     pix : np.ndarray
-        Pixels à projeter, shape (N, 2). Coordonnées ralatives au centre optique
+        Pixels to project, shape (N, 2). Coordinates relative to the optical center.
     Nx, Ny : int
-        Dimensions du capteur
+        Sensor dimensions.
     R_Cam2Gnd : np.ndarray
-        Rotation 3x3 caméra -> sol
+        3x3 rotation matrix from the camera frame to the ground frame.
     Cam_Center : np.ndarray
-        Position caméra (X, Y, Z) dans R_Gnd
+        Camera position (X, Y, Z) in the R_Gnd reference frame.
     fx, fy : float
-        Focale en pixels
+        Focal lengths in pixels.
     cx, cy : float
-        Centre optique en pixels
+        Optical center coordinates in pixels.
     altitude : callable
-        Fonction altitude(X, Y) renvoyant Z
+        Function altitude(X, Y) returning Z.
     verbose : bool
-        Affichage debug
+        Enable debug output.
 
-    Retour
-    ------
+    Returns
+    -------
     X_s, Y_s, Z_s : np.ndarray
-        Coordonnées 3D du sol projeté, shape (N,)
+        3D coordinates of the projected ground points, shape (N,).
     """
 
     X_s = []
@@ -2232,18 +2223,18 @@ def project_camera_to_MNT(
     Z_s = []
 
     for u, v in pix:
-        # vecteur du rayon en repère caméra
+        # Ray vector in the camera reference frame
         ray_cam = np.array([u / fx, v / fy, -1.0])
         ray_cam /= np.linalg.norm(ray_cam)
 
-        # transforme le rayon en repère sol
+        # Transform the ray into the ground reference frame
         ray_gnd = R_Cam2Gnd @ ray_cam
 
-        # intersection avec le MNT : méthode simple (Newton, dichotomie, ou ici itérative)
-        # approche initiale : marcher le long du rayon jusqu'à Z ~= altitude(X,Y)
+        # Intersection with the DTM: simple iterative method (Newton's method, bisection, or the iterative approach used here)
+        # Initial approach: move along the ray until Z ~= altitude(X, Y)
 
         max_iter = 100
-        tol = 0.01  # tolérance 10 cm
+        tol = 0.01  # Tolerance: 1 cm
         t = 0.0
         count_iter = 0
         for _ in range(max_iter):
@@ -2260,11 +2251,10 @@ def project_camera_to_MNT(
         Z_s.append(P[2])
 
         if verbose:
-            print(f"[DEBUG]  iter intersection = {count_iter}   |  altitude Z_t = {Z_t} m'\n"
+            print(f"[DEBUG] iter intersection = {count_iter}   |  altitude Z_t = {Z_t} m'\n"
                   f"[DEBUG] pixel ({u_pix},{v_pix}) -> sol ({P[0]:.2f},{P[1]:.2f},{P[2]:.2f})")
 
     return np.array(X_s), np.array(Y_s), np.array(Z_s)
-
 
 def project_ground_to_camera_batch(
         P_sol,
@@ -2274,13 +2264,15 @@ def project_ground_to_camera_batch(
         cx, cy,
         dist=None,
         verbose=False):
+    """
+    GROUND -> CAMERA
+        > P_sol: UTM coordinates of a point in the R_Gnd reference frame
+        > Cam_Center: UTM coordinates of the optical center in the R_Gnd reference frame
+        > Pcam: coordinates (in meters) in the camera reference frame (origin at the optical center)
+    """
+
     # -----------------------------------------------------------------------------
-    # SOL -> CAMERA
-    # P_sol coordonnées UTM d'un point dans repère R_Gnd
-    # Cam_Center coordonnées UTM du centre optique  dans repère R_Gnd
-    # Pcam coordonnées (en m) dans le repère de la caméra  (origine centre optique)
-    # ------------------------------------------------------------------------------
-    dP_Gnd = P_sol - Cam_Center  # (...,3)
+    dP_Gnd = P_sol - Cam_Center  # (..., 3)
 
     P_cam = np.einsum(
         'ij,...j->...i',
@@ -2298,17 +2290,17 @@ def project_ground_to_camera_batch(
 
     # logger.warn(f" Zc stats : {np.min(Zcam)} , {np.max(Zcam)}")
     if np.any(Zcam >= 0):
-        logger.warn(" points derrière caméra")
+        logger.warn("Points behind the camera")
 
     # ------------------------------------------
-    # Projection perspective (modèle pinhole)
+    # Perspective projection (pinhole model)
     # ------------------------------------------
 
     x = Xcam / -Zcam
     y = Ycam / -Zcam
 
     # ----------------------------------------------
-    # DISTORSION LENTILLE (modèle Zhang / OpenCV)
+    # LENS DISTORTION (Zhang / OpenCV model)
     # ----------------------------------------------
 
     if dist is not None:
@@ -2326,16 +2318,16 @@ def project_ground_to_camera_batch(
         x = x_dist
         y = y_dist
 
-    # ---------------------------------------------------------
-    # Conversion coordonnées pixels centreé sur centre optique
-    # ----------------------------------------------------------
+    # ---------------------------------------------------------------
+    # Conversion to pixel coordinates centered on the optical center
+    # ---------------------------------------------------------------
 
     u = fx * x + cx
     v = fy * y + cy
 
     return u, v, Zcam
 
-# ---- calcul d'erreur
+# ---- Error computation
 
 def compute_error_rmse_montecarlo(
         P_sol,
@@ -2356,13 +2348,14 @@ def compute_error_rmse_montecarlo(
         tol_MC=0.01,
         verbose=True):
     """
-    Monte-Carlo global sur toutes les sources d'erreur.
-    tol : critère de convergence relatif sur la RMSE (1% par défaut)
+    Run a global Monte Carlo simulation accounting for all error sources.
+
+    tol: relative convergence criterion for the RMSE (1% by default).
     """
 
     sigma_yaw = np.deg2rad(sigma_yaw_deg)
 
-    # accumulateur
+    # Accumulator
     sum_sq = np.zeros_like(u_ref, dtype=np.float64)
 
     rmse_prev = None
@@ -2370,7 +2363,7 @@ def compute_error_rmse_montecarlo(
     for k in range(1, N_max + 1):
 
         # ---------------------------------
-        # tirage des perturbations
+        # Draw random perturbations
         # ---------------------------------
 
         dx = np.random.normal(0, sigma_xy)
@@ -2382,7 +2375,7 @@ def compute_error_rmse_montecarlo(
         dz_mnt = np.random.normal(0, sigma_z_mnt)
 
         # ---------------------------------
-        # paramètres perturbés
+        # Perturbed parameters
         # ---------------------------------
 
         Cam_pert = (
@@ -2397,7 +2390,7 @@ def compute_error_rmse_montecarlo(
         P_pert[..., 2] += dz_mnt
 
         # ---------------------------------
-        # reprojection
+        # Reprojection
         # ---------------------------------
 
         u_p, v_p, _ = project_ground_to_camera_batch(
@@ -2417,13 +2410,13 @@ def compute_error_rmse_montecarlo(
         sum_sq += err ** 2
 
         # ---------------------------------
-        # RMSE courante
+        # Current RMSE
         # ---------------------------------
 
         rmse = np.sqrt(sum_sq / k)
 
         # ---------------------------------
-        # contrôle convergence
+        # Convergence check
         # ---------------------------------
 
         if k > N_min:
@@ -2432,10 +2425,12 @@ def compute_error_rmse_montecarlo(
 
             if verbose:
                 print(f"[Monte Carlo] iter={k} convergence={100 * diff:.2f}%")
+                logger.info(f"[Monte Carlo] iter={k} convergence={100 * diff:.2f}%")
 
             if diff < tol_MC:
                 if verbose:
                     print(f"[Monte Carlo] convergence {100 * diff:.5f}% atteinte à N={k}")
+                    logger.info(f"[Monte Carlo] convergence {100 * diff:.5f}% reached at N={k}")
                 break
 
         rmse_prev = rmse.copy()
@@ -2446,7 +2441,7 @@ def compute_error_rmse_montecarlo(
 
 def is_regular_grid(Xg, Yg, tol=1e-10):
     """
-    Détecte si une grille est régulière.
+    Detect whether a grid is regular.
     """
     x_ref = Xg[0, :]
     y_ref = Yg[:, 0]
@@ -2465,18 +2460,18 @@ def build_MNT_interpolator(Xg, Yg, Zg, method="RectBivariateSpline_quadratic", t
 
     logger.info(f" regular grid = {regular}")
 
-    # choix de la méthode d'interpolation du MNT
-    # options possibles :
+    # Select the DTM interpolation method
+    # Available options:
     # "RectBivariateSpline_cubic"
     # "RectBivariateSpline_quadratic"
     # "RectBivariateSpline_linear"
 
     # =====================================================
-    # GRILLE REGULIERE
+    # REGULAR GRID
     # =====================================================
     if regular:
 
-        # axes réels de la grille
+        # Actual grid axes
         x = Xg[0, :]
         y = Yg[:, 0]
 
@@ -2484,50 +2479,50 @@ def build_MNT_interpolator(Xg, Yg, Zg, method="RectBivariateSpline_quadratic", t
                     f"            grid size : {len(x)} x {len(y)}")
 
         # -------------------------------------------------
-        # Interpolation bicubique
+        # Bicubic interpolation
         # -------------------------------------------------
         if method == "RectBivariateSpline_cubic":
             """
-            Interpolation spline bicubique (ordre 3).
+            Bicubic spline interpolation (order 3).
 
-            Propriétés :
-            - continuité C2 (fonction + dérivées 1 et 2 continues)
-            - surface très lisse
-            - bon comportement pour calculs géométriques
-            - coût de calcul le plus élevé
+            Properties:
+            - C2 continuity (function and first and second derivatives are continuous)
+            - Very smooth surface
+            - Good behavior for geometric computations
+            - Highest computational cost
             """
 
             spline = RectBivariateSpline(y, x, Zg, kx=3, ky=3)
 
         # -------------------------------------------------
-        # Interpolation quadratique
+        # Quadratic interpolation
         # -------------------------------------------------
         elif method == "RectBivariateSpline_quadratic":
             """
-            Interpolation spline quadratique (ordre 2).
+            Quadratic spline interpolation (order 2).
 
-            Propriétés :
-            - continuité C1 (fonction + dérivée première continue)
-            - surface lisse mais moins que bicubique
-            - compromis précision / vitesse souvent intéressant
-            - coût de calcul inférieur au bicubique
+            Properties:
+            - C1 continuity (function and first derivative are continuous)
+            - Smooth surface, but less smooth than the bicubic interpolation
+            - Often a good compromise between accuracy and speed
+            - Lower computational cost than bicubic interpolation
             """
 
             spline = RectBivariateSpline(y, x, Zg, kx=2, ky=2)
 
         # -------------------------------------------------
-        # Interpolation linéaire (bilinéaire)
+        # Linear (bilinear) interpolation
         # -------------------------------------------------
         elif method == "RectBivariateSpline_linear":
             """
-            Interpolation bilinéaire (ordre 1).
+            Bilinear interpolation (order 1).
 
-            Propriétés :
-            - continuité C0 (fonction continue)
-            - dérivées discontinues aux limites des cellules
-            - surface facettée (plan par cellule)
-            - très rapide
-            - souvent suffisant pour un MNT
+            Properties:
+            - C0 continuity (continuous function)
+            - Discontinuous derivatives at cell boundaries
+            - Faceted surface (one plane per cell)
+            - Very fast
+            - Often sufficient for a DTM
             """
 
             spline = RectBivariateSpline(y, x, Zg, kx=1, ky=1)
@@ -2535,7 +2530,7 @@ def build_MNT_interpolator(Xg, Yg, Zg, method="RectBivariateSpline_quadratic", t
             return altitude
 
         # -------------------------------------------------
-        # fonction altitude pour les splines
+        # Altitude function for the splines
         # -------------------------------------------------
 
         def altitude(X, Y):
@@ -2550,7 +2545,7 @@ def build_MNT_interpolator(Xg, Yg, Zg, method="RectBivariateSpline_quadratic", t
             return z.reshape(shp)
 
     # =====================================================
-    # GRILLE IRREGULIERE
+    # IRREGULAR GRID
     # =====================================================
     else:
 
@@ -2583,6 +2578,28 @@ def build_MNT_interpolator(Xg, Yg, Zg, method="RectBivariateSpline_quadratic", t
 def plot_terrain_3d(Xg_abs, Yg_abs, Zg_abs, X0, Y0, Z0, xi_Yaw, N_mesh_x, N_mesh_y,
                     altitude, folder_input, img_name, graphic_3D=False, view_graphic=False, save_graphic=False,
                     title="Terrain", nx_subdiv=60, ny_subdiv=45, axes_terrain=True):
+    """
+    Plot the terrain as a 3D surface relative to the nadir.
+
+    The function interpolates a dense grid to display a smooth DTM surface,
+    plots the original terrain points, and optionally displays the local
+    ground reference axes.
+
+    Parameters:
+        Xg_abs, Yg_abs, Zg_abs: Absolute terrain grid coordinates and altitudes.
+        X0, Y0, Z0: Nadir coordinates used as the origin of the local frame.
+        xi_Yaw: Sensor yaw angle.
+        N_mesh_x, N_mesh_y: Terrain mesh dimensions.
+        altitude: Interpolation function returning relative altitudes.
+        folder_input: Input folder containing the image data.
+        img_name: Image name used to construct the output filename.
+        graphic_3D: 3D graphic option.
+        view_graphic: If True, display the plot.
+        save_graphic: If True, save the plot to a PNG file.
+        title: Plot title.
+        nx_subdiv, ny_subdiv: Number of subdivisions in the dense grid.
+        axes_terrain: If True, display the local ground reference axes.
+    """
 
     if not view_graphic and not save_graphic:
         return
@@ -2591,29 +2608,25 @@ def plot_terrain_3d(Xg_abs, Yg_abs, Zg_abs, X0, Y0, Z0, xi_Yaw, N_mesh_x, N_mesh
     fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(111, projection='3d')
 
-    # coordonnées relatives au nadir (X0, Y0, Z0)
+    # Coordinates relative to the nadir (X0, Y0, Z0)
     Xg = Xg_abs - X0
     Yg = Yg_abs - Y0
     Zg = Zg_abs - Z0
 
-    # print(f'[DEBUG]   nx_subdiv={nx_subdiv} ny_subdiv={ny_subdiv}')
-
-    # --- grille dense pour surface lisse du MNT ---
+    # --- Dense grid for a smooth DTM surface ---
     x_dense = np.linspace(Xg_abs.min(), Xg_abs.max(), nx_subdiv)
     y_dense = np.linspace(Yg_abs.min(), Yg_abs.max(), ny_subdiv)
     Xd_abs, Yd_abs = np.meshgrid(x_dense, y_dense)
 
-    # --- calcul des altitudes de la grille dense via l'interpolateur ---
-    # altitude ; renvoie les altitudes relatives au nadir.
+    # --- Compute dense-grid altitudes using the interpolator ---
+    # altitude returns altitudes relative to the nadir.
     Zd = altitude(Xd_abs, Yd_abs)
 
-    # print(f'[DEBUG]   dim Xd_abs={np.shape(Xd_abs)} dim Yd_abs ={np.shape(Yd_abs)}')
-
-    # coordonnées relatives
+    # Relative coordinates
     Xd = Xd_abs - X0
     Yd = Yd_abs - Y0
 
-    # --- surface lisse du MNT ---
+    # --- Smooth DTM surface ---
     ax.plot_surface(Xd, Yd, Zd,
                     cmap="gray",  # "terrain",
                     alpha=0.55,
@@ -2622,15 +2635,15 @@ def plot_terrain_3d(Xg_abs, Yg_abs, Zg_abs, X0, Y0, Z0, xi_Yaw, N_mesh_x, N_mesh
                     antialiased=True
                     )
 
-    # --- points du MNT originaux ---
+    # --- Original DTM points ---
     ax.scatter(Xg, Yg, Zg, color="darkgreen", s=2)
     ax.scatter(0, 0, 0, color="red", s=4)
-    # ---- Axes terrain explicites
+    # ---- Explicit ground axes
     z_ref = np.min(Zg) - 30
     if axes_terrain:
-        # Vecteurs repère sol horizontal
+        # Horizontal ground reference axes
         x0, y0, z0 = 0, 0, z_ref
-        Lg = 20  # longueur flèche en m
+        Lg = 20  # Arrow length in meters
 
         arrow3d(ax, (x0, y0, z_ref), (Lg, 0, 0), 'blue')
         arrow3d(ax, (x0, y0, z_ref), (0, Lg, 0), 'blue')
@@ -2648,19 +2661,19 @@ def plot_terrain_3d(Xg_abs, Yg_abs, Zg_abs, X0, Y0, Z0, xi_Yaw, N_mesh_x, N_mesh
         else:
             pass
 
-    # --- Plan horizontal de référence (légèrement sous le sol)
+    # --- Horizontal reference plane (slightly below the ground)
     Xp, Yp = np.meshgrid(
         np.linspace(np.min(Xg), np.max(Xg), 2),
         np.linspace(np.min(Yg), np.max(Yg), 2))
     Zp = np.full_like(Xp, z_ref)
     ax.plot_surface(Xp, Yp, Zp, color='lightgray', alpha=0.25, edgecolor='none')
 
-    # Respect de distances sur les axes X/Y
+    # Preserve equal distances along the X and Y axes
     force_square_xy(ax)
     ax.set_proj_type('ortho')
     ax.set_box_aspect((1, 1, 1))
 
-    # --- Nettoyage visuel du repère 3D
+    # -----------------------------------
     ax.grid(False)
 
     ax.xaxis.pane.set_visible(False)
@@ -2669,38 +2682,57 @@ def plot_terrain_3d(Xg_abs, Yg_abs, Zg_abs, X0, Y0, Z0, xi_Yaw, N_mesh_x, N_mesh
 
     ax.set_xlabel("EW (m from nadir)")
     ax.set_ylabel("SN (m from nadir)")
-    ax.set_zlabel("Altitude relative (m)")
+    ax.set_zlabel("Relative altitude (m)")
     ax.set_title(title)
 
-    # réglage aspect ratio pour visualisation réaliste
+    # Adjust the aspect ratio for realistic visualization
     ax.set_box_aspect([1, 1, 1])
-    # --- sauvegarde éventuelle ---
+
+    # --- Optional saving ---
     if save_graphic:
         fig.savefig(geo_path, dpi=300, bbox_inches="tight")
-        logger.ok(f" Save graphic in : {geo_path}")
+        logger.ok(f" Graphic saved to: {geo_path}")
 
-    # --- affichage éventuel ---
+    # --- Optional display ---
     if view_graphic:
         plt.show()
     else:
         plt.close(fig)
 
 def arrow3d(ax, O_h, V, color):
+    """
+       Draw a 3D arrow using a line segment and a short arrowhead.
+
+       Parameters:
+           ax: Matplotlib 3D axes.
+           O_h: Arrow origin as a three-dimensional coordinate.
+           V: Arrow direction and length vector.
+           color: Arrow color.
+    """
     O_h = np.array(O_h)
     V = np.array(V)
 
-    # corps
+    # Arrow shaft
     ax.plot([O_h[0], O_h[0] + V[0]],
             [O_h[1], O_h[1] + V[1]],
             [O_h[2], O_h[2] + V[2]],
             color=color, linewidth=1)
 
-    # petite flèche finale
+    # Arrowhead
     ax.quiver(O_h[0] + 0.85 * V[0], O_h[1] + 0.85 * V[1], O_h[2] + 0.85 * V[2],
               0.15 * V[0], 0.15 * V[1], 0.15 * V[2],
               color=color, arrow_length_ratio=0.3)
 
 def force_square_xy(ax):
+    """
+        Set equal spans on the X and Y axes of a 3D plot.
+
+        The function preserves the center of each horizontal axis and adjusts
+        their limits so that both axes cover the same distance.
+
+        Parameters:
+            ax: Matplotlib 3D axes.
+    """
     xmin, xmax = ax.get_xlim3d()
     ymin, ymax = ax.get_ylim3d()
     zmin, zmax = ax.get_zlim3d()
@@ -2715,7 +2747,7 @@ def force_square_xy(ax):
     ax.set_xlim3d(xc - L / 2, xc + L / 2)
     ax.set_ylim3d(yc - L / 2, yc + L / 2)
 
-    # optionnel : harmoniser aussi Z pour une vraie boîte cubique
+    # Optional: also adjust Z to create a true cubic box
     zc = 0.6 * (zmax + zmin)
     # ax.set_zlim3d(zc - L / 2, zc + L / 2)
 
@@ -2723,14 +2755,25 @@ def graph_mesh_2D(Xg_abs, Yg_abs, X_Bound_abs, Y_Bound_abs, UTM_x, UTM_y, xi_Yaw
                   folder_input, img_name, save_graphic=True,
                   txt="", view_graphic=False):
     """
-    Grille centrée sur le nadir. Repère EW-SN . unité : m
-    :param Xg_abs:
-    :param Yg_abs:
-    :param X_Bound_abs:
-    :param Y_Bound_abs:
-    :param UTM_x:
-    :param UTM_y:
-    :return:
+    Plot the terrain grid in a local east-west / south-north coordinate frame.
+
+    The grid is centered on the nadir, and distances are expressed in meters.
+    The plot shows the grid lines, grid-point indices, reference points,
+    sensor axes, and projected sensor footprint.
+
+    Parameters:
+        Xg_abs: Absolute X coordinates of the terrain grid.
+        Yg_abs: Absolute Y coordinates of the terrain grid.
+        X_Bound_abs: Absolute X coordinates of the sensor footprint boundaries.
+        Y_Bound_abs: Absolute Y coordinates of the sensor footprint boundaries.
+        UTM_x: UTM X coordinate of the nadir.
+        UTM_y: UTM Y coordinate of the nadir.
+        xi_Yaw: Sensor yaw angle.
+        folder_input: Input folder containing the image data.
+        img_name: Image name used to construct the output filename.
+        save_graphic: If True, save the plot to a PNG file.
+        txt: Plot title.
+        view_graphic: If True, display the plot.
     """
 
     if not view_graphic and not save_graphic:
@@ -2749,7 +2792,7 @@ def graph_mesh_2D(Xg_abs, Yg_abs, X_Bound_abs, Y_Bound_abs, UTM_x, UTM_y, xi_Yaw
     Y_Bound = np.array(Y_Bound_abs) - UTM_y
 
     # -----------------------------
-    # tracé des lignes de la grille
+    # Plot the grid lines
     # -----------------------------
     for i in range(Ny):
         plt.plot(Xg[i, :], Yg[i, :], 'k', linewidth=0.8)
@@ -2758,7 +2801,7 @@ def graph_mesh_2D(Xg_abs, Yg_abs, X_Bound_abs, Y_Bound_abs, UTM_x, UTM_y, xi_Yaw
         plt.plot(Xg[:, j], Yg[:, j], 'k', linewidth=0.8)
 
     # -----------------------------
-    # axes capteur
+    # Sensor axes
     # -----------------------------
     scale = 3 * min((Xg.max() - Xg.min())/Nx, (Yg.max() - Yg.min())/Ny)
     plt.arrow(0, 0, scale * np.cos(xi_Yaw), scale * np.sin(xi_Yaw),
@@ -2767,7 +2810,7 @@ def graph_mesh_2D(Xg_abs, Yg_abs, X_Bound_abs, Y_Bound_abs, UTM_x, UTM_y, xi_Yaw
         width=0.3, color="green")
 
     # -----------------------------
-    # affichage des indices (i,j)
+    # Display the indices (i, j)
     # -----------------------------
     dx = 0.003 * (Xg.max() - Xg.min())
     dy = 0.003 * (Yg.max() - Yg.min())
@@ -2778,33 +2821,32 @@ def graph_mesh_2D(Xg_abs, Yg_abs, X_Bound_abs, Y_Bound_abs, UTM_x, UTM_y, xi_Yaw
                 fontsize=3, color="darkgreen", ha="center", va="center")
 
     # ----------------------------------------------------------
-    # affichage des indices B(k) des 9 points de référence.
+    # Display the B(k) indices of the 9 reference points
     # ----------------------------------------------------------
 
     for k, (x, y) in enumerate(zip(X_Bound, Y_Bound)):
         plt.text(x+2*dx, y+2*dy, f"B{k}", color="red", fontsize=9)
 
-
     # -----------------------------
-    # bornes capteur projetées
+    # Projected sensor boundaries
     # -----------------------------
 
     x = X_Bound[1:]
     y = Y_Bound[1:]
 
-    # fermeture du polygone
+    # Close the polygon
     x = np.append(x, x[0])
     y = np.append(y, y[0])
 
     plt.plot(x, y, color='black')
-    plt.fill(x, y, color='gray', alpha=0.3, label="Emprise capteur")
+    plt.fill(x, y, color='gray', alpha=0.3, label="Sensor footprint")
 
 
-    # points rouges par dessus
-    plt.scatter(x, y, c='red', s=20, label="Bornes image")
+    # Red points on top
+    plt.scatter(x, y, c='red', s=20, label="Image boundary points")
 
-    # centre caméra nadir
-    plt.scatter(0, 0, c='blue', s=40, label="Nadir caméra")
+    # Camera nadir center
+    plt.scatter(0, 0, c='blue', s=40, label="Camera nadir")
 
 
     # plt.grid(True, alpha=0.3)
@@ -2812,41 +2854,65 @@ def graph_mesh_2D(Xg_abs, Yg_abs, X_Bound_abs, Y_Bound_abs, UTM_x, UTM_y, xi_Yaw
     plt.legend()
     plt.axis('equal')
 
-    # --- sauvegarde éventuelle ---
+    # --- Optional saving ---
     if save_graphic:
         fig.savefig(geo_path, dpi=300, bbox_inches="tight")
-        logger.ok(f" graphic saved : {geo_path}")
+        logger.ok(f" Graphic saved: {geo_path}")
 
-    # --- affichage éventuel ---
+    # --- Optional display ---
     if view_graphic:
         plt.show()
     else:
         plt.close(fig)
 
 def plot_grille_image(u, v, cx=0, cy=0):
+    """
+        Plot projected ground-grid points in image coordinates.
+
+        The optical center is displayed separately, and the vertical axis
+        is inverted to match image-coordinate conventions.
+
+        Parameters:
+            u: Horizontal image coordinates of the projected points.
+            v: Vertical image coordinates of the projected points.
+            cx: Horizontal coordinate of the optical center.
+            cy: Vertical coordinate of the optical center.
+    """
     plt.scatter(u, v, s=2)
     plt.scatter(cx, cy, s=10, color='r')
     plt.gca().invert_yaxis()
-    plt.title("Projection grille sol -> image")
+    plt.title("Ground grid projection onto the image")
     plt.show()
 
 def graph_ortho(ortho_display, xo, yo, ortho_path, graphic_ortho=False, view_graphic=False, save_graphic=False):
+    """
+    Display and optionally save an orthorectified image.
+
+    Parameters:
+        ortho_display: Image array to display.
+        xo: X coordinates of the reference points.
+        yo: Y coordinates of the reference points.
+        ortho_path: Output path for the saved graphic.
+        graphic_ortho: If True, generate the orthorectification plot.
+        view_graphic: If True, display the plot.
+        save_graphic: If True, save the plot to a file.
+    """
     if graphic_ortho:
         fig = plt.figure(figsize=(12, 8))
         ax = fig.add_subplot(111)
         plt.imshow(ortho_display, origin="lower")  # , extent=extent)
         # plt.scatter(xo, yo, c="red", marker="+", s=100)
         plt.gca().invert_yaxis()
-        plt.xlabel("ΔX terrain (m)")
-        plt.ylabel("ΔY terrain (m)")
-        plt.title("Orthorectification — Test")
-        # --- sauvegarde éventuelle ---
+        plt.xlabel("ΔX ground (m)")
+        plt.ylabel("ΔY ground (m)")
+        plt.title("Orthorectification")
+        # --- Optional saving ---
         if save_graphic:
             fig.savefig(ortho_path, dpi=300, bbox_inches="tight")
-            logger.ok(f" graphic saved : {ortho_path}")
-        # --- affichage éventuel ---
+            logger.ok(f"Graphic saved: {ortho_path}")
+        # --- Optional display ---
         if view_graphic:
-            print(f'DEBUG  view_graphic ={view_graphic}')
+            logger.info(f'View_graphic ={view_graphic}')
             plt.show()
         else:
             plt.close(fig)
@@ -2855,44 +2921,72 @@ def graph_ortho(ortho_display, xo, yo, ortho_path, graphic_ortho=False, view_gra
 
 # -----------   Tag image
 
-def tag_image(img_raw, tif_path_taged, cx, cy,
-              verbose=False, draw_square_tag=False,
-              draw_axe=False, draw_arrow_x=False, draw_arrow_y=True,
-              draw_grid=True, grid_step=None):
+def tag_image(img_raw,
+              tif_path_taged,
+              cx,
+              cy,
+              verbose=False,
+              draw_square_tag=False,
+              draw_axe=False,
+              draw_arrow_x=False,
+              draw_arrow_y=True,
+              draw_grid=True,
+              grid_step=None):
     """
-    création d'une image brute avec les marques
-    :return:
+    Create an image without orthorectification and add visual markers.
+
+    Setting draw_grid=True overlays a regular orthogonal grid on the image.
+    Orthorectifying this image makes it possible, in particular, to highlight
+    grid deformation.
+
+    Parameters:
+        img_raw: Input image array.
+        tif_path_taged: Output path for the tagged TIFF image.
+        cx: X coordinate of the optical center.
+        cy: Y coordinate of the optical center.
+        verbose: If True, print the output path.
+        draw_square_tag: If True, draw the square markers.
+        draw_axe: If True, draw the image coordinate axes.
+        draw_arrow_x: If True, draw the X-axis arrow.
+        draw_arrow_y: If True, draw the Y-axis arrow.
+        draw_grid: If True, overlay a regular grid.
+        grid_step: Grid spacing in pixels; defaults to one tenth of the image width.
+
+    Returns:
+        The image array with the markers added.
     """
 
     # -------------------------------------------------------
-    # création d'une image brute avec les marques
+    # Create a raw image with markers
     # -------------------------------------------------------
     cx = int(cx)
     cy = int(cy)
 
-    # - 1) Image sans les marques
+    # - 1) Image without markers
     Ny_raw, Nx_raw = img_raw.shape[:2]
     bands = 1 if img_raw.ndim == 2 else img_raw.shape[2]
 
-    # - 2) Adaptation dynamique couleur selon profondeur
+    # - 2) Dynamic color-range adjustment based on bit depth
     if img_raw.dtype == np.uint16:
         CMAX = 65535
     elif img_raw.dtype == np.uint32:
         CMAX = 4294967295
     else:
         CMAX = 255
-    # Passage en couleur si besoin
+    # Convert to color if necessary
     if img_raw.ndim == 2:
         img = cv2.cvtColor(img_raw, cv2.COLOR_GRAY2BGR)
     else:
         img = img_raw.copy()
 
-    # _ 3) Impression des marques de repère image
-    # centre image (cx, cy) (si Undistord en général cx != Nx_raw // 2 et cy != Ny_raw // 2 )
-    # --------- 3.0) grille régulière
+    # - 3) Draw image reference markers
+    # Image center (cx, cy); after undistortion, it generally differs
+    # from (Nx_raw // 2, Ny_raw // 2)
+
+    # --------- 3.0) Regular grid
     if draw_grid:
         if grid_step is None:
-            grid_step = Nx_raw // 10  # densité par défaut
+            grid_step = Nx_raw // 10  # Default grid spacing
 
         grid_color = (CMAX, CMAX, CMAX)
 
@@ -2905,63 +2999,73 @@ def tag_image(img_raw, tif_path_taged, cx, cy,
             thickness=2
         )
 
-    # ----- 3.1) Axes et vecteurs image
+    # ----- 3.1) Image axes and vectors
     L = Nx_raw // 4
     if draw_axe:
-        # axe x horizontal
+        # Horizontal X-axis
         cv2.arrowedLine(img, (0, cy), (2 * cx, cy), (CMAX // 1.5, CMAX // 1.5, CMAX // 1.5), 4, tipLength=0.00)
-        # axe y vertical
+        # Vertical Y-axis
         cv2.arrowedLine(img, (cx, 0), (cx, 2 * cy), (CMAX // 1.5, CMAX // 1.5, CMAX // 1.5), 4, tipLength=0.00)
     if draw_arrow_x:
-        # x_img → droite (rouge)
+        # x_img → right (red)
         cv2.arrowedLine(img, (cx, cy), (cx + L, cy), (0, 0, 0.5 * CMAX), 10, tipLength=0.05)
     if draw_arrow_y:
-        # y_img → haut (vert)
+        # y_img → up (green)
         cv2.arrowedLine(img, (cx, cy), (cx, cy - L), (0, 0.5 * CMAX, 0), 10, tipLength=0.05)
 
-    # ----- 3.2) Pavés et Carrés
+    # ----- 3.2) Blocks and squares
     if draw_square_tag:
         S = 200
         Dx = Nx_raw // 4
         Dy = Ny_raw // 4
 
-        # --------- 3.2.1) Quadrant I  Noir
+        # --------- 3.2.1) Quadrant I: Black
         draw_square(img, cx + Dx, cy - Dx, S, (20, 20, 20))
-        # --------- 3.2.2) Quadrant II  Gris
+        # --------- 3.2.2) Quadrant II: Gray
         draw_square(img, cx - Dx, cy - Dx, S, (CMAX / 3, CMAX / 3, CMAX / 3))
-        # --------- 3.2.3) Quadrant III  Blanc
+        # --------- 3.2.3) Quadrant III: White
         draw_square(img, cx - Dx, cy + Dx, S, (CMAX, CMAX, CMAX))
-        # --------- 3.2.4) Quadrant IV  Intérieur transparent
+        # --------- 3.2.4) Quadrant IV: Transparent interior
         draw_square_outline(img, cx + Dx, cy + Dx, S, (CMAX, CMAX, CMAX), thickness=6)
-        # --------- 3.2.5) carré contour blanc entre le carrés quadrant
+        # --------- 3.2.5) White outline square between the quadrant squares
         draw_square_outline(img, cx, cy, Nx_raw // 2 + S, (CMAX, CMAX, CMAX), thickness=4)
 
-    # --------- 3.3) Centre optique
+    # --------- 3.3) Optical center
     cv2.circle(img, (cx, cy), 12, (0, 0, 0), -1)
 
-    # --------- 3.4) Centre géométrique
+    # --------- 3.4) Geometric center
     cv2.circle(img, (Nx_raw // 2, Ny_raw // 2), 8, (CMAX, CMAX, 0), -1)
 
-    # - 4)  Sauvegardes TIFF avec Tags
+    # - 4) Save TIFF with tags
     cv2.imwrite(str(tif_path_taged), img)
 
-
-
     if verbose:
-        print(f"Image avec Tags sauvegardée :  {tif_path_taged}")
+        # print(f"Image avec Tags sauvegardée :  {tif_path_taged}")
+        logger.info(f"Image with Tags saved:  {tif_path_taged}")
 
     return img
-    # -------------------------------------------------------
-    # Fin création d'une image brute avec les marques
-    # -------------------------------------------------------
 
 def draw_grid_centered(img, cx, cy, step_x, color, thickness=1):
+    """
+    Draw a regular orthogonal grid centered on a specified image point.
+
+    The grid is drawn in both directions from (cx, cy), using the same
+    spacing for horizontal and vertical lines.
+
+    Parameters:
+        img: Image array on which to draw the grid.
+        cx: Horizontal coordinate of the grid center.
+        cy: Vertical coordinate of the grid center.
+        step_x: Grid spacing in pixels.
+        color: Grid-line color.
+        thickness: Grid-line thickness in pixels.
+    """
 
     Ny, Nx = img.shape[:2]
 
     step_y = step_x  # int(step_x * 3 / 4)
 
-    # lignes verticales
+    # Vertical lines
     x = cx
     while x < Nx:
         cv2.line(img, (int(x), 0), (int(x), Ny), color, thickness)
@@ -2972,7 +3076,7 @@ def draw_grid_centered(img, cx, cy, step_x, color, thickness=1):
         cv2.line(img, (int(x), 0), (int(x), Ny), color, thickness)
         x -= step_x
 
-    # lignes horizontales
+    # Horizontal lines
     y = cy
     while y < Ny:
         cv2.line(img, (0, int(y)), (Nx, int(y)), color, thickness)
@@ -2984,31 +3088,61 @@ def draw_grid_centered(img, cx, cy, step_x, color, thickness=1):
         y -= step_y
 
 def draw_square(img, xc, yc, size, color):
+    """
+    Draw a filled square on an image.
+
+    Parameters:
+        img: Image array on which to draw the square.
+        xc: X coordinate of the square center.
+        yc: Y coordinate of the square center.
+        size: Side length of the square in pixels.
+        color: Square fill color.
+    """
     h = size // 2
     cv2.rectangle(img, (int(xc - h), int(yc - h)), (int(xc + h), int(yc + h)), color, -1)
 
 def draw_square_outline(img, x_center, y_center, size, color, thickness=3):
+    """
+    Draw a square outline on an image.
+
+    Parameters:
+        img: Image array on which to draw the square.
+        x_center: X coordinate of the square center.
+        y_center: Y coordinate of the square center.
+        size: Side length of the square in pixels.
+        color: Outline color.
+        thickness: Outline thickness in pixels.
+    """
     h = size // 2
     pt1 = (int(x_center - h), int(y_center - h))
     pt2 = (int(x_center + h), int(y_center + h))
     cv2.rectangle(img, pt1, pt2, color, thickness)
 
 # --------------------------------------------------
-# sélection interactive des images
+# Interactive image selection
 # --------------------------------------------------
 
-
 def choose_images(folder_mission: Path):
+    """
+    Interactively select image files from a file dialog.
+
+    Parameters:
+        folder_mission: Mission folder used as the initial directory.
+
+    Returns:
+        A tuple containing the input folder, image names without extensions,
+        image filenames, and full image paths.
+    """
 
     root = tk.Tk()
     root.withdraw()
 
     filepaths = filedialog.askopenfilenames(
         parent=root,
-        title="Sélectionner les images",
+        title="Select images.",
         initialdir=str(folder_mission),
         filetypes=[
-            ("Images DNG, TIF", "*.dng *.tif"),
+            ("DNG and TIFF images", "*.dng *.tif"),
             ("All files", "*.*")
         ]
     )
@@ -3016,7 +3150,8 @@ def choose_images(folder_mission: Path):
     root.destroy()
 
     if not filepaths:
-        print("Aucune image sélectionnée.")
+        print("No image selected.")
+        logger.warn("No image selected.")
         sys.exit(0)
 
     paths = [Path(p) for p in filepaths]
@@ -3028,25 +3163,29 @@ def choose_images(folder_mission: Path):
 
     return folder_input, list_img_name, list_img, list_path
 
-
-
 def choose_images_dev():
     """
-    A conserver. Permet d'utiliser le lancement par ligne de commande
-    et d'accéder au mode interactif
-    :return:
+    Keep this method available for development.
+
+    It supports command-line launching while providing access to interactive
+    image selection.
+
+    Returns:
+        A tuple containing the input folder, image names without extensions,
+        image filenames, and full image paths.
     """
 
     root = tk.Tk()
     root.withdraw()
 
     filepaths = filedialog.askopenfilenames(
-        title="Sélectionner les images",
-        filetypes=[("Images DNG, TIF", "*.dng  *.tif"), ("All files", "*.*")]
+        title="Select images",
+        filetypes=[("DNG and TIFF images", "*.dng  *.tif"), ("All files", "*.*")]
     )
 
     if not filepaths:
-        print("Aucune image sélectionnée.")
+        print("No image selected.")
+        logger.warn("No image selected.")
         sys.exit(0)
 
     paths = [Path(p) for p in filepaths]
@@ -3058,13 +3197,22 @@ def choose_images_dev():
 
     return folder_input, list_img_name, list_img, list_path
 
-
-
 # --------------------------------------------------
-# ligne de commande
+# Command-line interface
 # --------------------------------------------------
 
 def add_bool_arg(parser, name, default, help_text):
+    """
+    Add a mutually exclusive pair of command-line options for a Boolean flag.
+
+    The positive option enables the flag, while the --no- variant disables it.
+
+    Parameters:
+        parser: ArgumentParser instance.
+        name: Name of the Boolean argument.
+        default: Default Boolean value.
+        help_text: Help text describing the option.
+    """
     group = parser.add_mutually_exclusive_group()
 
     group.add_argument(f"--{name}", dest=name, action="store_true",
@@ -3076,57 +3224,70 @@ def add_bool_arg(parser, name, default, help_text):
     parser.set_defaults(**{name: default})
 
 def parse_args():
+    """
+    Parse command-line arguments.
+
+    Returns:
+        The parsed command-line arguments.
+    """
     parser = argparse.ArgumentParser(description="Orthorectification GeoRef")
 
-    parser.add_argument("--input_dir", help="dossier images (ex: .../VIS)")
-    parser.add_argument("--images", nargs="+", help="liste images sans extension")
+    parser.add_argument("--input_dir", help="Image folder (e.g. .../VIS)")
+    parser.add_argument("--images", nargs="+", help="List of image names without extensions")
     parser.add_argument("--suffix", default="dng")
     parser.add_argument("--mode",
                         default="raw_DJI",
                         choices=["raw_DJI", "multispectral"],
-                        help="type image entrée")
+                        help="Input image type")
     parser.add_argument("--topo_style", default="IGN")
 
     parser.add_argument("--bitdepth",
                         default="float32",
                         choices=["float32", "uint8"],
-                        help="type image sortie")
+                        help="Output image type")
 
     parser.add_argument("--offsetyaw",
                         type=float,
                         default=0,
-                        help="offset yaw en degrés")
+                        help="Yaw offset in degrees")
 
     parser.add_argument("--offsetUTMx",
                         type=float,
                         default=0,
-                        help="offset UTM vers EST en m")
+                        help="UTM eastward offset in meters")
 
     parser.add_argument("--offsetUTMy",
                         type=float,
                         default=0,
-                        help="offset UTM vers Nord en m")
+                        help="UTM northward offset in meters")
 
     parser.add_argument("--altitakeoff",
                         default=None,
-                        help="altitude du point de decollage")
+                        help="Takeoff point altitude")
 
-    add_bool_arg(parser, "verbose", False, "mode verbose")
-    add_bool_arg(parser, "tag_img", False, "ajouter tag image")
-    add_bool_arg(parser, "graphic_3D", True, "graphic 3D MNT")
-    add_bool_arg(parser, "graphic_2D", True, "graphic 2D Grid MNT")
-    add_bool_arg(parser, "graphic_ortho", False, "image ortho dng")
+    add_bool_arg(parser, "verbose", False, "Verbose mode")
+    add_bool_arg(parser, "tag_img", False, "Add image markers")
+    add_bool_arg(parser, "graphic_3D", True, "3D DTM plot")
+    add_bool_arg(parser, "graphic_2D", True, "2D DTM grid plot")
+    add_bool_arg(parser, "graphic_ortho", False, "Orthorectified DNG image")
     add_bool_arg(parser, "view_graphic", False, "show graphic")
     add_bool_arg(parser, "save_graphic", True, "save graphic")
-    add_bool_arg(parser, "comp_error_rms", False, "calcul erreur position")
-    add_bool_arg(parser, "carte_topo", True, "carte topographique")
-    add_bool_arg(parser, "raster_topo", False, "raster topographique")
+    add_bool_arg(parser, "comp_error_rms", False, "Compute position error")
+    add_bool_arg(parser, "carte_topo", True, "Topographic map")
+    add_bool_arg(parser, "raster_topo", False, "Topographic raster")
 
 
     args = parser.parse_args()
     return args
 
 def calib_cam_DJI():
+    """
+    Return the DJI camera calibration parameters.
+
+    Returns:
+        A dictionary containing the camera matrix, distortion coefficients,
+        image dimensions, and camera identifier.
+    """
     zhang_dic = {
         "mtx": [
             [2898.4683237896006, 0.0, 2032.1512913688591],
@@ -3147,99 +3308,128 @@ def calib_cam_DJI():
     return zhang_dic
 
 # -----------------------------------------------------------------
-#   détection automatique du mode de traitement
-#    > "raw_DJI" :    raw dng du DJI
-#    > "miltispectral" : quadruplet R\G\B\NIR de tif de IRDrone
+# Automatic detection of the processing mode
+#    > "raw_DJI": DJI raw DNG images
+#    > "multispectral": IRDrone RGB/NIR TIFF quartet
 # ------------------------------------------------------------------
 
 def detect_mode(paths, args_mode):
+    """
+    Detect the processing mode from the input file extensions.
+
+    Parameters:
+        paths: List of input image paths.
+        args_mode: Requested processing mode.
+
+    Returns:
+        The detected processing mode: "raw_DJI" or "multispectral".
+
+    Raises:
+        ValueError: If no files are provided, file types are mixed,
+                    or the file format is unsupported.
+    """
 
     if not paths:
-        raise ValueError("Aucun fichier fourni")
+        raise ValueError("No files provided")
 
     suffixes = {p.suffix.lower() for p in paths}
 
     has_dng = any(s == ".dng" for s in suffixes)
     has_tif = any(s in [".tif", ".tiff"] for s in suffixes)
 
-    # --- cas invalide : mélange ---
+    # --- Invalid case: mixed file types ---
     if has_dng and has_tif:
         raise ValueError(
-            "Mélange de fichiers DNG et TIF détecté.\n"
-            "Veuillez sélectionner uniquement des images RAW DJI (.dng)\n"
-            "ou uniquement des images multispectrales (.tif)."
+            "Mix of DNG and TIFF files detected.\n"
+            "Please select only DJI RAW images (.dng)\n"
+            "or only multispectral images (.tif)."
         )
 
-
-    # --- cas RAW DJI ---
+    # --- DJI RAW mode ---
     if has_dng:
         return "raw_DJI"
 
-    # --- cas multispectral ---
+    # --- Multispectral mode ---
     if has_tif:
         return "multispectral"
 
-    # --- cas non supporté ---
-    raise ValueError(f"Format non supporté : {suffixes}")
+    # --- Unsupported format ---
+    raise ValueError(f"Unsupported format: {suffixes}")
 
 # --------------------------------------------------
-# traitement d'une image
+# Process a single image
 # --------------------------------------------------
 
 def process_image(folder_input, img_name, args, zhang_dic,  tol_MC=0.01, img_override=None, tif_override=None, logger=None, georef_success=0):
+    """
+    Georeference a single image.
 
+    Parameters:
+        folder_input: Input image directory.
+        img_name: Image name without its extension.
+        args: Processing arguments.
+        zhang_dic: DJI camera calibration parameters.
+        tol_MC: Monte Carlo convergence tolerance.
+        img_override: Optional preloaded image array.
+        tif_override: Optional override for the input TIFF path.
+        logger: Logger used to report processing progress.
+        georef_success: Number of images successfully georeferenced so far.
+
+    Returns:
+        The updated number of successfully georeferenced images.
+    """
 
     geo_ref_dir = folder_input / "geo_ref"
 
     if not geo_ref_dir.exists():
         geo_ref_dir.mkdir(parents=True, exist_ok=True)
-        logger.ok(f"Création du dossier : {geo_ref_dir}")
+        logger.ok(f"Directory created: {geo_ref_dir}")
 
     if args.mode == "raw_DJI":
-        logger.info(f"--- Traitement {img_name}.{args.suffix}")
+        logger.info(f"--- Processing {img_name}.{args.suffix}")
         geo_tif = folder_input / "geo_ref" / f"{img_name}_geo.tif"
 
     elif args.mode == "multispectral":
-        base_name = img_name.rsplit("_", 1)[0]  # enlève _1 de la bande N°1
-        logger.info(f"--- Traitement {base_name}")
+        base_name = img_name.rsplit("_", 1)[0]  # Remove '_1' from band 1.
+        logger.info(f"--- Processing {base_name}")
         geo_tif = folder_input / "geo_ref" / f"{base_name}_0_geo.tif"
 
     try:
 
         if img_override is not None:
-            # --- multispectral : image déjà chargée ---
+            # --- Multispectral mode: image already loaded ---
             img = img_override
-            tif_path = None  # ⚠️ pas de fichier source
+            tif_path = None  # ⚠️ No source file
 
         else:
-            # --- mode raw_DJI --- seul le nom de l'image est chargé à ce stade
+            # ---- raw_DJI mode --- only the image name is loaded at this stage
             if args.suffix.lower() == "dng":
-                tif_path = dng2tiff(folder_input, img_name)  # création d'une image .tif à partie de l'image .dng
+                tif_path = dng2tiff(folder_input, img_name)  # Create a .tif image from the .dng image
             elif args.suffix.lower() == "tif":
-                logger.warn(f'  le suffix {args.suffix} n\'est pas pris en charge en mode raw DJI')
+                logger.warn(f'  The suffix {args.suffix} is not supported in raw_DJI mode')
                 sys.exit(1)
             else:
-                logger.error(f' le suffix {args.suffix} n\'est pas pris en charge.')
+                logger.error(f' The suffix {args.suffix} is not supported.')
                 sys.exit(1)
 
             img = cv2.imread(str(tif_path), cv2.IMREAD_UNCHANGED)
             if img is None:
                 raise FileNotFoundError(tif_path)
 
-        # --- recherche des données exif essentielles pour le géoréférencement et l'orthorectification.
-        # Coordonnées GPS de la prise de vue, attitude du drone (Yaw), altitude takeoff, altitude du nadir.
+        # Retrieve the essential EXIF data for georeferencing and orthorectification.
+        # Image GPS coordinates, drone attitude (yaw), takeoff altitude, and nadir altitude.
 
         raw_exif = load_companion_exif(folder_input, img_name, suffix=args.suffix, alti_takeoff=args.altitakeoff)
 
         if raw_exif is None:
-            raise RuntimeError("EXIF manquant")
+            raise RuntimeError("Missing EXIF data")
 
         tif_ref = tif_override if tif_override is not None else tif_path
 
         output_name = img_name
 
         if args.mode == "multispectral":
-            output_name = base_name + "_0"  # le nom est construit en remplaçant le numéro de bande spectrale (1,2,3,4) par 0
+            output_name = base_name + "_0"  # Build the output name by replacing the spectral band number (1, 2, 3, 4) with 0
 
         new_geo_path = \
             georeference_tiff_MNT(
@@ -3271,41 +3461,54 @@ def process_image(folder_input, img_name, args, zhang_dic,  tol_MC=0.01, img_ove
 
         if new_geo_path:
             georef_success += 1
-            logger.ok(f"{georef_success} géoréférencement terminé : {new_geo_path}")
+            logger.ok(f"{georef_success} Georeferencing completed: {new_geo_path}")
 
         else:
-            logger.warn(f" Process terminé sans génération du fichier georef")
+            logger.warn(f" Processing completed without generating the georeferenced file")
         return georef_success
 
     except Exception as e:
+        logger.error(f" Error processing {img_name}: {e}")
 
-        # import traceback
-        logger.error(f" Erreur sur {img_name}: {e}")
-        # traceback.print_exc()
 
 # -----------------------------------------------------------------------
-# process multispectral
+# Process multispectral images
 # -----------------------------------------------------------------------
 
 def process_multispectral(folder_input, base, band_paths, args, zhang_dic, tol_MC=0.01, georef_success=0):
+    """
+    Combine four spectral bands and georeference the resulting image.
 
-    # --- sécurité ---
+    Parameters:
+        folder_input: Input image directory.
+        base: Common base name of the multispectral image.
+        band_paths: Dictionary mapping band numbers to file paths.
+        args: Processing arguments.
+        zhang_dic: DJI camera calibration parameters.
+        tol_MC: Monte Carlo convergence tolerance.
+        georef_success: Number of images successfully georeferenced so far.
+
+    Returns:
+        The updated number of successfully georeferenced images.
+    """
+
+    # --- Check that all four spectral bands are present ---
     expected = {1, 2, 3, 4}
     if set(band_paths.keys()) != expected:
-        raise ValueError(f"{base} bandes invalides : {band_paths.keys()}")
+        raise ValueError(f"{base}: invalid spectral bands: {band_paths.keys()}")
 
-    # --- lecture des 4 bandes spectrales séparées ---
+    # --- Read the four separate spectral bands ---
     img_r = cv2.imread(str(band_paths[1]), cv2.IMREAD_UNCHANGED)
     img_g = cv2.imread(str(band_paths[2]), cv2.IMREAD_UNCHANGED)
     img_b = cv2.imread(str(band_paths[3]), cv2.IMREAD_UNCHANGED)
     img_nir = cv2.imread(str(band_paths[4]), cv2.IMREAD_UNCHANGED)
 
-    # --- validation dimensions des bandes ---
+    # --- Validate band dimensions ---
     if not (img_r.shape == img_g.shape == img_b.shape == img_nir.shape):
-        raise ValueError(f"{base} bandes spectrales incohérentes")
+        raise ValueError(f"{base}: inconsistent spectral band dimensions")
 
-    # --- stack ---
-    # normalisation globale des 4 bandes spectrales
+    # --- Stack the bands ---
+    # Global normalization of the four spectral bands
     def normalize(img):
         return (img - img.min()) / (img.max() - img.min() + 1e-6)
 
@@ -3314,17 +3517,17 @@ def process_multispectral(folder_input, base, band_paths, args, zhang_dic, tol_M
     img_b = normalize(img_b)
     img_nir = normalize(img_nir)
 
-    # image multispectrale   R|G|B|NIR
+    # Multispectral image: R|G|B|NIR
 
     img = np.stack([img_r, img_g, img_b, img_nir], axis=-1)
 
-    # --- suffix pour sortie compatible georef QGIS---
+    # --- Output suffix compatible with QGIS georeferencing ---
     args.suffix = "tif"
 
-    ref_path = band_paths[1]  # ex: HYPERLAPSE_0271_1.tif
-    ref_name = ref_path.stem  # ex: HYPERLAPSE_0271_1
+    ref_path = band_paths[1]  # e.g. HYPERLAPSE_0271_1.tif
+    ref_name = ref_path.stem  # e.g. HYPERLAPSE_0271_1
 
-    # --- pipeline ---
+    # --- Processing pipeline ---
     georef_success = process_image(
                                     folder_input,
                                     ref_name,
@@ -3332,12 +3535,22 @@ def process_multispectral(folder_input, base, band_paths, args, zhang_dic, tol_M
                                     zhang_dic,
                                     logger=logger,
                                     tol_MC=tol_MC,
-                                    img_override=img,  # injection directe de l'image 4 couches
+                                    iimg_override=img,  # Direct injection of the four-channel image
                                     georef_success=georef_success
                                 )
     return georef_success
 
 def group_multispectral(paths, logger):
+    """
+        Group multispectral TIFF files by base name and validate their bands.
+
+        Parameters:
+            paths: List of TIFF file paths.
+            logger: Logger used to report rejected groups.
+
+        Returns:
+            A tuple containing the valid groups and the rejected groups.
+        """
     pattern = re.compile(r"(.+?)_(\d)\.(tif|tiff)$", re.IGNORECASE)
 
     groups = defaultdict(dict)
@@ -3358,51 +3571,61 @@ def group_multispectral(paths, logger):
             valid[base] = bands
         else:
             rejected[base] = bands
-            logger.warn(f"{base} rejeté. Bandes présentes: {sorted(bands.keys())}")
+            logger.warn(f"{base} rejected. Available bands: {sorted(bands.keys())}")
 
-    logger.info(f'quadruplets valides = {len(valid)}')
-    if len(rejected) != 0: logger.warn(f'quadruplets rejetés = {rejected}')
+    logger.info(f"Valid quartets = {len(valid)}")
+    if len(rejected) != 0:
+        logger.warn(f"Rejected quartets = {rejected}")
 
     return valid, rejected
 
-
 def georef_main(image_callback=None, mission_parameters=None):
+    """
+    Run the georeferencing workflow in command-line or interactive mode.
+
+    Parameters:
+        image_callback: Optional callback used to display the current image.
+        mission_parameters: Mission configuration parameters.
+
+    Returns:
+        None.
+    """
     logger = CliLogger(use_color=True)
     logger.log_callback = globals()["logger"].log_callback
 
 
-    args = parse_args()  # arguments ligne de commande
+    args = parse_args()  # Command-line arguments
 
-    zhang_dic = calib_cam_DJI()  # calibration caméra DJI
+    zhang_dic = calib_cam_DJI()  # DJI camera calibration
 
     tolerence_Monte_Carlo = 0.0025
 
     # ==================================================
-    # MODE LIGNE DE COMMANDE
+    # COMMAND-LINE MODE
     # ==================================================
     if args.input_dir:
 
         folder_input = Path(args.input_dir)
 
         if not folder_input.exists() or not folder_input.is_dir():
-            logger.error(f"Dossier invalide : {folder_input}")
+            logger.error(f"Invalid directory: {folder_input}")
             sys.exit(1)
 
         # ----------------------------------------------
-        # Construction de paths
+        # Build the list of paths
         # ----------------------------------------------
         if args.images:
             paths = []
 
             for name in args.images:
-                # --- test DNG ---
+                # --- Check for DNG files ---
                 if args.mode == "raw_DJI":
                     dng_path = folder_input / f"{name}.dng"
                     if dng_path.exists():
                         paths.append(dng_path)
                         continue
 
-                # --- test multispectral ---
+                # --- Check for multispectral files ---
                 elif args.mode == "multispectral":
                     for i in range(1, 5):
                         tif_path = folder_input / f"{name}_{i}.tif"
@@ -3412,12 +3635,12 @@ def georef_main(image_callback=None, mission_parameters=None):
                     pass
 
             if not paths:
-                logger.error("Aucune image trouvée correspondant à --images")
+                logger.error("No images found matching --images")
                 sys.exit(1)
 
         else:
             # scan auto
-            logger.info(f'Scan automatique du dossier {folder_input}')
+            logger.info(f'Automatic scan {folder_input}')
             paths = (
                     list(folder_input.glob("*.dng")) +
                     list(folder_input.glob("*.tif")) +
@@ -3425,28 +3648,28 @@ def georef_main(image_callback=None, mission_parameters=None):
             )
 
         if not paths:
-            logger.error("Aucune image trouvée dans le dossier")
+            logger.error("No images found in the directory")
             sys.exit(1)
 
-        # ----------------------------------------------
-        # Détection du mode
-        # ----------------------------------------------
+        # ----------------------------------------------------------
+        # Detect the processing mode.  "raw_DJI" or "multispectral"
+        # ----------------------------------------------------------
 
         try:
             mode = detect_mode(paths, args.mode)
         except ValueError as e:
             logger.error(str(e))
             sys.exit(1)
-        logger.info(f"Mode détecté : {mode}")
+        logger.info(f"Detected processing mode: {mode}")
 
         # ----------------------------------------------
-        # RAW DJI
+        # DJI Raw mode
         # ----------------------------------------------
         if mode == "raw_DJI":
 
             list_img_name = sorted(p.stem for p in paths if p.suffix.lower() == ".dng")
 
-            logger.info(f"{len(list_img_name)} images DNG à traiter")
+            logger.info(f"{len(list_img_name)} DNG images to process")
             georef_sucsess = 0
             for img_name in list_img_name:
                 georef_success = process_image(
@@ -3458,11 +3681,11 @@ def georef_main(image_callback=None, mission_parameters=None):
                                             tol_MC=tolerence_Monte_Carlo,
                                             georef_sucsess=georef_unsucces
                                         )
-            Uti.show_info_message("IRDrone", f"{georef_success }image géoréférencée avec succes ...", "")
+            Uti.show_info_message("IRDrone", f"{georef_success }image georeferencing succesfully ...", "")
 
 
         # ----------------------------------------------
-        # MULTISPECTRAL
+        # Multispectral mode
         # ----------------------------------------------
         elif mode == "multispectral":
 
@@ -3481,11 +3704,11 @@ def georef_main(image_callback=None, mission_parameters=None):
                 )
 
     # ==================================================
-    # MODE INTERACTIF
+    # INTERACTIVE MODE
     # ==================================================
     else:
 
-        logger.info(f"Mode interactif : sélection des images ...\n", _bold=True)
+        logger.info(f"Interactive mode: selecting images ...\n", _bold=True)
 
         folder_mission = Path(
             mission_parameters["File path mission"]
@@ -3496,7 +3719,7 @@ def georef_main(image_callback=None, mission_parameters=None):
         )
 
         if not list_path:
-            logger.error("Aucune image sélectionnée")
+            logger.error("No images selected")
             sys.exit(1)
 
         try:
@@ -3506,7 +3729,7 @@ def georef_main(image_callback=None, mission_parameters=None):
             logger.error(str(e))
             sys.exit(1)
 
-        # --- réglages developpement ---
+        # --- Development settings ---
         if args.offsetyaw == 0:
             args.offsetyaw = 6.
         if args.offsetUTMx == 0:
@@ -3514,22 +3737,22 @@ def georef_main(image_callback=None, mission_parameters=None):
         if args.offsetUTMy == 0:
             args.offsetUTMy = 3.8
         logger.warn(
-            f'forcage des arguments pour le développement ...\n'
-            f'      offset yaw = {args.offsetyaw}°\n'
-            f'      offset UTM vers Est = {args.offsetUTMx} m\n'
-            f'      offset UTM vers Nord = {args.offsetUTMy} m\n'
+            f'Forcing arguments for development ...\n'
+            f'      Yaw offset = {args.offsetyaw}°\n'
+            f'      UTM eastward offset = {args.offsetUTMx} m\n'
+            f'      UTM northward offset = {args.offsetUTMy} m\n'
         )
 
         logger.info(f"Mode détecté : {mode}")
 
         # ----------------------------------------------
-        # RAW DJI
+        # RAW DJI mode
         # ----------------------------------------------
         if mode == "raw_DJI":
             args.mode = "raw_DJI"
             args.suffix = "dng"
-            logger.info(f'Dossier : {folder_input}')
-            logger.info(f'{len(list_img_name)} images à traiter : {list_img_name}')
+            logger.info(f'File: {folder_input}')
+            logger.info(f'{len(list_img_name)} images to process: {list_img_name}')
 
             args.comp_error_rms = False
 
@@ -3538,7 +3761,7 @@ def georef_main(image_callback=None, mission_parameters=None):
             for img_path in list_path:
                 img_name = img_path.stem
 
-                # gestion de l'affichage de l'image à géoréferencée. Envoie du chemin
+                # Handle the display of the image to be georeferenced. Send its path.
                 if image_callback is not None:
                     image_callback(str(img_path))
 
@@ -3552,10 +3775,10 @@ def georef_main(image_callback=None, mission_parameters=None):
                                                 tol_MC=tolerence_Monte_Carlo,
                                                 georef_success=georef_success
                                             )
-            Uti.show_info_message("IRDrone", f"{georef_success} images géoréférencées avec succes ...", "")
+            Uti.show_info_message("IRDrone", f"{georef_success} images successfully georeferenced ...", "")
 
         # ----------------------------------------------
-        # MULTISPECTRAL
+        # MULTISPECTRAL mode
         # ----------------------------------------------
         elif mode == "multispectral":
             args.mode = "multispectral"
@@ -3564,7 +3787,7 @@ def georef_main(image_callback=None, mission_parameters=None):
             georef_success = 0
 
             for base, bands in valid.items():
-                logger.info(f"Traitement multispectral : {base}")
+                logger.info(f"Multispectral processing: {base}")
 
                 # Display the red spectral band in the GUI preview.
                 if image_callback is not None:
@@ -3582,12 +3805,12 @@ def georef_main(image_callback=None, mission_parameters=None):
                                                         georef_success=georef_success
                                                     )
 
-            Uti.show_info_message("IRDrone", f"{georef_success} images multispectrales géoréférencées avec succes ...", "")
+            Uti.show_info_message("IRDrone", f"{georef_success} multispectral images successfully georeferenced ...", "")
 
 
 # ================================================================
-# programme principal pour le développement
-# ou utilisation en ligne de commande.
+# Main program for development
+# or command-line execution.
 # ================================================================
 
 if __name__ == "__main__":

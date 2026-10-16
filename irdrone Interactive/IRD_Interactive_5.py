@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # --------------------------------------------------------------------------------
-#   IR_drone interactive Phase 3
-#   compute time_shift alignement
-#   17/12/2025   V003
+#   IR_drone interactive Phase 5
+#   Georeferencing images.  User interface
+#   17/10/2026   V004
 # ---------------------------------------------------------------------------------
 
 import os
@@ -65,7 +65,7 @@ from PyQt6.QtWidgets import (
 #     bib matplotlib
 # ----------------------------------------------------
 import matplotlib
-matplotlib.use("Agg")  # backend non interactif. Fondamental ici avec PyQt
+matplotlib.use("Agg")  # Non-interactive backend. Essential here when using PyQt.
 import matplotlib.pyplot as plt
 
 # ----------------------------------------------------
@@ -84,7 +84,7 @@ assert Path(RAWTHERAPEEPATH).exists(), f"RawTherapee not found at {RAWTHERAPEEPA
 
 class DialogGeoRef(QDialog):
     """
-    Dialog for géoréférencement.
+    Dialog for georeferncing image.
 
     Phase 5 of the processing pipeline:
           - Post-processing
@@ -130,7 +130,7 @@ class DialogGeoRef(QDialog):
         self._log("Dialog initialized.")
 
     # ------------------------------------------------------------------
-    # UI
+    # User Interface
     # ------------------------------------------------------------------
     def _init_gui(self) -> None:
         main_layout = QVBoxLayout(self)
@@ -146,7 +146,7 @@ class DialogGeoRef(QDialog):
         self.log_text.setMaximumHeight(200)
         main_layout.addWidget(self.log_text)
 
-        # Boutons Run GeoRef
+        # Buttons Run GeoRef
         btn_layout = QHBoxLayout()
         self.btn_run_GeoRef = QPushButton("Run Geo ref")
         btn_layout.addWidget(self.btn_run_GeoRef)
@@ -255,12 +255,9 @@ class DialogGeoRef(QDialog):
         self.image_preview_label.setPixmap(scaled_pixmap)
         self._log(f"Image preview loaded: {image_path}")
 
-
-
     # ------------------------------------------------------------------
     #       Georeferencing
     # ------------------------------------------------------------------
-
 
     def on_run_GeoRef(self) -> None:
         """
@@ -277,8 +274,8 @@ class DialogGeoRef(QDialog):
                 "    - DNG (DJI)\n"
                 "    - TIFF\n"
                 "    - Multispectral TIFF: groups of four images.\n"
-                "      Example: HYPRLASE_0121_1.tif, HYPRLASE_0121_2.tif, "
-                "HYPRLASE_0121_3.tif, HYPRLASE_0121_4.tif\n"
+                "      Example: HYPERLAPSE_0121_1.tif, HYPERLAPSE_0121_2.tif, "
+                "               HYPERLAPSE_0121_3.tif, HYPERLAPSE_0121_4.tif\n"
                 "    In the latter case, select all four images."
             )
             GeoRef.georef_main(
