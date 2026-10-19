@@ -110,10 +110,11 @@ class DialogGeoRef(QDialog):
             )
             self.close()
             return
-
+        self.whidth_window = 900
+        self.height_window = 900
         self.setWindowTitle("Phase 5 – Georeferencing")
         self.setMinimumSize(900, 600)  # Minimum window size
-        self.resize(900, 900)  # Initial window size
+        self.resize(self.height_window, self.whidth_window,)  # Initial window size
 
         self._init_gui()
         self._connect_signals()
@@ -149,7 +150,39 @@ class DialogGeoRef(QDialog):
         # Buttons Run GeoRef
         btn_layout = QHBoxLayout()
         self.btn_run_GeoRef = QPushButton("Run Geo ref")
+        # Button width: approximately one third of the window
+        self.btn_run_GeoRef.setFixedWidth(int(self.whidth_window/3))
+        # Define the common button style
+        button_style = """
+                    QPushButton {
+                        background-color: #17365D;
+                        color: white;
+                        font-weight: bold;
+                        padding: 8px;
+                        border: 1px solid #102840;
+                        border-radius: 4px;
+                    }
+
+                    QPushButton:hover {
+                        background-color: #244A73;
+                    }
+
+                    QPushButton:pressed {
+                        background-color: #0F243E;
+                    }
+
+                    QPushButton:disabled {
+                        background-color: #B8C2CC;
+                        color: #666666;
+                        border: 1px solid #A0AAB4;
+                    }
+                """
+
+        # Apply the common style to the three main buttons
+        self.btn_run_GeoRef.setStyleSheet(button_style)
         btn_layout.addWidget(self.btn_run_GeoRef)
+        # Keep the button on the left
+        btn_layout.addStretch()
         main_layout.addLayout(btn_layout)
 
         # Progress bar label (bold)
@@ -174,12 +207,18 @@ class DialogGeoRef(QDialog):
 
         # Close button at the bottom
         self.btn_close = QPushButton("Close")
+        self.btn_close.setFixedWidth(120)
+        self.btn_close.setStyleSheet(button_style)
 
-        # Stretch to push the Close button to the bottom
+        # Push the Close button to the bottom
         main_layout.addStretch()
 
+        # Align the Close button to the right
+        close_layout = QHBoxLayout()
+        close_layout.addStretch()
+        close_layout.addWidget(self.btn_close)
 
-        main_layout.addWidget(self.btn_close)
+        main_layout.addLayout(close_layout)
 
     # ------------------------------------------------------------------
     # Signals

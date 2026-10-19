@@ -302,7 +302,7 @@ class ImagePairingWorker(QRunnable):
         idx_upper = np.searchsorted(t_vis, t_nir_arr, side='right')
         idx_lower = idx_upper - 1
 
-        # Extrapolation avant/arriére
+        # Extrapolation avant/arrière
         idx_lower[idx_lower < 0] = 0
         idx_upper[idx_upper >= len(t_vis)] = len(t_vis) - 1
 
@@ -317,7 +317,30 @@ class ImagePairingWorker(QRunnable):
             alpha[np.isnan(alpha)] = 0.0  # cas t1==t0
             alpha = np.clip(alpha, 0, 1)  # clip pour extrapolation
 
-        values = (1 - alpha) * x0 + alpha * x1
+
+        # Interpolate cyclic angles along the shortest angular path.
+        cyclic_angle_keys_1 = {
+            "FlightYawDegree",
+            "GimbalYawDegree",
+        }
+        cyclic_angle_keys_2 = {
+            "CapToLastPoint",
+        }
+
+        if key in cyclic_angle_keys_1:
+            # entre -180° et +180°
+            delta = ((x1 - x0 + 180.0) % 360.0) - 180.0
+            values = (x0 + alpha * delta) % 360.0
+            values = ((values + 180.0) % 360.0) - 180.0
+        if key in cyclic_angle_keys_2:
+            # entre 0° et 360°
+            delta = ((x1 - x0 + 180.0) % 360.0) - 180.0
+            values = (x0 + alpha * delta) % 360.0
+        else:
+            # Keep the existing linear interpolation for all other variables.
+            values = (1 - alpha) * x0 + alpha * x1
+
+
         methods = np.where(t_nir_arr < t_vis[0], 'extrap_before',
                            np.where(t_nir_arr > t_vis[-1], 'extrap_after', 'linear_VIS'))
 
@@ -334,8 +357,8 @@ class ImagePairingWorker(QRunnable):
         list_key = [
                 "DroneLatitude",
                 "DroneLongitude",
-                "DroneAltitudeSeaLevel",
                 "GroundAltitude",
+                "DroneAltitudeSeaLevel",
                 "DroneAltitudeGround",
                 "UTM_x",
                 "UTM_y",
@@ -395,7 +418,7 @@ class TimeShiftWorkerSignals(QObject):
 
 class TimeShiftWorker(QRunnable):
     """
-    Worker QRunnable pour calculer l'offset temporel VIS/NIR (coquille pour l'instant).
+    Worker QRunnable for compute temporal offset  VIS/NIR.
     """
     def __init__(self, vis_results, vis_x, vis_y, nir_results, nir_x, nir_y):
         super().__init__()
@@ -535,7 +558,7 @@ class TimeShiftWorker(QRunnable):
                 use_median=True,
             )
             if self.abstract:
-              msg_abstract = Aru.abstract_time_line_alignement(time_shift, omega, metrics)
+                msg_abstract = Aru.abstract_time_line_alignement(time_shift, omega, metrics)
 
             self.signals.finished.emit(time_shift,
                                        time_line_VIS,
@@ -593,16 +616,12 @@ class TimeShiftWorker(QRunnable):
         angles_unwrapped_rev = unwrap_func(angles_rev)
         return angles_unwrapped_rev[::-1]
 
-
-
-
 class ArucoWorkerSignals(QObject):
     progress = pyqtSignal(int)  # Progress bar
     stage = pyqtSignal(str)
     finished = pyqtSignal(list, list, list)  # results, x_vals, y_vals
     error = pyqtSignal(str)
     log = pyqtSignal(str)  # Log message for the GUI
-
 
 class ArucoWorker(QRunnable):
     """

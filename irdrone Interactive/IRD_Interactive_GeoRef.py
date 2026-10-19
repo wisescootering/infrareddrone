@@ -3150,7 +3150,6 @@ def choose_images(folder_mission: Path):
     root.destroy()
 
     if not filepaths:
-        print("No image selected.")
         logger.warn("No image selected.")
         sys.exit(0)
 
@@ -3184,7 +3183,6 @@ def choose_images_dev():
     )
 
     if not filepaths:
-        print("No image selected.")
         logger.warn("No image selected.")
         sys.exit(0)
 

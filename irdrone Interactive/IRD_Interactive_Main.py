@@ -414,7 +414,7 @@ class Main_Window(QMainWindow):
 
 
     # ====================================================================================
-    #                  Méthodes de la class main_windows
+    #                  Methods for class main_windows
     # ===================================================================================
 
     def ensure_mission_parameters(self) -> bool:
