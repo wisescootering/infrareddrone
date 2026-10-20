@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # --------------------------------------------------------------------------------
 #   IR_drone interactive
-#   Creation of the mission by selection of the first image taken by the DJI (visible spectrum, image in dng format)
-#   29/10/2023   V002
+#   parallel processing with interactive windows.
+#   20/10/2026   V003
 # ---------------------------------------------------------------------------------
 
 from typing import Any, Dict, Optional, Tuple, List, Union, Callable
@@ -46,21 +46,62 @@ assert Path(SJCONVERTERPATH).exists(), f"SJCam RAW converter not found at {SJCON
 
 # --------------------------------------------------------------------------------------------
 #
-#     Class pour utilisation du parallélisme avec des fenêtres interactives
+#    Class for parallel processing with interactive windows.
 #
 # --------------------------------------------------------------------------------------------
 
+
 class ImagePairingWorkerSignals(QObject):
-    progress = pyqtSignal(int)   # progress bar
-    stage = pyqtSignal(str)      # textual stage
-    finished = pyqtSignal(dict)  # pairing result
-    error = pyqtSignal(str)
+    """Define the signals emitted by the image-pairing worker."""
+
+    progress = pyqtSignal(int)   # Processing progress, expressed as a percentage.
+    stage = pyqtSignal(str)      # Description of the current processing stage.
+    finished = pyqtSignal(dict)  # Complete image-pairing result.
+    error = pyqtSignal(str)      # Error message raised during processing.
 
 
 class ImagePairingWorker(QRunnable):
-    def __init__(self, time_shift: float, folderMissionPath: Path, control_mode: bool = False):
+    """
+    Pair VIS images with their two nearest NIR images in time.
+
+    The VIS timeline is used as the temporal reference. The NIR timeline is
+    shifted by ``time_shift`` before image pairing and metadata interpolation.
+
+    For each VIS image, the two NIR images with the smallest absolute time
+    differences are selected. The signed time difference is defined as:
+
+        dt = t_NIR_shifted - t_VIS
+
+    Therefore:
+        dt < 0: the NIR acquisition precedes the VIS acquisition.
+        dt > 0: the NIR acquisition follows the VIS acquisition.
+        dt = 0: both acquisitions have the same relative timestamp.
+
+    NIR metadata are subsequently interpolated from the VIS timeline.
+    Angular variables are interpolated along the shortest angular path.
+
+    Parameters
+    ----------
+    time_shift : float
+        Time correction applied to every NIR timestamp, in the same time
+        units as the relative timelines.
+    folderMissionPath : Path
+        Root directory of the mission.
+    control_mode : bool, optional
+        If True, store additional interpolation-method information in the
+        resulting NIR metadata. Defaults to False.
+    """
+
+    def __init__(
+        self,
+        time_shift: float,
+        folderMissionPath: Path,
+        control_mode: bool = False,
+    ):
+        """Initialize the worker and its processing state."""
         super().__init__()
         QObject.__init__(self)
+
         self.time_shift = time_shift
         self.folderMissionPath = safe_path(folderMissionPath)
         self.control_mode = control_mode
@@ -73,34 +114,60 @@ class ImagePairingWorker(QRunnable):
         self.signals = ImagePairingWorkerSignals()
 
     def run(self):
+        """
+        Execute the complete image-pairing workflow.
+
+        The worker loads the VIS and NIR metadata, constructs image pairs,
+        builds the shoot-point records, interpolates NIR metadata, saves the
+        JSON result, and emits the completion signal.
+
+        Any exception is printed to the console and reported through the
+        error signal.
+        """
         try:
             self.signals.stage.emit("Image pairing – initializing")
             self.signals.progress.emit(1)
 
-            # ---------------------------------------------------
-            self.dics_VIS, self.time_line_VIS = self.load_images_exif(safe_path(self.folderMissionPath / "AerialPhotography" / "VIS"), "dng")
-            self.dics_NIR, self.time_line_NIR = self.load_images_exif(safe_path(self.folderMissionPath / "AerialPhotography" / "NIR"), "dng")
+            # Load VIS and NIR metadata and their relative timelines.
+            self.dics_VIS, self.time_line_VIS = self.load_images_exif(
+                safe_path(
+                    self.folderMissionPath
+                    / "AerialPhotography"
+                    / "VIS"
+                ),
+                "dng",
+            )
+            self.dics_NIR, self.time_line_NIR = self.load_images_exif(
+                safe_path(
+                    self.folderMissionPath
+                    / "AerialPhotography"
+                    / "NIR"
+                ),
+                "dng",
+            )
 
+            # Select the two nearest NIR images for each VIS image.
             pairs = self.pairing_img()
 
+            # Build the shoot-point structure from the selected images.
             shoot_points = self.build_shoot_points(
                 pairs,
                 self.dics_VIS,
                 self.dics_NIR,
             )
-            # version partielle sans les données NIR non interpolée
+
+            # Build the result structure before adding interpolated NIR data.
             pairing_result = self.build_pairing_result(shoot_points)
 
+            # Interpolate each selected VIS metadata variable at NIR times.
             for key in self.build_list_interpol_key():
                 self.interpolate_nir_scalar(shoot_points, key)
 
-            # Sauvegarde du JSON
+            # Save the pairing result as a JSON file.
             if pairing_result is None:
                 pairing_result = {}
 
             self.save_shoot_points(pairing_result)
-
-            # -----------------------------------------------------
 
             self.signals.progress.emit(100)
             self.signals.stage.emit("Image pairing – completed")
@@ -112,39 +179,101 @@ class ImagePairingWorker(QRunnable):
             self.signals.error.emit(str(e))
 
     def pairing_img(self):
+        """
+        Find the two temporally nearest NIR images for every VIS image.
+
+        The NIR timestamps are corrected before the comparison:
+
+            t_NIR_shifted = t_NIR + time_shift
+
+        For each VIS timestamp, the method computes the absolute difference
+        from every corrected NIR timestamp and selects the two smallest
+        differences. The rank-1 NIR image is the closest; rank 2 is the
+        second closest.
+
+        The absolute differences are used only to rank the candidates.
+        The returned ``dt_1`` and ``dt_2`` values are signed and follow this
+        convention:
+
+            dt = t_NIR_shifted - t_VIS
+
+        A negative value means that NIR precedes VIS; a positive value means
+        that NIR follows VIS; zero means simultaneous relative timestamps.
+
+        The same NIR image may be selected for more than one VIS image.
+        This method does not enforce one-to-one pairing or impose a maximum
+        permitted time difference.
+
+        Returns
+        -------
+        list of dict
+            One dictionary per VIS image, containing its index and timestamp,
+            the indices and corrected timestamps of the two selected NIR
+            images, and their signed time differences.
+        """
         t_VIS = np.array(self.time_line_VIS)
         t_NIR = np.array(self.time_line_NIR) + self.time_shift
         n_VIS = len(t_VIS)
         n_NIR = len(t_NIR)
 
+        # Compute every absolute VIS-to-NIR time difference.
+        # Shape: (number of VIS images, number of NIR images).
         dt_matrix = np.abs(t_VIS[:, None] - t_NIR[None, :])
+
+        # Sort NIR candidates independently for each VIS image.
+        # The first two indices correspond to the smallest absolute differences.
         nearest_idx = np.argsort(dt_matrix, axis=1)[:, :2]
         nearest_dt = np.take_along_axis(dt_matrix, nearest_idx, axis=1)
 
         pairs = []
         for i in range(n_VIS):
+            idx_1 = int(nearest_idx[i, 0])
+            idx_2 = int(nearest_idx[i, 1])
+
             pairs.append({
                 "idx_VIS": i,
-                "idx_NIR_1": int(nearest_idx[i, 0]),
-                "idx_NIR_2": int(nearest_idx[i, 1]),
+                "idx_NIR_1": idx_1,
+                "idx_NIR_2": idx_2,
                 "t_VIS": float(t_VIS[i]),
-                "t_NIR_1_shifted": float(t_NIR[nearest_idx[i, 0]]),
-                "t_NIR_2_shifted": float(t_NIR[nearest_idx[i, 1]]),
-                "dt_1": float(nearest_dt[i, 0]),
-                "dt_2": float(nearest_dt[i, 1]),
+                "t_NIR_1_shifted": float(t_NIR[idx_1]),
+                "t_NIR_2_shifted": float(t_NIR[idx_2]),
+
+                # Signed time differences: corrected NIR time minus VIS time.
+                "dt_1": float(t_NIR[idx_1] - t_VIS[i]),
+                "dt_2": float(t_NIR[idx_2] - t_VIS[i]),
             })
 
-            # Progress update (linear in pairing step)
+            # Update progress during the pairing step.
             percent = int((i + 1) / max(1, n_VIS) * 100)
             self.signals.progress.emit(percent)
-            self.signals.stage.emit(f"Pairing images")
+            self.signals.stage.emit("Pairing images")
 
         return pairs
 
     def load_images_exif(self, folder: Path, suffix: str = "dng"):
         """
-        Lit tous les fichiers exif JSON dans le dossier correspondant aux images
-        suffixées (VIS ou NIR), renvoie liste de dictionnaires et time line.
+        Load metadata from the EXIF sidecar files associated with images.
+
+        Image files matching ``*.suffix`` are sorted by filename. For each
+        image, the corresponding ``.exif`` file is loaded if it exists.
+        The metadata dictionaries and their ``RelativeTimeLine`` values are
+        returned in matching list order.
+
+        If ``RelativeTimeLine`` cannot be converted to a float, it is replaced
+        with 0.0. Images without an existing sidecar file are skipped.
+
+        Parameters
+        ----------
+        folder : Path
+            Directory containing the images and their EXIF sidecar files.
+        suffix : str, optional
+            Image filename extension without the leading dot. Defaults to
+            ``"dng"``.
+
+        Returns
+        -------
+        tuple[list[dict], list[float]]
+            The loaded metadata dictionaries and their relative timestamps.
         """
         folder = Path(folder)
         list_dic = []
@@ -162,18 +291,33 @@ class ImagePairingWorker(QRunnable):
                     t = dic.get("RelativeTimeLine", 0.0)
                     try:
                         t = float(t)
-                    except ValueError:
+                    except (ValueError, TypeError):
                         t = 0.0
                     time_line.append(t)
 
-            # Update progress bar for this folder
+            # Update progress while loading this image folder.
             percent = int((i + 1) / max(1, n_files) * 100)
             self.signals.progress.emit(percent)
-            self.signals.stage.emit(f"Loading {suffix.upper()} images)")
+            self.signals.stage.emit(f"Loading {suffix.upper()} images")
 
         return list_dic, time_line
 
     def build_pairing_result(self, shoot_points):
+        """
+        Assemble the metadata describing the pairing operation.
+
+        Parameters
+        ----------
+        shoot_points : list[dict]
+            Shoot-point records containing each VIS image and its two
+            selected NIR images.
+
+        Returns
+        -------
+        dict
+            The mission path, time correction, image counts, pairing method,
+            creation timestamp, schema version, and shoot-point records.
+        """
         pairing_result = {
             "mission_path": str(self.folderMissionPath),
             "time_shift": self.time_shift,
@@ -187,6 +331,27 @@ class ImagePairingWorker(QRunnable):
         return pairing_result
 
     def build_shoot_points(self, pairs, dics_VIS, dics_NIR):
+        """
+        Build one shoot-point record for each VIS image.
+
+        Each record contains the selected VIS metadata and a list of two NIR
+        records, ordered by temporal proximity. The NIR records include their
+        corrected relative timestamps and signed time differences.
+
+        Parameters
+        ----------
+        pairs : list[dict]
+            Pairing information returned by ``pairing_img``.
+        dics_VIS : list[dict]
+            VIS metadata dictionaries.
+        dics_NIR : list[dict]
+            NIR metadata dictionaries.
+
+        Returns
+        -------
+        list[dict]
+            Shoot-point records containing VIS metadata and two NIR entries.
+        """
         shoot_points = []
         try:
             for p in pairs:
@@ -250,59 +415,94 @@ class ImagePairingWorker(QRunnable):
 
                 shoot_points.append(shoot_point)
         except Exception as e:
-            print(f'error in build_shoot_points  {e}')
+            print(f"Error in build_shoot_points: {e}")
 
         return shoot_points
 
     def prepare_vis_arrays(self, shoot_points, key):
-        # Cleanup None values by replacing them with the nearest valid value
+        """
+        Prepare the VIS timestamps and values used for NIR interpolation.
+
+        Missing values for the requested variable and for
+        ``RelativeTimeLine`` are replaced by the previous valid value.
+        If no previous value exists, 0.0 is used.
+
+        Parameters
+        ----------
+        shoot_points : list[dict]
+            Shoot-point records containing VIS metadata.
+        key : str
+            Name of the VIS metadata field to prepare.
+
+        Returns
+        -------
+        tuple[numpy.ndarray, numpy.ndarray]
+            The VIS relative timestamps and the corresponding numeric values.
+        """
         cleaned_values = []
         for sp in shoot_points:
             value = sp["VIS"].get(key)
             if value is None:
-                # Replace None with the last valid value or 0.0 if no valid value exists
+                # Use the previous valid value, or 0.0 if none is available.
                 value = cleaned_values[-1] if cleaned_values else 0.0
             cleaned_values.append(float(value))
 
         x_vis = np.array(cleaned_values, dtype=float)
-        
 
         cleaned_values = []
         for sp in shoot_points:
             value = sp["VIS"].get("RelativeTimeLine")
             if value is None:
-                # Replace None with the last valid value or 0.0 if no valid value exists
+                # Use the previous valid value, or 0.0 if none is available.
                 value = cleaned_values[-1] if cleaned_values else 0.0
             cleaned_values.append(float(value))
+
         t_vis = np.array(cleaned_values, dtype=float)
         return t_vis, x_vis
 
     def interpolate_nir_scalar(self, shoot_points, key):
         """
-        Version semi-vectorisée de interpolate_nir_scalar.
-        Interpole (ou extrapole) une grandeur scalaire VIS vers NIR.
+        Interpolate VIS metadata values at the corrected NIR timestamps.
+
+        The VIS timeline provides the reference values. For each NIR record,
+        the method locates the surrounding VIS timestamps and computes the
+        interpolation coefficient:
+
+            alpha = (t_NIR - t0) / (t1 - t0)
+
+        For timestamps outside the VIS time range, alpha is clipped to [0, 1].
+        Consequently, the nearest endpoint value is used rather than a
+        mathematical extrapolation beyond the available VIS data.
+
+        Angular variables are interpolated along the shortest angular path:
+        ``FlightYawDegree`` and ``GimbalYawDegree`` are normalized to
+        [-180, 180), whereas ``CapToLastPoint`` is normalized to [0, 360).
+        All other variables use linear interpolation.
 
         Parameters
         ----------
+        shoot_points : list[dict]
+            Shoot-point records whose NIR entries receive interpolated values.
         key : str
-            Clé VIS à interpoler (ex: 'DroneLatitude')
+            Name of the VIS metadata field to interpolate.
         """
         t_vis, x_vis = self.prepare_vis_arrays(shoot_points, key)
 
-        # Collecte tous les t_nir dans un seul array
+        # Collect all corrected NIR timestamps and their destination indices.
         t_nir_list = []
-        nir_refs = []  # tuples (sp_index, nir_index) pour remettre les valeurs
+        nir_refs = []  # (shoot-point index, NIR-record index)
         for sp_idx, sp in enumerate(shoot_points):
             for nir_idx, nir in enumerate(sp["NIR"]):
                 t_nir_list.append(float(nir["RelativeTimeLine_shifted"]))
                 nir_refs.append((sp_idx, nir_idx))
+
         t_nir_arr = np.array(t_nir_list, dtype=float)
 
-        # Recherche des indices pour interpolation/extrapolation
-        idx_upper = np.searchsorted(t_vis, t_nir_arr, side='right')
+        # Find the VIS indices bracketing each NIR timestamp.
+        idx_upper = np.searchsorted(t_vis, t_nir_arr, side="right")
         idx_lower = idx_upper - 1
 
-        # Extrapolation avant/arrière
+        # Clamp indices to the first or last VIS sample at the boundaries.
         idx_lower[idx_lower < 0] = 0
         idx_upper[idx_upper >= len(t_vis)] = len(t_vis) - 1
 
@@ -311,12 +511,11 @@ class ImagePairingWorker(QRunnable):
         x0 = x_vis[idx_lower]
         x1 = x_vis[idx_upper]
 
-        # Calcul des alpha pour interpolation linéaire
-        with np.errstate(divide='ignore', invalid='ignore'):
+        # Calculate interpolation coefficients.
+        with np.errstate(divide="ignore", invalid="ignore"):
             alpha = (t_nir_arr - t0) / (t1 - t0)
-            alpha[np.isnan(alpha)] = 0.0  # cas t1==t0
-            alpha = np.clip(alpha, 0, 1)  # clip pour extrapolation
-
+            alpha[np.isnan(alpha)] = 0.0  # Handle identical adjacent timestamps.
+            alpha = np.clip(alpha, 0, 1)  # Hold endpoint values outside the range.
 
         # Interpolate cyclic angles along the shortest angular path.
         cyclic_angle_keys_1 = {
@@ -328,74 +527,110 @@ class ImagePairingWorker(QRunnable):
         }
 
         if key in cyclic_angle_keys_1:
-            # entre -180° et +180°
+            # Normalize angles to the range [-180°, 180°).
             delta = ((x1 - x0 + 180.0) % 360.0) - 180.0
             values = (x0 + alpha * delta) % 360.0
             values = ((values + 180.0) % 360.0) - 180.0
-        if key in cyclic_angle_keys_2:
-            # entre 0° et 360°
+
+        elif key in cyclic_angle_keys_2:
+            # Normalize angles to the range [0°, 360°).
             delta = ((x1 - x0 + 180.0) % 360.0) - 180.0
             values = (x0 + alpha * delta) % 360.0
+
         else:
-            # Keep the existing linear interpolation for all other variables.
+            # Use ordinary linear interpolation for non-angular variables.
             values = (1 - alpha) * x0 + alpha * x1
 
+        # Identify whether each NIR timestamp lies inside or outside the
+        # VIS timeline. These labels are diagnostic metadata only.
+        methods = np.where(
+            t_nir_arr < t_vis[0],
+            "extrap_before",
+            np.where(
+                t_nir_arr > t_vis[-1],
+                "extrap_after",
+                "linear_VIS",
+            ),
+        )
 
-        methods = np.where(t_nir_arr < t_vis[0], 'extrap_before',
-                           np.where(t_nir_arr > t_vis[-1], 'extrap_after', 'linear_VIS'))
-
-        # Remettre dans shoot_points
+        # Store the interpolated values in their corresponding NIR records.
         for (sp_idx, nir_idx), val, mode in zip(nir_refs, values, methods):
             nir = shoot_points[sp_idx]["NIR"][nir_idx]
             nir.setdefault("Interpolated", {})
             nir["Interpolated"][key] = val
+
             if self.control_mode:
                 nir["Interpolated"][f"{key}_method"] = mode
 
-
     def build_list_interpol_key(self):
+        """
+        Return the VIS metadata fields interpolated for the NIR records.
+
+        Returns
+        -------
+        list[str]
+            Names of the numeric metadata fields processed by
+            ``interpolate_nir_scalar``.
+        """
         list_key = [
-                "DroneLatitude",
-                "DroneLongitude",
-                "GroundAltitude",
-                "DroneAltitudeSeaLevel",
-                "DroneAltitudeGround",
-                "UTM_x",
-                "UTM_y",
-                "FlightYawDegree",
-                "FlightPitchDegree",
-                "FlightRollDegree",
-                "GimbalYawDegree",
-                "GimbalPitchDegree",
-                "GimbalRollDegree",
-                "DistanceToLastPoint",
-                "CapToLastPoint",
-                "CumulDistance"
-            ]
+            "DroneLatitude",
+            "DroneLongitude",
+            "GroundAltitude",
+            "DroneAltitudeSeaLevel",
+            "DroneAltitudeGround",
+            "UTM_x",
+            "UTM_y",
+            "FlightYawDegree",
+            "FlightPitchDegree",
+            "FlightRollDegree",
+            "GimbalYawDegree",
+            "GimbalPitchDegree",
+            "GimbalRollDegree",
+            "DistanceToLastPoint",
+            "CapToLastPoint",
+            "CumulDistance",
+        ]
         return list_key
 
     def save_shoot_points(self, pairing_result):
         """
-        Sauvegarde le dictionnaire pairing_result (incluant shoot_points)
-        dans un fichier JSON dans le dossier AerialPhotography.
+        Save the pairing result to ``AerialPhotography/shoot_points.json``.
+
+        The output directory is created if it does not already exist.
+
+        Parameters
+        ----------
+        pairing_result : dict
+            Pairing metadata and shoot-point records to serialize.
+
+        Returns
+        -------
+        Path or None
+            The output file path on success, or None if saving fails.
+            A failure is also reported through the worker's error signal.
         """
         try:
-            folder = safe_path(self.folderMissionPath / "AerialPhotography")
-            folder.mkdir(parents=True, exist_ok=True)  # Juste au cas où
+            folder = safe_path(
+                self.folderMissionPath / "AerialPhotography"
+            )
+            folder.mkdir(parents=True, exist_ok=True)
 
             file_path = folder / "shoot_points.json"
+
             pairing_result_json_safe = {
                 k: Uti.to_json_safe(v)
                 for k, v in pairing_result.items()
             }
 
             with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(pairing_result, f, indent=4, ensure_ascii=False)
+                json.dump(pairing_result_json_safe, f, indent=4, ensure_ascii=False)
 
             return file_path
+
         except Exception as e:
             self.signals.error.emit(f"Failed to save shoot_points.json: {e}")
             return None
+
 
 
 # ============================================================================================
@@ -1148,9 +1383,94 @@ class Transfer_NIR(QtCore.QObject):
             print("Error in WorkerTransfer_NIR.run:", e)
             self.error.emit(str(e))
 
+
 class Alti_GPS(QtCore.QObject):
     """
+    Retrieve ground elevations from GPS coordinates and update image metadata.
 
+    This QObject is designed to perform altitude and GPS-related calculations
+    in a worker thread, while communicating with the main GUI thread through
+    Qt signals.
+
+    The processing workflow consists of the following stages:
+
+    1. EXIF metadata loading
+       Read the .exif JSON sidecar files matching the selected spectral band.
+       Extract GPS coordinates, takeoff-relative altitude, and projected UTM
+       coordinates when available.
+
+    2. Ground elevation retrieval:
+       - For locations in France, query the IGN (Institut national de
+         l'information géographique et forestière) elevation API, which
+         provides high-resolution elevation data.
+       - If an IGN request fails, make up to three consecutive attempts,
+         with a short delay between attempts.
+       - If all three attempts fail, automatically fall back to
+         OpenTopoData, which provides global elevation coverage.
+       - Locations outside France are automatically handled by
+         OpenTopoData, since the IGN elevation API is intended for
+         French territory.
+       - OpenTopoData generally provides less precise elevation data
+         than IGN for locations in France.
+
+    3. Sea-level altitude calculation
+       Combine the drone's takeoff-relative altitude with the ground elevation
+       at the first GPS point to estimate the drone altitude above sea level.
+       The estimated ground elevation is then used to derive the drone height
+       above ground level.
+
+    4. Timeline loading
+       Read the VIS relative timeline from time_line.json. These timestamps
+       are subsequently stored in the corresponding EXIF dictionaries.
+
+    5. Distance and heading calculations
+       Compute the distance between successive GPS points, the corresponding
+       heading, and the cumulative flight distance using Geo.calcul_distance.
+
+    6. EXIF metadata update
+       Add the retrieved ground elevation, calculated altitude values,
+       distances, headings, cumulative distance, and relative timeline to each
+       EXIF dictionary, then save the updated JSON sidecar file.
+
+    7. Plot-data preparation
+       Normalize ground and sea-level altitudes relative to the minimum
+       ground elevation. Emit the cumulative distance and normalized altitude
+       arrays through the plot_data signal so that the main GUI thread can
+       display the resulting profile.
+
+    Signals
+    -------
+    progress : pyqtSignal(int)
+        Processing progress, expressed as a percentage.
+    finished : pyqtSignal(str)
+        Completion message emitted after successful processing.
+    error : pyqtSignal(str)
+        Error message emitted if an unhandled exception occurs.
+    plot_data : pyqtSignal(object, object, object)
+        Emits the cumulative distance, normalized ground elevation, and
+        normalized drone altitude above sea level, in that order.
+
+    Parameters
+    ----------
+    folder : Union[str, Path]
+        Directory containing the EXIF sidecar files and time_line.json.
+    band : str, optional
+        Spectral band identifier used to select the EXIF files.
+        Defaults to "VIS".
+    verbose : bool, optional
+        If True, print additional information about the GPS data being read.
+        Defaults to False.
+
+    Notes
+    -----
+    The class relies on the external Geo module for IGN elevation retrieval
+    and distance/heading calculations.
+
+    The plot_data signal is emitted from the worker. The connected GUI slot
+    should handle graphical display in the main Qt thread.
+
+    The existing processing logic and variable names are intentionally
+    preserved.
     """
 
     progress = QtCore.pyqtSignal(int)
@@ -1158,11 +1478,25 @@ class Alti_GPS(QtCore.QObject):
     error = QtCore.pyqtSignal(str)
     plot_data = QtCore.pyqtSignal(object, object, object)
 
-    def __init__(self,
-                 folder: Union[str, Path],
-                 band: str = "VIS",
-                 verbose: bool = False
-                 ):
+    def __init__(
+        self,
+        folder: Union[str, Path],
+        band: str = "VIS",
+        verbose: bool = False
+    ):
+        """
+        Initialize the altitude and GPS processing worker.
+
+        Parameters
+        ----------
+        folder : Union[str, Path]
+            Directory containing the image EXIF sidecar files.
+        band : str, optional
+            Spectral band identifier used to select the EXIF files.
+            Defaults to "VIS".
+        verbose : bool, optional
+            Enable additional GPS metadata output. Defaults to False.
+        """
         super().__init__()
         self.folder = Path(folder)
         self.band = band
@@ -1170,32 +1504,67 @@ class Alti_GPS(QtCore.QObject):
         self.list_dic_exif = []
 
     def run(self) -> None:
+        """
+        Execute the complete altitude and GPS processing workflow.
+
+        The method loads the EXIF metadata, retrieves ground elevations from
+        the IGN service, reads the image timeline, computes distances and
+        headings, updates the EXIF JSON files, and emits the data required
+        to display the altitude profile.
+
+        Progress updates are emitted throughout the processing stages.
+
+        If no matching EXIF files or no timeline file is found, the method
+        prints a warning and returns. Errors raised during individual EXIF
+        reads or IGN batch requests are handled locally where possible.
+        Other exceptions are reported through the error signal.
+
+        Returns
+        -------
+        None
+            Results are communicated through Qt signals and updated EXIF files.
+        """
         try:
-            # exif list
+            # Collect the EXIF sidecar files matching the selected spectral band.
             exif_files = sorted([
                 str(p)
                 for p in self.folder.glob(f"{self.band}_*.exif")
             ])
+
             if not exif_files:
-                print(Style.YELLOW + f'⚠ Les données exif pour le dossier {self.folder} ne sont pas disponibles' + Style.RESET)
+                print(
+                    Style.YELLOW
+                    + f'⚠ EXIF data are not available in folder {self.folder}'
+                    + Style.RESET
+                )
                 return
+
             n = len(exif_files)
 
             self.progress.emit(0)
             gps_list = []
             list_exif_dict = []
+
             for idx, exif_path in enumerate(exif_files):
-                # --- Lecture du fichier .exif (JSON) ---
+                # --- Read the EXIF sidecar file (JSON) ---
                 try:
                     with open(exif_path, "r", encoding="utf-8") as f:
                         exif_dict = json.load(f)
                         list_exif_dict.append(exif_dict)
                 except Exception as e:
-                    print(f"[ERREUR] Impossible de lire {exif_path} : {e}")
+                    print(f"[ERROR] Unable to read {exif_path}: {e}")
                     continue
 
-                # --- Lecture des clés GPS ---
-                keys = ["DateTimeOriginal", "DroneLatitude", "DroneLongitude", "DroneAltitudeTakeOff", "UTM_x", "UTM_y", "UTM_zone"]
+                # --- Extract the GPS-related metadata fields ---
+                keys = [
+                    "DateTimeOriginal",
+                    "DroneLatitude",
+                    "DroneLongitude",
+                    "DroneAltitudeTakeOff",
+                    "UTM_x",
+                    "UTM_y",
+                    "UTM_zone"
+                ]
 
                 gps_list.append({
                     "file": exif_path,
@@ -1207,115 +1576,166 @@ class Alti_GPS(QtCore.QObject):
                 })
 
                 if self.verbose:
-                    print(f'[INFO] name = {Path(exif_path).stem} '
-                          f'Latitude : {exif_dict.get("DroneLatitude")}°'
-                          f'Longitude {exif_dict.get("DroneLongitude")}°'
-                          f', Altitude/take off :  {exif_dict.get("DroneAltitudeTakeOff")} m')
+                    print(
+                        f'[INFO] name = {Path(exif_path).stem} '
+                        f'Latitude : {exif_dict.get("DroneLatitude")}°'
+                        f'Longitude {exif_dict.get("DroneLongitude")}°'
+                        f', Altitude/take off :  '
+                        f'{exif_dict.get("DroneAltitudeTakeOff")} m'
+                    )
 
-
-            # --- Mise à jour de la barre de progression ---
+            # --- Update the progress bar after reading the EXIF files ---
             pct = int(100 * idx / n)
             self.progress.emit(pct)
 
             self.progress.emit(10)
+
             lat = np.array([d["lat"] for d in gps_list])
             lon = np.array([d["lon"] for d in gps_list])
             alt_tkoff = np.array([d["alt_tkoff"] for d in gps_list])
             list_pts = [(lat[i], lon[i]) for i in range(len(gps_list))]
 
-            # ------------------- altitudes du sol
-            # Utilise API IGN (Institut Géographique National. France) ou bien OpenTopoData (Monde)
-            # Renvoie en fonction des coordonnées GPS, l'altitude géographique.
-            # C'est le niveau du sol par rapport au niveau de la mer
+            # --- Retrieve ground elevations ---
+            # Use the IGN (Institut national de l'information géographique
+            # et forestière) API for France, or OpenTopoData for global coverage.
+            # The returned elevation is the ground height above sea level
+            # at each GPS coordinate.
             self.progress.emit(30)
 
-            # ------------------ Extraction IGN
-            chunk_size = 300  # nombre de points maximum par requette à l'API IGN
+            # --- Query the IGN elevation service in batches ---
+            chunk_size = 300  # Maximum number of points per IGN API request.
             n = len(list_pts)
-            alt_ground_list = []  # Liste pour accumuler les valeurs d'altitude
-            n_batches = (n + chunk_size - 1) // chunk_size  # Nombre total de batches
+            alt_ground_list = []  # Accumulate the retrieved ground elevations.
+            n_batches = (n + chunk_size - 1) // chunk_size  # Total number of batches.
 
             for b in range(n_batches):
-                # Début / fin de la requette à l'API IGN
+                # Determine the start and end indices of the current batch.
                 start = b * chunk_size
                 end = min(start + chunk_size, n)
                 pts_batch = list_pts[start:end]
-                print(Style.GREEN + f"Traitement batch {b + 1}/{n_batches} ({len(pts_batch)} points)" + Style.RESET)
+
+                print(
+                    Style.GREEN
+                    + f"Processing batch {b + 1}/{n_batches} "
+                      f"({len(pts_batch)} points)"
+                    + Style.RESET
+                )
 
                 try:
-                    dic_pts_geo = Geo.extract_alti_IGN(pts_batch, verbose=True, bypass=False)
+                    dic_pts_geo = Geo.extract_alti_IGN(
+                        pts_batch,
+                        verbose=True,
+                        bypass=False
+                    )
                     elevations = dic_pts_geo
+
+
                 except Exception as e:
-                    print(f"[ERREUR] Batch {b + 1} échoue : {e}")
-                    # On génère un batch de données INVALIDES
+                    print(f"[ERROR] Batch {b + 1} failed: {e}")
+
+                    # Insert invalid elevation values for the failed batch.
                     elevations = [{"z": -9999} for _ in pts_batch]
-                # Accumulation des altitudes dans la liste globale
+
+                # Append the elevations returned for the current batch.
                 alt_ground_list.extend([d["z"] for d in elevations])
-                # ------------------ Mise à jour de la progression
-                pct = int(30 + 40 * (b + 1) / n_batches)  # Exemple : 30% → 70%
+
+                # --- Update progress during elevation retrieval ---
+                pct = int(30 + 40 * (b + 1) / n_batches)  # From 30% to 70%.
                 self.progress.emit(pct)
 
-            # Conversion en array NumPy
+            # Convert the collected ground elevations to a NumPy array.
             alt_ground = np.array(alt_ground_list)
             alt_sea_level = alt_tkoff + alt_ground[0]
 
-            # Fin ------------------ Extraction IGN
+            # --- IGN elevation retrieval completed ---
             self.progress.emit(70)
             # print("[INFO] Altitudes IGN récupérées (avec gestion des erreurs)")
 
-            # ------------------- time line
-
+            # --- Load the image timeline ---
             time_line_path = next(self.folder.glob(f"time_line.json"), None)
+
             if not time_line_path:
-                print(Style.YELLOW + f'⚠ Les données de la time line pour le dossier {self.folder} ne sont pas disponibles' + Style.RESET)
+                print(
+                    Style.YELLOW
+                    + f'⚠ Timeline data are not available in folder {self.folder}'
+                    + Style.RESET
+                )
                 return
-            with open(time_line_path, "r", encoding="utf-8") as f: data = json.load(f)
+
+            with open(time_line_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
             list_time_line_dict = data["VIS"]
-            relative_timeline = np.array([d["relative_timeline"] for d in list_time_line_dict])
+            relative_timeline = np.array([
+                d["relative_timeline"] for d in list_time_line_dict
+            ])
+
             self.progress.emit(90)
 
-            # ------------------- distances entre les points
-            distP0P1, capP0P1 = Geo.calcul_distance(np.column_stack((lat, lon, alt_ground_list)))
-            distance_cum = np.cumsum(distP0P1)  # distance cumulée
+            # --- Calculate distances and headings between successive points ---
+            distP0P1, capP0P1 = Geo.calcul_distance(
+                np.column_stack((lat, lon, alt_ground_list))
+            )
 
+            distance_cum = np.cumsum(distP0P1)  # Cumulative flight distance.
+
+            # --- Update and save the EXIF metadata for each image ---
             for idx, exif_dict in enumerate(list_exif_dict):
                 exif_dict["GroundAltitude"] = alt_ground[idx]
                 exif_dict["DroneAltitudeSeaLevel"] = alt_sea_level[idx]
-                exif_dict["DroneAltitudeGround"] = alt_sea_level[idx] - alt_ground[idx]
+                exif_dict["DroneAltitudeGround"] = (
+                    alt_sea_level[idx] - alt_ground[idx]
+                )
                 exif_dict["DistanceToLastPoint"] = distP0P1[idx]
                 exif_dict["CapToLastPoint"] = capP0P1[idx]
                 exif_dict["RelativeTimeLine"] = relative_timeline[idx]
                 exif_dict["CumulDistance"] = distance_cum[idx]
-                # Construction du chemin du fichier .exif
-                json_path = Path(exif_dict["Directory"]) / (Path(exif_dict["FileName"]).stem + ".exif")
+
+                # Build the path to the corresponding EXIF sidecar file.
+                json_path = (
+                    Path(exif_dict["Directory"])
+                    / (Path(exif_dict["FileName"]).stem + ".exif")
+                )
+
                 with json_path.open("w", encoding="utf-8") as f:
-                    json.dump(exif_dict, f, ensure_ascii=False, indent=2)
+                    json.dump(
+                        exif_dict,
+                        f,
+                        ensure_ascii=False,
+                        indent=2
+                    )
 
             self.progress.emit(90)
 
-            # ======== CALCUL GRAPHIQUE (dans le worker, sans Matplotlib !) ========
-
+            # ======== PLOT-DATA CALCULATION (without Matplotlib) ========
+            # Prepare the altitude arrays for display by the main GUI thread.
             try:
-                # altitude minimale du sol (référence)
+                # Minimum ground elevation used as the reference level.
                 alt_ground_min = np.min(alt_ground)
 
-                # altitudes normalisées
+                # Normalize both altitude arrays relative to the minimum
+                # ground elevation, so that the lowest ground point is zero.
                 alt_ground_norm = alt_ground - alt_ground_min
                 alt_sea_level_norm = alt_sea_level - alt_ground_min
-            except Exception as e:
-                print(f'error  dans CALCUL GRAPHIQUE {e}')
-            # ======== EMISSION Signal vers le MAIN THREAD ========
-            self.plot_data.emit(distance_cum, alt_ground_norm, alt_sea_level_norm)
 
-            # ======================================================================
+            except Exception as e:
+                print(f'Error in plot-data calculation: {e}')
+
+            # ======== EMIT DATA TO THE MAIN THREAD THROUGH A QT SIGNAL ========
+            # The GUI can use these arrays to plot the flight altitude profile.
+            self.plot_data.emit(
+                distance_cum,
+                alt_ground_norm,
+                alt_sea_level_norm
+            )
+
+            # ==================================================================
 
             self.progress.emit(100)
-            msg = "Calcul des altitudes et coordonnées GPS terminé"
+            msg = "Altitude and GPS coordinate calculation completed"
             self.finished.emit(msg)
-
-
-
 
         except Exception as e:
             print("Error in Alti_GPS:", e)
             self.error.emit(str(e))
+

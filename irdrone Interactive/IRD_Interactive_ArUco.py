@@ -3,9 +3,8 @@
 # --------------------------------------------------------------------------------
 #   IR_drone interactive
 #
-#   2025-12-17 00:35:10   V002   *
+#   2026-10-20 00:35:10   V003   *
 # ---------------------------------------------------------------------------------
-
 
 import os
 import os.path as osp
@@ -31,10 +30,9 @@ from IRD_Interactive_color_style import Style
 from config import RAWTHERAPEEPATH
 assert Path(RAWTHERAPEEPATH).exists(), "Please install raw therapee first http://www.rawtherapee.com/downloads/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
 
-
-# ----------------------
-# Dictionnaires ArUco disponibles
-# ----------------------
+# ------------------------------------
+# Available ArUco dictionaries
+# ------------------------------------
 ARUCO_DICT = {
     "DICT_4X4_50": cv2.aruco.DICT_4X4_50,
     "DICT_4X4_100": cv2.aruco.DICT_4X4_100,
@@ -42,7 +40,6 @@ ARUCO_DICT = {
     "DICT_4X4_1000": cv2.aruco.DICT_4X4_1000,
     "DICT_5X5_50": cv2.aruco.DICT_5X5_50,
 }
-
 
 def process_aruco_images(
         folderMissionPath: Path,
@@ -105,7 +102,7 @@ def process_aruco_images(
 
     # 1) Retrieve list of images
     outputFolder, idMin, idMax, listImages = read_transfer_info(
-        folderMissionPath, spectral_band, suffix_image, section="sync"
+        folderMissionPath, spectral_band, suffix_image, key="sync"
     )
 
 
@@ -252,8 +249,6 @@ def process_aruco_images(
     # Order results chronologically
     # ------------------------------------------------------------
 
-    # ordered = sorted(zip(results), key=lambda t: t[0])
-    # results = [t[0] for t in ordered]
     ordered = sorted(zip(x_vals, y_vals, results), key=lambda t: t[0])
     x_vals = [t[0] for t in ordered]
     y_vals = [t[1] for t in ordered]
@@ -624,7 +619,7 @@ def compute_mobile_marker_geometry(marker_data_ID, fixed_ids, mobile_id, log_mes
         return None
 
 # ----------------------
-# Modules utilitaires
+# Utility Modules
 # ----------------------
 
 def compute_time_shift_L2(
@@ -733,8 +728,6 @@ def compute_time_shift_L2(
 
     return time_shift, omega, metrics
 
-
-
 def load_relative_time_line(folderMissionPath, spectral_band, log_message=None):
     """
     Load the relative timeline JSON file into self.dic_relative_time_line.
@@ -801,44 +794,128 @@ def extract_relative_time_line(dic_relative_time_line, file_name: str, type_img:
 
     return relative_timeline
 
+
 def unwrap_angles(angle_list_deg):
     """
-    Déplie une liste d'angles en degrés (-180 à 180) en une série continue.
+    Unwrap a sequence of angles expressed in degrees.
+
+    Converts the input angles to radians, removes discontinuities
+    caused by transitions across the -180°/180° boundary, and
+    converts the resulting continuous sequence back to degrees.
+
+    Args:
+        angle_list_deg: Sequence of angles in degrees.
+
+    Returns:
+        NumPy array of unwrapped angles in degrees.
     """
     angles_rad = np.radians(angle_list_deg)
-    unwrapped_rad = np.unwrap(angles_rad)  # rend la série continue
-    return np.degrees(unwrapped_rad)       # on repasse en degrés
+    unwrapped_rad = np.unwrap(angles_rad)  # Make the sequence continuous.
+    return np.degrees(unwrapped_rad)       # Convert back to degrees.
 
 def print_marker_results(markers, image_type="VIS"):
+    """
+    Print the detection results for a collection of ArUco markers.
+
+    Each marker entry is expected to contain its ID, orientation
+    angle, center coordinates, and corner coordinates.
+
+    Args:
+        markers: Iterable of marker detection results. Each entry
+            contains (markerID, angle, center, corners).
+        image_type: Spectral band or image type associated with
+            the results, typically "VIS" or "NIR".
+
+    Returns:
+        None. Results are printed to the console using the Style
+        color constants.
+    """
     for marker in markers:
         markerID, angle, center, corners = marker
-        print(Style.GREEN + f"{image_type}: ID {markerID}, angle={angle:.1f}°, centre={center}" + Style.CYAN)
+        print(
+            Style.GREEN
+            + f"{image_type}: ID {markerID}, angle={angle:.1f}°, center={center}"
+            + Style.CYAN
+        )
 
 def get_aruco_dict(dict_name="DICT_4X4_50", verbose=False):
-    """Retourne le dictionnaire ArUco compatible avec toutes les versions OpenCV."""
+    """
+    Retrieve a predefined ArUco dictionary with OpenCV compatibility.
+
+    Uses the preferred OpenCV API, with a fallback to the legacy API
+    when getPredefinedDictionary is unavailable.
+
+    Args:
+        dict_name: Name of the predefined ArUco dictionary.
+            The name must exist in the ARUCO_DICT mapping.
+        verbose: If True, print a confirmation message when the
+            dictionary is loaded successfully through the preferred API.
+
+    Returns:
+        The OpenCV ArUco dictionary object.
+
+    Raises:
+        KeyError: If dict_name is not present in ARUCO_DICT.
+        AttributeError: If neither supported dictionary API is
+            available in the installed OpenCV version.
+    """
     try:
         if verbose:
-            print(f"Dictionnaire ArUco {dict_name} chargé ✅")
+            print(f"ArUco dictionary {dict_name} loaded successfully.")
         return cv2.aruco.getPredefinedDictionary(ARUCO_DICT[dict_name])
 
     except AttributeError:
         return cv2.aruco.Dictionary_get(ARUCO_DICT[dict_name])
 
-def read_transfer_info(folderMissionPath: Path, spectral_band: str, suffix_image: str, section: str):
+def read_transfer_info(folderMissionPath: Path,
+                       spectral_band: str,
+                       suffix_image: str,
+                       key: str):
     """
-    section = 'tkoff' ou 'sync'
+    Read transfer information from a mission-specific JSON file.
+
+    The JSON filename is built from the spectral band and image suffix.
+    The requested key section, identified by key (typically "tkoff" or
+    "sync"), is extracted and its transfer parameters are returned.
+
+    Args:
+        folderMissionPath: Root directory of the current mission.
+        spectral_band: Spectral band directory, typically "VIS" or "NIR".
+        suffix_image: Image suffix used in the transfer information
+            filename.
+        key: Name of the JSON key section to retrieve, typically "tkoff"
+            or "sync".
+
+    Returns:
+        A tuple containing:
+            - outputFolder: Destination folder recorded in the JSON.
+            - idMin: Minimum image ID in the transfer range.
+            - idMax: Maximum image ID in the transfer range.
+            - listCopiedImages: List of copied image names, defaulting
+              to an empty list if the field is missing.
+
+    Raises:
+        FileNotFoundError: If the JSON file does not exist.
+        json.JSONDecodeError: If the file contains invalid JSON.
+        KeyError: If the requested key section is not present in the file.
     """
-    # Construction du chemin du fichier JSON
-    json_file = folderMissionPath / spectral_band / f"transfer_info_{spectral_band}_{suffix_image}.json"
+    # Build the JSON file path.
+    json_file = (
+        folderMissionPath
+        / spectral_band
+        / f"transfer_info_{spectral_band}_{suffix_image}.json"
+    )
 
     with open(json_file, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    # Vérification que la section existe
-    if section not in data:
-        raise KeyError(f"La section '{section}' n'existe pas dans le fichier JSON.")
+    # Check that the requested key section exists.
+    if key not in data:
+        raise KeyError(
+            f"Key '{key}' does not exist in the JSON file."
+        )
 
-    block = data[section]
+    block = data[key]
 
     outputFolder = block.get("outputFolder")
     idMin = block.get("idMin")
@@ -847,20 +924,26 @@ def read_transfer_info(folderMissionPath: Path, spectral_band: str, suffix_image
 
     return outputFolder, idMin, idMax, listCopiedImages
 
-def cached_jpeg_old(path):
-    p = Path(path)
-    return str(p.with_suffix("")) + "_RawTherapee.jpg"
-
 def cached_jpeg(path, folder_mission):
     """
-    Calcule le chemin du JPEG RawTherapee dans :
-    folder_mission / Synchro / VIS|NIR
+    Build the path of the cached RawTherapee JPEG used for ArUco detection.
+
+    The output image is stored in the mission directory under
+    'Synchro/VIS' or 'Synchro/NIR', depending on the parent directory
+    of the input image. The output directory is created if necessary.
+
+    Args:
+        path: Path to the input image.
+        folder_mission: Root directory of the current mission.
+
+    Returns:
+        The output JPEG path as a string.
     """
     p = Path(path)
     folder_mission = Path(folder_mission)
 
-    # Détection du canal (VIS / NIR)
-    spectral_band = p.parent.name  # "VIS" ou "NIR"
+    # Detect the spectral band (VIS / NIR).
+    spectral_band = p.parent.name
 
     out_dir = folder_mission / "Synchro" / spectral_band
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -870,6 +953,27 @@ def cached_jpeg(path, folder_mission):
     return str(out_file)
 
 def load_dng_for_aruco(path, folder_mission):
+    """
+    Load a DNG image for ArUco marker detection.
+
+    If the cached RawTherapee JPEG does not exist, RawTherapee is
+    invoked to convert the DNG image using the ArUco_Detection.pp3
+    processing profile. The resulting JPEG is then loaded as an
+    OpenCV color image.
+
+    Args:
+        path: Path to the input DNG image.
+        folder_mission: Root directory of the current mission.
+
+    Returns:
+        A tuple containing:
+            - img_cv: The image loaded as an OpenCV BGR array.
+            - out_file: Path to the cached JPEG image.
+
+    Notes:
+        The conversion is skipped if the output JPEG already exists.
+        The RawTherapee command uses JPEG quality 95.
+    """
     out_file = cached_jpeg(path, folder_mission)
     cmd = [
         RAWTHERAPEEPATH,
@@ -882,6 +986,7 @@ def load_dng_for_aruco(path, folder_mission):
         ),
         "-c", path
     ]
+
     if not osp.isfile(out_file):
         subprocess.call(cmd)
 
@@ -889,22 +994,65 @@ def load_dng_for_aruco(path, folder_mission):
     return img_cv, out_file
 
 def cached_tif(path):
-    return path[:-4]+"_RawTherapee.tif"
+    """
+    Return the path of the cached RawTherapee TIFF image.
+
+    The output filename is derived from the input path by removing
+    the final four characters and appending '_RawTherapee.tif'.
+
+    Args:
+        path: Path to the input TIFF image.
+
+    Returns:
+        The cached TIFF path as a string.
+    """
+    return path[:-4] + "_RawTherapee.tif"
 
 def load_tif_radiometric(in_file):
+    """
+    Load a TIFF image while preserving its original bit depth.
+
+    The image is read with support for arbitrary bit depth and color
+    channels, and EXIF orientation is ignored. Its channel order is
+    converted from BGR to RGB, and pixel values are normalized by
+    the maximum value of a 16-bit unsigned integer.
+
+    Args:
+        in_file: Path to the input TIFF image.
+
+    Returns:
+        An RGB NumPy array with pixel values normalized by 65535.
+    """
     flags = cv2.IMREAD_ANYDEPTH | cv2.IMREAD_ANYCOLOR
     flags |= cv2.IMREAD_IGNORE_ORIENTATION
-    return cv2.cvtColor(cv2.imread(in_file, flags=flags), cv2.COLOR_BGR2RGB)/(2.**16-1)
+    return cv2.cvtColor(
+        cv2.imread(in_file, flags=flags),
+        cv2.COLOR_BGR2RGB
+    ) / (2.0**16 - 1)
 
 def load_tif_aruco(in_file):
+    """
+    Load a TIFF image and convert it to 8-bit RGB for ArUco detection.
+
+    The image is read with support for arbitrary bit depth and color
+    channels, and EXIF orientation is ignored. Its channel order is
+    converted from BGR to RGB, then its intensity values are scaled
+    to 8-bit unsigned integers for OpenCV ArUco processing.
+
+    Args:
+        in_file: Path to the input TIFF image.
+
+    Returns:
+        An 8-bit RGB NumPy array suitable for ArUco detection.
+    """
     flags = cv2.IMREAD_ANYDEPTH | cv2.IMREAD_ANYCOLOR
     flags |= cv2.IMREAD_IGNORE_ORIENTATION
 
     img16 = cv2.imread(in_file, flags=flags)
     img16 = cv2.cvtColor(img16, cv2.COLOR_BGR2RGB)
 
-    # Convertir 16 bits → 8 bits pour OpenCV ArUco
-    img8 = cv2.convertScaleAbs(img16, alpha=255.0/65535.0)
+    # Convert from 16-bit to 8-bit for OpenCV ArUco detection.
+    img8 = cv2.convertScaleAbs(img16, alpha=255.0 / 65535.0)
 
     return img8
 
@@ -934,18 +1082,49 @@ def best_thread_count(io_bound: bool = True) -> int:
     return cpu_count
 
 def abstract_time_line_alignement(time_shift, omega, metrics):
+    """
+    Format and display the results of VIS/NIR timeline alignment.
+
+    The function reports the estimated time shift between the VIS and
+    NIR image timelines, the NIR angular velocity, and statistical
+    metrics describing the alignment quality. If the VIS angular
+    velocity is available, it also reports that velocity and the
+    relative angular velocity difference.
+
+    Args:
+        time_shift: Estimated time shift between the VIS and NIR
+            timelines, in seconds.
+        omega: Estimated NIR angular velocity, in degrees per second.
+            Dividing by 6 converts this value to revolutions per minute.
+        metrics: Dictionary containing alignment statistics, including
+            'n_vis', 'n_nir', 'r2_nir', 'dt_iqr', and 'dt_std'.
+            The optional keys 'omega_vis' and 'rel_delta_omega'
+            provide the VIS angular velocity and the relative
+            angular velocity difference.
+
+    Returns:
+        A string containing the formatted alignment results.
+        If the VIS angular velocity is unavailable, the returned
+        string contains only the general alignment results.
+
+    Notes:
+        The results are printed in green using the Style constants.
+        The VIS angular velocity is considered available when
+        metrics['omega_vis'] is not None.
+    """
     msg_1 = f"Time alignment results:\n" \
-          f"  Estimated time shift      : {time_shift:.3f} s\n" \
-          f"  Angular velocity (NIR)    : {omega/6:.4f} rpm\n" \
-          f"  Number of VIS points      : {metrics['n_vis']}\n" \
-          f"  Number of NIR points      : {metrics['n_nir']}\n" \
-          f"  NIR linear fit R²         : {metrics['r2_nir']:.6f}\n" \
-          f"  Δt interquartile range    : {metrics['dt_iqr']:.4f} s\n" \
-          f"  Δt standard deviation     : {metrics['dt_std']:.4f} s\n"
+            f"  Estimated time shift      : {time_shift:.3f} s\n" \
+            f"  Angular velocity (NIR)    : {omega / 6:.4f} rpm\n" \
+            f"  Number of VIS points      : {metrics['n_vis']}\n" \
+            f"  Number of NIR points      : {metrics['n_nir']}\n" \
+            f"  NIR linear fit R²         : {metrics['r2_nir']:.6f}\n" \
+            f"  Δt interquartile range    : {metrics['dt_iqr']:.4f} s\n" \
+            f"  Δt standard deviation     : {metrics['dt_std']:.4f} s\n"
+
     print(Style.GREEN + msg_1 + Style.RESET)
 
     if metrics.get("omega_vis") is not None:
-        msg_2 = f" Angular velocity (VIS)    : {metrics['omega_vis']/6:.4f} rpm\n" \
+        msg_2 = f"  Angular velocity (VIS)    : {metrics['omega_vis'] / 6:.4f} rpm\n" \
                 f"  Relative Δ_Omega          : {(100.0 * metrics['rel_delta_omega']):.2e} %"
         print(Style.GREEN + msg_2 + Style.RESET)
         return msg_1 + msg_2
@@ -1227,12 +1406,39 @@ def draw_fixed_markers(img_cv,
                        markerSize=15,
                        marker_color=(0, 0, 255),
                        marker_patern=-1):
+    """
+    Draw circles around the centers of detected fixed ArUco markers.
+
+    Args:
+        img_cv: Image on which the markers are drawn, in OpenCV format.
+        marker_data_ID: Dictionary containing marker data indexed by ID.
+            Each marker entry must include a "center" field.
+        fixed_ids: Iterable of marker IDs to highlight.
+        markerSize: Radius of the circles in pixels.
+        marker_color: Circle color in BGR format.
+        marker_patern: Circle thickness in pixels. A negative value
+            fills the circle.
+
+    Returns:
+        None. The input image is modified in place.
+    """
     for fid in fixed_ids:
         if fid in marker_data_ID:
             ct = tuple(marker_data_ID[fid]["center"].astype(int))
             cv2.circle(img_cv, ct, markerSize, marker_color, marker_patern)
 
 def draw_mobile_center(img_cv, center):
+    """
+    Draw a red cross at the center of a mobile marker.
+
+    Args:
+        img_cv: Image on which the marker center is drawn,
+            in OpenCV format.
+        center: Marker center coordinates as a NumPy array.
+
+    Returns:
+        None. The input image is modified in place.
+    """
     cX, cY = tuple(center.astype(int))
     cv2.drawMarker(
         img_cv, (cX, cY),
@@ -1248,7 +1454,28 @@ def draw_image_orientation(img_cv,
                            scale=3,
                            color=(0, 255, 0),
                            thickness=4):
+    """
+    Draw the marker's orientation vector in image coordinates.
 
+    The vector is estimated from the marker corners and normalized.
+    Its displayed length is proportional to the marker width.
+
+    Args:
+        img_cv: Image on which the orientation vector is drawn,
+            in OpenCV format.
+        center: Marker center coordinates as a NumPy array.
+        corners: Marker corner coordinates, ordered as expected
+            by the orientation calculation.
+        scale: Multiplier applied to the marker width to determine
+            the displayed vector length.
+        color: Vector color in BGR format.
+        thickness: Vector line thickness in pixels.
+
+    Returns:
+        A normalized NumPy vector representing the image orientation,
+        or None if the vector cannot be normalized because its norm
+        is zero. The input image is modified in place.
+    """
     u = ((corners[0] - corners[3]) + (corners[1] - corners[2]))
     n = np.linalg.norm(u)
     if n == 0:
@@ -1272,8 +1499,30 @@ def draw_absolute_orientation(img_cv,
                               y_ref,
                               corners,
                               scale=4,
-                              color=(0, 165, 255),
-                              ):
+                              color=(0, 165, 255)):
+    """
+    Draw the marker's orientation projected onto absolute reference axes.
+
+    The image orientation vector is projected onto the reference axes
+    x_ref and y_ref. The resulting vector is then drawn as a dashed
+    line whose length is proportional to the marker width.
+
+    Args:
+        img_cv: Image on which the orientation vector is drawn,
+            in OpenCV format.
+        center: Marker center coordinates as a NumPy array.
+        u_img: Normalized orientation vector in image coordinates.
+        x_ref: Reference unit vector for the absolute X axis.
+        y_ref: Reference unit vector for the absolute Y axis.
+        corners: Marker corner coordinates, ordered as expected
+            by the orientation calculation.
+        scale: Multiplier applied to the marker width to determine
+            the displayed vector length.
+        color: Vector color in BGR format.
+
+    Returns:
+        None. The input image is modified in place.
+    """
     ux = np.dot(u_img, x_ref)
     uy = np.dot(u_img, y_ref)
     u_abs = ux * x_ref + uy * y_ref
@@ -1293,7 +1542,6 @@ def draw_absolute_orientation(img_cv,
         thickness=4,
         dash_length=15,
     )
-
 
 def draw_dashed_line(
     img_cv: np.ndarray,
@@ -1331,8 +1579,8 @@ def draw_dashed_line(
 
     Examples
     --------
-        >>> img_cv = np.zeros((400, 400, 3), dtype=np.uint8)
-        >>> draw_dashed_line(
+        > img_cv = np.zeros((400, 400, 3), dtype=np.uint8)
+        > draw_dashed_line(
         ...     img_cv,
         ...     (100, 100),
         ...     (300, 250),
@@ -1340,9 +1588,9 @@ def draw_dashed_line(
         ...     thickness=2,
         ...     dash_length=15
         ... )
-        >>> cv2.imshow("Dashed line", img_cv)
-        >>> cv2.waitKey(0)
-        >>> cv2.destroyAllWindows()
+        > cv2.imshow("Dashed line", img_cv)
+        > cv2.waitKey(0)
+        > cv2.destroyAllWindows()
     """
     p1 = np.asarray(pt1, dtype=float)
     p2 = np.asarray(pt2, dtype=float)
@@ -1370,33 +1618,44 @@ def draw_dashed_line(
         )
 
 
-def get_color_BGR(name):
+def get_color_BGR(name: str) -> tuple:
     """
-    Retourne la couleur BGR correspondant au nom donné.
+    Return the BGR color corresponding to the specified color name.
+
+    OpenCV uses the BGR channel order (Blue, Green, Red), rather than
+    the RGB order commonly used in image editing applications.
+
+    Args:
+        name: Color name in English, case-insensitive.
+
+    Returns:
+        A tuple of three integer values representing the BGR color.
+        Returns black (0, 0, 0) if the color name is not recognized.
     """
     colors = {
-        "rouge":       (0, 0, 255),
-        "vert":        (0, 255, 0),
-        "bleu":        (255, 0, 0),
-        "cyan":        (255, 255, 0),
-        "magenta":     (255, 0, 255),
-        "orange":      (0, 165, 255),
-        "rose":        (203, 192, 255),
-        "blanc":       (255, 255, 255),
-        "gris":        (128, 128, 128),
-        "violet":      (211, 0, 148),
-        "jaune":       (0, 255, 255),
-        "turquoise":   (208, 224, 64),
-        "marron":      (42, 42, 165),
-        "olive":       (0, 128, 128),
-        "lavande":     (250, 230, 230),
-        "bleu_clair":  (255, 200, 100),
-        "vert_clair":  (144, 238, 144),
-        "rose_foncé":  (147, 20, 80),
-        "beige":       (220, 245, 245),
-        "noir":        (0, 0, 0)
+        "red":          (0, 0, 255),
+        "green":        (0, 255, 0),
+        "blue":         (255, 0, 0),
+        "cyan":         (255, 255, 0),
+        "magenta":      (255, 0, 255),
+        "orange":       (0, 165, 255),
+        "pink":         (203, 192, 255),
+        "white":        (255, 255, 255),
+        "gray":         (128, 128, 128),
+        "violet":       (211, 0, 148),
+        "yellow":       (0, 255, 255),
+        "turquoise":    (208, 224, 64),
+        "brown":        (42, 42, 165),
+        "olive":        (0, 128, 128),
+        "lavender":     (250, 230, 230),
+        "light_blue":   (255, 200, 100),
+        "light_green":  (144, 238, 144),
+        "dark_pink":    (147, 20, 80),
+        "beige":        (220, 245, 245),
+        "black":        (0, 0, 0)
     }
-    return colors.get(name.lower(), (0, 0, 0))  # Retourne noir si non trouvé
+
+    return colors.get(name.lower(), (0, 0, 0))
 
 # --------------------------------------------------------------
 # Utilisation

@@ -2,7 +2,7 @@
 # --------------------------------------------------------------------------------
 #   IR_drone interactive Phase 3
 #   compute time_shift alignment
-#   17/12/2025   V003
+#   20/10/2026   V003
 # ---------------------------------------------------------------------------------
 
 import os
@@ -26,7 +26,7 @@ RESOURCE_ICON_DIR = (
     / "Icon"
 )
 
-IMAGE_ARUCO_PATH = RESOURCE_ICON_DIR / "Image_ArUco.jpg"
+IMAGE_ARUCO_VIS_PATH = RESOURCE_ICON_DIR / "Image_ArUco_VIS.jpg"
 IMAGE_ARUCO_NIR_PATH = RESOURCE_ICON_DIR / "Image_ArUco_NIR.jpg"
 
 # ----------------------------------------------------
@@ -96,7 +96,7 @@ class DialogSynchroAruco(QDialog):
     Phase 3 of the processing pipeline:
       - 3.1 ArUco detection and angle extraction
       - 3.2 Time shift estimation between VIS and NIR timelines
-      - 3.3 pairing VIS and NIR images
+      - 3.3 Pairing VIS and NIR images
     """
 
     data_signal_to_main = pyqtSignal(bool)
@@ -239,7 +239,7 @@ class DialogSynchroAruco(QDialog):
         )
 
         # Display the default ArUco image
-        pixmap = QPixmap(str(IMAGE_ARUCO_PATH))
+        pixmap = QPixmap(str(IMAGE_ARUCO_VIS_PATH))
 
         if not pixmap.isNull():
             scaled_pixmap = pixmap.scaled(
@@ -249,7 +249,7 @@ class DialogSynchroAruco(QDialog):
             )
             self.timeshift_plot_label.setPixmap(scaled_pixmap)
         else:
-            self._log(f"Unable to load image: {IMAGE_ARUCO_PATH}")
+            self._log(f"Unable to load image: {IMAGE_ARUCO_VIS_PATH}")
 
         main_layout.addWidget(self.timeshift_plot_label)
 
@@ -344,8 +344,9 @@ class DialogSynchroAruco(QDialog):
             self.aruco_orchestrator.signals.progress.connect(
                 self.progress_bar.setValue
             )
+
             self.aruco_orchestrator.signals.stage.connect(
-                self.progress_label.setText
+                self._on_aruco_stage
             )
 
             # Reset the progress bar before starting processing
@@ -399,11 +400,26 @@ class DialogSynchroAruco(QDialog):
         Update the GUI when the active ArUco processing stage changes.
 
         Args:
-            stage: Name of the spectral band being processed, typically
-                "VIS" or "NIR".
+            stage: Description of the current processing stage.
         """
         self.progress_bar.setValue(0)
-        self.progress_label.setText(f"ArUco detection - {stage}")
+        self.progress_label.setText(stage)
+
+        # Display the NIR ArUco image when NIR processing starts.
+        if "NIR" in stage:
+            pixmap = QPixmap(str(IMAGE_ARUCO_NIR_PATH))
+
+            if not pixmap.isNull():
+                scaled_pixmap = pixmap.scaled(
+                    self.timeshift_plot_label.size(),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                self.timeshift_plot_label.setPixmap(scaled_pixmap)
+            else:
+                self._log(
+                    f"Unable to load image: {IMAGE_ARUCO_NIR_PATH}"
+                )
 
     def _on_aruco_error(self, error_msg: str) -> None:
         """

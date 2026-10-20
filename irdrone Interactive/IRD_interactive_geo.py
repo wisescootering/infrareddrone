@@ -33,45 +33,57 @@ from IRD_Interactive_color_style import Style
 # =          Utilities for  GPS          =
 # ========================================
 
-# =============================================================
+# =================================================================================
 # Altitude Retrieval Module
-# =============================================================
-# This section retrieves elevation data for a list of GPS coordinates (latitude, longitude).
-# It first queries the IGN (Institut Géographique National, France) API, and if unavailable
-# or if some coordinates fall outside French territory, it automatically falls back to the
-# OpenTopoData global API.
+# =================================================================================
+# This section retrieves elevation data for a list of GPS coordinates
+# (latitude, longitude).
+#
+# It first queries the IGN (Institut national de l'information
+# géographique et forestière) elevation API, which provides high-resolution
+# elevation data for locations within French territory.
+#
+# IGN requests are retried up to three consecutive times, with a short
+# delay between attempts. If all attempts fail, including when coordinates
+# fall outside the area covered by IGN, the resulting error triggers
+# an automatic fallback to the OpenTopoData global elevation API.
+#
+# OpenTopoData provides worldwide coverage, but its elevation data are
+# generally less precise than IGN data for locations in France.
 #
 # APIs used:
-#     - IGN : https://data.geopf.fr/altimetrie/
-#     - OpenTopoData : https://www.opentopodata.org/
+#     - IGN: https://data.geopf.fr/altimetrie/
+#     - OpenTopoData: https://www.opentopodata.org/
 #
-# If both APIs fail for some coordinates, altitudes are set to 0 with a tag 'unavailable'.
+# If both APIs fail for some coordinates, their altitudes are set to 0
+# and tagged as 'unavailable'.
 #
 # Main functions:
-#     1️⃣ get_altitudes_IGN(coordinates, ...)       → Query IGN API
-#     2️⃣ get_altitudes_OpenTopo(coordinates, ...)  → Query OpenTopoData API
-#     3️⃣ get_altitudes(coordinates, ...)           → Combined fallback procedure (IGN → OpenTopo)
+#     1. get_altitudes_IGN(coordinates, ...)       -> Query the IGN API
+#     2. get_altitudes_OpenTopo(coordinates, ...)  -> Query OpenTopoData
+#     3. get_altitudes(coordinates, ...)           -> Combined fallback
+#                                                     procedure (IGN -> OpenTopoData)
 #
 # Example:
-#         coordinates = [
-#         (48.3904, -4.48607),    # Brest (France)
-#         (41.9028, 12.4964),     # Rome (Italy, outside IGN)
-#         (41.92723, 8.73462),    # Ajaccio (France, Corsica)
-#         ]
+#     coordinates = [
+#         (48.3904, -4.48607),   # Brest (France)
+#         (41.9028, 12.4964),    # Rome (Italy, outside IGN coverage)
+#         (41.92723, 8.73462),   # Ajaccio (France, Corsica)
+#     ]
+#
 #     altitudes = get_altitudes(coordinates)
 #     dico_coordinates_IGN = {'elevations': altitudes}
-# Results:
-#   altitudes = [{'lon': -4.48607, 'lat': 48.3904, 'z': 47.38, 'acc': 'IGN'},
-#                {'lon': 12.4964, 'lat': 41.9028, 'z': 59.0, 'acc': 'OpenTopoData'},
-#                {'lon': 8.73462, 'lat': 41.92723, 'z': 30.73, 'acc': 'IGN'}
-#                ]
-#   dico_coordinates_IGN = {'elevations': [{'lon': -4.48607, 'lat': 48.3904, 'z': 47.38, 'acc': 'IGN'},
-#                                          {'lon': 12.4964, 'lat': 41.9028, 'z': 59.0, 'acc': 'OpenTopoData'},
-#                                          {'lon': 8.73462, 'lat': 41.92723, 'z': 30.73, 'acc': 'IGN'}
-#                                         ]
-#                           }
 #
-#  =============================================================
+# Results:
+#     altitudes = [
+#         {'lon': -4.48607, 'lat': 48.3904, 'z': 47.38, 'acc': 'IGN'},
+#         {'lon': 12.4964, 'lat': 41.9028, 'z': 59.0, 'acc': 'OpenTopoData'},
+#         {'lon': 8.73462, 'lat': 41.92723, 'z': 30.73, 'acc': 'IGN'}
+#     ]
+#
+#     dico_coordinates_IGN = {'elevations': altitudes}
+#
+# =======================================================================================
 
 
 def data_sig(coordinates: tuple[float, float], geotag=True, verbose=False) -> Optional[dict[str, any]]:
