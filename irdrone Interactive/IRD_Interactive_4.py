@@ -64,6 +64,9 @@ class DialogImageProcessing(QDialog):
             raise ValueError(f"No image pairs were found in {shoot_points_file}")
 
         self.pair_count = len(shoot_points)
+        self.start_pair_index, self.end_pair_index = self._get_fly_pair_range(
+            shoot_points
+        )
         self.process = QProcess(self)
         self.process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         self.process.readyReadStandardOutput.connect(self._read_process_output)
@@ -75,13 +78,65 @@ class DialogImageProcessing(QDialog):
         self.resize(700, 500)
         self._init_gui()
 
+    def _get_fly_pair_range(self, shoot_points: list[dict]) -> tuple[int, int]:
+        transfer_info_file = (
+            self.mission_folder
+            / "AerialPhotography"
+            / "VIS"
+            / "transfer_info_VIS_dng.json"
+        )
+        if not transfer_info_file.is_file():
+            raise FileNotFoundError(
+                f"Step 2 visible-image selection was not found: {transfer_info_file}"
+            )
+
+        with transfer_info_file.open("r", encoding="utf-8") as file:
+            transfer_info = json.load(file)
+        if not isinstance(transfer_info, dict):
+            raise ValueError(f"Invalid Step 2 selection data in {transfer_info_file}")
+        fly_data = transfer_info.get("fly")
+        copied_images = (
+            fly_data.get("listCopiedImages") if isinstance(fly_data, dict) else None
+        )
+        if not isinstance(copied_images, list) or not copied_images:
+            raise ValueError(
+                f"No Step 2 visible FLY frames were found in {transfer_info_file}"
+            )
+
+        fly_filenames = {
+            Path(filename).name.casefold()
+            for filename in copied_images
+            if isinstance(filename, str) and filename
+        }
+        pair_indices = []
+        for index, point in enumerate(shoot_points):
+            visible_data = point.get("VIS") if isinstance(point, dict) else None
+            filename = (
+                visible_data.get("FileName")
+                if isinstance(visible_data, dict)
+                else None
+            )
+            if (
+                isinstance(filename, str)
+                and Path(filename).name.casefold() in fly_filenames
+            ):
+                pair_indices.append(index)
+
+        if not pair_indices:
+            raise ValueError(
+                "Step 2 visible FLY frames do not match any Step 3 image pairs."
+            )
+
+        return pair_indices[0], pair_indices[-1] + 1
+
     def _init_gui(self) -> None:
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(f"<b>Mission:</b> {self.mission_folder}"))
         layout.addWidget(
             QLabel(
                 f"{self.pair_count} preprocessed image pairs found. "
-                "The end index is exclusive."
+                "The range is pre-filled from Step 2's visible FLY frames; "
+                "the end index is exclusive."
             )
         )
 
@@ -89,13 +144,13 @@ class DialogImageProcessing(QDialog):
         range_layout.addWidget(QLabel("Start index:"))
         self.start_index = QSpinBox()
         self.start_index.setRange(0, self.pair_count)
-        self.start_index.setValue(0)
+        self.start_index.setValue(self.start_pair_index)
         range_layout.addWidget(self.start_index)
 
         range_layout.addWidget(QLabel("End index:"))
         self.end_index = QSpinBox()
         self.end_index.setRange(0, self.pair_count)
-        self.end_index.setValue(self.pair_count)
+        self.end_index.setValue(self.end_pair_index)
         range_layout.addWidget(self.end_index)
         range_layout.addStretch()
         layout.addLayout(range_layout)

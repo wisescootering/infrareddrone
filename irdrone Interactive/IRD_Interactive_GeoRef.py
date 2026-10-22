@@ -3533,7 +3533,7 @@ def process_multispectral(folder_input, base, band_paths, args, zhang_dic, tol_M
                                     zhang_dic,
                                     logger=logger,
                                     tol_MC=tol_MC,
-                                    iimg_override=img,  # Direct injection of the four-channel image
+                                    img_override=img,  # Direct injection of the four-channel image
                                     georef_success=georef_success
                                 )
     return georef_success
@@ -4020,7 +4020,6 @@ if __name__ == "__main__":
                                                     )
 
     sys.exit(0)
-
 
 
 

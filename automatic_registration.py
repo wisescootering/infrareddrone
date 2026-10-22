@@ -485,8 +485,17 @@ def process_raw_pairs(
                 ndvi(ref_full, ali, out_path=osp.join(out_dir, "_NDVI_" + almode + osp.basename(vis_pth[:-4])+".jpg"),
                     gps=gps_vis, exif=exif_dict_minimal, image_in=vis_pth)
             if VIR in traces:
-                vir(ref_full, ali, out_path=osp.join(out_dir, "_VIR_" + almode + osp.basename(vis_pth[:-4])+".jpg"),
-                    gps=gps_vis, exif=exif_dict_minimal, image_in=vis_pth)
+                vir(
+                    ref_full,
+                    ali,
+                    out_path=osp.join(
+                        out_dir,
+                        "_VIR_" + almode + osp.basename(vis_pth[:-4]) + ".jpg",
+                    ),
+                    gps=gps_vis,
+                    exif=exif_dict_minimal,
+                    image_in=vis_pth,
+                )
             if NIR in traces:
                 nir_out = pr.Image((ut.contrast_stretching(ali)[0]*255).astype(np.uint8))
                 nir_out.path = vis_pth

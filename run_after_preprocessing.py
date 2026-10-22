@@ -76,8 +76,8 @@ def run_postprocessing(
         if nir["rank"] == 1
     ]
     # Define required variables
-    out_dir = preprocessed_folder / "PostProcessed"
-    traces = ["vis", "nir"]  # Example traces
+    out_dir = preprocessed_folder / "ImgIRdrone"
+    traces = ["vir"]
     skip = False
     # Call automatic_registration.process_raw_pairs
     odm_image_directory = create_odm_folder(
