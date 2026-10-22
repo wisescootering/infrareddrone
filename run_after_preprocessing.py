@@ -1,10 +1,82 @@
 import argparse
 from pathlib import Path
 import json
+import subprocess
 from utils.utils_IRdrone_Class import ShootPoint
 import automatic_registration
 from utils.utils_odm import create_odm_folder, odm_mapping_optim
-from config import CROP
+from config import CROP, EXIFTOOLPATH
+
+
+GEOREF_METADATA_KEYS = (
+    "DroneLatitude",
+    "DroneLongitude",
+    "GroundAltitude",
+    "DroneAltitudeSeaLevel",
+    "DroneAltitudeGround",
+    "UTM_x",
+    "UTM_y",
+    "UTM_zone",
+    "FlightYawDegree",
+    "FlightPitchDegree",
+    "FlightRollDegree",
+    "GimbalYawDegree",
+    "GimbalPitchDegree",
+    "GimbalRollDegree",
+)
+
+
+def write_multispectral_exif(image_path: Path, vis_data: dict) -> Path:
+    """Write the Phase 5 companion metadata beside a multispectral band TIFF."""
+    result = subprocess.run(
+        [str(EXIFTOOLPATH), "-json", str(image_path)],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"ExifTool could not read metadata from {image_path}: "
+            f"{result.stderr.strip()}"
+        )
+
+    metadata_list = json.loads(result.stdout)
+    if not metadata_list or not isinstance(metadata_list[0], dict):
+        raise ValueError(f"ExifTool returned no image metadata for {image_path}")
+
+    metadata = metadata_list[0]
+    metadata["FileName"] = image_path.name
+    metadata["Directory"] = str(image_path.parent)
+    for key in GEOREF_METADATA_KEYS:
+        if key in vis_data:
+            metadata[key] = vis_data[key]
+
+    required_keys = {
+        "FOV",
+        "DroneLatitude",
+        "DroneLongitude",
+        "GroundAltitude",
+        "DroneAltitudeSeaLevel",
+        "DroneAltitudeGround",
+        "UTM_x",
+        "UTM_y",
+        "UTM_zone",
+        "FlightYawDegree",
+        "FlightPitchDegree",
+        "FlightRollDegree",
+    }
+    missing_keys = required_keys.difference(metadata)
+    if missing_keys:
+        raise ValueError(
+            f"Cannot create georeferencing metadata for {image_path}; "
+            f"missing fields: {', '.join(sorted(missing_keys))}"
+        )
+
+    exif_path = image_path.with_suffix(".exif")
+    exif_path.write_text(
+        json.dumps(metadata, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return exif_path
 
 
 def run_postprocessing(
@@ -97,6 +169,16 @@ def run_postprocessing(
         skip=skip,
         # debug=True
     )
+
+    for point in paired_points:
+        vis_data = point["VIS"]
+        band_one = odm_image_directory / f"{Path(vis_data['FileName']).stem}_1.tif"
+        if not band_one.is_file():
+            raise FileNotFoundError(
+                f"Expected multispectral band TIFF was not created: {band_one}"
+            )
+        sidecar = write_multispectral_exif(band_one, vis_data)
+        print(f"Wrote georeferencing metadata: {sidecar}")
 
 
 if __name__ == "__main__":

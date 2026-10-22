@@ -915,18 +915,45 @@ def load_companion_exif(folder, img_name, suffix="dng", alti_takeoff=None):
     exif_file = folder / f"{img_name}.exif"
     img_file = folder / f"{img_name}.{suffix}"
     if not exif_file.exists():
+        if not img_file.is_file():
+            raise FileNotFoundError(
+                f"Cannot create companion EXIF file because the image is missing: {img_file}"
+            )
         logger.warn(
             f"Companion EXIF file {img_name}.exif is missing from folder {folder}"
         )
-        try:
-            read_exif_and_write_json(img_file, exif_file, alti_takeoff=alti_takeoff)
-        except Exception as e:
-            logger.error(f" Read_exif_and_write_json failed for {img_file}: {e}")
-            return {}
+        data = read_exif_and_write_json(
+            img_file,
+            interactive=True,
+            alti_takeoff=alti_takeoff,
+        )
+        if not exif_file.is_file():
+            raise RuntimeError(f"Companion EXIF file was not created: {exif_file}")
+    else:
+        with exif_file.open("r", encoding="utf-8") as file:
+            data = json.load(file)
 
+    if not isinstance(data, dict) or not data:
+        raise ValueError(f"Companion EXIF file is empty or invalid: {exif_file}")
 
-    with open(exif_file, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    required_keys = {
+        "DroneLatitude",
+        "DroneLongitude",
+        "GroundAltitude",
+        "DroneAltitudeGround",
+        "UTM_x",
+        "UTM_y",
+        "UTM_zone",
+        "FlightYawDegree",
+        "FlightPitchDegree",
+        "FlightRollDegree",
+    }
+    missing_keys = required_keys.difference(data)
+    if missing_keys:
+        raise ValueError(
+            f"Companion EXIF file {exif_file} is missing required "
+            f"georeferencing metadata: {', '.join(sorted(missing_keys))}"
+        )
 
     return data
 
@@ -946,15 +973,18 @@ def save_exif_companion(raw_exif, folder_input, img_name, verbose=False):
 
     return exif_path
 
-def read_exif_and_write_json(dng_path: Path, exiftool_path: str,
-                             interactive: bool = True,  alti_takeoff=None) -> dict:
+def read_exif_and_write_json(
+    image_path: Path,
+    interactive: bool = True,
+    alti_takeoff=None,
+) -> dict:
     """
-    Extract selected EXIF/XMP metadata from a DNG file using ExifTool
+    Extract selected EXIF/XMP metadata from an image using ExifTool
     and save a clean .exif JSON file next to the image.
     """
     try:
         # 1) Run ExifTool
-        cmd = [EXIFTOOLPATH, "-json", str(dng_path)]
+        cmd = [EXIFTOOLPATH, "-json", str(image_path)]
         result = subprocess.run(cmd, capture_output=True, text=True)
 
         if result.returncode != 0:
@@ -1041,7 +1071,7 @@ def read_exif_and_write_json(dng_path: Path, exiftool_path: str,
 
             # 🔍 1. Search existing EXIF files
             else:
-                folder = dng_path.parent
+                folder = image_path.parent
                 takeoff_altitude = find_takeoff_altitude_from_exif_folder(folder, logger)
 
             # 🖥️ 2. Fall back to the GUI
@@ -1074,7 +1104,7 @@ def read_exif_and_write_json(dng_path: Path, exiftool_path: str,
                 f"Drone altitude / sea level = {drone_Altitude_SeaLevel: .3f} m"
             )
             logger.ok(
-                f"Companion EXIF file {str(dng_path.stem)}.exif has been reconstructed"
+                f"Companion EXIF file {str(image_path.stem)}.exif has been reconstructed"
             )
 
 
@@ -1082,15 +1112,15 @@ def read_exif_and_write_json(dng_path: Path, exiftool_path: str,
         cleaned = {k: full_metadata.get(k) for k in essential_keys if k in full_metadata}
 
         # 5) Write the companion .exif JSON
-        out_path = dng_path.with_suffix(".exif")
+        out_path = image_path.with_suffix(".exif")
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(cleaned, f, indent=2)
 
         return cleaned
 
     except Exception as e:
-        logger.error(f" Read_exif_and_write_json failed for {dng_path}: {e}")
-        return {}
+        logger.error(f" Read_exif_and_write_json failed for {image_path}: {e}")
+        raise
 
 def find_takeoff_altitude_from_exif_folder(folder: Path, logger) -> float:
     """
@@ -4020,7 +4050,5 @@ if __name__ == "__main__":
                                                     )
 
     sys.exit(0)
-
-
 
 
