@@ -44,8 +44,8 @@ OUTPUT_FOLDER_NAME = Path(OUTPUT_FOLDER_NAME)
 # ------------------------------------------------------
 if os.name == 'nt':
     EXIFTOOLPATH = os.path.join(
-        os.path.dirname(__file__),
-        "..", "thirdparty", "exiftool", "exiftool.exe"
+        os.path.dirname(os.path.abspath(__file__)),
+        "thirdparty", "exiftool", "exiftool.exe"
     )
 else:
     EXIFTOOLPATH = os.environ.get("EXIFTOOLPATH", "/usr/bin/exiftool")
@@ -60,8 +60,8 @@ if os.name == 'nt' and not os.path.exists(EXIFTOOLPATH):
 # ------------------------------------------------------
 if os.name == 'nt':
     SJCONVERTERPATH = os.path.join(
-        os.path.dirname(__file__),
-        "..", "thirdparty", "sjcam_raw2dng", "sjcam_raw2dng.exe"
+        os.path.dirname(os.path.abspath(__file__)),
+        "thirdparty", "sjcam_raw2dng", "sjcam_raw2dng.exe"
     )
 else:
     SJCONVERTERPATH = os.environ.get("SJCONVERTERPATH", "sjcam_raw2dng")
