@@ -316,12 +316,14 @@ def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extens
 
 
 def write_manual_bat_redo(vis_pth, nir_pth_list, debug_bat_pth, out_dir=None, debug=False, async_suffix=None, multispectral_folder=None, angles=None):
+    vis_pth = os.fspath(vis_pth)
     if out_dir is None:
         out_dir = osp.abspath(debug_bat_pth.replace(".bat", ""))
     with open(debug_bat_pth, "w") as fi:
         if conda_env_name is not None:
             fi.write("call activate {}\n".format(conda_env_name))
         for id_sync, nir_pth in enumerate(nir_pth_list):
+            nir_pth = os.fspath(nir_pth)
             out_dir_current = out_dir
             if async_suffix is not None:
                 out_dir_current = out_dir_current + "_async_{}".format(async_suffix[id_sync])
@@ -544,4 +546,3 @@ if __name__ == "__main__":
         multispectral_folder=args.multispectral_folder,
         angles=args.angles
     )
-

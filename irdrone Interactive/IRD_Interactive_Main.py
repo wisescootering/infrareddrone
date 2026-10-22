@@ -41,6 +41,7 @@ import imageio
 from IRD_Interactive_1 import Window_Load_TakeOff_Image, Window_create_file_structure
 from IRD_Interactive_2 import LoadVisNirImagesDialog
 from IRD_Interactive_3 import DialogSynchroAruco
+from IRD_Interactive_4 import DialogImageProcessing
 from IRD_Interactive_5 import DialogGeoRef
 from IRD_Interactive_GeoRef import georef_main
 import IRD_Interactive_utils as Uti
@@ -366,8 +367,20 @@ class Main_Window(QMainWindow):
 
 
     def on_process_images(self):
-        Uti.show_info_message("IRDrone", "Currently being implemented ...", "")
-        pass
+        if not self.ensure_mission_parameters():
+            return
+
+        try:
+            self.dialog_image_processing = DialogImageProcessing(
+                self.mission_parameters, self
+            )
+            self.dialog_image_processing.show()
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as e:
+            QMessageBox.critical(
+                self,
+                "Image processing unavailable",
+                str(e),
+            )
 
     # ===================================================================================
     #                   Button #5 click handlers
@@ -489,4 +502,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
