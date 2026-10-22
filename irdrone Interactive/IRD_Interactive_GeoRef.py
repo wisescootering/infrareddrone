@@ -891,7 +891,7 @@ def dng2tiff(folder, img_name, suffix="dng", bit=16):
 
     pp3 = osp.join(
         osp.dirname(__file__),
-        "..", "thirdparty", "rawtherapee", "DJI_color.pp3"
+        "..", "thirdparty", "rawtherapee", "DJI_neutral.pp3"
     )
 
     cmd = [
