@@ -1345,7 +1345,7 @@ def choose_mission_folder_phase_2(
                 "IRDrone",
                 "Invalid mission folder structure",
                 f"The selected mission folder is incomplete:\n\n{error_msg}\n\n"
-                "This mission cannot be loaded in phase 2."
+                "This mission cannot be loaded in step 2."
             )
             return folderMissionPath, False
 
@@ -1367,7 +1367,7 @@ def choose_mission_folder_phase_2(
 
 def validate_mission_structure_phase_2(mission_path: Path) -> tuple[bool, str]:
     """
-    Validate the minimal IRDrone mission folder structure for phase 2.
+    Validate the minimal IRDrone mission folder structure for step 2.
 
     Returns
     -------

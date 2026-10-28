@@ -32,6 +32,7 @@ import IRD_interactive_geo as Geo
 from IRD_Interactive_utils import Prefrence_Screen
 import IRD_Interactive_workers as Worker
 from IRD_Interactive_color_style import Style
+from IRD_Interactive_styles import BUTTON_STYLE
 from config import OUTPUT_FOLDER_NAME
 assert OUTPUT_FOLDER_NAME.exists(), f"Output folder does not exist: {OUTPUT_FOLDER_NAME} Use export IRDRONE_WORKING_DIR=your_path_to_folder to set it."
 
@@ -230,6 +231,7 @@ class Window_create_file_structure(QDialog):
         and initial input fields. Connects signals to their corresponding slots.
         """
         try:
+
             # Set window title
             self.setWindowTitle("Create a mission")
 
@@ -255,9 +257,9 @@ class Window_create_file_structure(QDialog):
 
             # Action buttons
             self.btn_1221: QPushButton = QPushButton("Validate create mission.")
-            self.btn_1221.setStyleSheet("background-color: darkGray; color: black;")
-            self.btn_1222: QPushButton = QPushButton("<< previous step")
-            self.btn_1222.setStyleSheet("background-color: darkGray; color: black;")
+            self.btn_1221.setStyleSheet(BUTTON_STYLE)
+            self.btn_1222: QPushButton = QPushButton("previous step")
+            self.btn_1222.setStyleSheet(BUTTON_STYLE)
 
             # ---- Nouveau layout vertical principal ----
             zone_122_vlayout = QVBoxLayout()
@@ -275,7 +277,7 @@ class Window_create_file_structure(QDialog):
             self.progress_bar.setValue(0)
             zone_122_vlayout.addWidget(self.progress_bar)
 
-            # Layout horizontal pour les boutons
+            # Layout horizontal for  buttons
             self.zone_122_layout = QHBoxLayout()
             self.zone_122_layout.addWidget(self.btn_1222)
             self.zone_122_layout.addWidget(self.btn_1221)
@@ -854,7 +856,6 @@ class Window_create_file_structure(QDialog):
                 Uti.center_on_screen(self.central_widget, screen_Id=0, screen_adjust=(1, 1), window_display_size=(800, 600))
                 self.btn_NextStep.setAutoDefault(True)
                 self.btn_NextStep.setEnabled(True)
-                self.btn_NextStep.setStyleSheet("background-color: darkGray; color:Black;")
                 self.progress_bar.setValue(100)
 
             else:
@@ -1668,7 +1669,7 @@ class Window_Load_TakeOff_Image(QDialog):
 
         self.btn_load_image = QPushButton("Load take-off image")
         self.btn_load_image.setFixedWidth(300)
-        self.btn_load_image.setStyleSheet("background-color: darkBlue; color: white;")
+        self.btn_load_image.setStyleSheet(BUTTON_STYLE)
         zone1_layout.addWidget(self.btn_load_image)
 
         # Area 2  Image area.
@@ -1710,16 +1711,15 @@ class Window_Load_TakeOff_Image(QDialog):
         self.info_Geo_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
         #  Area 4    Previous Step an Next Step button
-        self.btnPreviousStep = QPushButton("<< previous step")
+        self.btnPreviousStep = QPushButton("previous step")
         self.btnPreviousStep.setFixedWidth(100)
-        self.btnPreviousStep.setStyleSheet("background-color: darkGray; color: black;")
-        self.btn_NextStep = QPushButton("next step >>>>")
+        self.btnPreviousStep.setStyleSheet(BUTTON_STYLE)
+        self.btn_NextStep = QPushButton("next step")
         self.btn_NextStep.setFixedWidth(100)
-        self.btn_NextStep.setStyleSheet("background-color: darkGray; color: black;")
+        self.btn_NextStep.setStyleSheet(BUTTON_STYLE)
         # Disable Next Step  button
         self.btn_NextStep.setAutoDefault(False)
         self.btn_NextStep.setEnabled(False)
-        self.btn_NextStep.setStyleSheet("background-color: darkGray; color:gray;")
 
         zone4_layout.addWidget(self.btnPreviousStep)
         zone4_layout.addWidget(self.btn_NextStep)
@@ -1871,7 +1871,6 @@ class Window_Load_TakeOff_Image(QDialog):
                 Uti.center_on_screen(self.central_widget, screen_Id=0, screen_adjust=(1, 1), window_display_size=(800, 600))
                 self.btn_NextStep.setAutoDefault(True)
                 self.btn_NextStep.setEnabled(True)
-                self.btn_NextStep.setStyleSheet("background-color: darkGray; color:Black;")
                 self.progress_bar.setValue(100)
 
             else:
@@ -1931,7 +1930,6 @@ class Window_Load_TakeOff_Image(QDialog):
             self.close()
         except Exception as e:
             print("error in Window_Load_TakeOff_Image   cancel_clicked :", e)
-
 
 
 

@@ -40,9 +40,8 @@ from PyQt6.QtCore import (
     Qt,
     QThreadPool,
     QObject,
+    QRunnable,
     pyqtSignal,
-    QThreadPool,
-    QTimer,
 )
 
 
@@ -77,9 +76,77 @@ from IRD_Interactive_utils import safe_path
 from IRD_Interactive_workers import TimeShiftWorker
 from IRD_Interactive_workers import ImagePairingWorker
 from IRD_Interactive_color_style import Style
+from IRD_Interactive_styles import BUTTON_STYLE
+from IRD_Interactive_ODM import (
+    DockerUnavailableError,
+    ODMMappingError,
+    read_orthophoto_preview,
+    run_odm,
+)
 from config import RAWTHERAPEEPATH, EXIFTOOLPATH
 assert Path(EXIFTOOLPATH).exists(), f"ExifTool not found at {EXIFTOOLPATH}, Use environment variable EXIFTOOLPATH to set the path."
 assert Path(RAWTHERAPEEPATH).exists(), f"RawTherapee not found at {RAWTHERAPEEPATH}, Use environment variable RAWTHERAPEEPATH to set the path."
+
+
+class ODMRunSignals(QObject):
+    """Signals emitted while ODM runs outside the GUI thread."""
+
+    log = pyqtSignal(str)
+    stage = pyqtSignal(str)
+    finished = pyqtSignal(dict)
+    docker_unavailable = pyqtSignal(str)
+    error = pyqtSignal(str)
+
+
+class ODMRunWorker(QRunnable):
+    """Run the complete ODM workflow without blocking the Phase 5 dialog."""
+
+    def __init__(self, mission_folder: Path):
+        super().__init__()
+        self.mission_folder = mission_folder
+        self.signals = ODMRunSignals()
+
+    def run(self) -> None:
+        try:
+            result = run_odm(
+                self.mission_folder,
+                log_callback=self.signals.log.emit,
+                stage_callback=self.signals.stage.emit,
+            )
+        except DockerUnavailableError as error:
+            self.signals.docker_unavailable.emit(str(error))
+        except (ODMMappingError, OSError, ValueError, TypeError) as error:
+            self.signals.error.emit(f"{type(error).__name__}: {error}")
+        except Exception as error:
+            import traceback
+
+            self.signals.error.emit(
+                f"{type(error).__name__}: {error}\n{traceback.format_exc()}"
+            )
+        else:
+            self.signals.finished.emit(result)
+
+
+class ODMPreviewSignals(QObject):
+    ready = pyqtSignal(object)
+    error = pyqtSignal(str)
+
+
+class ODMPreviewWorker(QRunnable):
+    """Read a reduced RGB preview of an orthophoto off the GUI thread."""
+
+    def __init__(self, orthophoto_path: Path):
+        super().__init__()
+        self.orthophoto_path = orthophoto_path
+        self.signals = ODMPreviewSignals()
+
+    def run(self) -> None:
+        try:
+            preview = read_orthophoto_preview(self.orthophoto_path)
+        except Exception as error:
+            self.signals.error.emit(f"{type(error).__name__}: {error}")
+        else:
+            self.signals.ready.emit(preview)
 
 
 class DialogGeoRef(QDialog):
@@ -106,18 +173,20 @@ class DialogGeoRef(QDialog):
                 self,
                 "Missing mission folder",
                 "The mission folder is not defined.\n"
-                "Please run Phase 1 or Phase 2 first, or select a mission folder."
+                "Please run step 1 or step 2 first, or select a mission folder."
             )
             self.close()
             return
         self.whidth_window = 900
         self.height_window = 900
-        self.setWindowTitle("Phase 5 – Georeferencing")
+        self.setWindowTitle("Step 5 – Georeferencing")
         self.setMinimumSize(900, 600)  # Minimum window size
         self.resize(self.height_window, self.whidth_window,)  # Initial window size
 
         self._init_gui()
         self._connect_signals()
+        self.odm_worker: Optional[ODMRunWorker] = None
+        self.odm_preview_worker: Optional[ODMPreviewWorker] = None
 
         # Connect the logger signal to the GUI log window.
         self.log_signal.connect(self._log)
@@ -147,41 +216,18 @@ class DialogGeoRef(QDialog):
         self.log_text.setMaximumHeight(200)
         main_layout.addWidget(self.log_text)
 
-        # Buttons Run GeoRef
+        # GeoRef and ODM preparation buttons
         btn_layout = QHBoxLayout()
         self.btn_run_GeoRef = QPushButton("Run Geo ref")
         # Button width: approximately one third of the window
         self.btn_run_GeoRef.setFixedWidth(int(self.whidth_window/3))
-        # Define the common button style
-        button_style = """
-                    QPushButton {
-                        background-color: #17365D;
-                        color: white;
-                        font-weight: bold;
-                        padding: 8px;
-                        border: 1px solid #102840;
-                        border-radius: 4px;
-                    }
-
-                    QPushButton:hover {
-                        background-color: #244A73;
-                    }
-
-                    QPushButton:pressed {
-                        background-color: #0F243E;
-                    }
-
-                    QPushButton:disabled {
-                        background-color: #B8C2CC;
-                        color: #666666;
-                        border: 1px solid #A0AAB4;
-                    }
-                """
-
         # Apply the common style to the three main buttons
-        self.btn_run_GeoRef.setStyleSheet(button_style)
+        self.btn_run_GeoRef.setStyleSheet(BUTTON_STYLE)
         btn_layout.addWidget(self.btn_run_GeoRef)
-        # Keep the button on the left
+        self.btn_run_Mapping = QPushButton("Run Mapping")
+        self.btn_run_Mapping.setFixedWidth(180)
+        self.btn_run_Mapping.setStyleSheet(BUTTON_STYLE)
+        btn_layout.addWidget(self.btn_run_Mapping)
         btn_layout.addStretch()
         main_layout.addLayout(btn_layout)
 
@@ -208,7 +254,7 @@ class DialogGeoRef(QDialog):
         # Close button at the bottom
         self.btn_close = QPushButton("Close")
         self.btn_close.setFixedWidth(120)
-        self.btn_close.setStyleSheet(button_style)
+        self.btn_close.setStyleSheet(BUTTON_STYLE)
 
         # Push the Close button to the bottom
         main_layout.addStretch()
@@ -226,6 +272,7 @@ class DialogGeoRef(QDialog):
 
     def _connect_signals(self) -> None:
         self.btn_run_GeoRef.clicked.connect(self.on_run_GeoRef)
+        self.btn_run_Mapping.clicked.connect(self.on_run_ODM)
         self.btn_close.clicked.connect(self.on_close)
 
     # ------------------------------------------------------------------
@@ -233,6 +280,13 @@ class DialogGeoRef(QDialog):
     # ------------------------------------------------------------------
 
     def on_close(self) -> None:
+        if self.odm_worker is not None:
+            QMessageBox.warning(
+                self,
+                "ODM is running",
+                "Wait for the ODM process to finish before closing this window.",
+            )
+            return
         self._log("Dialog closed by user.")
         self.data_signal_to_main.emit(True)
         self.close()
@@ -348,6 +402,149 @@ class DialogGeoRef(QDialog):
             f"An error occurred during Geo Ref:\n{error_msg}"
         )
 
+    # --------------------------------------------
+    #  Mapping ODM
+    # --------------------------------------------
+
+    def on_run_ODM(self) -> None:
+        """Prepare the selected images and start ODM in a background worker."""
+        if self.odm_worker is not None:
+            return
+
+        mission_folder = Path(self.folderMissionPath)
+        confirm = QMessageBox.question(
+            self,
+            "Start ODM mapping",
+            "This will hard-link the selected image quartets from "
+            "ImgIRdrone/imgMultispectral into mapping_MULTI/images, then run ODM "
+            "directly in mapping_MULTI using Docker.\n\n"
+            "The orthophoto, report, shots GeoJSON, and 2.5D mesh will also be copied "
+            "to mapping_MULTI/mapping_result.\n\n"
+            "The processing may take a long time and use several gigabytes of memory "
+            "and disk space. Existing ODM output folders or archived mapping results "
+            "will not be overwritten; move or remove them manually before starting "
+            "another run.\n\n"
+            f"Mission:\n{mission_folder}\n\nStart ODM now?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        self._start_ODM_worker(mission_folder)
+
+    def _start_ODM_worker(self, mission_folder: Path) -> None:
+        worker = ODMRunWorker(mission_folder)
+        worker.signals.log.connect(self._log)
+        worker.signals.stage.connect(self._on_ODM_stage)
+        worker.signals.finished.connect(self._on_ODM_finished)
+        worker.signals.docker_unavailable.connect(self._on_ODM_docker_unavailable)
+        worker.signals.error.connect(self._on_ODM_error)
+        self.odm_worker = worker
+        self.btn_run_GeoRef.setEnabled(False)
+        self.btn_run_Mapping.setEnabled(False)
+        self.btn_close.setEnabled(False)
+        self.progress_bar.setRange(0, 0)
+        self.progress_label.setText("ODM – starting")
+        self._log("Starting the complete ODM workflow.")
+        QThreadPool.globalInstance().start(worker)
+
+    def _on_ODM_docker_unavailable(self, message: str) -> None:
+        self._finish_ODM_ui()
+        self._log(f"Docker Desktop is unavailable: {message}")
+        retry = QMessageBox.question(
+            self,
+            "Docker Desktop is not running",
+            f"{message}\n\n"
+            "Please start Docker Desktop and wait until its engine is running. "
+            "Then choose Retry to check the engine again, or Cancel to stop here.",
+            QMessageBox.StandardButton.Retry | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Retry,
+        )
+        if retry == QMessageBox.StandardButton.Retry:
+            self._start_ODM_worker(Path(self.folderMissionPath))
+        else:
+            self.progress_label.setText("ODM cancelled: Docker Desktop is unavailable.")
+
+    def _on_ODM_stage(self, stage: str) -> None:
+        self.progress_label.setText(f"ODM – {stage}")
+
+    def _finish_ODM_ui(self) -> None:
+        self.odm_worker = None
+        self.btn_run_GeoRef.setEnabled(True)
+        self.btn_run_Mapping.setEnabled(True)
+        self.btn_close.setEnabled(True)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+
+    def _on_ODM_finished(self, result: dict) -> None:
+        self._finish_ODM_ui()
+        orthophoto = result["orthophoto"]
+        completion_message = f"Orthophoto:\n{orthophoto['path']}"
+        self._log(f"ODM completed successfully: {orthophoto['path']}")
+        self.progress_label.setText("ODM completed successfully.")
+        self.image_preview_label.setText("Loading orthophoto preview...")
+        self.image_preview_label.setPixmap(QPixmap())
+        self._start_ODM_preview(Path(orthophoto["path"]))
+        QMessageBox.information(
+            self,
+            "ODM completed",
+            completion_message,
+        )
+
+    def _start_ODM_preview(self, orthophoto_path: Path) -> None:
+        worker = ODMPreviewWorker(orthophoto_path)
+        worker.signals.ready.connect(self._on_ODM_preview_ready)
+        worker.signals.error.connect(self._on_ODM_preview_error)
+        self.odm_preview_worker = worker
+        QThreadPool.globalInstance().start(worker)
+
+    def _on_ODM_preview_ready(self, rgb: np.ndarray) -> None:
+        height, width, _channels = rgb.shape
+        image = QImage(
+            rgb.data,
+            width,
+            height,
+            rgb.strides[0],
+            QImage.Format.Format_RGB888,
+        ).copy()
+        pixmap = QPixmap.fromImage(image)
+        self.image_preview_label.setPixmap(
+            pixmap.scaled(
+                self.image_preview_label.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
+        self._log("Orthophoto RGB preview displayed (bands 1-3).")
+        self.odm_preview_worker = None
+
+    def _on_ODM_preview_error(self, error_message: str) -> None:
+        self.image_preview_label.setText("Orthophoto preview could not be created.")
+        self._log(f"Orthophoto preview failed: {error_message}")
+        self.odm_preview_worker = None
+
+    def _on_ODM_error(self, error_message: str) -> None:
+        self._finish_ODM_ui()
+        self._log(f"ODM failed: {error_message}")
+        QMessageBox.critical(
+            self,
+            "ODM error",
+            f"The ODM workflow failed:\n\n{error_message}",
+        )
+        self.progress_label.setText("ODM failed.")
+
+    def closeEvent(self, event) -> None:
+        if self.odm_worker is not None:
+            QMessageBox.warning(
+                self,
+                "ODM is running",
+                "Wait for the ODM process to finish before closing this window.",
+            )
+            event.ignore()
+            return
+        super().closeEvent(event)
+
 
     # ------------------------------------------------------------------
     # Logging helper
@@ -359,8 +556,3 @@ class DialogGeoRef(QDialog):
         self.log_text.append(message)
         self.log_text.ensureCursorVisible()
         self.log_text.repaint()
-
-
-
-
-

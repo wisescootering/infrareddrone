@@ -291,7 +291,10 @@ class Image:
                 except:
                     maker = str(exifTag['Make'])
                     model = str(exifTag['Model'])
-                serial_number = str(exifTag[prefix+'BodySerialNumber'])
+                serial_number_tag = exifTag.get(prefix + 'BodySerialNumber')
+                serial_number = (
+                    str(serial_number_tag) if serial_number_tag is not None else None
+                )
                 timelapse = 0
                 deltatime = 0
                 self.camera = {

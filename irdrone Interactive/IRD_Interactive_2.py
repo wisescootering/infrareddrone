@@ -36,6 +36,7 @@ from PyQt6.QtCore import Qt
 import IRD_Interactive_utils as Uti
 from IRD_Interactive_utils import center_on_screen
 from IRD_Interactive_color_style import Style
+from IRD_Interactive_styles import BUTTON_STYLE
 from config import OUTPUT_FOLDER_NAME
 
 """
@@ -273,14 +274,16 @@ class LoadVisNirImagesDialog(QDialog):
             self.btn_command = [QPushButton(btn_legend[i]) for i in range(self.number_images_reference)]
             for btn in self.btn_command:
                 btn.setFixedWidth(button_width)
-                btn.setStyleSheet("background-color: darkGray; color: black;")
+                btn.setStyleSheet(BUTTON_STYLE)
 
             # Button to load all mission images once reference images are chosen
             button_width = int(0.7 * (self.screen_width // self.number_images_reference))
-            self.btn_load_all_images = QPushButton("validate phase mission images")
+            self.btn_load_all_images = QPushButton("Validate\nmission images")
             self.btn_load_all_images.setFixedWidth(button_width)
+            self.btn_load_all_images.setMinimumHeight(56)
+            self.btn_load_all_images.setStyleSheet(BUTTON_STYLE)
             self.btn_help = QPushButton("Help")
-            self.btn_help.setStyleSheet("background-color: darkGreen; color: white;")
+            self.btn_help.setStyleSheet(BUTTON_STYLE)
             self.btn_help.setFixedWidth(button_width)
 
             # button_width = int(0.7 * (self.screen_width // self.number_images_reference))
@@ -357,7 +360,6 @@ class LoadVisNirImagesDialog(QDialog):
 
             # Disable btn_load_all_images at startup. Will be enabled when all five reference images are loaded
             self.btn_load_all_images.setEnabled(False)
-            self.btn_load_all_images.setStyleSheet("background-color: darkBlue; color: gray;")
 
             # Load images if interactive sequence was already completed once
             if self.image_0_available:
@@ -381,7 +383,6 @@ class LoadVisNirImagesDialog(QDialog):
 
             if all(self.flags):
                 self.btn_load_all_images.setEnabled(True)
-                self.btn_load_all_images.setStyleSheet("background-color: darkBlue; color: white;")
 
 
             # Setting button actions
@@ -390,7 +391,6 @@ class LoadVisNirImagesDialog(QDialog):
             self.btn_load_all_images.clicked.connect(self.on_load_all_images)
             # self.btn_validate_load_all_images.clicked.connect(self.on_validate_load_all_images)
             self.btn_help.clicked.connect(self.on_help)
-            self.btn_help.setStyleSheet("background-color: green; color: white;")
             self.setLayout(layout)
 
         except Exception as e:
@@ -932,7 +932,6 @@ class LoadVisNirImagesDialog(QDialog):
             self.currentUserDir = self.new_user_dir
             if all(elem is True for elem in self.flags):
                 self.btn_load_all_images.setEnabled(True)
-                self.btn_load_all_images.setStyleSheet("background-color: darkBlue; color: white;")
         except Exception as e:
             print("error in open_takeoff_image : ", e)
 
@@ -1097,7 +1096,6 @@ class LoadVisNirImagesDialog(QDialog):
             self.currentUserDir = self.new_user_dir
             if all(self.flags):
                 self.btn_load_all_images.setEnabled(True)
-                self.btn_load_all_images.setStyleSheet("background-color: darkBlue; color: white;")
         except Exception as e:
             print("error in open_image : ", e)
 
@@ -1390,7 +1388,5 @@ class LoadVisNirImagesDialog(QDialog):
     def reset_flag_AllImageOK(cls):
         cls.flagAllImageOK = False
         cls.currentUserDir = OUTPUT_FOLDER_NAME
-
-
 
 

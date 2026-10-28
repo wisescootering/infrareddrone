@@ -54,6 +54,7 @@ from PyQt6.QtCore import (
 from PyQt6.QtWidgets import (
     QMessageBox,
     QApplication,
+    QSizePolicy,
     QWidget,
     QFileDialog,
     QDialog,
@@ -84,6 +85,7 @@ from IRD_Interactive_workers import ArucoWorker
 from IRD_Interactive_workers import TimeShiftWorker
 from IRD_Interactive_workers import ImagePairingWorker
 from IRD_Interactive_color_style import Style
+from IRD_Interactive_styles import BUTTON_STYLE
 from config import RAWTHERAPEEPATH, EXIFTOOLPATH
 assert Path(EXIFTOOLPATH).exists(), f"ExifTool not found at {EXIFTOOLPATH}, Use environment variable EXIFTOOLPATH to set the path."
 assert Path(RAWTHERAPEEPATH).exists(), f"RawTherapee not found at {RAWTHERAPEEPATH}, Use environment variable RAWTHERAPEEPATH to set the path."
@@ -114,16 +116,25 @@ class DialogSynchroAruco(QDialog):
                 self,
                 "Missing mission folder",
                 "The mission folder is not defined.\n"
-                "Please run Phase 1 or Phase 2 first, or select a mission folder."
+                "Please run step 1 or step 2 first, or select a mission folder."
             )
             self.close()
             return
 
-        self.whidth_window = 900
-        self.height_window = 900
-        self.setWindowTitle("Phase 3 – VIS / NIR time synchronization")
-        self.setMinimumSize(900, 600)  # Minimum window size
-        self.resize(self.height_window, self.whidth_window, )  # Initial window size
+        self.setWindowTitle("Step 3 – VIS / NIR time synchronization")
+        screen = parent.screen() if parent is not None else QApplication.primaryScreen()
+        if screen is None:
+            screen = QApplication.primaryScreen()
+        screen_geometry = screen.availableGeometry()
+        window_width = min(900, int(screen_geometry.width() * 0.92))
+        window_height = min(760, int(screen_geometry.height() * 0.90))
+        self.setMinimumSize(min(600, window_width), min(480, window_height))
+        self.setGeometry(
+            screen_geometry.x() + (screen_geometry.width() - window_width) // 2,
+            screen_geometry.y() + (screen_geometry.height() - window_height) // 2,
+            window_width,
+            window_height,
+        )
 
         self._init_gui()
         self._connect_signals()
@@ -158,8 +169,8 @@ class DialogSynchroAruco(QDialog):
         # Log display area
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
-        self.log_text.setMinimumHeight(120)
-        self.log_text.setMaximumHeight(200)
+        self.log_text.setMinimumHeight(70)
+        self.log_text.setMaximumHeight(120)
         main_layout.addWidget(self.log_text)
 
         # Buttons: ArUco detection / Time alignment / Image pairing
@@ -185,36 +196,10 @@ class DialogSynchroAruco(QDialog):
         # Keep the buttons aligned to the left
         btn_layout.addStretch()
 
-        # Define the common button style
-        button_style = """
-            QPushButton {
-                background-color: #17365D;
-                color: white;
-                font-weight: bold;
-                padding: 8px;
-                border: 1px solid #102840;
-                border-radius: 4px;
-            }
-
-            QPushButton:hover {
-                background-color: #244A73;
-            }
-
-            QPushButton:pressed {
-                background-color: #0F243E;
-            }
-
-            QPushButton:disabled {
-                background-color: #B8C2CC;
-                color: #666666;
-                border: 1px solid #A0AAB4;
-            }
-        """
-
         # Apply the common style to the three main buttons
-        self.btn_run_aruco.setStyleSheet(button_style)
-        self.btn_compute_time_shift.setStyleSheet(button_style)
-        self.btn_image_pairing.setStyleSheet(button_style)
+        self.btn_run_aruco.setStyleSheet(BUTTON_STYLE)
+        self.btn_compute_time_shift.setStyleSheet(BUTTON_STYLE)
+        self.btn_image_pairing.setStyleSheet(BUTTON_STYLE)
 
         main_layout.addLayout(btn_layout)
 
@@ -232,8 +217,12 @@ class DialogSynchroAruco(QDialog):
         # Graphic display area
         self.timeshift_plot_label = QLabel()
         self.timeshift_plot_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.timeshift_plot_label.setMinimumHeight(600)
-        self.timeshift_plot_label.setMaximumHeight(620)
+        self.timeshift_plot_label.setMinimumHeight(220)
+        self.timeshift_plot_label.setMaximumHeight(420)
+        self.timeshift_plot_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
         self.timeshift_plot_label.setStyleSheet(
             "QLabel { background-color: #f5f5f5; border: 1px solid #cccccc; }"
         )
@@ -256,7 +245,7 @@ class DialogSynchroAruco(QDialog):
         # Close button at the bottom
         self.btn_close = QPushButton("Close")
         self.btn_close.setFixedWidth(120)
-        self.btn_close.setStyleSheet(button_style)
+        self.btn_close.setStyleSheet(BUTTON_STYLE)
 
         # Push the Close button to the bottom
         main_layout.addStretch()
@@ -1272,7 +1261,4 @@ class TimeShiftInputDialog(QDialog):
         Return the manually entered time shift value (in seconds).
         """
         return float(self.spinbox.value())
-
-
-
 

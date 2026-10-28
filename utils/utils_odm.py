@@ -21,7 +21,14 @@ columnNbr = 5
 colorNames = list(matplotlib.colors.cnames.keys())
 
 
-def create_odm_folder(dirMission, multispectral_modality="MS", extra_suggested_options=True, forced_camera_calibration=True, extra_options=[]):
+def create_odm_folder(
+    dirMission,
+    multispectral_modality="MS",
+    extra_suggested_options=True,
+    forced_camera_calibration=True,
+    extra_options=[],
+    create_images_directory=True,
+):
     mapping_folder = "mapping_{}".format(multispectral_modality)
     path_database = Path(dirMission) / mapping_folder
     odm_camera_conf = Path(__file__).parent / ".." / "thirdparty" / "odm_data" / "irdrone_multispectral.json"
@@ -29,7 +36,8 @@ def create_odm_folder(dirMission, multispectral_modality="MS", extra_suggested_o
     camera_conf_dir.mkdir(exist_ok=True, parents=True)
     shutil.copyfile(odm_camera_conf, camera_conf_dir / "camera_IRdrone.json")
     image_database = path_database / "images"
-    image_database.mkdir(exist_ok=True, parents=True)
+    if create_images_directory:
+        image_database.mkdir(exist_ok=True, parents=True)
     cmd = "docker run -ti --rm -v {}:/datasets opendronemap/odm".format(dirMission)
     cmd += " --project-path /datasets {}".format(mapping_folder)
     cmd += " --cameras /datasets/{}/camera/camera_IRdrone.json".format(mapping_folder)
@@ -283,7 +291,6 @@ def coordRef2coordGeo(A, coord_Img):
             listPtY.append(Coord_geo[1])
         verts = [(listPtX[k], listPtY[k]) for k in range(len(listPtX))]
         return verts
-
 
 
 

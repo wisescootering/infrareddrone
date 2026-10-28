@@ -43,6 +43,7 @@ from IRD_Interactive_2 import LoadVisNirImagesDialog
 from IRD_Interactive_3 import DialogSynchroAruco
 from IRD_Interactive_4 import DialogImageProcessing
 from IRD_Interactive_5 import DialogGeoRef
+from IRD_Interactive_styles import colored_button_style
 from IRD_Interactive_GeoRef import georef_main
 import IRD_Interactive_utils as Uti
 from IRD_Interactive_utils import Prefrence_Screen
@@ -121,36 +122,42 @@ class Main_Window(QMainWindow):
 
         #  Creating the command bar:
         #  btn create_mission
-        self.btn_create_mission = QPushButton("Step 1 : Define the mission", self)
-        self.btn_create_mission.setStyleSheet("background-color: darkBlue; color: white;")
+        self.btn_create_mission = QPushButton("Step 1\nDefine the mission", self)
+        self.btn_create_mission.setStyleSheet(colored_button_style("darkBlue"))
         self.btn_create_mission.setFixedWidth(self.btn_width)
+        self.btn_create_mission.setMinimumHeight(56)
         self.btn_create_mission.clicked.connect(self.open_window_define_mission)
         #  btn load_images
-        self.btn_load_images = QPushButton("Step 2 : Choice of reference image set.", self)
+        self.btn_load_images = QPushButton("Step 2\nSelect reference images", self)
         self.btn_load_images.setAutoDefault(True)
         self.btn_load_images.setEnabled(True)   # (True) pour test  et (False) en prod !
-        self.btn_load_images.setStyleSheet("background-color: purple; color: white;")  # color: darkGray;")
+        self.btn_load_images.setStyleSheet(colored_button_style("purple"))
         self.btn_load_images.setFixedWidth(self.btn_width)
+        self.btn_load_images.setMinimumHeight(56)
         self.btn_load_images.clicked.connect(self.open_window_load_set_images)
         #  btn pre_process_images
-        self.btn_pre_process_images = QPushButton("Step 3 : Image pre-processing", self)
-        self.btn_pre_process_images.setStyleSheet("background-color: #505050; color: white;")  # plus sombre #383838  plus clair #696969
+        self.btn_pre_process_images = QPushButton("Step 3\nImage pre-processing", self)
+        self.btn_pre_process_images.setStyleSheet(colored_button_style("#505050"))
         self.btn_pre_process_images.setFixedWidth(self.btn_width)
+        self.btn_pre_process_images.setMinimumHeight(56)
         self.btn_pre_process_images.clicked.connect(self.on_pre_process_images)
         #  btn process_images
-        self.btn_process_images = QPushButton("Step 4 : Image processing", self)
-        self.btn_process_images.setStyleSheet("background-color: darkRed; color: white;")
+        self.btn_process_images = QPushButton("Step 4\nImage processing", self)
+        self.btn_process_images.setStyleSheet(colored_button_style("darkRed"))
         self.btn_process_images.setFixedWidth(self.btn_width)
+        self.btn_process_images.setMinimumHeight(56)
         self.btn_process_images.clicked.connect(self.on_process_images)
         #  btn post process_images
-        self.btn_post_process_images = QPushButton("Step 5 : Image postprocessing", self)
-        self.btn_post_process_images.setStyleSheet("background-color: #C87800; color: white;")
+        self.btn_post_process_images = QPushButton("Step 5\nImage post-processing", self)
+        self.btn_post_process_images.setStyleSheet(colored_button_style("#C87800"))
         self.btn_post_process_images.setFixedWidth(self.btn_width)
+        self.btn_post_process_images.setMinimumHeight(56)
         self.btn_post_process_images.clicked.connect(self.on_post_process_images)
         #  btn help
         self.btn_help = QPushButton("Help", self)
-        self.btn_help.setStyleSheet("background-color: darkGreen; color: white;")
+        self.btn_help.setStyleSheet(colored_button_style("darkGreen"))
         self.btn_help.setFixedWidth(self.btn_help_width)
+        self.btn_help.setMinimumHeight(56)
         self.btn_help.clicked.connect(self.on_help)
 
         # Layout for command bar
@@ -241,7 +248,7 @@ class Main_Window(QMainWindow):
             self.dialog_create_file_structure.close()  # Close dialog_create_file_structure
             self.btn_load_images.setAutoDefault(True)
             self.btn_load_images.setEnabled(True)
-            self.btn_load_images.setStyleSheet("background-color: purple; color: White;")
+            self.btn_load_images.setStyleSheet(colored_button_style("purple"))
         else:
             print("The user has not validated his entries.")
 
@@ -343,7 +350,10 @@ class Main_Window(QMainWindow):
             return
 
         try:
-            self.dialog_synchro_aruco = DialogSynchroAruco(self.mission_parameters)
+            self.dialog_synchro_aruco = DialogSynchroAruco(
+                self.mission_parameters,
+                parent=self,
+            )
             self.dialog_synchro_aruco.data_signal_to_main.connect(
                 self.handle_data_from_dialog_synchro_aruco
             )
@@ -354,9 +364,9 @@ class Main_Window(QMainWindow):
 
     def handle_data_from_dialog_synchro_aruco(self, validate: bool):
         if validate:
-            print(Style.GREEN + "✔   Phase 3 completed successfully." + Style.RESET)
+            print(Style.GREEN + "✔   Step 3 completed successfully." + Style.RESET)
         else:
-            print(Style.YELLOW + "⚠  Phase 3 cancelled by user." + Style.RESET)
+            print(Style.YELLOW + "⚠  Step 3 cancelled by user." + Style.RESET)
 
 
 
@@ -389,7 +399,7 @@ class Main_Window(QMainWindow):
 
     def on_post_process_images(self):
         """
-        Phase 5 – Georef
+        Phase 5 – Georef and Mapping
         """
 
         if not self.ensure_mission_parameters():

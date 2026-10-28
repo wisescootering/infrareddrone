@@ -266,7 +266,7 @@ class ImagePipe:
         self.maxColorBar = maxColorBar
 
     def engine(self, imglst, geometricscale=None):
-        if not self.signalIn and self.floatpipe: result = [1. * deepcopy(imglst[0])] + list(map(lambda x: x.astype(np.float), imglst.copy()))
+        if not self.signalIn and self.floatpipe: result = [1. * deepcopy(imglst[0])] + list(map(lambda x: x.astype(np.float64), imglst.copy()))
         else: result = [deepcopy(imglst[0])] + deepcopy(imglst)
         for prc in self.sliders:
             if prc is None:

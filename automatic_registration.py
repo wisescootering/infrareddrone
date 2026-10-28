@@ -16,6 +16,8 @@ import interactive.imagepipe as ipipe
 import shutil
 import cv2
 import argparse
+import psutil
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from copy import deepcopy
 from config import CROP
@@ -315,34 +317,37 @@ def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extens
 
 
 
-def write_manual_bat_redo(vis_pth, nir_pth_list, debug_bat_pth, out_dir=None, debug=False, async_suffix=None, multispectral_folder=None, angles=None):
+def write_manual_bat_redo(
+    vis_pth, nir_candidates, debug_bat_pth, out_dir, multispectral_folder=None, angles=None
+):
     vis_pth = os.fspath(vis_pth)
-    if out_dir is None:
-        out_dir = osp.abspath(debug_bat_pth.replace(".bat", ""))
+    out_dir = os.fspath(out_dir)
     with open(debug_bat_pth, "w") as fi:
+        fi.write("REM Full recovery run: detailed diagnostics and all image traces.\n")
+        fi.write("REM Keep one command active; uncomment an alternative NIR rank if needed.\n")
         if conda_env_name is not None:
             fi.write("call activate {}\n".format(conda_env_name))
-        for id_sync, nir_pth in enumerate(nir_pth_list):
+        for id_candidate, (nir_pth, nir_rank) in enumerate(nir_candidates):
             nir_pth = os.fspath(nir_pth)
-            out_dir_current = out_dir
-            if async_suffix is not None:
-                out_dir_current = out_dir_current + "_async_{}".format(async_suffix[id_sync])
-            cmd = "REM " if id_sync>0 else ""
-            cmd+= "python {} --images {} {} --manual --outdir {} {}".format(
+            cmd = "REM " if id_candidate > 0 else ""
+            cmd += "REM NIR rank {}: {}\n".format(nir_rank, nir_pth)
+            cmd += "REM " if id_candidate > 0 else ""
+            cmd += "python {} --images {} {} --manual --outdir {} --debug".format(
                 "\""+osp.abspath(__file__)+"\"",
                 "\""+vis_pth+"\"", "\""+nir_pth+"\"",
-                "\""+out_dir_current+"\"",
-                "--debug" if debug else ""
+                "\""+out_dir+"\"",
             )
             if multispectral_folder is not None:
-                cmd+= "--multispectral-folder "+ "\""+osp.abspath(multispectral_folder)+"\""
+                cmd+= " --multispectral-folder "+ "\""+osp.abspath(multispectral_folder)+"\""
             if angles is not None:
                 cmd += f" --angles {angles[0]:.3f} {angles[1]:.3f} {angles[2]:.3f}"
+            cmd += " --traces {}".format(" ".join(TRACES))
+            cmd += " --alignment-modes local global"
             cmd+="\n"
             fi.write(cmd)
         fi.write("call deactivate\n")
 
-def process_raw_pairs(
+def _process_raw_pairs_serial(
         sync_pairs,
         cals=dict(refcalib=ut.cameracalibration(camera="DJI_RAW"), movingcalib=ut.cameracalibration(camera="M20_RAW")),
         extension=1.4,
@@ -352,7 +357,10 @@ def process_raw_pairs(
         multispectral_folder=None,
         traces=[VIS, NIR, VIR, NDVI],
         angles=None,
-        skip=False
+        skip=False,
+        alignment_modes=("local", "global"),
+        redo_nir_candidates=None,
+        progress_callback=None,
     ):
     """
     listPts [optional]: contains all metadata & theoretical angles
@@ -391,6 +399,12 @@ def process_raw_pairs(
                     listPts[index_pair].rollCoarseAlign = motion_model["roll"]
                     listPts[index_pair].motion_model = motion_model
                 logging.info(f"SKIP IMAGE PROCESSING - loaded motion from {motion_model_file}")
+                if progress_callback is not None:
+                    progress_callback(
+                        index_pair + 1,
+                        len(sync_pairs),
+                        osp.basename(vis_pth),
+                    )
                 continue
         logging.warning("processing {} {}".format(osp.basename(vis_pth), osp.basename(nir_pth)))
         
@@ -400,19 +414,27 @@ def process_raw_pairs(
         else:
             debug_dir = None
 
-        # REDO.bat
+        # Generate one complete recovery script with rank-1 active by default.
         if os.name == "nt":
-            offset_async = [offset for offset in [0, -1, +1, -2, +2]
-                        if (index_pair+offset >=0 and index_pair+offset<len(sync_pairs))]
-            nir_pth_async = [sync_pairs[index_pair+offset][1] for offset in offset_async]
-            write_manual_bat_redo(vis_pth, nir_pth_async,
-                              osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO_ASYNC.bat"),
-                              async_suffix=offset_async,
-                              debug=False,
-                              multispectral_folder=multispectral_folder,
-                              angles=angles)
-            write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO.bat"), debug=False, multispectral_folder=multispectral_folder, angles=angles)
-            write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_DEBUG.bat"), debug=True, multispectral_folder=multispectral_folder, angles=angles)
+            nir_candidates = (
+                redo_nir_candidates[index_pair]
+                if redo_nir_candidates is not None
+                else [(nir_pth, 1)]
+            )
+            if not nir_candidates or os.fspath(nir_candidates[0][0]) != nir_pth:
+                nir_candidates = [(nir_pth, 1)] + [
+                    candidate
+                    for candidate in nir_candidates
+                    if os.fspath(candidate[0]) != nir_pth
+                ]
+            write_manual_bat_redo(
+                vis_pth,
+                nir_candidates,
+                osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO.bat"),
+                out_dir,
+                multispectral_folder=multispectral_folder,
+                angles=angles,
+            )
 
 
         gps_vis = pr.Image(vis_pth).gps
@@ -463,6 +485,7 @@ def process_raw_pairs(
             listPts[index_pair].pitchCoarseAlign = motion_model["pitch"]
             listPts[index_pair].rollCoarseAlign = motion_model["roll"]
             listPts[index_pair].motion_model = motion_model
+        vis_number = Path(vis_pth).stem.removeprefix("VIS_")
         if multispectral_folder is not None:
             #----------------------------------------------------------------------------------------------- MULTISPECTRAL EXPORT
             img = pr.Image(vis_pth)
@@ -470,28 +493,29 @@ def process_raw_pairs(
             ms_img[:, :, :3] = ref_full
             ms_img[:, :, 3] = np.average(aligned_full, axis=-1)
             img._data = ms_img
-            # out_name = f"{(index_pair+1):04d}"
-            out_name = osp.basename(vis_pth[:-4])
+            out_name = f"IRD_{vis_number}"
             img.save_multispectral(Path(multispectral_folder)/out_name)
             #--------------------------------------------------------------------------------------------------------------------
         if VIS in traces:
             vis_img = pr.Image((ut.contrast_stretching(ref_full)[0]*255).astype(np.uint8))
             vis_img.path = vis_pth
             vis_img.save(
-                osp.join(out_dir, osp.basename(vis_pth[:-4])+"_VIS.jpg"), gps=gps_vis, exif=exif_dict_minimal)
+                osp.join(out_dir, f"VIS_{vis_number}.jpg"), gps=gps_vis, exif=exif_dict_minimal)
         
-        for ali, almode in [(aligned_full, "_local_"), (align_full_global, "_global_")]:
+        aligned_images = {
+            "local": aligned_full,
+            "global": align_full_global,
+        }
+        for mode in alignment_modes:
+            ali = aligned_images[mode]
             if NDVI in traces:
-                ndvi(ref_full, ali, out_path=osp.join(out_dir, "_NDVI_" + almode + osp.basename(vis_pth[:-4])+".jpg"),
+                ndvi(ref_full, ali, out_path=osp.join(out_dir, f"NDVI_{vis_number}_{mode}.jpg"),
                     gps=gps_vis, exif=exif_dict_minimal, image_in=vis_pth)
             if VIR in traces:
                 vir(
                     ref_full,
                     ali,
-                    out_path=osp.join(
-                        out_dir,
-                        "_VIR_" + almode + osp.basename(vis_pth[:-4]) + ".jpg",
-                    ),
+                    out_path=osp.join(out_dir, f"VIR_{vis_number}_{mode}.jpg"),
                     gps=gps_vis,
                     exif=exif_dict_minimal,
                     image_in=vis_pth,
@@ -500,19 +524,182 @@ def process_raw_pairs(
                 nir_out = pr.Image((ut.contrast_stretching(ali)[0]*255).astype(np.uint8))
                 nir_out.path = vis_pth
                 nir_out.save(
-                    osp.join(out_dir, osp.basename(vis_pth[:-4])+"_NIR{}.jpg".format(almode)),
+                    osp.join(out_dir, f"NIR_{vis_number}_{mode}.jpg"),
                     exif=exif_dict_minimal,
                     gps=gps_vis
                 )
-        if debug:  # SCIENTIFIC LINEAR OUTPUTS
-            pr.Image(aligned_full).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR.tif"), gps=gps_vis, exif=exif_dict_minimal)
-            pr.Image(align_full_global).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR_global.tif"), gps=gps_vis, exif=exif_dict_minimal)
-            pr.Image(ref_full).save(osp.join(out_dir, "_RAW_"+ osp.basename(vis_pth[:-4])+"_VIS.tif"), gps=gps_vis, exif=exif_dict_minimal)
-            
         motion_model_list.append(motion_model)
         if clean_proxy:
             pr.Image(vis_pth).clean_proxy()
             pr.Image(nir_pth).clean_proxy()
+        if progress_callback is not None:
+            progress_callback(
+                index_pair + 1,
+                len(sync_pairs),
+                osp.basename(vis_pth),
+            )
+    return motion_model_list
+
+
+def available_alignment_workers() -> int:
+    """Return the number of physical CPU cores, with a safe single-core fallback."""
+    return max(1, psutil.cpu_count(logical=False) or 1)
+
+
+def _initialize_alignment_worker() -> None:
+    cv2.setNumThreads(1)
+
+
+def _process_single_pair_task(task):
+    point = task["point"]
+    point_list = [point] if point is not None else None
+    motion_models = _process_raw_pairs_serial(
+        [task["pair"]],
+        cals=task["cals"],
+        extension=task["extension"],
+        debug_folder=task["debug_folder"],
+        out_dir=task["out_dir"],
+        manual=task["manual"],
+        debug=task["debug"],
+        crop=task["crop"],
+        listPts=point_list,
+        option_alti=task["option_alti"],
+        clean_proxy=task["clean_proxy"],
+        multispectral_folder=task["multispectral_folder"],
+        traces=task["traces"],
+        angles=task["angles"],
+        skip=task["skip"],
+        alignment_modes=task["alignment_modes"],
+        redo_nir_candidates=[task["redo_nir_candidates"]],
+    )
+    updated_point = point_list[0] if point_list is not None else None
+    return task["index"], task["pair"][0], motion_models, updated_point
+
+
+def process_raw_pairs(
+    sync_pairs,
+    cals=dict(refcalib=ut.cameracalibration(camera="DJI_RAW"), movingcalib=ut.cameracalibration(camera="M20_RAW")),
+    extension=1.4,
+    debug_folder=None,
+    out_dir=None,
+    manual=False,
+    debug=False,
+    crop=None,
+    listPts=None,
+    option_alti="takeoff",
+    clean_proxy=False,
+    multispectral_folder=None,
+    traces=(VIS, NIR, VIR, NDVI),
+    angles=None,
+    skip=False,
+    alignment_modes=("local", "global"),
+    redo_nir_candidates=None,
+    progress_callback=None,
+    max_workers=1,
+):
+    """Orchestrate independent shoot-point alignment in worker processes."""
+    if not sync_pairs:
+        return []
+    if isinstance(max_workers, bool) or not isinstance(max_workers, int) or max_workers < 1:
+        raise ValueError("max_workers must be a positive integer.")
+    worker_count = min(max_workers, len(sync_pairs))
+    if worker_count == 1:
+        print(f"Aligning {len(sync_pairs)} shoot points sequentially (1 worker).")
+        return _process_raw_pairs_serial(
+            sync_pairs,
+            cals=cals,
+            extension=extension,
+            debug_folder=debug_folder,
+            out_dir=out_dir,
+            manual=manual,
+            debug=debug,
+            crop=crop,
+            listPts=listPts,
+            option_alti=option_alti,
+            clean_proxy=clean_proxy,
+            multispectral_folder=multispectral_folder,
+            traces=traces,
+            angles=angles,
+            skip=skip,
+            alignment_modes=alignment_modes,
+            redo_nir_candidates=redo_nir_candidates,
+            progress_callback=progress_callback,
+        )
+
+    if out_dir is None:
+        out_dir = osp.join(osp.dirname(str(sync_pairs[0][0])), "_RESULTS")
+    os.makedirs(out_dir, exist_ok=True)
+    if debug_folder is not None:
+        os.makedirs(debug_folder, exist_ok=True)
+    if multispectral_folder is not None:
+        os.makedirs(multispectral_folder, exist_ok=True)
+
+    print(
+        f"Aligning {len(sync_pairs)} shoot points with "
+        f"{worker_count} worker processes."
+    )
+    tasks = []
+    for index, pair in enumerate(sync_pairs):
+        nir_candidates = (
+            redo_nir_candidates[index]
+            if redo_nir_candidates is not None
+            else [(pair[1], 1)]
+        )
+        tasks.append(
+            {
+                "index": index,
+                "pair": (str(pair[0]), str(pair[1])),
+                "point": listPts[index] if listPts is not None else None,
+                "cals": cals,
+                "extension": extension,
+                "debug_folder": debug_folder,
+                "out_dir": out_dir,
+                "manual": manual,
+                "debug": debug,
+                "crop": crop,
+                "option_alti": option_alti,
+                "clean_proxy": clean_proxy,
+                "multispectral_folder": multispectral_folder,
+                "traces": tuple(traces),
+                "angles": angles,
+                "skip": skip,
+                "alignment_modes": tuple(alignment_modes),
+                "redo_nir_candidates": nir_candidates,
+            }
+        )
+
+    results = [None] * len(tasks)
+    with ProcessPoolExecutor(
+        max_workers=worker_count,
+        initializer=_initialize_alignment_worker,
+    ) as executor:
+        futures = {
+            executor.submit(_process_single_pair_task, task): task
+            for task in tasks
+        }
+        completed = 0
+        for future in as_completed(futures):
+            task = futures[future]
+            try:
+                result = future.result()
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Alignment failed for {osp.basename(task['pair'][0])}."
+                ) from exc
+            results[result[0]] = result
+            completed += 1
+            if progress_callback is not None:
+                progress_callback(
+                    completed,
+                    len(tasks),
+                    osp.basename(result[1]),
+                )
+
+    motion_model_list = []
+    for index, (_, _, motion_models, point) in enumerate(results):
+        if listPts is not None and point is not None:
+            listPts[index] = point
+        motion_model_list.extend(motion_models)
     return motion_model_list
 
 
@@ -524,6 +711,20 @@ if __name__ == "__main__":
     parser.add_argument('--debug', action="store_true", help='full debug traces')
     parser.add_argument('--delay', help='synchronization (in seconds)', default=0.)
     parser.add_argument('--multispectral-folder', help='multispectral TIF folder for ODM', default=None)
+    parser.add_argument(
+        '--traces',
+        nargs='+',
+        choices=TRACES,
+        default=TRACES,
+        help='Image traces to generate.',
+    )
+    parser.add_argument(
+        '--alignment-modes',
+        nargs='+',
+        choices=('local', 'global'),
+        default=('local', 'global'),
+        help='Alignment modes for generated NIR, VIR, and NDVI images.',
+    )
     parser.add_argument("--angles", nargs='+', type=float, help="yaw,pitch,roll")
     args = parser.parse_args()
     extension = 1.6
@@ -553,5 +754,7 @@ if __name__ == "__main__":
         extension=extension,
         crop=CROP,
         multispectral_folder=args.multispectral_folder,
-        angles=args.angles
+        angles=args.angles,
+        traces=args.traces,
+        alignment_modes=tuple(args.alignment_modes),
     )
