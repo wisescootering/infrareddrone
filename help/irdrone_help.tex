@@ -1,0 +1,392 @@
+% Manuel utilisateur IRdrone - squelette
+% Compilation : pdflatex irdrone_help.tex (deux passes pour la table des matieres et les references)
+% Chaque bouton a un \label{btn:...} : ces labels serviront a ouvrir le PDF a la bonne page.
+\documentclass[a4paper,11pt]{report}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,linkcolor=blue!50!black]{hyperref}
+\usepackage{refcount}
+
+\graphicspath{{images/}}
+
+% Bouton du logiciel
+\DeclareRobustCommand{\bouton}[1]{\texorpdfstring{\fbox{\small\textsf{#1}}}{#1}}
+% A completer
+\newcommand{\todo}[1]{\textcolor{red}{[\`A r\'ediger : #1]}}
+% Figure tolerante : affiche un cadre si l'image n'existe pas encore.
+% Usage : \figureIRD[label]{fichier}{legende}{largeur}
+%   - label optionnel (ex. fig:img_VIR_1), utilisable avec \ref{...} / \autoref{...}
+%   - fichier avec ou sans extension ; sans extension, essaie .png, .jpg, .jpeg puis .pdf
+\makeatletter
+\newcommand{\ird@file}{}
+\newcommand{\ird@find}[1]{%
+  \def\ird@file{}%
+  \IfFileExists{images/#1}{\def\ird@file{#1}}{%
+  \IfFileExists{images/#1.png}{\def\ird@file{#1.png}}{%
+  \IfFileExists{images/#1.jpg}{\def\ird@file{#1.jpg}}{%
+  \IfFileExists{images/#1.jpeg}{\def\ird@file{#1.jpeg}}{%
+  \IfFileExists{images/#1.pdf}{\def\ird@file{#1.pdf}}{}}}}}}
+\newcommand{\figureIRD}[4][]{%
+  \ird@find{#2}%
+  \begin{figure}[htbp]\centering
+    \ifx\ird@file\@empty
+      \fbox{\parbox{0.6\linewidth}{\centering\small\textcolor{gray}{Image manquante : \detokenize{#2}}}}%
+    \else
+      \includegraphics[width=#4\linewidth]{\ird@file}%
+    \fi
+    \caption{#3}%
+    \if\relax\detokenize{#1}\relax\else\label{#1}\fi
+  \end{figure}}
+\makeatother
+
+\title{IRdrone\\Manuel de l'utilisateur}
+\author{}
+\date{\today}
+
+\begin{document}
+\maketitle
+\tableofcontents
+
+%==========================================================
+\chapter{Vue d'ensemble}\label{ch:overview}
+\section{Objectif du logiciel}
+%\todo{Principe d'IRdrone : acquisition VIS/NIR par drone, alignement, g\'eor\'ef\'erencement, cartographie.}
+IRDrone est une application qui permet de générer des images multispectrales pour des études d'impact environnemental, la botanique. Elle utilise pour cela les images prises par deux caméras, l'une dans le spectre visible (\og VIS\fg)et l'autre dans le spectre proche infrarouge (\og NIR\fg). Les deux caméras sont fixées sur un drone. Actuellement le système supporte un drone DJI Mavic air 2 munie de sa caméra VIS montée sur un gimbal et une caméra SJCam M20 modifiée pour capturer des images dans le spectre du proche infrarouge (typiquement au delà  de 810 nm). L'application synchronise les horloges de deux caméras puis aligne les images VIS et NIR. Le process principal produit des images multispectrales  (4 bandes red, green, blue, nir au format tif). Un post traitement permet de générer des images multispectrales orthorectifiées et géoréférencées, soit unitairement soit sous forme d'assemblage (mapping avec le code ODM; figure~\ref{fig:img_mapping_1}).
+\figureIRD[fig:img_mapping_1]{img_mapping_1.png}{Assemblage à l'aide d'Open Drone Map  (ODM) d'images dans le spectre VIS. La visualisation est faite avec le logiciel QGIS. Les courbes de niveaux ont une équidistance de 1m. Les points rouges indiquent emplacement des clich\'es et le numéro de la prise de vue.}{0.8}
+L'exploitation peut être réalisée avec le logiciel QGIS afin d'obtenir des images spécialisées (indice NDVI  figure~\ref{fig:img_NDVI_1}, Image VIR (nir/red/green figure~\ref{fig:img_VIR_1})). 
+\figureIRD[fig:img_NDVI_1]{img_NDVI_1.png}{Carte de l'indice NDVI de développement des végétaux.}{0.7}
+\figureIRD[fig:img_VIR_1]{img_VIR_1.png}{Exemple d'image composite de type VIR. Les couches R/G/B sont remplac\'ees par les couches NIR/R/G. Ce type de représentation est très utile entre autre pour distinguer entre résineux et feuillus.}{0.7}
+
+
+
+
+\section{Fen\^etre principale. }
+%\todo{Pr\'esentation des cinq \'etapes et du bouton \bouton{?}.}
+\figureIRD[fig:dialogueprincipal]{DialoguePrincipal}{Fen\^etre principale d'IRdrone.}{0.8}
+
+Au lancement de l'application la fenêtre du dialogue principal s'ouvre (voir figure~\ref{fig:dialogueprincipal}) . 
+Elle comporte 5 boutons qui permettent d'exploiter les images d'une mission. 
+Cette exploitation comporte 5 étapes.
+\begin{enumerate}
+	\item La première étape permet de transférer sur l'ordinateur les images prises par les caméras qui sont stockées sur cartes SD. 
+	Dans cette étape on défini aussi les paramètres de la mission. 
+	Le nom du dossier de mission est généré automatiquement en fonction de la localisation et de la date. 
+	\footnote{\label{fn:MissionFolderName} Par défaut le nom du dossier est FLY\_YYYYMMDD\_hhmm\_locality. Il peut être modifié (une fois pour toute!) dans le champ \og location \fg. } 
+	\item La deuxième étape permet de sélectionner les images du décollage où sont visibles les mires ArUco (synchronisation des caméras) et les images prises au dessus de la zone d'étude (alignement multispectral).
+	\item La troisième étape synchronise les deux caméras VIS et NIR et étalie la liste des paires d'images VIS / NIR.
+	\item La quatrième étape, qui est le c\oe ur d'IRDrone, aligne les paires d'images pour obtenir 4 couches spectrales superposées.  
+	\item La cinquième étape permet un post traitement des images multispectrales. géoréférencement, orthorectification, mapping, topographie.
+\end{enumerate} 
+
+
+\section{Organisation d'une mission}
+%\todo{Dossier \texttt{FLY-YYYYMMDD-HHmm-localit\'e}, sous-dossiers \texttt{ImgIRdrone}, \texttt{mapping\_MULTI}, etc.}
+On suppose ici que votre ordinateur sous Windows comporte un dossier \texttt{C:\\Air-Mission}.
+Chaque mission est placée dans un dossier \texttt{C:\\Air-Mission\\FLY-YYYYMMDD-HHmm-location} Ce dossier comportera les sous dossiers :
+\begin{enumerate}
+	\item \texttt{AerialPhotography}
+	      \begin{itemize}
+	      	\item \texttt{VIS}
+	      	  \begin{itemize}
+	      	  	\item \texttt{VIS\_XXXX.DNG}. Images de la caméra DJI transférées,
+	      	  	\item \texttt{VIS\_XXXX.exif}. Fichiers \og compagnons \fg des images contenant des données exif,
+	      	  	\item \texttt{time\_line.json}. Fichier  qui donne la chronologie des images par rapport à l'horloge de la caméra VIS
+	      	  	\item \texttt{transfer\_info\_VIS\_dng.json}. Fichier  qui résume les choix de l'étape 2,
+	      	  	\item \texttt{VIS\_XXXX\_RawTherapee.tif}. Images \footnote{\label{fn:rawtherapee_1}Ces fichiers très volumineux sont indispensables au traitement numérique des images. Ils sont générés une seule fois à la première utilisation de l'étape~4. Lorsque la mission est entièrement traitée et doit être archivée, ils peuvent être supprimés.} créées à l'étape~4.      	  	
+	      	  \end{itemize}
+	      		
+	      	\item \texttt{NIR}
+	      	\begin{itemize}
+	      		\item \texttt{NIR\_XXXX.DNG}. Images de la caméra infrarouge transférées et converties (RAW propriétaire vers dng), 
+	      		\item \texttt{NIR\_XXXX.exif}. Fichiers \og compagnons \fg ~ des images contenant des données exif,   
+	      		\item \texttt{time\_line.json}. Fichier qui donne la chronomogie des images par rapport à l'horloge de la caméra NIR,
+	      		\item \texttt{transfer\_info\_VIS\_dng.json}. Fichier  qui résume les choix de l'étape 2,
+	      		\item \texttt{NIR\_XXXX\_RawTherapee.tif}. Images\textsuperscript{\ref{fn:rawtherapee_1}} créées à l'étape~4.     		
+	      		\end{itemize}
+      		\item \texttt{shoot\_points.json}. Dictionnaire des shoot point (prise de vue avec comme référence l'image VIS et l'image NIR la plus proche de l'instant de la prise de vue VIS).
+	    \end{itemize}
+	\item \texttt{cameras}
+	         \begin{itemize}
+	         	\item Non utilisé actuellement.
+	         \end{itemize}
+	\item \texttt{FlightAnalytics}. C'es un dossier technique.
+			\begin{itemize}
+				\item \texttt{mission\_parameters.json}. Fichier contenant les paramètres de la mission.				
+				\item \texttt{fly\_vertical\_profil.png}. Graphe  qui permet de visualiser les altitudes de prise de vue par rapport ua sol
+				\item \texttt{Angles analysis.png},  \texttt{Angles analysis dispersion.png}, \texttt{Angles analysis spectrum.png}. Graphes danalyse de la qualité du vol. Le premier de ces trois graphes permet par exemple de juger si l'attitude du drone pendant la mission est restée dans les spécifications de vol.
+			\end{itemize}
+	\item \texttt{ImgIRdrone}
+		\begin{itemize}
+		\item Pour chaque shoot point de numéro XXXX on trouve : 
+			\begin{itemize}
+				\item \texttt{VIS\_XXXX\_REDO.bat},
+				\item \texttt{VIS\_XXXX.jpg},
+				\item \texttt{VIR\_XXXX\_local.jpg},
+				\item \texttt{VIS\_XXXX\_motion\_model.json},
+				\item \texttt{VIS\_XXXX\_motion\_model.npy},		
+			\end{itemize}
+		\item \texttt{shoot\_points.json}. La liste des shoot point traité avec un indicateur de réussite. Attention cet indicateur suppose par défaut que l'alignement est correct. L'utilisateur dispose d'une procédure pour examiner les alignements et les déclarer le cas échéant défaillant.
+		\item \texttt{imgMultispectral}. Dossier contenant les quadruplets  d'images multispectrales au format tif. Ici ces images ne sont pas géoréférencées. Pour chaque shoot point XXXX :
+			\begin{itemize}
+				\item \texttt{IRD\_XXXX\_1.tif}. Image de la couche rouge. 
+				\item \texttt{IRD\_XXXX\_2.tif}. Image de la couche verte
+				\item \texttt{IRD\_XXXX\_3.tif}. Image de la couche bleu.
+				\item \texttt{IRD\_XXXX\_4.tif}. Image de la couche infrarouge proche.
+				\item \texttt{IRD\_XXXX\_1.exif}. Fichier \og compagnon \fg ~ contenant des données exif \footnote{Les données exif sont aussi présentes dans les images IRD\_XXXX\_Y.tif. Toutefois  l'extraction de certaines de ces données exif nécessite l'utilisation de logiciel tiers spécifique comme ExifTool. C'est une opération couteuse qu'on ne réalise qu'une fois. On peut donc considérer les fichiers exif compagnons comme des données qui ont été mises en cache.  }
+			\end{itemize}
+		\item \texttt{VIS\_XXXX\_align\_traces\_manual}. Dossier contenant toutes les informations et images suite à une opération d'alignement manuel des images VIS et NIR du shot point XXXX.
+		\end{itemize}
+	\item \texttt{mapping\_MULTI}
+	\item \texttt{Synchro}
+\end{enumerate}
+
+\section{Encha\^inement des \'etapes}
+%\todo{Ordre conseill\'e, pr\'erequis de chaque \'etape.}
+Vous devez avoir sur un support numérique (carte SD, disque dur) les images des deux caméras prises lors du vol de la mission. Les images du DJI sont au format dng. Les images de la caméra SJCam M20 sont au format RAW (ne pas utiliser les version jpeg).
+
+Pour une nouvelle mission il faut suivre dans l'ordre les étapes 1 à 5. 
+Cependant les étapes 2 à 5 peuvent être lancées individuellement à condition que le dossier de la mission comporte à minima les éléments traités par les étapes qui la précède. C'est particulièrement utile pour les étapes 4 et 5.
+
+%==========================================================
+\chapter{Step 1 -- D\'efinir la mission}\label{ch:step1}
+\section{Principe}
+Le Step~1 cr\'ee le dossier de la mission et y range les images du vol. Il se d\'eroule en deux fen\^etres successives :
+\begin{enumerate}
+  \item \textbf{\og Choose the image taken by the drone during takeoff \fg} : on choisit la premi\`ere image prise par le drone
+        au d\'ecollage. Elle fournit la date, l'heure, la position GPS et l'appareil photo utilis\'e.
+  \item \textbf{\og Create a mission \fg} : on v\'erifie et on compl\`ete les informations de la mission, puis on lance la cr\'eation
+        du dossier et le transfert des images VIS et NIR.
+\end{enumerate}
+\`A la fin, le bouton \bouton{Step 2} de la fen\^etre principale devient actif.
+
+\paragraph{Pr\'erequis.}
+\begin{itemize}
+  \item Une connexion Internet : l'altitude du sol est demand\'ee \`a l'IGN
+  \footnote{\label{fn:ign}IGN : Institut national de l'information g\'eographique et foresti\`ere.} 
+  (France) ou \`a OpenTopoData (hors de France),
+        et l'adresse du lieu \`a OpenStreetMap.
+  \item Les images du drone (visible) au format DNG, et les images de la cam\'era proche infrarouge (SJCam M20, fichiers RAW)
+        copi\'ees sur le disque de l'ordinateur.
+  \item Un dossier de travail existant (par d\'efaut \texttt{C:/Air-Mission}, modifiable avec la variable d'environnement
+        \texttt{IRDRONE\_WORKING\_DIR}).
+\end{itemize}
+
+% \figureIRD{step1_load_takeoff_1.png}{Premi\`ere fen\^etre du Step 1 avant chargement de l'image de d\'ecollage.}{0.8}
+
+%----------------------------------------------------------
+\section{Bouton \bouton{Load take-off image}}\label{btn:step1_load_takeoff}
+Ouvre un explorateur de fichiers pour choisir l'image prise par le drone au d\'ecollage.
+Seuls les fichiers \texttt{.dng} de la cam\'era visible sont accept\'es.
+
+Une fois l'image choisie, le logiciel :
+\figureIRD{step1_load_takeoff_2.png}{Premi\`ere fen\^etre du Step 1 apr\`es chargement de l'image de d\'ecollage.}{0.5}
+\begin{enumerate}
+  \item affiche l'image (le d\'ecodage du fichier DNG est assez long : la barre de progression indique l'avancement) ;
+  \item lit les donn\'ees EXIF : date et heure de prise de vue, position GPS, fabricant, mod\`ele et num\'ero de s\'erie de l'appareil ;
+  \item interroge l'IGN (ou OpenTopoData hors de France) pour obtenir l'altitude du sol \emph{au-dessus du niveau de la mer} ;
+  \item interroge OpenStreetMap pour obtenir le lieu-dit, la commune, le code postal, le d\'epartement, la r\'egion et le pays.
+\end{enumerate}
+Ces informations s'affichent dans le cadre gris sous l'image.
+
+\begin{center}
+\fbox{\parbox{0.9\linewidth}{\small\textbf{Attention.} L'altitude enregistr\'ee dans l'image par le drone est mesur\'ee \emph{par rapport
+au point de d\'ecollage}, et non par rapport \`a la mer. C'est pourquoi l'altitude du sol est demand\'ee \`a un service externe tel que l'IGN ref{fn:ign}.}}
+\end{center}
+
+
+\paragraph{Si l'image ne se charge pas.} V\'erifiez la connexion Internet et que le fichier est bien un \texttt{.dng} du drone.
+Le bouton \bouton{next step} reste inactif tant qu'aucune image n'a \'et\'e charg\'ee correctement.
+
+%----------------------------------------------------------
+\section{Boutons \bouton{previous step} et \bouton{next step}}\label{btn:step1_navigation}
+\begin{description}
+  \item[\bouton{next step}] n'est disponible qu'apr\`es le chargement de l'image de d\'ecollage. Il ouvre la fen\^etre \og Create a mission \fg.
+  \item[\bouton{previous step}] ferme la fen\^etre en cours sans rien enregistrer. Dans la fen\^etre \og Create a mission \fg, il revient
+        \`a la fen\^etre pr\'ec\'edente ; l'image de d\'ecollage d\'ej\`a charg\'ee est conserv\'ee.
+\end{description}
+
+%----------------------------------------------------------
+\section{La fen\^etre \og Create a mission \fg}\label{btn:step1_form}
+Les champs sont remplis automatiquement \`a partir de l'image de d\'ecollage. La touche \textsf{Entr\'ee} passe d'un champ au suivant.
+Les champs gris sont remplis automatiquement et ne sont pas modifiables.
+
+\begin{center}
+\begin{tabular}{@{}p{3.6cm}p{2.4cm}p{7.5cm}@{}}
+\hline
+\textbf{Champ} & \textbf{Modifiable} & \textbf{Contenu} \\ \hline
+Date, Hour & non & Date et heure du d\'ecollage (EXIF). \\
+Location & oui & Commune trouv\'ee automatiquement. Fait partie du nom du dossier de la mission. \\
+GPS & non & Latitude et longitude du point de d\'ecollage. \\
+Short description & oui & Br\`eve description libre de la mission. \\
+Pilot & oui & Nom du t\'el\'epilote et son num\'ero d'identification. \\
+Camera VIS & en partie & Fabricant et mod\`ele (lus dans l'image, non modifiables) ; intervalle de prise de vue (timelapse, en s) et d\'ecalage d'horloge (delta time, en s). \\
+Image VIS format & non & Format des images (DNG). \\
+Camera NIR & oui & Par d\'efaut SJCam M20, format RAW, intervalle 3\,s, d\'ecalage d'horloge $-30$\,s. \\
+NIR Filter & oui & Fabricant du filtre et bande, en nm (par d\'efaut 810\,nm). \\ \hline
+\end{tabular}
+\end{center}
+
+\figureIRD{step1_param_mission.png}{Fen\^etre \og Create a mission \fg.}{0.5}
+
+Remarque: les paramètres de décalage d'horloge VIS et NIR sont réservés à un utilisateur expérimenté. Ce sont des paramètres qui permettent de \og récupérer\fg ~une mission dont la phase de synchronisation  sur le terrain se révèle inexploitable (impossibilité de reconnaitre les ArUco, oubli de déclenchement de la mire, etc).
+
+%----------------------------------------------------------
+\section{Bouton \bouton{Validate create mission.}}\label{btn:step1_validate}
+Lance la cr\'eation de la mission. Le bouton se d\'esactive pendant le traitement ; une \'etiquette et une barre de progression
+indiquent la phase en cours. Le logiciel encha\^ine, sans intervention de l'utilisateur sauf \`a l'\'etape~3 :
+\begin{enumerate}
+  \item \textbf{Cr\'eation du dossier} de mission et de ses sous-dossiers, \'ecriture de \texttt{mission\_parameters.json},
+        copie de l'image de d\'ecollage.
+  \item \textbf{Transfert des images VIS} : les fichiers \texttt{HYPERLAPSE\_XXXX.dng} du dossier de l'image de d\'ecollage sont copi\'es
+        dans \texttt{AerialPhotography/VIS} sous le nom \texttt{VIS\_XXXX.dng}.
+  \item \textbf{Choix du dossier NIR} : un message demande de choisir la premi\`ere image proche infrarouge (fichier RAW ou JPG
+  \footnote{Chaque image RAW à une image jpeg associée. La SJCam nomme les images par leur date de prise de vue. Par exemple 2022\_0125\_130413\_001.RAW, 2022\_0125\_130415\_002.JPG, 2022\_0125\_130416\_003.RAW, 2022\_0125\_130418\_004.JPG, etc. L'image jpeg est toujours enregistrée après l'image RAW environ 2s après. A noter que dans certaines circonstances (carte SD trop lente, longue séquence de vol) le délais d'enregistrement du fichier RAW dépasse la fréquence de prise de vue (3s dans notre cas). Dans ce cas l'image suivante est prise 6s après. IRdrone gère automatiquement ce type de saut.} de la SJCam).
+        Le dossier qui la contient est utilis\'e pour toutes les images NIR.
+  \item \textbf{Conversion des images NIR} : les fichiers RAW sont convertis en DNG dans \texttt{AerialPhotography/NIR}
+        (calcul en parall\`ele, \'eventuellement long).
+  \item \textbf{Fichiers \texttt{.exif}} des images VIS puis NIR : un fichier de m\'etadonn\'ees par image,
+        et un fichier \texttt{time\_line.json} par bande donnant la chronologie des prises de vue.
+  \item \textbf{Altitudes et trajectoire} : pour chaque position GPS du vol, l'altitude du sol est demand\'ee \`a l'IGN (par paquets ;
+        trois essais en cas d'\'echec, puis bascule automatique sur OpenTopoData). Le logiciel en d\'eduit la hauteur du drone au-dessus du sol,
+        les distances et les caps entre prises de vue, et enregistre ces valeurs dans les fichiers \texttt{.exif}.
+  \item \textbf{Profil vertical} : trac\'e de l'altitude du drone et du sol le long du trajet, enregistr\'e dans
+        \texttt{FlightAnalytics/fly\_vertical\_profil.png}.
+  \item \textbf{Message final} indiquant le dossier cr\'e\'e, puis fermeture des fen\^etres du Step~1.
+\end{enumerate}
+
+\figureIRD{step1_nir_prompt.png}{Message demandant de choisir la premi\`ere image NIR.}{0.2}
+\figureIRD{step1_fly_vertical_profil.png}{Profil vertical du vol (altitude du drone et du sol), produit \`a la fin du Step~1.}{0.8}
+
+\subsection{Dossiers cr\'e\'e}
+A l'issue de l'étape 1 (Step 1) IRDrone aura cr\'e\'e la structure de dossiers et fichiers de la mission. A ce stade vous n'aurez plus besoin d'accéder aux images originales stockées sur les cartes sd des caméras. La structure du dossier de la mission est la suivante :
+
+
+\begin{verbatim}
+FLY-YYYYMMDD-hhmm-<location>/
+  AerialPhotography/
+     VIS/   VIS_XXXX.dng, VIS_XXXX.exif, time_line.json,
+            transfer_info_VIS_dng.json, time_line.json
+     NIR/   NIR_XXXX.dng, NIR_XXXX.exif, time_line.json
+            transfer_info_NIR_dng.json, time_line.json
+  FlightAnalytics/
+     mission_parameters.json, fly_vertical_profil.png
+  Synchro/        (Step 3)
+  ImgIRdrone/     (Step 4)
+  mapping_MULTI/  (Step 5)
+  cameras/
+\end{verbatim}
+Les sous-dossiers ont une ic\^one sp\'ecifique dans l'explorateur Windows.
+Le dossier de mission n'est jamais effac\'e : si le dossier existe d\'ej\`a, seuls les \'el\'ements manquants sont cr\'e\'es.
+Pour les images VIS d\'ej\`a transf\'er\'ees (fichier \texttt{.exif} pr\'esent), le transfert est ignor\'e : relancer le Step~1 sur
+une mission existante est donc rapide.
+
+\figureIRD{step1_mission_folder.png}{Dossier de mission vu dans l'explorateur Windows.}{0.7}
+
+La durée des transferts dépend beaucoup des performances des supports (carte SD, disque dur) et des liaisons (USB B ou C, lecteur). De plus et contrairement aux images de la caméra DJI qui sont au format dng, les images de la caméra SJCam M20 sont dans un format \og RAW \fg~qui n'est pas normalisé. Chaque image doit être convertie au format dng d'ADOBE à l'aide d'un logiciel tiers \footnote{Il s'agit du code \texttt{sjcam\_raw2dng} disponible uniquement comme un fichier exe. \texttt{sjcam\_raw2dng}
+	Convert SJCAM raw files to Adobe DNG and TIFF while also getting metadata
+	such as date and ISO from JPEGs that correlate to the RAW files
+} ce qui allonge le temps de transfert effectif. 
+
+\subsection{En cas de probl\`eme}
+\begin{itemize}
+  \item \textbf{Aucune image NIR trouv\'ee} : le message \og No NIR RAW files found \fg\ signifie que le dossier choisi ne contient pas de
+        fichiers \texttt{.RAW} ; recommencez en choisissant le bon dossier.
+  \item \textbf{Erreur pendant le transfert VIS ou la lecture EXIF} : un message d'erreur s'affiche et la fen\^etre se ferme.
+        Le bouton reste utilisable apr\`es r\'eouverture de la fen\^etre.
+  \item \textbf{Altitudes IGN indisponibles} : le logiciel bascule seul sur OpenTopoData, moins pr\'ecis en France.
+\end{itemize}
+%\todo{Compl\'eter avec les erreurs rencontr\'ees sur le terrain (carte SD absente, dossier prot\'eg\'e en \'ecriture, \dots).}
+
+%==========================================================
+\chapter{Step 2 -- S\'electionner les images de r\'ef\'erence}\label{ch:step2}
+\section{Principe}
+%\todo{R\^ole des images de r\'ef\'erence (synchronisation, vol).}
+\figureIRD{step2_dialog_select_phase_images_1.png}{Fen\^etre de s\'election des images de r\'ef\'erence. Pour la bande spectrale visible la première image est par défaut celle du point de décollage qui a servi à définir la mission à l'étape 1. Mais elle peut être changée ici.}{0.95}
+La fenêtre de dialogue permet la définition :
+\begin{enumerate}
+	\item du point de décollage,
+	\item des points de début et fin de synchronisation,
+	\item des points de début et fin de vol au dessus de la zone étudiée par la mission.
+\end{enumerate}
+Les images sont sélectionnées pour les spectres visible et proche infrarouge  respectivement dans les dossiers
+\begin{itemize} 
+	\item \texttt{C:/Air-Mission/FLY-YYYYMMDD-hhmm-location/AerialPhotography/VIS}, 
+   	\item  \texttt{C:/Air-Mission/FLY-YYYYMMDD-hhmm-location/AerialPhotography/NIR}.
+\end{itemize} 
+ Lors de cette étape de choix il est toujours possible après une première sélection de choisir une autre image. 
+ L'ordre de sélection des cinq images n'a pas d'importance mais bien entendu first précède toujours last.
+ Il est possible de sélectionner la même image pour \texttt{first mission image} et \texttt{first sync image}.  
+  Pour les images DJI du spectre visible, si vous sélectionnez la même image pour \texttt{first sync image} et \texttt{last sync image} alors une seule image sera retenue (c'est un cas limite pour la synchronisation). 
+  En revanche  si vous sélectionnez la même image pour \texttt{first sync image} et \texttt{last sync image} pour le spectre proche infrarouge la synchronisation automatique échouera à l'étape 3 et il vous sera demandé d'entrer manuellement l'offset de synchronisation des horloges. 
+  Cela peut constituer une \og astuce \fg~ pour forcer l' offset de synchronisation des horloges à une valeur particulière en cas de synchronisation terrain problématique.
+%\todo{\bouton{Load first mission image.}, \bouton{Load first sync image.}, \bouton{Load last sync image.},
+%----------------------------------------------------------
+\section{Boutons \bouton{Load first mission image.}}\label{btn:step2_Load_first_mission_image}
+Le choix de cette image défini l'origine de la ligne de temps pour la synchronisation des horloges des caméras. En règle général on choisira la première prise de vue de la mission.
+\section{Boutons \bouton{Load first synchro image.},\bouton{Load last synchro image.}}\label{btn:step2_Load_synchro_image}
+L'utilisateur doit choisir l'image de début du cycle de synchronisation. Pour les images visibles et si la procédure a été respectée sur le terrain il s'agit de la première ou deuxième image enregistrée. Pour les images infrarouge il faut repérer la première image stable où le système de mire est visible en totalité et où la mire mobile est effectivement en rotation. Ensuite il faut choisir la dernière image de la phase de synchronisation. En général on la repère facilement car lorsque la phse de synchronisation est terminée le pilote prend rapidement de l'altitude et le changement d'aspect est bien visible. Les choix fait ici conditionnent en partie le réussite de la phase 3 de synchronisation des horloge. Mais après la phase 3 il est possible de revenir à la phase 2 et de redéfinir ces images.
+\figureIRD[fig:step2_dialog_select_VIS]{step2_dialog_select_phase_image_VIS.png}{Fen\^etre de s\'election des images de r\'ef\'erence. Bande spectrale visible (VIS).}{0.95}
+\section{Boutons \bouton{Load first fly image.},\bouton{Load last fly image.}}\label{btn:step2_Load_mission_image}
+L'utilisateur doit choisir la première image prise au dessus de la zone à étudier (vol mission). On élimine ainsi les images de la transition entre le décollage/synchronisation à très basse altitude et le vol de la mission à \og haute altitude \fg. A noter qu'en principe le vol mission devrait s'oppérer à altitude constante du drone et au dessus d'une zone dont les altitudes varie peu par rapport à l'altitude du drone par rapport au sol. L'observation de la figure \ref{fig;step1_fly_vertical_profil.png} permet de juger de la qualité du plan de vol réalisé sur le terrain.		
+\section{Bouton \bouton{Validate mission images}}\label{btn:step2_validate}
+\figureIRD[fig:step2_dialog_select_NIR]{step2_dialog_select_phase_images_NIR.png}{Fen\^etre de s\'election des images de r\'ef\'erence. Bande spectrale proche infrarouge (NIR).}{0.95}
+Ce bouton déclenche la construction des listes des images des trois phases de vol pertinente pour IRDrone : takeoff, synchro et fly. Aucune image n'est déplacée. L'opération est très rapide.
+
+%==========================================================
+\chapter{Step 3 -- Pr\'etraitement des images}\label{ch:step3}
+\section{Principe}
+%\todo{Synchronisation temporelle et appariement des images VIS/NIR.}
+\figureIRD{step3_window.png}{Fen\^etre de pr\'etraitement.}{0.8}
+\section{Bouton \bouton{Run ArUco detection (VIS + NIR)}}\label{btn:step3_aruco}
+\todo{D\'etection des marqueurs ArUco dans les images VIS et NIR.}
+\section{Bouton \bouton{Compute time alignment}}\label{btn:step3_time_shift}
+\todo{Calcul du d\'ecalage temporel entre VIS et NIR.}
+\section{Bouton \bouton{Pair VIS / NIR images}}\label{btn:step3_pairing}
+\todo{Appariement des images.}
+\section{Bouton \bouton{Close}}\label{btn:step3_close}
+\todo{Fermeture de la fen\^etre.}
+
+%==========================================================
+\chapter{Step 4 -- Traitement des images}\label{ch:step4}
+\section{Principe}
+\todo{Alignement VIS/NIR, sorties dans \texttt{ImgIRdrone}.}
+\figureIRD{step4_window.png}{Fen\^etre de traitement des images.}{0.8}
+\section{Options de sortie}\label{btn:step4_options}
+\todo{Cases \bouton{NDVI}, \bouton{NIR}, \bouton{Local alignment}, \bouton{Global alignment}.}
+\section{Bouton \bouton{Run alignment}}\label{btn:step4_run_alignment}
+\todo{Lancement de l'alignement, fichiers produits (\texttt{VIS\_XXXX.jpg}, \texttt{IRD\_XXXX\_n.tif}, \dots).}
+\section{Bouton \bouton{Flag misaligned points}}\label{btn:step4_flag_misaligned}
+\todo{S\'election des \texttt{VIR\_XXXX\_local.jpg} mal align\'es dans l'explorateur, mise \`a jour de la cl\'e
+\texttt{failed} de \texttt{shoot\_points.json}, fichier \texttt{shoot\_points\_failed\_summary.json}.
+Conseil : afficher le dossier en \og tr\`es grandes ic\^ones \fg.}
+\figureIRD{step4_flag_misaligned.png}{S\'election des images mal align\'ees.}{0.8}
+\section{Bouton \bouton{Close}}\label{btn:step4_close}
+\todo{Fermeture de la fen\^etre.}
+
+%==========================================================
+\chapter{Step 5 -- Post-traitement}\label{ch:step5}
+\section{Principe}
+\todo{G\'eor\'ef\'erencement, mosa\"ique ODM, mod\`ele num\'erique de terrain.}
+\figureIRD{step5_window.png}{Fen\^etre de post-traitement.}{0.8}
+\section{S\'election des images}\label{btn:step5_selection}
+\todo{\og Select one image every $n$ eligible images \fg\ ou \og Select by image overlap \fg.}
+\section{Bouton \bouton{Run Geo ref}}\label{btn:step5_georef}
+\todo{G\'eor\'ef\'erencement des images.}
+\section{Bouton \bouton{Run Mapping}}\label{btn:step5_mapping}
+\todo{Mosa\"ique par ODM, orthophoto dans \texttt{mapping\_MULTI/mapping\_result}.}
+\section{Bouton \bouton{DTM + contours}}\label{btn:step5_dtm}
+\todo{Grille r\'eguli\`ere, altitudes IGN, MNT, courbes de niveau QGIS (1\,m), pas de grille (10\,m par d\'efaut),
+lancement automatique apr\`es ODM.}
+\figureIRD{step5_dtm_map.png}{Carte 2D du MNT avec courbes de niveau et quadrillage UTM.}{0.8}
+\figureIRD{step5_dtm_3d.png}{Surface 3D du MNT.}{0.8}
+\subsection{Fichiers produits}
+\todo{\texttt{ortho\_dtm.tif}, \texttt{ortho\_contours.geojson} et \texttt{.qml}, \texttt{ortho\_dtm\_map.png},
+\texttt{ortho\_dtm\_3d.png}, \texttt{ortho\_dtm\_grid.json}. Ouverture dans QGIS.}
+\section{Bouton \bouton{Close}}\label{btn:step5_close}
+\todo{Fermeture de la fen\^etre.}
+
+\end{document}
