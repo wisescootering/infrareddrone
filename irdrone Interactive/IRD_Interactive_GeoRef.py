@@ -2557,8 +2557,6 @@ def build_MNT_interpolator(Xg, Yg, Zg, method="RectBivariateSpline_quadratic", t
 
             spline = RectBivariateSpline(y, x, Zg, kx=1, ky=1)
 
-            return altitude
-
         # -------------------------------------------------
         # Altitude function for the splines
         # -------------------------------------------------
@@ -3759,11 +3757,11 @@ def georef_main(image_callback=None, mission_parameters=None):
 
         # --- Development settings ---
         if args.offsetyaw == 0:
-            args.offsetyaw = 6.
+            args.offsetyaw = -9.
         if args.offsetUTMx == 0:
-            args.offsetUTMx = - 3.8
+            args.offsetUTMx = - 1
         if args.offsetUTMy == 0:
-            args.offsetUTMy = 3.8
+            args.offsetUTMy = 1.0
         logger.warn(
             f'Forcing arguments for development ...\n'
             f'      Yaw offset = {args.offsetyaw}°\n'
@@ -3985,11 +3983,11 @@ if __name__ == "__main__":
 
         # --- réglages developpement ---
         if args.offsetyaw == 0:
-            args.offsetyaw = 6.
+            args.offsetyaw = -9.
         if args.offsetUTMx == 0:
-            args.offsetUTMx = - 3.8
+            args.offsetUTMx = - 1.0
         if args.offsetUTMy == 0:
-            args.offsetUTMy = 3.8
+            args.offsetUTMy = -1.0
         logger.warn(
             f'forcage des arguments pour le développement ...\n'
             f'      offset yaw = {args.offsetyaw}°\n'

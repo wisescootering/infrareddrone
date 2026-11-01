@@ -29,6 +29,9 @@ RESOURCE_ICON_DIR = (
 IMAGE_ARUCO_VIS_PATH = RESOURCE_ICON_DIR / "Image_ArUco_VIS.jpg"
 IMAGE_ARUCO_NIR_PATH = RESOURCE_ICON_DIR / "Image_ArUco_NIR.jpg"
 
+# Minimum display time of each ArUco check image during detection (ms)
+CHECK_IMAGE_HOLD_MS = 5000
+
 # ----------------------------------------------------
 #     bib Multi Thread
 # ----------------------------------------------------
@@ -79,6 +82,7 @@ import matplotlib.pyplot as plt
 #     bib IRD_Interactive
 # ----------------------------------------------------
 import IRD_Interactive_utils as Uti
+import IRD_Interactive_help as Help
 from IRD_Interactive_utils import safe_path
 import IRD_Interactive_ArUco as Aru
 from IRD_Interactive_workers import ArucoWorker
@@ -150,6 +154,12 @@ class DialogSynchroAruco(QDialog):
         self._animation_timer = None
         self._animation_index = 0
         self._animation_images = None
+
+        # Live display of the check images saved during ArUco detection
+        self._pending_check_image = None
+        self._check_image_timer = QTimer(self)
+        self._check_image_timer.setSingleShot(True)
+        self._check_image_timer.timeout.connect(self._show_pending_check_image)
 
         self.image_pairing_worker = None
 
@@ -254,6 +264,11 @@ class DialogSynchroAruco(QDialog):
         close_layout = QHBoxLayout()
         close_layout.addStretch()
         close_layout.addWidget(self.btn_close)
+        self.btn_help = QPushButton("?")
+        self.btn_help.setFixedWidth(30)
+        self.btn_help.setStyleSheet(BUTTON_STYLE)
+        self.btn_help.clicked.connect(lambda: Help.show_help("ch:step3", parent=self))
+        close_layout.addWidget(self.btn_help)
 
         main_layout.addLayout(close_layout)
 
@@ -337,6 +352,9 @@ class DialogSynchroAruco(QDialog):
             self.aruco_orchestrator.signals.stage.connect(
                 self._on_aruco_stage
             )
+            self.aruco_orchestrator.signals.check_image.connect(
+                self._on_check_image
+            )
 
             # Reset the progress bar before starting processing
             self.progress_bar.setValue(0)
@@ -381,6 +399,9 @@ class DialogSynchroAruco(QDialog):
         # Reset the progress bar
         self.progress_bar.setValue(0)
 
+        # Stop the live display of check images (the label is reused by the next steps)
+        self._reset_check_image_display()
+
         # Enable time alignment now that both detection stages are complete
         self.btn_compute_time_shift.setEnabled(True)
 
@@ -394,21 +415,70 @@ class DialogSynchroAruco(QDialog):
         self.progress_bar.setValue(0)
         self.progress_label.setText(stage)
 
-        # Display the NIR ArUco image when NIR processing starts.
-        if "NIR" in stage:
-            pixmap = QPixmap(str(IMAGE_ARUCO_NIR_PATH))
+        # Back to the generic image of the band that starts; drop pending check images
+        self._reset_check_image_display()
+        generic_path = IMAGE_ARUCO_NIR_PATH if "NIR" in stage else IMAGE_ARUCO_VIS_PATH
+        self._show_image_file(generic_path)
 
-            if not pixmap.isNull():
-                scaled_pixmap = pixmap.scaled(
-                    self.timeshift_plot_label.size(),
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation
-                )
-                self.timeshift_plot_label.setPixmap(scaled_pixmap)
-            else:
-                self._log(
-                    f"Unable to load image: {IMAGE_ARUCO_NIR_PATH}"
-                )
+    def _reset_check_image_display(self) -> None:
+        """
+        Stop the hold timer and forget any pending check image.
+        """
+        self._pending_check_image = None
+        timer = getattr(self, "_check_image_timer", None)
+        if timer is not None:
+            timer.stop()
+
+    def _show_image_file(self, image_path: Path) -> bool:
+        """
+        Display an image file in the central label, keeping its aspect ratio.
+
+        Args:
+            image_path: Path of the image to display.
+
+        Returns:
+            True if the image was loaded and displayed, False otherwise.
+        """
+        pixmap = QPixmap(str(image_path))
+        if pixmap.isNull():
+            self._log(f"Unable to load image: {image_path}")
+            return False
+        self.timeshift_plot_label.setPixmap(
+            pixmap.scaled(
+                self.timeshift_plot_label.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+        )
+        return True
+
+    def _on_check_image(self, image_path: str) -> None:
+        """
+        Display a check image saved during ArUco detection.
+
+        Images arrive much faster than they can be read (several per second
+        in multi-thread mode). The first one is shown immediately and kept for
+        CHECK_IMAGE_HOLD_MS; during this time only the most recent image is
+        remembered and shown when the delay expires.
+
+        Args:
+            image_path: Path of the check image just saved.
+        """
+        self._pending_check_image = image_path
+        if self._check_image_timer.isActive():
+            return
+        self._show_pending_check_image()
+
+    def _show_pending_check_image(self) -> None:
+        """
+        Show the pending check image (if any) and restart the hold delay.
+        """
+        image_path = self._pending_check_image
+        self._pending_check_image = None
+        if image_path is None:
+            return
+        self._show_image_file(Path(image_path))
+        self._check_image_timer.start(CHECK_IMAGE_HOLD_MS)
 
     def _on_aruco_error(self, error_msg: str) -> None:
         """
@@ -1081,6 +1151,7 @@ class ArucoOrchestrator:
         # Relay progress updates and processing stages
         worker.signals.progress.connect(self.signals.progress.emit)
         worker.signals.stage.connect(self.signals.stage.emit)
+        worker.signals.check_image.connect(self.signals.check_image.emit)
 
         # Start the worker in the global thread pool
         self.thread_pool.start(worker)
@@ -1204,6 +1275,8 @@ class ArucoOrchestratorSignals(QObject):
     error = pyqtSignal(str)
     # Log message forwarded by a worker
     log = pyqtSignal(str)
+    # Path of a check image (Synchro/Check_ARUCO) just saved by a worker
+    check_image = pyqtSignal(str)
 
 class TimeShiftInputDialog(QDialog):
     """

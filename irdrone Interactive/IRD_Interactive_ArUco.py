@@ -53,7 +53,8 @@ def process_aruco_images(
         multi_thread=False,
         max_workers: int = 4,
         progress_callback: Optional[Callable[[int], None]] = None,
-        log_callback: Optional[Callable[[str], None]] = None
+        log_callback: Optional[Callable[[str], None]] = None,
+        check_image_callback: Optional[Callable[[str], None]] = None
 ):
     """
     Multi-threaded processing of ArUco detections.
@@ -79,6 +80,10 @@ def process_aruco_images(
         Print debug information. Default is False.
     use_aruco_cache : bool, optional
         If True, force reprocessing and overwrite ArUco EXIF cache.
+    check_image_callback : callable, optional
+        Called with the path of each check image just after it has been saved
+        (may be called from several threads; it must be thread-safe, e.g. a Qt
+        signal ``emit``). Not called when the EXIF cache is used.
 
     Returns
     -------
@@ -193,6 +198,10 @@ def process_aruco_images(
                 cv2.imwrite(str(out_path), img_check, [cv2.IMWRITE_JPEG_QUALITY, 90])
             else:
                 cv2.imwrite(str(out_path), img_check)
+
+            # Tell the GUI that a new check image is available (file fully written)
+            if check_image_callback is not None:
+                check_image_callback(str(out_path))
 
         return i, img_name, result
 

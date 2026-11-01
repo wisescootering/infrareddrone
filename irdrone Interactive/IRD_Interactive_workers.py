@@ -857,6 +857,7 @@ class ArucoWorkerSignals(QObject):
     finished = pyqtSignal(list, list, list)  # results, x_vals, y_vals
     error = pyqtSignal(str)
     log = pyqtSignal(str)  # Log message for the GUI
+    check_image = pyqtSignal(str)  # Path of a check image just saved in Synchro/Check_ARUCO
 
 class ArucoWorker(QRunnable):
     """
@@ -898,7 +899,8 @@ class ArucoWorker(QRunnable):
                 use_aruco_cache=self.use_aruco_cache,
                 multi_thread=self.multi_thread,
                 progress_callback=self.signals.progress.emit,
-                log_callback=self.signals.log.emit
+                log_callback=self.signals.log.emit,
+                check_image_callback=self.signals.check_image.emit
             )
             self.signals.finished.emit(results, x_vals, y_vals)
 

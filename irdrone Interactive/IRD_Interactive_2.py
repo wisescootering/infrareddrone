@@ -34,6 +34,7 @@ from PyQt6.QtGui import QPixmap, QColor, QImage, QCloseEvent, QIcon
 from PyQt6.QtCore import Qt
 # -------------- IRDrone Library -------------------------------------
 import IRD_Interactive_utils as Uti
+import IRD_Interactive_help as Help
 from IRD_Interactive_utils import center_on_screen
 from IRD_Interactive_color_style import Style
 from IRD_Interactive_styles import BUTTON_STYLE
@@ -282,7 +283,7 @@ class LoadVisNirImagesDialog(QDialog):
             self.btn_load_all_images.setFixedWidth(button_width)
             self.btn_load_all_images.setMinimumHeight(56)
             self.btn_load_all_images.setStyleSheet(BUTTON_STYLE)
-            self.btn_help = QPushButton("Help")
+            self.btn_help = QPushButton("?")
             self.btn_help.setStyleSheet(BUTTON_STYLE)
             self.btn_help.setFixedWidth(button_width)
 
@@ -1285,15 +1286,9 @@ class LoadVisNirImagesDialog(QDialog):
 
         return files
 
-    @staticmethod
-    def on_help() -> None:
-        """
-        """
-        try:
-            Uti.show_info_message("IRDrone", "Sorry, this feature is under development.", "")
-        except Exception as e:
-            print("error", e)
-        pass
+    def on_help(self) -> None:
+        """Open the user manual on the Step 2 chapter."""
+        Help.show_help("ch:step2", parent=self)
 
     @staticmethod
     def _dict_has_keys(d: dict, keys: list[str]) -> bool:

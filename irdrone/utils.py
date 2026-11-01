@@ -4,6 +4,7 @@ from scipy.interpolate import interp1d
 from skimage import exposure
 import glob
 import itertools
+import logging
 import numpy as np
 import os.path as osp
 import json
@@ -76,7 +77,7 @@ def cameracalibration(camera="sjcam", checkerboardsize=(10,7), imgname="*.JPG"):
     """
     calibfile = osp.join(osp.dirname(osp.abspath(__file__)), "..", "calibration", camera, "calibration.json")
     if not osp.exists(calibfile):
-        print("NOT CALIBRATED %s"%calibfile)
+        logging.warning("Calibration file not found: %s", calibfile)
         import cameracalibration
         dic = cameracalibration.calibrate(
             imlist= imagepath(imgname=imgname,  dirname=osp.join("calibration",camera))[-60:],
@@ -86,15 +87,14 @@ def cameracalibration(camera="sjcam", checkerboardsize=(10,7), imgname="*.JPG"):
         dic["mtx"] = dic["mtx"].tolist()
         dic["dist"] = dic["dist"].tolist()[0]
         with open(calibfile, "w") as fi:
-            print(Style.CYAN + "SAVING %s CALIBRATION RESULTS %s"%(camera,calibfile))
+            logging.info("Saving %s calibration results to %s", camera, calibfile)
             json.dump(dic, fi)
     if osp.exists(calibfile):
         with open(calibfile, "r") as fi:
             dic = json.load(fi)
             dic["mtx"] = np.array(dic["mtx"])
             dic["dist"] = np.array(dic["dist"])
-            print(Style.GREEN + "CALIBRATION %s SUCCESSFULLY LOADED"%camera)
-            print(Style.RESET)
+            logging.info("Calibration %s successfully loaded", camera)
     else:
         raise  NameError("Calibration %s cannot be loaded %s"%(camera, calibfile))
     return dic

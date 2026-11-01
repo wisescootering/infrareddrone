@@ -4,22 +4,35 @@ The **ODM** button in the Phase 5 dialog now runs the complete OpenDroneMap
 workflow through Docker Desktop. The long-running Docker process runs on a
 background worker, so the dialog remains responsive. The dialog asks for
 confirmation before starting and prevents closing while ODM is running.
+Before confirmation, the user selects the maximum rank-1 NIR `|dt|` from 0.05 to
+6 seconds and either one image every 1-4 eligible images (default: every 3) or
+an overlap-based criterion. Overlap percentages can be configured from 0% to
+100% on both image axes, but overlap-based selection is not implemented yet;
+the interface warns the user and requires choosing the image-interval option.
 
 ## Workflow
 
 The ODM module performs these steps:
 
-1. Reads `AerialPhotography/shoot_points.json`.
-2. Keeps NIR matches with `rank == 1` and `abs(dt) <= 0.5` seconds.
+1. Reads `ImgIRdrone/shoot_points.json`, generated at the end of Step 4. It
+   contains only shoot points with all four multispectral TIFFs and the rank-1
+   EXIF sidecar. When Step 4 regenerates this inventory, it preserves each
+   existing point's `failed` status and other point fields if that point remains
+   available; newly available points start with `failed: false`. If this
+   inventory is absent (for older missions), the module reads
+   `AerialPhotography/shoot_points.json` instead.
+2. Excludes records marked `failed: true` (or `1`), then keeps records whose
+   rank-1 NIR match has `abs(dt)` less than or equal to the selected threshold
+   (default: 0.5 seconds).
 3. Keeps only VIS filenames listed in
    `AerialPhotography/VIS/transfer_info_VIS_dng.json` under
    `fly.listCopiedImages`.
-4. Selects every third eligible pair in the original shoot-point order,
-   starting with the first.
-5. Resolves the four TIFF files `VIS_XXXX_1.tif` through `VIS_XXXX_4.tif` in
-   `mapping_MULTI/images` and validates that each is readable, single-band,
+4. Selects every n-th eligible pair in original shoot-point order, starting
+   with the first; n is selected from 1 to 4 and defaults to 3.
+5. Resolves the four TIFF files `IRD_XXXX_1.tif` through `IRD_XXXX_4.tif` in
+   `ImgIRdrone/imgMultispectral` and validates that each is readable, single-band,
    and has matching dimensions and data type.
-6. Estimates the image GSD from each selected `VIS_XXXX_1.exif` sidecar,
+6. Estimates the image GSD from each selected `IRD_XXXX_1.exif` sidecar,
    `DroneAltitudeGround`, image width, and the matching camera's normalized
    `focal_x`. The median GSD rounded up to the next 0.1 cm/pixel is passed to
    ODM as `--orthophoto-resolution`. If the sidecars or camera calibration

@@ -176,6 +176,47 @@ class BestMappingTests(unittest.TestCase):
             self.assertFalse(manifest["odm_started"])
             self.assertTrue((mission / "mapping_MULTI" / "img_best_mappping.json").is_file())
 
+    def test_mapping_uses_selected_time_tolerance_and_image_interval(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            mission = Path(temporary)
+            self._create_mission(mission)
+
+            manifest = build_best_mapping(
+                mission,
+                dt_tolerance_s=0.25,
+                sample_every=2,
+            )
+
+            self.assertEqual(
+                manifest["selection_rules"]["maximum_absolute_dt_seconds"],
+                0.25,
+            )
+            self.assertEqual(
+                manifest["selection_rules"]["sample_every_nth_eligible_pair"],
+                2,
+            )
+            self.assertEqual(
+                [
+                    point["VIS"]["FileName"]
+                    for point in manifest["shoot_points"]
+                ],
+                ["VIS_0121.DNG", "VIS_0128.DNG"],
+            )
+
+    def test_mapping_selection_rejects_out_of_range_criteria(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            mission = Path(temporary)
+            self._create_mission(mission)
+
+            for tolerance in (0.04, 6.01, True):
+                with self.subTest(dt_tolerance_s=tolerance):
+                    with self.assertRaises(ODMMappingError):
+                        build_best_mapping(mission, dt_tolerance_s=tolerance)
+            for interval in (0, 5, 1.0, True):
+                with self.subTest(sample_every=interval):
+                    with self.assertRaises(ODMMappingError):
+                        build_best_mapping(mission, sample_every=interval)
+
     def test_missing_band_is_reported_and_not_added_as_a_ready_quartet(self):
         with tempfile.TemporaryDirectory() as temporary:
             mission = Path(temporary)
@@ -195,6 +236,49 @@ class BestMappingTests(unittest.TestCase):
             self.assertEqual(len(manifest["image_quartets"]), 2)
             self.assertFalse(manifest["shoot_points"][0]["ready_for_odm"])
             self.assertTrue(manifest["shoot_points"][0]["validation_errors"])
+
+    def test_step_four_inventory_excludes_shoot_points_marked_failed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            mission = Path(temporary)
+            self._create_mission(mission)
+            inventory_path = mission / "ImgIRdrone" / "shoot_points.json"
+            inventory_path.write_text(
+                json.dumps(
+                    {
+                        "mission_path": str(mission),
+                        "shoot_points": [
+                            {
+                                "FileName": f"VIS_{index:04d}.DNG",
+                                "dt": dt,
+                                "failed": 1 if index == 120 else 0,
+                            }
+                            for index, dt in (
+                                (120, 0.5),
+                                (121, -0.2),
+                                (122, 0.1),
+                                (123, 0.5001),
+                                (124, -0.5),
+                                (125, 0.2),
+                                (126, 0.4),
+                                (127, -0.49),
+                                (128, 0.1),
+                            )
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            manifest = build_best_mapping(mission)
+
+            self.assertEqual(
+                manifest["source_files"]["shoot_points"],
+                str(inventory_path),
+            )
+            self.assertEqual(
+                [point["VIS"]["FileName"] for point in manifest["shoot_points"]],
+                ["VIS_0121.DNG", "VIS_0125.DNG", "VIS_0128.DNG"],
+            )
 
     def test_required_mission_metadata_is_reported(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -332,6 +416,37 @@ class BestMappingTests(unittest.TestCase):
                 previous_result.read_text(encoding="utf-8"),
                 "previous output",
             )
+
+    def test_style_shots_geojson_adds_shot_number_and_qgis_style(self):
+        import xml.etree.ElementTree as ElementTree
+
+        from IRD_Interactive_ODM import style_shots_geojson
+
+        with tempfile.TemporaryDirectory() as temporary:
+            shots = Path(temporary) / "shots.geojson"
+            shots.write_text(
+                json.dumps(
+                    {
+                        "type": "FeatureCollection",
+                        "features": [
+                            {
+                                "type": "Feature",
+                                "properties": {"filename": "IRD_0128_1.tif"},
+                                "geometry": {"type": "Point", "coordinates": [3.4, 45.1, 100]},
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            style_shots_geojson(shots)
+
+            properties = json.loads(shots.read_text(encoding="utf-8"))["features"][0]["properties"]
+            self.assertEqual(properties["shot"], 128)
+            self.assertEqual(properties["filename"], "IRD_0128_1.tif")
+            root = ElementTree.parse(shots.with_suffix(".qml")).getroot()
+            self.assertEqual(root.find(".//text-style").get("fieldName"), "shot")
 
     def test_copies_selected_results_to_mapping_result(self):
         with tempfile.TemporaryDirectory() as temporary:

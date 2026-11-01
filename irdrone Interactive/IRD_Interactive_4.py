@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import sys
 
 from PyQt6.QtCore import QProcess, QProcessEnvironment, Qt
@@ -15,6 +16,7 @@ from PyQt6.QtWidgets import (
     QDialog,
     QCheckBox,
     QDoubleSpinBox,
+    QFileDialog,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -27,6 +29,7 @@ from PyQt6.QtWidgets import (
 )
 
 from IRD_Interactive_styles import BUTTON_STYLE
+import IRD_Interactive_help as Help
 from config import SJCONVERTERPATH
 
 
@@ -36,6 +39,91 @@ VIS_FILENAME_PATTERN = re.compile(r"^VIS_(\d+)\.dng$", re.IGNORECASE)
 PROGRESS_LINE_PATTERN = re.compile(
     r"^STEP4_PROGRESS (\d+) (\d+)(?: (\S+))?(?: ([\d.]+) (-?[\d.]+))?$"
 )
+LOCAL_JPEG_PATTERN = re.compile(r"^VIR_(\d+)_local\.jpg$", re.IGNORECASE)
+FAILED_SUMMARY_FILENAME = "shoot_points_failed_summary.json"
+
+
+def select_local_jpegs(parent, folder: Path) -> list[str]:
+    """Ask for VIR_*_local.jpg files with the native file explorer."""
+    files, _ = QFileDialog.getOpenFileNames(
+        parent,
+        "Select misaligned images",
+        str(folder),
+        "Local alignment (VIR_*_local.jpg)",
+    )
+    return files
+
+
+def image_numbers_from_local_jpegs(paths) -> tuple[set[int], list[str]]:
+    """Return the image numbers of VIR_XXXX_local.jpg files and the ignored names."""
+    numbers = set()
+    ignored = []
+    for path in paths:
+        name = Path(path).name
+        match = LOCAL_JPEG_PATTERN.fullmatch(name)
+        if match is None:
+            ignored.append(name)
+        else:
+            numbers.add(int(match.group(1)))
+    return numbers, ignored
+
+
+def apply_failed_selection(inventory: dict, selected_numbers) -> dict:
+    """Set ``failed`` on existing shoot points selected by the user (in place).
+
+    Returns the counts of newly flagged points, already flagged points and
+    selected numbers absent from the inventory.
+    """
+    points = inventory.get("shoot_points")
+    if not isinstance(points, list):
+        raise ValueError("shoot_points.json has no shoot_points list.")
+    remaining = set(selected_numbers)
+    newly_flagged = 0
+    already_flagged = 0
+    for point in points:
+        if not isinstance(point, dict) or not isinstance(point.get("FileName"), str):
+            continue
+        number = _vis_image_number(point["FileName"])
+        if number not in remaining:
+            continue
+        remaining.discard(number)
+        current = point.get("failed", False)
+        if current:
+            already_flagged += 1
+            continue
+        point["failed"] = 1 if isinstance(current, int) and not isinstance(
+            current, bool
+        ) else True
+        newly_flagged += 1
+    return {
+        "newly_flagged": newly_flagged,
+        "already_flagged": already_flagged,
+        "not_found": sorted(remaining),
+    }
+
+
+def build_failed_summary(inventory: dict) -> dict:
+    """List the point numbers (zero-padded) by ``failed`` status."""
+    failed_true, failed_false = [], []
+    for point in inventory.get("shoot_points", []):
+        if not isinstance(point, dict) or not isinstance(point.get("FileName"), str):
+            continue
+        label = f"{_vis_image_number(point['FileName']):04d}"
+        (failed_true if point.get("failed", False) else failed_false).append(label)
+    return {
+        "failed_false": failed_false,
+        "failed_true": failed_true,
+        "count_failed_false": len(failed_false),
+        "count_failed_true": len(failed_true),
+    }
+
+
+def _write_json_atomic(path: Path, data: dict) -> None:
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    temporary.replace(path)
 
 
 def _vis_image_number(filename: str) -> int:
@@ -233,12 +321,21 @@ class DialogImageProcessing(QDialog):
 
         button_layout = QHBoxLayout()
         button_layout.addStretch()
-        self.run_button = QPushButton("Run alignmnent")
+        self.run_button = QPushButton("Run alignment")
         self.run_button.clicked.connect(self._start_processing)
         button_layout.addWidget(self.run_button)
+        self.flag_button = QPushButton("Flag misaligned points")
+        self.flag_button.clicked.connect(self._flag_misaligned_points)
+        self.flag_button.setStyleSheet(BUTTON_STYLE)
+        button_layout.addWidget(self.flag_button)
         self.close_button = QPushButton("Close")
         self.close_button.clicked.connect(self.close)
         button_layout.addWidget(self.close_button)
+        self.help_button = QPushButton("?")
+        self.help_button.setFixedWidth(30)
+        self.help_button.setStyleSheet(BUTTON_STYLE)
+        self.help_button.clicked.connect(lambda: Help.show_help("ch:step4", parent=self))
+        button_layout.addWidget(self.help_button)
 
         # Apply the common style to the three main buttons
         self.run_button.setStyleSheet(BUTTON_STYLE)
@@ -246,8 +343,67 @@ class DialogImageProcessing(QDialog):
 
         layout.addLayout(button_layout)
 
+    def _flag_misaligned_points(self) -> None:
+        output_folder = self.mission_folder / "ImgIRdrone"
+        inventory_path = output_folder / "shoot_points.json"
+        if not inventory_path.is_file():
+            QMessageBox.warning(
+                self,
+                "Alignment output not found",
+                f"Run the alignment first. File not found:\n{inventory_path}",
+            )
+            return
+
+        QMessageBox.information(
+            self,
+            "Flag misaligned points",
+            "Select the images (VIR_XXXX_local.jpg) that you consider "
+            "misaligned. The matching shoot points will be marked as failed.",
+        )
+        selected_files = select_local_jpegs(self, output_folder)
+        if not selected_files:
+            return
+
+        numbers, ignored = image_numbers_from_local_jpegs(selected_files)
+        if ignored:
+            self.log_text.append(
+                "Ignored files (not VIR_XXXX_local.jpg): " + ", ".join(ignored)
+            )
+        if not numbers:
+            QMessageBox.warning(
+                self, "No valid image", "No VIR_XXXX_local.jpg image was selected."
+            )
+            return
+
+        try:
+            inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+            result = apply_failed_selection(inventory, numbers)
+            shutil.copy2(inventory_path, inventory_path.with_name(
+                inventory_path.name + ".bak"
+            ))
+            _write_json_atomic(inventory_path, inventory)
+            _write_json_atomic(
+                output_folder / FAILED_SUMMARY_FILENAME,
+                build_failed_summary(inventory),
+            )
+        except (OSError, ValueError) as error:
+            QMessageBox.critical(self, "Unable to update shoot points", str(error))
+            return
+
+        message = (
+            f"{result['newly_flagged']} shoot point(s) marked as failed, "
+            f"{result['already_flagged']} already failed."
+        )
+        if result["not_found"]:
+            message += " Not in shoot_points.json (ignored): " + ", ".join(
+                f"{number:04d}" for number in result["not_found"]
+            )
+        self.log_text.append(message)
+        self.status_label.setText(message)
+        QMessageBox.information(self, "Shoot points updated", message)
+
     def _start_processing(self) -> None:
-        start = self.start_image_number.value()
+        start =  self.start_image_number.value()
         end = self.end_image_number.value()
         if start > end:
             QMessageBox.warning(
@@ -310,6 +466,7 @@ class DialogImageProcessing(QDialog):
         self._progress_total = 0
         self._last_elapsed_seconds = None
         self.run_button.setEnabled(False)
+        self.flag_button.setEnabled(False)
         self.close_button.setEnabled(False)
         self.start_image_number.setEnabled(False)
         self.end_image_number.setEnabled(False)
@@ -377,6 +534,7 @@ class DialogImageProcessing(QDialog):
         elif exit_code == 0 and exit_status == QProcess.ExitStatus.NormalExit:
             self.progress_bar.setValue(self._progress_total)
         self.run_button.setEnabled(True)
+        self.flag_button.setEnabled(True)
         self.close_button.setEnabled(True)
         self.start_image_number.setEnabled(True)
         self.end_image_number.setEnabled(True)
@@ -410,6 +568,7 @@ class DialogImageProcessing(QDialog):
         self.progress_bar.setValue(0)
         self.status_label.setText("Unable to start processing.")
         self.run_button.setEnabled(True)
+        self.flag_button.setEnabled(True)
         self.close_button.setEnabled(True)
         self.start_image_number.setEnabled(True)
         self.end_image_number.setEnabled(True)

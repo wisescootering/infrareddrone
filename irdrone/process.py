@@ -48,25 +48,36 @@ SJCAM_M20_PROFILE_CONTROL_POINTS = {
 def load_tif(in_file):
     flags = cv2.IMREAD_ANYDEPTH | cv2.IMREAD_ANYCOLOR
     flags |= cv2.IMREAD_IGNORE_ORIENTATION
-    return cv2.cvtColor(cv2.imread(in_file, flags=flags), cv2.COLOR_BGR2RGB)/(2.**16-1)
+    image = cv2.imread(in_file, flags=flags)
+    if image is None:
+        raise OSError(f"Could not read TIFF image: {in_file}")
+    return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)/(2.**16-1)
 
 def cached_tif(path):
     return path[:-4]+"_RawTherapee.tif"
 
 def load_dng(path, template="DJI_neutral.pp3"):
     out_file = cached_tif(path)
-    # assert osp.isfile(RAWTHERAPEEPATH), "RAWTHERAPEE NOT FOUND"
     cmd = [
         RAWTHERAPEEPATH,
         "-t", "-o", out_file,
         "-p", osp.join(osp.dirname(__file__), "..", "thirdparty", "rawtherapee", template),
         "-c", path
     ]
+    if osp.isfile(out_file):
+        try:
+            return load_tif(out_file), out_file
+        except (OSError, cv2.error):
+            logging.warning("Discarding unreadable RawTherapee proxy: %s", out_file)
+            os.remove(out_file)
+
+    completed = subprocess.run(cmd, check=False)
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"RawTherapee failed to convert {path} (exit code {completed.returncode})."
+        )
     if not osp.isfile(out_file):
-        subprocess.call(cmd)
-    else:
-        logging.info("DNG already processed by RAW THERAPEE {}".format(path))
-    assert osp.isfile(out_file), f"DNG file not converted! {out_file}"
+        raise RuntimeError(f"RawTherapee did not create the expected TIFF: {out_file}")
     return load_tif(out_file), out_file
 
 

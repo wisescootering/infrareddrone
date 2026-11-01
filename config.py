@@ -30,7 +30,7 @@ CNIRCVIS_0 = 0.046  # Distance between the lenses of two cameras (DJI Mavic Air 
 
 # User Settings --------------------------------------------------------------------------------------
 NIR_FILTER_MAKER = 'OpticsConcept'  #
-NIR_FILTER_MODEL = 830             # cut wavelength ( in nanometers nm) of the NIR camera filter
+NIR_FILTER_MODEL = 830              # cut wavelength ( in nanometers nm) of the NIR camera filter
 COPYRIGHT = "Copyright"
 ARTIST = "Artist"
 

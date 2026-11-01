@@ -43,12 +43,13 @@ from IRD_Interactive_2 import LoadVisNirImagesDialog
 from IRD_Interactive_3 import DialogSynchroAruco
 from IRD_Interactive_4 import DialogImageProcessing
 from IRD_Interactive_5 import DialogGeoRef
-from IRD_Interactive_styles import colored_button_style
+from IRD_Interactive_styles import colored_button_style, BUTTON_STYLE
 from IRD_Interactive_GeoRef import georef_main
 import IRD_Interactive_utils as Uti
 from IRD_Interactive_utils import Prefrence_Screen
 from IRD_Interactive_color_style import Style
 from config import OUTPUT_FOLDER_NAME
+import IRD_Interactive_help as Help
 assert (
     OUTPUT_FOLDER_NAME.exists()
 ), f"Output folder does not exist: {OUTPUT_FOLDER_NAME} Use export IRDRONE_WORKING_DIR=your_path_to_folder to set it."
@@ -82,7 +83,7 @@ class Main_Window(QMainWindow):
         self.btn_process_images = None
         self.btn_post_process_images = None
         self.btn_help = None
-        self.btn_help_width = 40
+        self.btn_help_width = 30
         self.nb_btn = 5
         self.btn_width = int((self.pref_screen.windowDisplaySize[0]-self.btn_help_width)/self.nb_btn )
         self.command_layout = None
@@ -123,7 +124,7 @@ class Main_Window(QMainWindow):
         #  Creating the command bar:
         #  btn create_mission
         self.btn_create_mission = QPushButton("Step 1\nDefine the mission", self)
-        self.btn_create_mission.setStyleSheet(colored_button_style("darkBlue"))
+        self.btn_create_mission.setStyleSheet(colored_button_style("darkGreen"))
         self.btn_create_mission.setFixedWidth(self.btn_width)
         self.btn_create_mission.setMinimumHeight(56)
         self.btn_create_mission.clicked.connect(self.open_window_define_mission)
@@ -154,8 +155,8 @@ class Main_Window(QMainWindow):
         self.btn_post_process_images.setMinimumHeight(56)
         self.btn_post_process_images.clicked.connect(self.on_post_process_images)
         #  btn help
-        self.btn_help = QPushButton("Help", self)
-        self.btn_help.setStyleSheet(colored_button_style("darkGreen"))
+        self.btn_help = QPushButton("?", self)
+        self.btn_help.setStyleSheet(BUTTON_STYLE)
         self.btn_help.setFixedWidth(self.btn_help_width)
         self.btn_help.setMinimumHeight(56)
         self.btn_help.clicked.connect(self.on_help)
@@ -432,8 +433,8 @@ class Main_Window(QMainWindow):
 
 
     def on_help(self):
-        Uti.show_info_message("IRDrone", "Currently being implemented ...", "")
-        pass
+        """Open the user manual on the overview chapter."""
+        Help.show_help("ch:overview", parent=self)
 
 
     # ====================================================================================

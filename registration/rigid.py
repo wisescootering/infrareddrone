@@ -83,7 +83,7 @@ def minimum_cost_max_hessian(cost, debug=False):
         plt.imshow(cost.sum(axis=-1))
         plt.plot(displacement[0]+cost.shape[1]//2, displacement[1]+cost.shape[0]//2, "r+")
         plt.title("Full cost {}".format(displacement))
-        plt.show()
+        plt.close()
     return displacement
 
 
@@ -542,4 +542,3 @@ if __name__ == "__main__":
 
     # run_alignment_disparity()
     run_alignment_multispectral()
-

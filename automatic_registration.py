@@ -16,6 +16,7 @@ import interactive.imagepipe as ipipe
 import shutil
 import cv2
 import argparse
+import json
 import psutil
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
@@ -317,6 +318,141 @@ def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extens
 
 
 
+def save_readable_motion_model(motion_model, path):
+    """Write the human-readable part of a motion model as JSON (angles in degrees)."""
+    def to_list(value):
+        return np.asarray(value, dtype=float).tolist()
+
+    readable = {
+        key: float(motion_model[key]) for key in ("yaw", "pitch", "roll") if key in motion_model
+    }
+    if "initialization" in motion_model:
+        readable["initialization"] = {
+            key: float(value) for key, value in motion_model["initialization"].items()
+        }
+        readable["correction_vs_initialization"] = {
+            key: readable[key] - readable["initialization"][key]
+            for key in ("yaw", "pitch", "roll")
+            if key in readable and key in readable["initialization"]
+        }
+    for key in ("homography", "previous_homography"):
+        if motion_model.get(key) is not None:
+            readable[key] = to_list(motion_model[key])
+    vector_field = motion_model.get("vector_field")
+    if vector_field is not None:
+        field = np.asarray(vector_field, dtype=float)
+        readable["vector_field_summary"] = {
+            "shape": list(field.shape),
+            "mean_abs": float(np.abs(field).mean()),
+            "max_abs": float(np.abs(field).max()),
+        }
+    with open(path, "w", encoding="utf-8") as file:
+        json.dump(readable, file, indent=2)
+
+
+def _manual_redo_result_names(vis_pth):
+    image_number = Path(vis_pth).stem.removeprefix("VIS_")
+    names = [
+        f"VIS_{image_number}.jpg",
+        f"VIS_{image_number}_motion_model.npy",
+        f"VIS_{image_number}_motion_model.json",
+    ]
+    for trace in (VIR, NIR, NDVI):
+        names.extend(
+            f"{trace.upper()}_{image_number}_{mode}.jpg"
+            for mode in ("local", "global")
+        )
+    names.extend(
+        f"IRD_{image_number}_{band}.tif"
+        for band in range(1, 5)
+    )
+    names.append(f"IRD_{image_number}_1.exif")
+    return names
+
+
+def _move_to_archive(source, archive_dir):
+    source = Path(source)
+    destination = archive_dir / source.name
+    index = 1
+    while destination.exists():
+        destination = archive_dir / f"{source.stem}_{index}{source.suffix}"
+        index += 1
+    shutil.move(str(source), str(destination))
+    return destination
+
+
+def prepare_manual_redo_archives(vis_pth, out_dir, multispectral_folder=None):
+    """Preserve existing REDO outputs and clear stale diagnostics before rerunning."""
+    vis_pth = Path(vis_pth)
+    out_dir = Path(out_dir)
+    debug_dir = out_dir / f"{vis_pth.stem}_align_traces_manual"
+    tech_dir = debug_dir / "Tech"
+    original_dir = debug_dir / "original"
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    tech_dir.mkdir(exist_ok=True)
+    original_dir.mkdir(exist_ok=True)
+
+    for existing in debug_dir.iterdir():
+        if existing not in (tech_dir, original_dir):
+            _move_to_archive(existing, tech_dir)
+
+    image_number = vis_pth.stem.removeprefix("VIS_")
+    original_names = _manual_redo_result_names(vis_pth)
+    original_names.remove(f"VIS_{image_number}_motion_model.npy")
+    archived_exif = None
+    for name in original_names:
+        if name.startswith("IRD_"):
+            if multispectral_folder is None:
+                continue
+            source_dir = Path(multispectral_folder)
+        else:
+            source_dir = out_dir
+        source = source_dir / name
+        if source.is_file():
+            archived = _move_to_archive(source, original_dir)
+            if name.endswith("_1.exif"):
+                archived_exif = archived
+
+    motion_model = out_dir / f"VIS_{image_number}_motion_model.npy"
+    if motion_model.is_file():
+        _move_to_archive(motion_model, original_dir)
+    return debug_dir, original_dir, archived_exif
+
+
+def finalize_manual_redo_archives(
+    vis_pth, out_dir, multispectral_folder, debug_dir, archived_exif
+):
+    """Copy the regenerated deliverables into the trace folder and file diagnostics."""
+    vis_pth = Path(vis_pth)
+    out_dir = Path(out_dir)
+    debug_dir = Path(debug_dir)
+    image_number = vis_pth.stem.removeprefix("VIS_")
+
+    if archived_exif is not None and multispectral_folder is not None:
+        sidecar = Path(multispectral_folder) / f"IRD_{image_number}_1.exif"
+        shutil.copy2(archived_exif, sidecar)
+
+    result_names = _manual_redo_result_names(vis_pth)
+    result_paths = [
+        (Path(multispectral_folder) if name.startswith("IRD_") else out_dir) / name
+        for name in result_names
+        if not name.startswith("IRD_") or multispectral_folder is not None
+    ]
+
+    archived_names = set(result_names)
+    tech_dir = debug_dir / "Tech"
+    try:
+        for result in result_paths:
+            if not result.is_file():
+                raise FileNotFoundError(f"Expected REDO output was not created: {result}")
+            shutil.copy2(result, debug_dir / result.name)
+    finally:
+        for item in debug_dir.iterdir():
+            if item.name in ("Tech", "original") or item.name in archived_names:
+                continue
+            _move_to_archive(item, tech_dir)
+
+
 def write_manual_bat_redo(
     vis_pth, nir_candidates, debug_bat_pth, out_dir, multispectral_folder=None, angles=None
 ):
@@ -343,6 +479,7 @@ def write_manual_bat_redo(
                 cmd += f" --angles {angles[0]:.3f} {angles[1]:.3f} {angles[2]:.3f}"
             cmd += " --traces {}".format(" ".join(TRACES))
             cmd += " --alignment-modes local global"
+            cmd += " --redo"
             cmd+="\n"
             fi.write(cmd)
         fi.write("call deactivate\n")
@@ -480,6 +617,7 @@ def _process_raw_pairs_serial(
             if motion_model_file is None:
                 motion_model_file = osp.join(out_dir, osp.basename(vis_pth[:-4])+"_motion_model")
             np.save(motion_model_file, motion_model, allow_pickle=True)
+            save_readable_motion_model(motion_model, str(motion_model_file) + ".json")
         if listPts is not None:
             listPts[index_pair].yawCoarseAlign = motion_model["yaw"]
             listPts[index_pair].pitchCoarseAlign = motion_model["pitch"]
@@ -548,6 +686,24 @@ def available_alignment_workers() -> int:
 
 def _initialize_alignment_worker() -> None:
     cv2.setNumThreads(1)
+
+
+def _alignment_task_waves(tasks, worker_count):
+    """Keep tasks sharing a NIR source out of the same parallel batch."""
+    pending = list(tasks)
+    while pending:
+        wave = []
+        used_nir_paths = set()
+        remaining = []
+        for task in pending:
+            nir_path = os.path.normcase(os.path.abspath(task["pair"][1]))
+            if len(wave) < worker_count and nir_path not in used_nir_paths:
+                wave.append(task)
+                used_nir_paths.add(nir_path)
+            else:
+                remaining.append(task)
+        yield wave
+        pending = remaining
 
 
 def _process_single_pair_task(task):
@@ -673,27 +829,28 @@ def process_raw_pairs(
         max_workers=worker_count,
         initializer=_initialize_alignment_worker,
     ) as executor:
-        futures = {
-            executor.submit(_process_single_pair_task, task): task
-            for task in tasks
-        }
         completed = 0
-        for future in as_completed(futures):
-            task = futures[future]
-            try:
-                result = future.result()
-            except Exception as exc:
-                raise RuntimeError(
-                    f"Alignment failed for {osp.basename(task['pair'][0])}."
-                ) from exc
-            results[result[0]] = result
-            completed += 1
-            if progress_callback is not None:
-                progress_callback(
-                    completed,
-                    len(tasks),
-                    osp.basename(result[1]),
-                )
+        for wave in _alignment_task_waves(tasks, worker_count):
+            futures = {
+                executor.submit(_process_single_pair_task, task): task
+                for task in wave
+            }
+            for future in as_completed(futures):
+                task = futures[future]
+                try:
+                    result = future.result()
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Alignment failed for {osp.basename(task['pair'][0])}."
+                    ) from exc
+                results[result[0]] = result
+                completed += 1
+                if progress_callback is not None:
+                    progress_callback(
+                        completed,
+                        len(tasks),
+                        osp.basename(result[1]),
+                    )
 
     motion_model_list = []
     for index, (_, _, motion_models, point) in enumerate(results):
@@ -709,6 +866,11 @@ if __name__ == "__main__":
     parser.add_argument('--manual', action="store_true", help='manual alignement')
     parser.add_argument('--outdir', help='output directory')
     parser.add_argument('--debug', action="store_true", help='full debug traces')
+    parser.add_argument(
+        '--redo',
+        action="store_true",
+        help='archive existing outputs and save regenerated results with manual traces',
+    )
     parser.add_argument('--delay', help='synchronization (in seconds)', default=0.)
     parser.add_argument('--multispectral-folder', help='multispectral TIF folder for ODM', default=None)
     parser.add_argument(
@@ -745,6 +907,12 @@ if __name__ == "__main__":
         out_dir = args.outdir
     else:
         out_dir = osp.dirname(im_pairs[0][0])
+    if args.redo:
+        debug_dir, _, archived_exif = prepare_manual_redo_archives(
+            im_pairs[0][0],
+            out_dir,
+            multispectral_folder=args.multispectral_folder,
+        )
     process_raw_pairs(
         im_pairs,
         debug_folder=out_dir,
@@ -758,3 +926,11 @@ if __name__ == "__main__":
         traces=args.traces,
         alignment_modes=tuple(args.alignment_modes),
     )
+    if args.redo:
+        finalize_manual_redo_archives(
+            im_pairs[0][0],
+            out_dir,
+            args.multispectral_folder,
+            debug_dir,
+            archived_exif,
+        )

@@ -5,8 +5,11 @@ from concurrent.futures import Future
 from pathlib import Path
 from unittest.mock import patch
 
+import numpy as np
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import automatic_registration
+import irdrone.process as image_process
 
 
 class Step4MultiprocessingTests(unittest.TestCase):
@@ -71,6 +74,47 @@ class Step4MultiprocessingTests(unittest.TestCase):
             {entry[2] for entry in progress},
             {"VIS_0001.dng", "VIS_0002.dng"},
         )
+
+    def test_parallel_waves_do_not_process_a_shared_nir_source_together(self):
+        tasks = [
+            {"index": 0, "pair": ("VIS_0001.dng", "NIR_shared.dng")},
+            {"index": 1, "pair": ("VIS_0002.dng", "NIR_other.dng")},
+            {"index": 2, "pair": ("VIS_0003.dng", "NIR_shared.dng")},
+            {"index": 3, "pair": ("VIS_0004.dng", "NIR_last.dng")},
+        ]
+
+        waves = list(automatic_registration._alignment_task_waves(tasks, 2))
+
+        self.assertEqual(
+            [[task["index"] for task in wave] for wave in waves],
+            [[0, 1], [2, 3]],
+        )
+
+    def test_unreadable_rawtherapee_proxy_is_regenerated(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "NIR_0001.dng"
+            source.write_bytes(b"raw")
+            proxy = Path(image_process.cached_tif(str(source)))
+            proxy.write_bytes(b"incomplete TIFF")
+            valid_image = np.zeros((2, 2, 3), dtype=np.uint16)
+
+            def convert(command, check):
+                self.assertFalse(check)
+                proxy.write_bytes(b"regenerated TIFF")
+                return type("Completed", (), {"returncode": 0})()
+
+            with (
+                patch(
+                    "irdrone.process.cv2.imread",
+                    side_effect=[None, valid_image],
+                ),
+                patch("irdrone.process.subprocess.run", side_effect=convert) as run,
+            ):
+                image, output_path = image_process.load_dng(str(source))
+
+            self.assertEqual(output_path, str(proxy))
+            self.assertEqual(image.shape, valid_image.shape)
+            run.assert_called_once()
 
     @staticmethod
     def _completed_future(result):

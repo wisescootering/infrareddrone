@@ -28,6 +28,7 @@ from PyQt6.QtCore import Qt, pyqtSignal, QRegularExpression, QUrl
 
 # -------------- IRDrone Library ------------------------------------
 import IRD_Interactive_utils as Uti
+import IRD_Interactive_help as Help
 import IRD_interactive_geo as Geo
 from IRD_Interactive_utils import Prefrence_Screen
 import IRD_Interactive_workers as Worker
@@ -82,6 +83,24 @@ class Window_create_file_structure(QDialog):
     data_signal_from_dialog_create_file_structure_to_main_window = pyqtSignal(bool, dict)
 
     def __init__(self, parent, mission_parameters_light: Dict[str, Any]):
+        """
+        Build the mission creation dialog (Step 1, second window).
+
+        Parameters
+        ----------
+        parent : QWidget
+            Main window of the application.
+        mission_parameters_light : dict
+            Light version of the mission parameters filled by
+            ``Window_Load_TakeOff_Image`` (EXIF data of the take-off image,
+            geographic information, ...). The key ``"Date Exif"`` is mandatory
+            (format ``YYYY:MM:DD HH:MM:SS``).
+
+        Notes
+        -----
+        The mission folder names (AerialPhotography, FlightAnalytics, ...) come
+        from ``Prefrence_Screen``. The widgets are created by ``initGUI``.
+        """
         super().__init__(parent)
         # -----------Name of folders to store mission images. ----------------
         try:
@@ -281,6 +300,11 @@ class Window_create_file_structure(QDialog):
             self.zone_122_layout = QHBoxLayout()
             self.zone_122_layout.addWidget(self.btn_1222)
             self.zone_122_layout.addWidget(self.btn_1221)
+            self.btn_help = QPushButton("?")
+            self.btn_help.setFixedWidth(30)
+            self.btn_help.setStyleSheet(BUTTON_STYLE)
+            self.btn_help.clicked.connect(lambda: Help.show_help("btn:step1_form", parent=self))
+            self.zone_122_layout.addWidget(self.btn_help)
             zone_122_vlayout.addLayout(self.zone_122_layout)
 
             # Connect buttons to slots
@@ -299,6 +323,13 @@ class Window_create_file_structure(QDialog):
             print(f'error in initGUI : {e}')
 
     def focus_sequence(self) -> None:
+        """
+        Define the keyboard navigation order.
+
+        Pressing Enter in a field moves the focus to the next one (date, time,
+        location, GPS, description, pilot, VIS camera, NIR camera, NIR filter)
+        and finally to the 'Validate create mission.' button.
+        """
         try:
             self.date_field.returnPressed.connect(self.time_field.setFocus)
             self.time_field.returnPressed.connect(self.location_field.setFocus)
@@ -400,6 +431,17 @@ class Window_create_file_structure(QDialog):
 
 
     def start_mission_pipeline(self):
+        """
+        Chain the transfer and analysis workers that create the mission.
+
+        Order of the steps (each one starts when the previous one is finished):
+            1. VIS transfer (copy and rename the DNG images)
+            2. EXIF of the VIS images (.exif files and time_line.json)
+            3. NIR transfer (RAW to DNG conversion)
+            4. EXIF of the NIR images
+            5. Ground altitude, distances and headings (Alti_GPS)
+            6. Final message and notification of the main window
+        """
         pipeline = [
             self.start_transfer_VIS,
             self.start_exif_VIS_step,
@@ -425,6 +467,21 @@ class Window_create_file_structure(QDialog):
 
 
     def start_transfer_VIS(self, done, *args):
+        """
+        Start the worker that copies and renames the VIS images in a thread.
+
+        Parameters
+        ----------
+        done : Callable
+            Pipeline callback ``done(result, msg)`` called when the worker ends.
+        *args
+            Unused (results of the previous pipeline step).
+
+        Notes
+        -----
+        ``HYPERLAPSE_XXXX.dng`` files of the input folder are copied to
+        ``AerialPhotography/VIS`` as ``VIS_XXXX.dng``.
+        """
         print("[PIPE] Starting VIS transfer")
 
         self.thread_vis = QtCore.QThread()
@@ -465,6 +522,21 @@ class Window_create_file_structure(QDialog):
 
 
     def start_transfer_NIR(self, done, *args):
+        """
+        Ask the user for the NIR images folder, then start the NIR transfer worker.
+
+        Parameters
+        ----------
+        done : Callable
+            Pipeline callback ``done(result, msg)`` called when the worker ends.
+        *args
+            Unused (results of the previous pipeline step).
+
+        Notes
+        -----
+        The user selects any NIR image (SJCam M20 RAW/JPG): its folder is used.
+        The RAW files are converted to DNG in ``AerialPhotography/NIR``.
+        """
         print("[PIPE] Starting NIR transfer")
         self.progress_bar.setValue(0)
         self.phase_label.setText(f"Waiting …")
@@ -490,6 +562,7 @@ class Window_create_file_structure(QDialog):
         self.thread_nir.start()
 
     def on_nir_progress(self, pct: int) -> None:
+        """Slot called by Transfer_NIR.progress: update the progress bar and its label."""
         try:
             self.progress_bar.setValue(pct)
             self.phase_label.setText(f"Transfer NIR : {pct}%")
@@ -497,6 +570,11 @@ class Window_create_file_structure(QDialog):
             print("Error in on_nir_progress:", e)
 
     def on_nir_finished(self, msg: str) -> None:
+        """
+        Legacy slot: announce the end of the NIR transfer and close the dialog.
+
+        Not connected in the current pipeline (see ``_final_mission_done``).
+        """
         try:
             self.nir_started = False
             self.btn_1221.setEnabled(True)
@@ -513,6 +591,11 @@ class Window_create_file_structure(QDialog):
             print("error in on_nir_finished:", e)
 
     def on_nir_error(self, message: str) -> None:
+        """
+        Display a NIR worker error and close the dialog.
+
+        Not connected to Transfer_NIR.error in the current pipeline.
+        """
         try:
             print("[ERROR] NIR worker:", message)
             self.nir_started = False
@@ -523,6 +606,15 @@ class Window_create_file_structure(QDialog):
             print("error in on_nir_error:", e)
 
     def load_NIR_directory(self) -> Optional[Path]:
+        """
+        Open a file dialog to select one NIR image (RAW/JPG) of the SJCam M20.
+
+        Returns
+        -------
+        Optional[Path]
+            Folder containing the selected image (it is assumed to contain all
+            the NIR images of the mission), or None if the user cancels.
+        """
         try:
             dlg = QFileDialog()
             dlg.setWindowTitle("Select a NIR RAW/JPG (SJCam M20)")
@@ -622,23 +714,36 @@ class Window_create_file_structure(QDialog):
             print(f"[ERROR] start_exif_worker({band}): {e}")
 
     def on_exif_progress(self, band: str, pct: int):
+        """Slot called by CreateExif.progress: update the progress bar and its label."""
         verbose = False
         if verbose: print(Style.GREEN + f"[INF0]   [EXIF {band}] progress = {pct}%" + Style.RESET)
         self.phase_label.setText(f"EXIF {band} : {pct}%")
         self.progress_bar.setValue(pct)
 
     def on_exif_error(self, band: str, msg: str):
+        """Slot called by CreateExif.error: display the message and close the dialog."""
         print(f"[ERROR] in on_exif_error     EXIF {band}: {msg}")
         Uti.show_info_message("IRDrone", f"Erreur EXIF {band}", msg)
         self.close()
 
     def on_exif_finished(self, band: str, exif_data: dict, msg: str):
+        """Slot called when CreateExif ends: keep the EXIF results of the last band processed."""
         try:
             self.exif_results = exif_data
         except Exception as e:
             print(f"[ERROR] on_exif_finished({band}): {e}")
 
     def start_exif_VIS_step(self, done: Callable, *args):
+        """
+        Pipeline step: create the .exif files and time_line.json of the VIS images.
+
+        Parameters
+        ----------
+        done : Callable
+            Pipeline callback ``done(exif_data, msg)``.
+        *args
+            Unused (results of the previous pipeline step).
+        """
         try:
             folder = self.output_dir_VIS
             cb = lambda exif_data, msg: done(exif_data, msg)
@@ -648,6 +753,17 @@ class Window_create_file_structure(QDialog):
             done({}, f"Error starting EXIF VIS: {e}")
 
     def start_exif_NIR_step(self, done: Callable, *args):
+        """
+        Pipeline step: create the .exif files and time_line.json of the NIR images.
+
+        Parameters
+        ----------
+        done : Callable
+            Pipeline callback ``done(exif_data, msg)``. It is called with an
+            empty dictionary if no NIR output folder is defined.
+        *args
+            Unused (results of the previous pipeline step).
+        """
         try:
             folder = getattr(self, "output_dir_NIR", None)
             if folder is None:
@@ -768,6 +884,23 @@ class Window_create_file_structure(QDialog):
             done(None, f"Final callback error: {e}")
 
     def show_plot(self, distance_cum, alt_ground_norm, alt_sea_level_norm):
+        """
+        Display (blocking window) the vertical profile of the flight.
+
+        Parameters
+        ----------
+        distance_cum : array-like
+            Cumulative flight distance in meters.
+        alt_ground_norm : array-like
+            Ground altitude, normalized to the lowest ground point (m).
+        alt_sea_level_norm : array-like
+            Drone altitude above sea level, normalized the same way (m).
+
+        Notes
+        -----
+        Not used by the pipeline, which saves ``fly_vertical_profil.png``
+        instead (see ``on_alti_plot_data``).
+        """
         import matplotlib.pyplot as plt
 
         plt.figure(figsize=(12, 5))
@@ -792,9 +925,10 @@ class Window_create_file_structure(QDialog):
 
     def load_takeoff_image(self):
         """
-        Ouvrir une boîte de dialogue pour sélectionner une image.
-        Ici on n'admet uniquement des images au format DNG
-        Elles doivent provenir de la caméra du drone qui capture des images dans le spectre VISIBLE (VIS).
+        Legacy copy of ``Window_Load_TakeOff_Image.load_takeoff_image``.
+
+        Not used by the application: the take-off image is chosen in the first
+        window of Step 1 (``Window_Load_TakeOff_Image``).
         """
 
         directory = os.path.abspath('/')   # DD racine
@@ -987,6 +1121,7 @@ class Window_create_file_structure(QDialog):
             print("Error in create_mission_folder (saving JSON):", e)
 
     def _init_date_mission(self):
+        """Create the read-only 'Date' field (YYYY/MM/DD) from the EXIF date of the take-off image."""
         try:
             self.date_label = QLabel("Date:")
             self.date_field = QLineEdit(self)
@@ -1017,6 +1152,7 @@ class Window_create_file_structure(QDialog):
             print("error in _init_date_mission : ", e)
 
     def _init_time_mission(self):
+        """Create the read-only 'Hour' field (hh:mm) from the EXIF time of the take-off image."""
         try:
             self.time_label = QLabel("Hour:")
             self.time_field = QLineEdit(self)
@@ -1049,6 +1185,12 @@ class Window_create_file_structure(QDialog):
             print("error _init_time_mission : ", e)
 
     def _init_location(self):
+        """
+        Create the editable 'Location' field.
+
+        It is pre-filled with the town found by reverse geocoding and is part of
+        the mission folder name (FLY-YYYYMMDD-hhmm-<location>).
+        """
         try:
             self.location_label = QLabel("Location :")
             self.location_field = QLineEdit(self)
@@ -1070,6 +1212,12 @@ class Window_create_file_structure(QDialog):
             print("error _init_location : ", e)
 
     def _init_GPS(self):
+        """
+        Create the read-only latitude / longitude fields (e.g. 'N 46.12345', 'E 001.23456').
+
+        The values come from the EXIF GPS data of the take-off image. The altitude
+        above sea level (IGN or OpenTopoData) is kept in ``self.GPS_alti``.
+        """
         try:
             self.GPS_label = QLabel("GPS:")
             # Formatting GPS coordinates
@@ -1129,6 +1277,7 @@ class Window_create_file_structure(QDialog):
             print("error _init_GPS : ", e)
 
     def _init_description(self):
+        """Create the editable 'Short description' field of the mission."""
         try:
             self.description_label = QLabel("Short description :")
             self.description_field = QLineEdit(self)
@@ -1151,6 +1300,7 @@ class Window_create_file_structure(QDialog):
             print("error _init_description : ", e)
 
     def _init_pilot(self):
+        """Create the editable 'Pilot' fields (name and pilot identification number)."""
         try:
             self.pilot_Name: str = "Florine"
             self.pilot_ID: str = "FRA-RP-0000001957"
@@ -1180,6 +1330,13 @@ class Window_create_file_structure(QDialog):
             print("error _init_pilot : ", e)
 
     def _init_VIS_camera(self):
+        """
+        Create the fields describing the VIS camera.
+
+        Maker, model and image format are read from the take-off image EXIF
+        (read-only). The timelapse interval (s) and the clock delta time (s)
+        are editable.
+        """
         try:
             # camera VIS part 1
             self.camera_VIS_maker: str = self.mission_parameters_light["Maker"]
@@ -1233,6 +1390,12 @@ class Window_create_file_structure(QDialog):
             print("error _init_VIS_camera : ", e)
 
     def _init_NIR_camera(self):
+        """
+        Create the editable fields describing the NIR camera.
+
+        Default values: SJCam M20, RAW format, timelapse 3 s, clock delta
+        time -30 s.
+        """
         try:
             # camera NIR part 1
             self.camera_NIR_maker: str = "SJCam"
@@ -1262,7 +1425,7 @@ class Window_create_file_structure(QDialog):
             self.layout.addLayout(self.image_NIR_format_layout)
             # camera NIR part 2
             self.camera_NIR_timelaspe: int = 3  # in second
-            self.camera_NIR_deltatime: float = 3894.91  # in second
+            self.camera_NIR_deltatime: float = -30.  # in second
 
             self.camera_NIR_t_label = QLabel("       timelapse in s | delta time in s:")
             self.camera_NIR_tlapse_field = QLineEdit(self)
@@ -1279,6 +1442,7 @@ class Window_create_file_structure(QDialog):
             print("error _init_NIR_camera : ", e)
 
     def _init_NIR_filter(self):
+        """Create the editable fields describing the NIR filter (maker and band in nm)."""
         try:
             # camera NIR part 4 (filter)
             self.image_NIR_filter_maker: str = "KOLARI VISION USA"  # Optic Concept LP830
@@ -1579,8 +1743,25 @@ class Window_create_file_structure(QDialog):
 #
 # --------------------------------------------------------------------------------------------
 class Window_Load_TakeOff_Image(QDialog):
+    """
+    Step 1, first window: choose the image taken by the drone at take-off.
+
+    The user loads a DNG image of the VIS camera. The window displays it and
+    extracts from it the date, the GPS position, the ground altitude (IGN or
+    OpenTopoData) and the address (OpenStreetMap). These data are stored in
+    ``mission_parameters_light`` and used by ``Window_create_file_structure``
+    (button 'next step').
+    """
 
     def __init__(self, parent):
+        """
+        Initialize the attributes and build the GUI.
+
+        Parameters
+        ----------
+        parent : QWidget
+            Main window of the application.
+        """
         super().__init__(parent)
         self.image_label = None  # declare (placeholder)
         self.main_layout = None  # idem if needed
@@ -1723,6 +1904,11 @@ class Window_Load_TakeOff_Image(QDialog):
 
         zone4_layout.addWidget(self.btnPreviousStep)
         zone4_layout.addWidget(self.btn_NextStep)
+        self.btn_help = QPushButton("?")
+        self.btn_help.setFixedWidth(30)
+        self.btn_help.setStyleSheet(BUTTON_STYLE)
+        self.btn_help.clicked.connect(lambda: Help.show_help("btn:step1_load_takeoff", parent=self))
+        zone4_layout.addWidget(self.btn_help)
 
         # Progress bar
         self.progress_bar = QProgressBar(self)
@@ -1807,9 +1993,16 @@ class Window_Load_TakeOff_Image(QDialog):
 
     def load_takeoff_image(self):
         """
-        Ouvrir une boîte de dialogue pour sélectionner une image.
-        Ici on n'admet uniquement des images au format DNG
-        Elles doivent provenir de la caméra du drone qui capture des images dans le spectre VISIBLE (VIS).
+        Open a file dialog to select the take-off image and extract its information.
+
+        Only DNG images are accepted. They must come from the drone camera, which
+        captures images in the VISIBLE spectrum (VIS).
+
+        The method displays the image, reads its EXIF data (date, GPS, camera),
+        queries the IGN API (or OpenTopoData outside France) for the ground
+        altitude and OpenStreetMap for the address, then fills
+        ``mission_parameters_light`` and enables the 'next step' button.
+        The decoding of the DNG file is slow: the progress bar shows the progress.
         """
 
         directory = os.path.abspath('/')   # DD racine

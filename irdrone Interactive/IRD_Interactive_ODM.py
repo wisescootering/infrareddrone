@@ -50,6 +50,9 @@ class ODMMappingError(ValueError):
     """Raised when required mission mapping metadata is missing or invalid."""
 
 
+ANSI_ESCAPE_PATTERN = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
 class DockerUnavailableError(ODMMappingError):
     """Raised when the Docker CLI or selected Docker engine is unavailable."""
 
@@ -476,13 +479,29 @@ def build_best_mapping(
     mission_folder = Path(mission_folder).expanduser().resolve()
     if not mission_folder.is_dir():
         raise ODMMappingError(f"Mission folder does not exist: {mission_folder}")
-    if not math.isfinite(dt_tolerance_s) or dt_tolerance_s < 0:
-        raise ODMMappingError("The maximum time difference must be a finite, non-negative value.")
-    if sample_every < 1:
-        raise ODMMappingError("The sampling interval must be at least 1.")
+    if (
+        isinstance(dt_tolerance_s, bool)
+        or not isinstance(dt_tolerance_s, (int, float))
+        or not math.isfinite(dt_tolerance_s)
+        or not 0.05 <= dt_tolerance_s <= 6.0
+    ):
+        raise ODMMappingError(
+            "The maximum time difference must be between 0.05 and 6.0 seconds."
+        )
+    if (
+        isinstance(sample_every, bool)
+        or not isinstance(sample_every, int)
+        or sample_every not in (1, 2, 3, 4)
+    ):
+        raise ODMMappingError("The image sampling interval must be 1, 2, 3, or 4.")
 
     aerial_photography = mission_folder / "AerialPhotography"
-    shoot_points_path = aerial_photography / "shoot_points.json"
+    status_shoot_points_path = mission_folder / "ImgIRdrone" / "shoot_points.json"
+    shoot_points_path = (
+        status_shoot_points_path
+        if status_shoot_points_path.is_file()
+        else aerial_photography / "shoot_points.json"
+    )
     transfer_info_path = aerial_photography / "VIS" / "transfer_info_VIS_dng.json"
     mapping_folder = mission_folder / "mapping_MULTI"
     images_folder = mission_folder / "ImgIRdrone" / "imgMultispectral"
@@ -513,7 +532,38 @@ def build_best_mapping(
         "fly_pairs_within_dt_tolerance": 0,
     }
 
-    for shoot_point_index, shoot_point in enumerate(shoot_points_data["shoot_points"]):
+    source_shoot_points = shoot_points_data["shoot_points"]
+    if shoot_points_path == status_shoot_points_path:
+        normalized_points = []
+        for shoot_point_index, shoot_point in enumerate(source_shoot_points):
+            if not isinstance(shoot_point, dict):
+                continue
+            failed = shoot_point.get("failed", False)
+            if isinstance(failed, bool):
+                is_failed = failed
+            elif isinstance(failed, int) and failed in (0, 1):
+                is_failed = bool(failed)
+            else:
+                raise ODMMappingError(
+                    f"Shoot point {shoot_point_index} has an invalid 'failed' status."
+                )
+            if is_failed:
+                continue
+            vis_filename = shoot_point.get("FileName")
+            dt = shoot_point.get("dt")
+            if not isinstance(vis_filename, str):
+                raise ODMMappingError(
+                    f"Shoot point {shoot_point_index} has no valid 'FileName'."
+                )
+            normalized_points.append(
+                {
+                    "VIS": {"FileName": vis_filename},
+                    "NIR": [{"rank": 1, "dt": dt}],
+                }
+            )
+        source_shoot_points = normalized_points
+
+    for shoot_point_index, shoot_point in enumerate(source_shoot_points):
         if not isinstance(shoot_point, dict):
             continue
         vis_data = shoot_point.get("VIS")
@@ -853,6 +903,78 @@ def _copy_mapping_results(mapping_folder: Path) -> Dict[str, str]:
     return copied
 
 
+SHOT_MARKER_COLOR = "255,0,0,255"
+SHOT_MARKER_SIZE_MM = 3.0
+SHOT_LABEL_COLOR = "0,0,0,255"
+SHOT_LABEL_SIZE_PT = 9.0
+SHOT_IMAGE_PATTERN = re.compile(r"^IRD_(\d+)_\d+\.", re.IGNORECASE)
+
+SHOTS_QGIS_STYLE = """<!DOCTYPE qgis PUBLIC 'http://mrcc.com/qgis.dtd' 'SYSTEM'>
+<qgis version="3.28.0" styleCategories="Symbology|Labeling">
+  <renderer-v2 type="singleSymbol" symbollevels="0" enableorderby="0" forceraster="0">
+    <symbols>
+      <symbol type="marker" name="0" alpha="1" clip_to_extent="1" force_rhr="0">
+        <layer class="SimpleMarker" enabled="1" pass="0" locked="0">
+          <Option type="Map">
+            <Option name="name" value="circle" type="QString"/>
+            <Option name="color" value="{marker_color}" type="QString"/>
+            <Option name="outline_color" value="0,0,0,255" type="QString"/>
+            <Option name="outline_width" value="0.2" type="QString"/>
+            <Option name="size" value="{marker_size}" type="QString"/>
+            <Option name="size_unit" value="MM" type="QString"/>
+          </Option>
+        </layer>
+      </symbol>
+    </symbols>
+  </renderer-v2>
+  <labeling type="simple">
+    <settings calloutType="simple">
+      <text-style fieldName="shot" isExpression="0" fontSize="{label_size}" fontSizeUnit="Point" textColor="{label_color}" fontFamily="Arial" namedStyle="Bold" fontWeight="75" textOpacity="1">
+        <text-buffer bufferDraw="1" bufferSize="0.8" bufferSizeUnits="MM" bufferColor="255,255,255,255" bufferOpacity="1"/>
+      </text-style>
+      <placement placement="6" dist="1.5" distUnits="MM" overlapHandling="PreventOverlap"/>
+      <rendering scaleVisibility="0" drawLabels="1"/>
+    </settings>
+  </labeling>
+</qgis>
+"""
+
+
+def style_shots_geojson(shots_path: Path) -> None:
+    """Add the shoot point number and style hints to the archived ODM shots.geojson.
+
+    Each feature gets a `shot` property (IRD_0128_1.tif -> 128) plus simplestyle
+    properties for generic GeoJSON viewers. QGIS ignores those, so a `shots.qml` sidecar
+    (loaded automatically next to the layer) sets the markers and the `shot` labels.
+    The original ODM properties, `filename` included, are kept.
+    """
+    shots_path = Path(shots_path)
+    with shots_path.open("r", encoding="utf-8") as shots_file:
+        data = json.load(shots_file)
+    for feature in data.get("features", []):
+        properties = feature.setdefault("properties", {})
+        match = SHOT_IMAGE_PATTERN.match(str(properties.get("filename", "")))
+        if match is not None:
+            properties["shot"] = int(match.group(1))
+        properties.update(
+            {
+                "marker-symbol": "circle",
+                "marker-color": "#ff0000",
+                "marker-size": "medium",
+            }
+        )
+    _write_json_atomic(shots_path, data)
+    shots_path.with_suffix(".qml").write_text(
+        SHOTS_QGIS_STYLE.format(
+            marker_color=SHOT_MARKER_COLOR,
+            marker_size=SHOT_MARKER_SIZE_MM,
+            label_color=SHOT_LABEL_COLOR,
+            label_size=SHOT_LABEL_SIZE_PT,
+        ),
+        encoding="utf-8",
+    )
+
+
 def _cleanup_odm_working_directories(mapping_folder: Path) -> List[str]:
     """Remove only ODM working directories after deliverables have been archived."""
     removed: List[str] = []
@@ -877,6 +999,8 @@ def run_odm(
     mission_folder: Path,
     log_callback: Optional[Callable[[str], None]] = None,
     stage_callback: Optional[Callable[[str], None]] = None,
+    dt_tolerance_s: float = 0.5,
+    sample_every: int = 3,
 ) -> Dict[str, Any]:
     """Prepare the selected dataset and run ODM through the Docker Desktop engine."""
     mission_folder = Path(mission_folder).expanduser().resolve()
@@ -894,7 +1018,11 @@ def run_odm(
     worker_log(f"Docker Engine {docker_server_version} is available.")
 
     stage("Building image selection and estimating GSD")
-    manifest = build_best_mapping(mission_folder, sample_every=3)
+    manifest = build_best_mapping(
+        mission_folder,
+        dt_tolerance_s=dt_tolerance_s,
+        sample_every=sample_every,
+    )
     counts = manifest["counts"]
     if counts["not_ready"] or not counts["ready_for_odm"]:
         raise ODMMappingError(
@@ -963,7 +1091,7 @@ def run_odm(
                     or "[ERROR]" in line
                     or "ODM app finished" in line
                 ):
-                    worker_log(line.strip())
+                    worker_log(ANSI_ESCAPE_PATTERN.sub("", line).strip())
             return_code = process.wait()
             elapsed_seconds = time.perf_counter() - run_started_monotonic
         if return_code != 0:
@@ -974,6 +1102,10 @@ def run_odm(
         output = _validate_odm_outputs(orthophoto_path)
         stage("Archiving selected ODM results")
         copied_results = _copy_mapping_results(mapping_folder)
+        try:
+            style_shots_geojson(Path(copied_results["shots"]))
+        except (OSError, ValueError) as error:
+            worker_log(f"Could not add shoot point labels and style to shots.geojson: {error}")
         output["path"] = copied_results["orthophoto"]
         stage("Cleaning ODM working directories")
         removed_directories = _cleanup_odm_working_directories(mapping_folder)

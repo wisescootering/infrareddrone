@@ -57,7 +57,13 @@ from PyQt6.QtWidgets import (
     QTextEdit,
     QProgressBar,
     QLabel,
-    QDoubleSpinBox
+    QDoubleSpinBox,
+    QSpinBox,
+    QRadioButton,
+    QButtonGroup,
+    QGroupBox,
+    QFormLayout,
+    QDialogButtonBox,
 )
 
 # ----------------------------------------------------
@@ -71,7 +77,9 @@ import matplotlib.pyplot as plt
 #     bib IRD_Interactive
 # ----------------------------------------------------
 import IRD_Interactive_utils as Uti
+import IRD_Interactive_help as Help
 import IRD_Interactive_GeoRef as GeoRef
+from IRD_Interactive_contours import DEFAULT_GRID_STEP_M, generate_ortho_dtm
 from IRD_Interactive_utils import safe_path
 from IRD_Interactive_workers import TimeShiftWorker
 from IRD_Interactive_workers import ImagePairingWorker
@@ -101,15 +109,24 @@ class ODMRunSignals(QObject):
 class ODMRunWorker(QRunnable):
     """Run the complete ODM workflow without blocking the Phase 5 dialog."""
 
-    def __init__(self, mission_folder: Path):
+    def __init__(
+        self,
+        mission_folder: Path,
+        dt_tolerance_s: float = 0.5,
+        sample_every: int = 3,
+    ):
         super().__init__()
         self.mission_folder = mission_folder
+        self.dt_tolerance_s = dt_tolerance_s
+        self.sample_every = sample_every
         self.signals = ODMRunSignals()
 
     def run(self) -> None:
         try:
             result = run_odm(
                 self.mission_folder,
+                dt_tolerance_s=self.dt_tolerance_s,
+                sample_every=self.sample_every,
                 log_callback=self.signals.log.emit,
                 stage_callback=self.signals.stage.emit,
             )
@@ -127,9 +144,157 @@ class ODMRunWorker(QRunnable):
             self.signals.finished.emit(result)
 
 
+class ODMSelectionDialog(QDialog):
+    """Collect temporal and density criteria for an ODM mapping run."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("ODM image selection")
+        self.setMinimumWidth(440)
+
+        layout = QVBoxLayout(self)
+        criteria = QFormLayout()
+        self.dt_tolerance = QDoubleSpinBox()
+        self.dt_tolerance.setRange(0.05, 6.0)
+        self.dt_tolerance.setSingleStep(0.05)
+        self.dt_tolerance.setDecimals(2)
+        self.dt_tolerance.setValue(0.5)
+        self.dt_tolerance.setSuffix(" s")
+        criteria.addRow("Maximum |dt| (NIR rank 1):", self.dt_tolerance)
+        layout.addLayout(criteria)
+
+        density_group = QGroupBox("Image density and overlap")
+        density_layout = QVBoxLayout(density_group)
+        self.sample_radio = QRadioButton("Select one image every n eligible images")
+        self.overlap_radio = QRadioButton("Select by image overlap")
+        self.sample_radio.setChecked(True)
+        self.selection_group = QButtonGroup(self)
+        self.selection_group.setExclusive(True)
+        self.selection_group.addButton(self.sample_radio)
+        self.selection_group.addButton(self.overlap_radio)
+        density_layout.addWidget(self.sample_radio)
+
+        self.sample_every = QSpinBox()
+        self.sample_every.setRange(1, 4)
+        self.sample_every.setValue(3)
+        sample_row = QFormLayout()
+        sample_row.addRow("One image every:", self.sample_every)
+        density_layout.addLayout(sample_row)
+
+        density_layout.addWidget(self.overlap_radio)
+        self.overlap_x = QSpinBox()
+        self.overlap_x.setRange(0, 100)
+        self.overlap_x.setValue(75)
+        self.overlap_x.setSuffix(" %")
+        self.overlap_y = QSpinBox()
+        self.overlap_y.setRange(0, 100)
+        self.overlap_y.setValue(75)
+        self.overlap_y.setSuffix(" %")
+        overlap_form = QFormLayout()
+        overlap_form.addRow("Overlap along image x-axis:", self.overlap_x)
+        overlap_form.addRow("Overlap along image y-axis:", self.overlap_y)
+        density_layout.addLayout(overlap_form)
+        self.overlap_warning = QLabel(
+            "Overlap-based selection is not implemented yet. "
+            "Choose the image interval criterion to start a mapping."
+        )
+        self.overlap_warning.setWordWrap(True)
+        self.overlap_warning.setStyleSheet("color: #9a5b00;")
+        density_layout.addWidget(self.overlap_warning)
+        layout.addWidget(density_group)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        self.sample_radio.toggled.connect(self._update_selection_controls)
+        self._update_selection_controls()
+
+    def _update_selection_controls(self) -> None:
+        sample_selected = self.sample_radio.isChecked()
+        self.sample_every.setEnabled(sample_selected)
+        self.overlap_x.setEnabled(not sample_selected)
+        self.overlap_y.setEnabled(not sample_selected)
+        self.overlap_warning.setVisible(not sample_selected)
+
+    def accept(self) -> None:
+        if self.overlap_radio.isChecked():
+            QMessageBox.information(
+                self,
+                "Overlap selection unavailable",
+                "Selection by image overlap is not implemented yet. "
+                "Please choose 'one image every n eligible images'.",
+            )
+            return
+        super().accept()
+
+
 class ODMPreviewSignals(QObject):
     ready = pyqtSignal(object)
     error = pyqtSignal(str)
+
+
+class DtmSignals(QObject):
+    log = pyqtSignal(str)
+    finished = pyqtSignal(dict)
+    error = pyqtSignal(str)
+
+
+class DtmWorker(QRunnable):
+    """Build the DTM and contour lines of an orthophoto off the GUI thread."""
+
+    def __init__(self, orthophoto_path: Path, step: float):
+        super().__init__()
+        self.orthophoto_path = orthophoto_path
+        self.step = step
+        self.signals = DtmSignals()
+
+    def run(self) -> None:
+        try:
+            result = generate_ortho_dtm(
+                self.orthophoto_path,
+                step=self.step,
+                log=self.signals.log.emit,
+            )
+        except Exception as error:
+            self.signals.error.emit(f"{type(error).__name__}: {error}")
+        else:
+            self.signals.finished.emit(result)
+
+
+class DtmStepDialog(QDialog):
+    """Ask for the grid step used to query the terrain altitudes."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("DTM and contour lines")
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        self.grid_step = QDoubleSpinBox()
+        self.grid_step.setRange(1.0, 100.0)
+        self.grid_step.setSingleStep(1.0)
+        self.grid_step.setDecimals(1)
+        self.grid_step.setValue(DEFAULT_GRID_STEP_M)
+        self.grid_step.setSuffix(" m")
+        form.addRow("Altitude grid step:", self.grid_step)
+        layout.addLayout(form)
+        layout.addWidget(
+            QLabel(
+                "Altitudes are requested from the IGN API (OpenTopoData as fallback).\n"
+                "A smaller step means many more requests."
+            )
+        )
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
 
 
 class ODMPreviewWorker(QRunnable):
@@ -187,6 +352,9 @@ class DialogGeoRef(QDialog):
         self._connect_signals()
         self.odm_worker: Optional[ODMRunWorker] = None
         self.odm_preview_worker: Optional[ODMPreviewWorker] = None
+        self.dtm_worker: Optional[DtmWorker] = None
+        self.odm_dt_tolerance_s = 0.5
+        self.odm_sample_every = 3
 
         # Connect the logger signal to the GUI log window.
         self.log_signal.connect(self._log)
@@ -228,6 +396,10 @@ class DialogGeoRef(QDialog):
         self.btn_run_Mapping.setFixedWidth(180)
         self.btn_run_Mapping.setStyleSheet(BUTTON_STYLE)
         btn_layout.addWidget(self.btn_run_Mapping)
+        self.btn_run_DTM = QPushButton("DTM + contours")
+        self.btn_run_DTM.setFixedWidth(180)
+        self.btn_run_DTM.setStyleSheet(BUTTON_STYLE)
+        btn_layout.addWidget(self.btn_run_DTM)
         btn_layout.addStretch()
         main_layout.addLayout(btn_layout)
 
@@ -263,6 +435,11 @@ class DialogGeoRef(QDialog):
         close_layout = QHBoxLayout()
         close_layout.addStretch()
         close_layout.addWidget(self.btn_close)
+        self.btn_help = QPushButton("?")
+        self.btn_help.setFixedWidth(30)
+        self.btn_help.setStyleSheet(BUTTON_STYLE)
+        self.btn_help.clicked.connect(lambda: Help.show_help("ch:step5", parent=self))
+        close_layout.addWidget(self.btn_help)
 
         main_layout.addLayout(close_layout)
 
@@ -273,6 +450,7 @@ class DialogGeoRef(QDialog):
     def _connect_signals(self) -> None:
         self.btn_run_GeoRef.clicked.connect(self.on_run_GeoRef)
         self.btn_run_Mapping.clicked.connect(self.on_run_ODM)
+        self.btn_run_DTM.clicked.connect(self.on_run_DTM)
         self.btn_close.clicked.connect(self.on_close)
 
     # ------------------------------------------------------------------
@@ -280,11 +458,11 @@ class DialogGeoRef(QDialog):
     # ------------------------------------------------------------------
 
     def on_close(self) -> None:
-        if self.odm_worker is not None:
+        if self.odm_worker is not None or self.dtm_worker is not None:
             QMessageBox.warning(
                 self,
-                "ODM is running",
-                "Wait for the ODM process to finish before closing this window.",
+                "Processing is running",
+                "Wait for the ODM or DTM process to finish before closing this window.",
             )
             return
         self._log("Dialog closed by user.")
@@ -412,18 +590,26 @@ class DialogGeoRef(QDialog):
             return
 
         mission_folder = Path(self.folderMissionPath)
+        selection_dialog = ODMSelectionDialog(self)
+        if selection_dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self.odm_dt_tolerance_s = selection_dialog.dt_tolerance.value()
+        self.odm_sample_every = selection_dialog.sample_every.value()
+
         confirm = QMessageBox.question(
             self,
             "Start ODM mapping",
             "This will hard-link the selected image quartets from "
-            "ImgIRdrone/imgMultispectral into mapping_MULTI/images, then run ODM "
-            "directly in mapping_MULTI using Docker.\n\n"
+            "ImgIRdrone/imgMultispectral into the prepared ODM dataset, then run "
+            "ODM directly in mapping_MULTI using Docker.\n\n"
             "The orthophoto, report, shots GeoJSON, and 2.5D mesh will also be copied "
             "to mapping_MULTI/mapping_result.\n\n"
             "The processing may take a long time and use several gigabytes of memory "
             "and disk space. Existing ODM output folders or archived mapping results "
             "will not be overwritten; move or remove them manually before starting "
             "another run.\n\n"
+            f"Selection: |dt| <= {self.odm_dt_tolerance_s:.2f} s; "
+            f"one image every {self.odm_sample_every} eligible images.\n\n"
             f"Mission:\n{mission_folder}\n\nStart ODM now?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
@@ -431,10 +617,27 @@ class DialogGeoRef(QDialog):
         if confirm != QMessageBox.StandardButton.Yes:
             return
 
-        self._start_ODM_worker(mission_folder)
+        self._start_ODM_worker(
+            mission_folder,
+            dt_tolerance_s=self.odm_dt_tolerance_s,
+            sample_every=self.odm_sample_every,
+        )
 
-    def _start_ODM_worker(self, mission_folder: Path) -> None:
-        worker = ODMRunWorker(mission_folder)
+    def _start_ODM_worker(
+        self,
+        mission_folder: Path,
+        dt_tolerance_s: Optional[float] = None,
+        sample_every: Optional[int] = None,
+    ) -> None:
+        if dt_tolerance_s is not None:
+            self.odm_dt_tolerance_s = dt_tolerance_s
+        if sample_every is not None:
+            self.odm_sample_every = sample_every
+        worker = ODMRunWorker(
+            mission_folder,
+            dt_tolerance_s=self.odm_dt_tolerance_s,
+            sample_every=self.odm_sample_every,
+        )
         worker.signals.log.connect(self._log)
         worker.signals.stage.connect(self._on_ODM_stage)
         worker.signals.finished.connect(self._on_ODM_finished)
@@ -486,6 +689,7 @@ class DialogGeoRef(QDialog):
         self.image_preview_label.setText("Loading orthophoto preview...")
         self.image_preview_label.setPixmap(QPixmap())
         self._start_ODM_preview(Path(orthophoto["path"]))
+        self._start_DTM_worker(Path(orthophoto["path"]), DEFAULT_GRID_STEP_M)
         QMessageBox.information(
             self,
             "ODM completed",
@@ -524,6 +728,91 @@ class DialogGeoRef(QDialog):
         self._log(f"Orthophoto preview failed: {error_message}")
         self.odm_preview_worker = None
 
+    # --------------------------------------------
+    #  DTM and contour lines
+    # --------------------------------------------
+
+    def _set_busy_buttons(self, enabled: bool) -> None:
+        for button in (
+            self.btn_run_GeoRef,
+            self.btn_run_Mapping,
+            self.btn_run_DTM,
+            self.btn_close,
+        ):
+            button.setEnabled(enabled)
+
+    def on_run_DTM(self) -> None:
+        """Rebuild the DTM and contour lines of the archived ODM orthophoto."""
+        if self.dtm_worker is not None or self.odm_worker is not None:
+            return
+        orthophoto = (
+            Path(self.folderMissionPath)
+            / "mapping_MULTI"
+            / "mapping_result"
+            / "odm_orthophoto.tif"
+        )
+        if not orthophoto.is_file():
+            QMessageBox.warning(
+                self,
+                "Orthophoto not found",
+                f"Run the mapping first. File not found:\n{orthophoto}",
+            )
+            return
+        dialog = DtmStepDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._start_DTM_worker(orthophoto, dialog.grid_step.value(), manual=True)
+
+    def _start_DTM_worker(
+        self, orthophoto_path: Path, step: float, manual: bool = False
+    ) -> None:
+        if self.dtm_worker is not None:
+            return
+        worker = DtmWorker(orthophoto_path, step)
+        worker.signals.log.connect(self._log)
+        worker.signals.finished.connect(
+            lambda result, manual=manual: self._on_DTM_finished(result, manual)
+        )
+        worker.signals.error.connect(self._on_DTM_error)
+        self.dtm_worker = worker
+        self._set_busy_buttons(False)
+        self.progress_bar.setRange(0, 0)
+        self.progress_label.setText("DTM and contour lines – altitude requests")
+        self._log(f"Building DTM and contour lines (grid step {step:g} m).")
+        QThreadPool.globalInstance().start(worker)
+
+    def _finish_DTM_ui(self) -> None:
+        self.dtm_worker = None
+        self._set_busy_buttons(True)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+
+    def _on_DTM_finished(self, result: dict, manual: bool) -> None:
+        self._finish_DTM_ui()
+        self.progress_label.setText("DTM and contour lines completed.")
+        self._log(
+            "Contour lines (QGIS): "
+            f"{result['contours']}\nDTM raster: {result['dtm']}\n"
+            f"2D map: {result['map']}\n3D surface: {result['surface_3d']}"
+        )
+        if manual:
+            QMessageBox.information(
+                self,
+                "DTM and contour lines",
+                f"Files saved next to the orthophoto:\n{Path(result['contours']).parent}",
+            )
+
+    def _on_DTM_error(self, error_message: str) -> None:
+        self._finish_DTM_ui()
+        self.progress_label.setText("DTM and contour lines failed.")
+        self._log(f"DTM and contour lines failed: {error_message}")
+        QMessageBox.warning(
+            self,
+            "DTM and contour lines",
+            f"The DTM and contour lines could not be generated "
+            f"(the ODM result is not affected):\n\n{error_message}",
+        )
+
     def _on_ODM_error(self, error_message: str) -> None:
         self._finish_ODM_ui()
         self._log(f"ODM failed: {error_message}")
@@ -535,11 +824,11 @@ class DialogGeoRef(QDialog):
         self.progress_label.setText("ODM failed.")
 
     def closeEvent(self, event) -> None:
-        if self.odm_worker is not None:
+        if self.odm_worker is not None or self.dtm_worker is not None:
             QMessageBox.warning(
                 self,
-                "ODM is running",
-                "Wait for the ODM process to finish before closing this window.",
+                "Processing is running",
+                "Wait for the ODM or DTM process to finish before closing this window.",
             )
             event.ignore()
             return
