@@ -1010,6 +1010,48 @@ def style_shots_geojson(shots_path: Path) -> None:
     )
 
 
+def _restore_output_ownership(
+    mapping_folder: Path,
+    docker_executable: str,
+    docker_context: Optional[str],
+    log: Callable[[str], None],
+) -> None:
+    """Give ODM outputs back to the current user on Linux/macOS.
+
+    With a rootful Docker engine, the ODM container writes files as root, which
+    the user can then neither clean up nor delete. Nothing is done on Windows or
+    when the files are already owned by the user (Docker Desktop, rootless Docker).
+    """
+    if not hasattr(os, "getuid"):
+        return
+    uid, gid = os.getuid(), os.getgid()
+    if all(path.lstat().st_uid == uid for path in mapping_folder.rglob("*")):
+        return
+    command = [
+        docker_executable,
+        *_context_args(docker_context),
+        "run",
+        "--rm",
+        "--entrypoint",
+        "chown",
+        "-v",
+        f"{mapping_folder.parent}:/datasets",
+        ODM_IMAGE,
+        "-R",
+        f"{uid}:{gid}",
+        f"/datasets/{mapping_folder.name}",
+    ]
+    result = subprocess.run(
+        command, capture_output=True, text=True, encoding="utf-8",
+        errors="replace", timeout=600, check=False,
+    )
+    if result.returncode != 0:
+        log(
+            "Could not give ODM outputs back to the current user: "
+            + (result.stderr or result.stdout).strip()
+        )
+
+
 def _cleanup_odm_working_directories(mapping_folder: Path) -> List[str]:
     """Remove only ODM working directories after deliverables have been archived."""
     removed: List[str] = []
@@ -1132,6 +1174,9 @@ def run_odm(
                     worker_log(ANSI_ESCAPE_PATTERN.sub("", line).strip())
             return_code = process.wait()
             elapsed_seconds = time.perf_counter() - run_started_monotonic
+        _restore_output_ownership(
+            mapping_folder, docker_executable, docker_context, worker_log
+        )
         if return_code != 0:
             raise ODMMappingError(
                 f"ODM exited with code {return_code}. Review the complete log: {log_path}"

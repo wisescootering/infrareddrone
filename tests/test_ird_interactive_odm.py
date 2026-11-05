@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import tempfile
+import types
 import unittest
 import subprocess
 from pathlib import Path
@@ -13,6 +14,7 @@ from affine import Affine
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "irdrone Interactive"))
 from IRD_Interactive_ODM import (
+    _restore_output_ownership,
     resolve_docker_context,
     ODM_PROJECT_NAME,
     ODM_RESULTS_FOLDER,
@@ -94,6 +96,22 @@ class BestMappingTests(unittest.TestCase):
         self.assertEqual(run.call_args_list[0].args[0], ["docker", "context", "inspect", "desktop-linux"])
         self.assertEqual(run.call_args.args[0][:4], ["docker", "--context", "desktop-linux", "info"])
         self.assertEqual(command[0:4], ["docker", "--context", "desktop-linux", "run"])
+
+    @patch("IRD_Interactive_ODM.subprocess.run")
+    def test_restore_ownership_does_nothing_on_windows(self, run):
+        # Windows has no os.getuid: the ownership step must not call Docker.
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch("IRD_Interactive_ODM.os", types.SimpleNamespace(environ=os.environ)):
+            _restore_output_ownership(Path(tmp), "docker", "desktop-linux", print)
+        run.assert_not_called()
+
+    @patch("IRD_Interactive_ODM.subprocess.run")
+    def test_restore_ownership_does_nothing_when_files_are_ours(self, run):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "odm_dem").mkdir()
+            (Path(tmp) / "odm_dem" / "dem.tif").write_bytes(b"")
+            _restore_output_ownership(Path(tmp), "docker", None, print)
+        run.assert_not_called()
 
     @patch("IRD_Interactive_ODM.shutil.which", return_value=None)
     def test_check_docker_reports_missing_cli(self, _which):
