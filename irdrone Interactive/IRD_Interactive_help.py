@@ -2,11 +2,14 @@
 """
 Contextual help for IRDrone.
 
-The user manual is written in LaTeX (``help/irdrone_help.tex``) and compiled to
-``help/irdrone_help.pdf``. Every chapter and every button section of the manual has
-a LaTeX label (``ch:step1``, ``btn:step4_run_alignment``, ...). During compilation
-LaTeX writes the page of each label in ``help/irdrone_help.aux``. The help buttons
-call :func:`show_help` with a label: the PDF is opened at the page of that label.
+The user manual is written in LaTeX (``help/irdrone_help.tex``) and compiled by
+``help/build_help.bat`` into two PDFs: ``help/irdrone_help_light.pdf`` (low-resolution
+images, committed, opened by the software) and ``help/irdrone_help.pdf`` (printable,
+too large for GitHub, used only when the light version is missing). Every chapter and
+every button section of the manual has a LaTeX label (``ch:step1``,
+``btn:step4_run_alignment``, ...). During compilation LaTeX writes the page of each
+label in the ``.aux`` file next to the PDF. The help buttons call :func:`show_help`
+with a label: the PDF is opened at the page of that label.
 
 Usage
 -----
@@ -30,8 +33,17 @@ from pathlib import Path
 from typing import Dict, Optional
 
 HELP_DIR = Path(__file__).resolve().parent.parent / "help"
-HELP_PDF = HELP_DIR / "irdrone_help.pdf"
-HELP_AUX = HELP_DIR / "irdrone_help.aux"
+HELP_PDF_LIGHT = HELP_DIR / "irdrone_help_light.pdf"
+HELP_PDF_FULL = HELP_DIR / "irdrone_help.pdf"
+# Light version first (the one shipped with the software), printable one as fallback.
+HELP_PDF = HELP_PDF_LIGHT if HELP_PDF_LIGHT.exists() or not HELP_PDF_FULL.exists() else HELP_PDF_FULL
+# Both versions share the same layout: either .aux gives the right pages.
+HELP_AUX = next(
+    (aux for aux in (HELP_PDF.with_suffix(".aux"),
+                     HELP_PDF_LIGHT.with_suffix(".aux"),
+                     HELP_PDF_FULL.with_suffix(".aux")) if aux.exists()),
+    HELP_PDF.with_suffix(".aux"),
+)
 
 # The title page (\maketitle) is numbered 0 by LaTeX: the physical page of the PDF viewer
 # is the printed page + 1. Set to 0 if the title page is removed from the manual.
@@ -105,7 +117,7 @@ def show_help(label: Optional[str] = None, parent=None) -> bool:
     """
     if not HELP_PDF.exists():
         _warn(parent, f"The user manual was not found:\n{HELP_PDF}\n\n"
-                      "Compile help/irdrone_help.tex with pdflatex (twice).")
+                      "Compile it with help/build_help.bat.")
         return False
     page = read_label_pages().get(label) if label else None
     try:
@@ -114,11 +126,28 @@ def show_help(label: Optional[str] = None, parent=None) -> bool:
         url = help_url(label)
         if webbrowser.open(url):
             return True
-        os.startfile(str(HELP_PDF))  # no page positioning with this fallback
-        return True
+        return open_with_default_app(HELP_PDF)  # no page positioning with this fallback
     except Exception as exc:
         _warn(parent, f"Unable to open the user manual:\n{exc}")
         return False
+
+
+def open_with_default_app(path) -> bool:
+    """Open a file with the application associated to it (Windows, Linux, macOS).
+
+    Returns False if no opener is available (no ``xdg-open`` on Linux).
+    """
+    if hasattr(os, "startfile"):  # Windows
+        os.startfile(str(path))
+        return True
+    import shutil
+    import subprocess
+    import sys
+    opener = shutil.which("open" if sys.platform == "darwin" else "xdg-open")
+    if opener is None:
+        return False
+    subprocess.Popen([opener, str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return True
 
 
 def _default_pdf_viewer() -> Optional[str]:

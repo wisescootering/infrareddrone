@@ -324,8 +324,9 @@ class AlignmentCheckDialog(QDialog):
 
     def _open_full_size(self) -> None:
         try:
-            os.startfile(str(self.image_path))
-        except (AttributeError, OSError) as error:
+            if not Help.open_with_default_app(self.image_path):
+                raise OSError(f"No application available to open {self.image_path}")
+        except OSError as error:
             QMessageBox.warning(self, "Unable to open the image", str(error))
 
 
