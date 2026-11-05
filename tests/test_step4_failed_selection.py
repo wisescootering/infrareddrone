@@ -18,7 +18,7 @@ spec.loader.exec_module(step4)
 class FailedSelectionTests(unittest.TestCase):
     def test_numbers_from_local_jpegs(self):
         numbers, ignored = step4.image_numbers_from_local_jpegs(
-            [r"C:\x\VIR_0010_local.jpg", r"C:\x\VIS_0011.jpg"]
+            ["C:/x/VIR_0010_local.jpg", "C:/x/VIS_0011.jpg"]
         )
         self.assertEqual(numbers, {10})
         self.assertEqual(ignored, ["VIS_0011.jpg"])

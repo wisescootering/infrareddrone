@@ -107,7 +107,12 @@ class WorkflowTests(unittest.TestCase):
             result = contours.generate_ortho_dtm(
                 ortho, step=10.0, log=lambda m: None, altitude_getter=fake_altitudes
             )
-            for key in ("dtm", "contours", "contours_style", "map", "surface_3d", "grid"):
+            keys = ["dtm", "map", "surface_3d", "grid"]
+            if GeoRef.GDAL_AVAILABLE:  # contour lines need GDAL
+                keys += ["contours", "contours_style"]
+            else:
+                self.assertIsNone(result["contours"])
+            for key in keys:
                 self.assertTrue(Path(result[key]).is_file(), key)
             with rasterio.open(result["dtm"]) as dtm:
                 self.assertEqual(dtm.crs.to_epsg(), 32631)
@@ -115,6 +120,8 @@ class WorkflowTests(unittest.TestCase):
                 self.assertTrue(np.isfinite(values).all())
                 # north is up: altitude must increase toward the top rows
                 self.assertGreater(values[0].mean(), values[-1].mean())
+            if not GeoRef.GDAL_AVAILABLE:
+                return
             from osgeo import ogr
             datasource = ogr.Open(result["contours"])
             layer = datasource.GetLayer()

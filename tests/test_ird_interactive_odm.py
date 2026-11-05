@@ -599,10 +599,12 @@ class BestMappingTests(unittest.TestCase):
             self.assertTrue((mapping / ODM_RESULTS_FOLDER).is_dir())
 
     def test_builds_docker_command_with_estimated_resolution(self):
-        command = build_odm_command(Path("C:/mission/mapping_MULTI"), 3.3)
+        mapping = Path("C:/mission/mapping_MULTI")
+        command = build_odm_command(mapping, 3.3)
 
         self.assertEqual(command[0:4], ["docker", "--context", "desktop-linux", "run"])
-        self.assertIn("C:\\mission:/datasets", command)
+        # "C:\\mission:/datasets" on Windows
+        self.assertIn(f"{mapping.resolve().parent}:/datasets", command)
         self.assertIn("mapping_MULTI", command)
         self.assertEqual(
             command[command.index("--cameras") + 1],
