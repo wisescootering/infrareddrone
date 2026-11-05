@@ -118,6 +118,7 @@ from PyQt6.QtWidgets import (
 
 from IRD_interactive_geo import data_sig
 import IRD_Interactive_utils as Uti
+from irdrone.file_utils import find_ci, glob_ci
 
 
 if os.name == 'nt':
@@ -3871,8 +3872,8 @@ def georef_main(image_callback=None, mission_parameters=None):
             for name in args.images:
                 # --- Check for DNG files ---
                 if args.mode == "raw_DJI":
-                    dng_path = folder_input / f"{name}.dng"
-                    if dng_path.exists():
+                    dng_path = find_ci(folder_input / f"{name}.dng")
+                    if dng_path is not None:
                         paths.append(dng_path)
                         continue
 
@@ -3893,9 +3894,9 @@ def georef_main(image_callback=None, mission_parameters=None):
             # scan auto
             logger.info(f'Automatic scan {folder_input}')
             paths = (
-                    list(folder_input.glob("*.dng")) +
-                    list(folder_input.glob("*.tif")) +
-                    list(folder_input.glob("*.tiff"))
+                    glob_ci(folder_input, "*.dng") +
+                    glob_ci(folder_input, "*.tif") +
+                    glob_ci(folder_input, "*.tiff")
             )
 
         if not paths:
@@ -4098,8 +4099,8 @@ if __name__ == "__main__":
             for name in args.images:
                 # --- test DNG ---
                 if args.mode == "raw_DJI":
-                    dng_path = folder_input / f"{name}.dng"
-                    if dng_path.exists():
+                    dng_path = find_ci(folder_input / f"{name}.dng")
+                    if dng_path is not None:
                         paths.append(dng_path)
                         continue
 
@@ -4120,9 +4121,9 @@ if __name__ == "__main__":
             # scan auto
             logger.info(f'Scan automatique du dossier {folder_input}')
             paths = (
-                list(folder_input.glob("*.dng")) +
-                list(folder_input.glob("*.tif")) +
-                list(folder_input.glob("*.tiff"))
+                glob_ci(folder_input, "*.dng") +
+                glob_ci(folder_input, "*.tif") +
+                glob_ci(folder_input, "*.tiff")
             )
 
         if not paths:

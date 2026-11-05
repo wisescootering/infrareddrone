@@ -14,6 +14,9 @@ import piexif
 from piexif import ImageIFD, ExifIFD
 from datetime import datetime
 import time
+import sys
+sys.path.append(osp.join(osp.dirname(osp.abspath(__file__)), ".."))
+from irdrone.file_utils import glob_ci
 
 
 '''
@@ -209,7 +212,7 @@ def convert_raw_to_dng_parallel(
     if not input_folder_path.exists():
         raise FileNotFoundError(f"Input folder not found: {input_folder}")
 
-    raw_files = sorted([str(p) for p in input_folder_path.glob("*.RAW")])
+    raw_files = [str(p) for p in glob_ci(input_folder_path, "*.raw")]
     dng_files: List[str] = []
 
     # Auto-adjust max_workers if not provided
@@ -334,7 +337,7 @@ def convert_raw_to_dng(
         if not folder_path.exists():
             raise FileNotFoundError(f"Input folder not found: {folder}")
 
-        return [str(p) for p in sorted(folder_path.glob("*.RAW"))]
+        return [str(p) for p in glob_ci(folder_path, "*.raw")]
 
     dng_files: List[str] = []
     raw_files = list_raw_files_str(input_folder)
@@ -386,7 +389,7 @@ def list_raw_files(folder: str) -> List[Path]:
     if not folder_path.exists():
         raise FileNotFoundError(f"Dossier introuvable : {folder}")
 
-    return sorted(folder_path.glob("*.RAW"))
+    return glob_ci(folder_path, "*.raw")
 
 
 

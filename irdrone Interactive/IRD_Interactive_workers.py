@@ -40,6 +40,7 @@ import IRD_interactive_geo as Geo
 from IRD_Interactive_color_style import Style
 import IRD_Interactive_ArUco as Aru
 from config import SJCONVERTERPATH, EXIFTOOLPATH
+from irdrone.file_utils import glob_ci
 assert Path(EXIFTOOLPATH).exists(), f"ExifTool not found at {EXIFTOOLPATH}, Use environment variable EXIFTOOLPATH to set the path."
 assert Path(SJCONVERTERPATH).exists(), f"SJCam RAW converter not found at {SJCONVERTERPATH}, Use environment variable SJCONVERTERPATH to set the path."
 
@@ -278,7 +279,7 @@ class ImagePairingWorker(QRunnable):
         folder = Path(folder)
         list_dic = []
         time_line = []
-        files = sorted(folder.glob(f"*.{suffix}"))
+        files = glob_ci(folder, f"*.{suffix}")
         n_files = len(files)
 
         for i, img_file in enumerate(files):
@@ -1110,7 +1111,7 @@ class CreateExif(QtCore.QObject):
     # =================================================================== #
     def run(self) -> None:
         try:
-            files = list(self.folder_to_scan.glob("*.dng"))
+            files = glob_ci(self.folder_to_scan, "*.dng")
             n = len(files)
 
             self.progress.emit(0)
@@ -1315,9 +1316,7 @@ class Transfer_NIR(QtCore.QObject):
             print(Style.GREEN + f"extract images in folder {self.input_folder}" + Style.RESET)
 
             # RAW list
-            raw_files = sorted([str(p) for p in self.input_folder.glob("*.RAW")])
-            if not raw_files:
-                raw_files = sorted([str(p) for p in self.input_folder.glob("*.raw")])
+            raw_files = [str(p) for p in glob_ci(self.input_folder, "*.raw")]
 
             n = len(raw_files)
             if n == 0:

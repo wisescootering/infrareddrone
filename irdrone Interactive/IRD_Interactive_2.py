@@ -1357,7 +1357,7 @@ class LoadVisNirImagesDialog(QDialog):
         # List all files in folder
         files = os.listdir(input_folder)
         # Filter the list to keep only .suffix type files
-        listInputImages = [f for f in files if f.lower().endswith('.' + suffix)]
+        listInputImages = [f for f in files if f.lower().endswith('.' + suffix.lower())]
         return listInputImages
 
     @staticmethod

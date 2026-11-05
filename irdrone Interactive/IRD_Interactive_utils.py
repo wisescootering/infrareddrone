@@ -47,6 +47,7 @@ from IRD_interactive_geo import geo2UTM
 from IRD_Interactive_color_style import Style
 
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
+from irdrone.file_utils import glob_ci
 import config as cf
 
 
@@ -1708,7 +1709,7 @@ def list_files_with_suffix(suffix: str, folder: str) -> List[Path]:
         raise FileNotFoundError(f"Folder not found: {folder}")
 
     # Use glob to find files matching the suffix and sort them
-    return sorted(folder_path.glob(f"*.{suffix.upper()}"))
+    return glob_ci(folder_path, f"*.{suffix}")
 
 def rename_file_VIS(input_img_name: str) -> str:
     """
@@ -1950,7 +1951,7 @@ def convert_raw_to_dng_parallel(
     if not input_folder_path.exists():
         raise FileNotFoundError(f"Input folder not found: {input_folder}")
 
-    raw_files = sorted([str(p) for p in input_folder_path.glob("*.RAW")])
+    raw_files = [str(p) for p in glob_ci(input_folder_path, "*.raw")]
     dng_files: List[str] = []
 
     # Auto-adjust max_workers if not provided

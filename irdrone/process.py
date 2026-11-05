@@ -20,6 +20,7 @@ from os import mkdir
 import utils.utils_IRdrone as IRd
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
 from irdrone.utils import Style, conversionGPSdms2dd, get_polar_shading_map, contrast_stretching
+from irdrone.file_utils import has_suffix, with_suffix_ci
 import config as cf
 import subprocess
 from pathlib import Path
@@ -213,7 +214,7 @@ class Image:
             self.conv_dir = osp.join(osp.dirname(self.path), "_conversion_sjcam")
             # This piece of code is a dirty, the proxies are RGB temporary conversions of raw files
             # The list self.proxy is used to later clear (methode clean_proxy)
-            dng_file = osp.join(self.conv_dir, osp.basename(self.path).replace(".RAW", ".dng"))
+            dng_file = osp.join(self.conv_dir, with_suffix_ci(osp.basename(self.path), ".raw", ".dng"))
             proxypth = cached_tif(self.path)
             proxypth_from_dng = cached_tif(dng_file)
             self.proxy = [dng_file, proxypth, proxypth_from_dng]
@@ -329,7 +330,7 @@ class Image:
                 print(Style.YELLOW + "NO CAMERA IN %s"%self.path + Style.RESET)
                 self.camera = None
             try:
-                if self.path.endswith(".RAW"):
+                if has_suffix(self.path, "raw"):
 
                     year, month_date, hours , _ = osp.basename(self.path).split("_")
                     converted_date = datetime.datetime(year=int(year), month=int(month_date[:2]), day=int(month_date[2:]),
@@ -459,7 +460,7 @@ class Image:
                 conv_dir = self.conv_dir
                 if not osp.isdir(conv_dir):
                     mkdir(conv_dir)
-                dng_file = osp.join(conv_dir, osp.basename(self.path).replace(".RAW", ".dng"))
+                dng_file = osp.join(conv_dir, with_suffix_ci(osp.basename(self.path), ".raw", ".dng"))
                 if not osp.isfile(dng_file):
                     # assert osp.isfile(sjcam_converter), f"No SJCam converter {sjcam_converter}"
                     assert osp.isfile(self.path), f"No input raw file {self.path}"

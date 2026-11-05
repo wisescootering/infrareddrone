@@ -4,6 +4,7 @@ from scipy.interpolate import interp1d
 from skimage import exposure
 import glob
 import itertools
+from irdrone.file_utils import glob_path_ci
 import logging
 import numpy as np
 import os.path as osp
@@ -58,7 +59,7 @@ def imagepath(imgname="2020_1225_091929_004FullSpectrum.JPG", dirname=opj(osp.di
 
         imgpth = opj(di, img)
         if "*" in imgpth:
-            imgpthList += glob.glob(imgpth)
+            imgpthList += glob_path_ci(imgpth)  # *.DNG also finds .dng (as on Windows)
         else:
             assert osp.exists(imgpth)
             imgpthList.append(imgpth)

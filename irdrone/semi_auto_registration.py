@@ -9,6 +9,7 @@ from skimage import filters
 from skimage import exposure
 import irdrone.utils as ut
 import irdrone.process as pr
+from irdrone.file_utils import glob_path_ci, with_suffix_ci
 from registration.warp_flow import warp
 import interactive.imagepipe as ipipe
 from irdrone.register import register_by_blocks, estimateFeaturePoints
@@ -643,7 +644,7 @@ def demo_raw(folder=osp.join(osp.dirname(__file__), "..", r"Hyperlapse 06_09_202
         import os
         os.mkdir(out_dir)
     import glob
-    for vis_pth in sorted(glob.glob(osp.join(folder, "*.DNG"))):
+    for vis_pth in glob_path_ci(osp.join(folder, "*.dng")):
         print(osp.basename((vis_pth)))
         params = None
         phase_correl_default_flag = 1.
@@ -657,9 +658,9 @@ def demo_raw(folder=osp.join(osp.dirname(__file__), "..", r"Hyperlapse 06_09_202
         if "20210906124530" in bname: params = {ROTATE: [2.24, 7.04, 1.52, phase_correl_default_flag]}
         params["Absgrad visualize"] = [1.]
         params["Alpha"] = [-0.47]
-        nir_pth = vis_pth.replace("DNG", "RAW")
+        nir_pth = with_suffix_ci(vis_pth, ".dng", ".RAW")
         # @TODO: FIX WHEN DJI GEOMETRIC CALIBRATION IS FIXED
-        vis_pth_undist = vis_pth.replace(".DNG", "_PL4_DIST.tif")
+        vis_pth_undist = with_suffix_ci(vis_pth, ".dng", "_PL4_DIST.tif")
         if osp.exists(vis_pth_undist):
             vis_pth = vis_pth_undist
         align_raw(vis_pth, nir_pth, cals, out_dir=out_dir, params=params)
