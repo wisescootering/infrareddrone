@@ -49,6 +49,29 @@ class ManualRedoBatchTests(unittest.TestCase):
             self.assertIn(str(nir_rank_2), commands[1])
             self.assertIn("NIR rank 2", content)
 
+    def test_shell_recovery_script_uses_current_interpreter(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary) / "Air Mission"
+            folder.mkdir()
+            script = folder / "VIS_0100_REDO.sh"
+            write_manual_bat_redo(
+                folder / "VIS_0100.dng",
+                [(folder / "NIR_0200.dng", 1), (folder / "NIR_0201.dng", 2)],
+                script,
+                folder / "ImgIRdrone",
+                angles=(1.0, 2.0, 3.0),
+            )
+            content = script.read_text(encoding="utf-8")
+            self.assertTrue(content.startswith("#!/bin/sh\n"))
+            self.assertNotIn("REM", content)
+            self.assertNotIn("activate", content)
+            commands = [
+                line for line in content.splitlines() if "automatic_registration.py" in line
+            ]
+            self.assertEqual(len(commands), 2)
+            self.assertTrue(commands[0].startswith(f'"{sys.executable}" '))
+            self.assertTrue(commands[1].startswith("# "))
+
     def test_redo_archives_previous_outputs_and_new_results(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -8,6 +8,7 @@ import registration.rigid as rigid
 from irdrone.semi_auto_registration import manual_warp, ManualAlignment, Transparency, Absgrad
 from skimage import transform
 import os
+import sys
 osp = os.path
 import time
 from datetime import datetime, timedelta
@@ -456,22 +457,34 @@ def finalize_manual_redo_archives(
             _move_to_archive(item, tech_dir)
 
 
+# Recovery script written next to each aligned pair, read back by the GUI "Redo".
+# Windows: batch file (conda activate + python). Elsewhere: shell script calling
+# the current interpreter directly (works with conda, venv or uv alike).
+REDO_SCRIPT_SUFFIX = "_REDO.bat" if os.name == "nt" else "_REDO.sh"
+
+
 def write_manual_bat_redo(
     vis_pth, nir_candidates, debug_bat_pth, out_dir, multispectral_folder=None, angles=None
 ):
     vis_pth = os.fspath(vis_pth)
     out_dir = os.fspath(out_dir)
+    batch = not os.fspath(debug_bat_pth).lower().endswith(".sh")
+    comment = "REM " if batch else "# "
+    python = "python" if batch else "\"" + sys.executable + "\""
     with open(debug_bat_pth, "w") as fi:
-        fi.write("REM Full recovery run: detailed diagnostics and all image traces.\n")
-        fi.write("REM Keep one command active; uncomment an alternative NIR rank if needed.\n")
-        if conda_env_name is not None:
+        if not batch:
+            fi.write("#!/bin/sh\n")
+        fi.write(comment + "Full recovery run: detailed diagnostics and all image traces.\n")
+        fi.write(comment + "Keep one command active; uncomment an alternative NIR rank if needed.\n")
+        if batch and conda_env_name is not None:
             fi.write("call activate {}\n".format(conda_env_name))
         for id_candidate, (nir_pth, nir_rank) in enumerate(nir_candidates):
             nir_pth = os.fspath(nir_pth)
-            cmd = "REM " if id_candidate > 0 else ""
-            cmd += "REM NIR rank {}: {}\n".format(nir_rank, nir_pth)
-            cmd += "REM " if id_candidate > 0 else ""
-            cmd += "python {} --images {} {} --manual --outdir {} --debug".format(
+            cmd = comment if id_candidate > 0 else ""
+            cmd += comment + "NIR rank {}: {}\n".format(nir_rank, nir_pth)
+            cmd += comment if id_candidate > 0 else ""
+            cmd += "{} {} --images {} {} --manual --outdir {} --debug".format(
+                python,
                 "\""+osp.abspath(__file__)+"\"",
                 "\""+vis_pth+"\"", "\""+nir_pth+"\"",
                 "\""+out_dir+"\"",
@@ -485,7 +498,10 @@ def write_manual_bat_redo(
             cmd += " --redo"
             cmd+="\n"
             fi.write(cmd)
-        fi.write("call deactivate\n")
+        if batch:
+            fi.write("call deactivate\n")
+    if not batch:
+        os.chmod(debug_bat_pth, 0o755)
 
 def _process_raw_pairs_serial(
         sync_pairs,
@@ -555,26 +571,25 @@ def _process_raw_pairs_serial(
             debug_dir = None
 
         # Generate one complete recovery script with rank-1 active by default.
-        if os.name == "nt":
-            nir_candidates = (
-                redo_nir_candidates[index_pair]
-                if redo_nir_candidates is not None
-                else [(nir_pth, 1)]
-            )
-            if not nir_candidates or os.fspath(nir_candidates[0][0]) != nir_pth:
-                nir_candidates = [(nir_pth, 1)] + [
-                    candidate
-                    for candidate in nir_candidates
-                    if os.fspath(candidate[0]) != nir_pth
-                ]
-            write_manual_bat_redo(
-                vis_pth,
-                nir_candidates,
-                osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO.bat"),
-                out_dir,
-                multispectral_folder=multispectral_folder,
-                angles=angles,
-            )
+        nir_candidates = (
+            redo_nir_candidates[index_pair]
+            if redo_nir_candidates is not None
+            else [(nir_pth, 1)]
+        )
+        if not nir_candidates or os.fspath(nir_candidates[0][0]) != nir_pth:
+            nir_candidates = [(nir_pth, 1)] + [
+                candidate
+                for candidate in nir_candidates
+                if os.fspath(candidate[0]) != nir_pth
+            ]
+        write_manual_bat_redo(
+            vis_pth,
+            nir_candidates,
+            osp.join(out_dir, osp.basename(vis_pth[:-4])+REDO_SCRIPT_SUFFIX),
+            out_dir,
+            multispectral_folder=multispectral_folder,
+            angles=angles,
+        )
 
 
         gps_vis = pr.Image(vis_pth).gps

@@ -92,6 +92,28 @@ class ReadRedoCommandTests(unittest.TestCase):
         self.assertEqual(arguments[arguments.index("--outdir") + 1], "C:\\Air Mission\\ImgIRdrone")
         self.assertEqual(arguments[arguments.index("--angles") + 1:][:3], ["1.000", "2.000", "3.000"])
 
+    def test_reads_shell_script_written_by_alignment(self):
+        sys.path.insert(0, str(ROOT))
+        from automatic_registration import write_manual_bat_redo
+
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary) / "Air Mission"
+            folder.mkdir()
+            script = folder / "VIS_0011_REDO.sh"
+            write_manual_bat_redo(
+                folder / "VIS_0011.dng",
+                [(folder / "NIR_0200.dng", 1), (folder / "NIR_0201.dng", 2)],
+                script,
+                folder / "ImgIRdrone",
+                angles=(1.0, 2.0, 3.0),
+            )
+            arguments = step4.read_redo_command(script)
+        self.assertEqual(arguments[:3], [
+            "--images", str(folder / "VIS_0011.dng"), str(folder / "NIR_0200.dng"),
+        ])
+        self.assertEqual(arguments[arguments.index("--outdir") + 1], str(folder / "ImgIRdrone"))
+        self.assertIn("--redo", arguments)
+
     def test_no_active_command(self):
         with tempfile.TemporaryDirectory() as temporary:
             batch = Path(temporary) / "VIS_0011_REDO.bat"

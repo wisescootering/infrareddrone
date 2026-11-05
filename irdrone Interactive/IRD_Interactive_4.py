@@ -46,7 +46,8 @@ PROGRESS_LINE_PATTERN = re.compile(
 )
 LOCAL_JPEG_PATTERN = re.compile(r"^VIR_(\d+)_local\.jpg$", re.IGNORECASE)
 FAILED_SUMMARY_FILENAME = "shoot_points_failed_summary.json"
-REDO_BATCH_SUFFIX = "_REDO.bat"
+# Same as automatic_registration.REDO_SCRIPT_SUFFIX (not imported: heavy module).
+REDO_BATCH_SUFFIX = "_REDO.bat" if os.name == "nt" else "_REDO.sh"
 
 
 def select_local_jpegs(parent, folder: Path) -> list[str]:
@@ -178,18 +179,21 @@ def mark_points_aligned(output_folder: Path, numbers) -> dict:
 
 
 def read_redo_command(batch_path: Path) -> list[str]:
-    """Arguments of the active command of a ``VIS_XXXX_REDO.bat`` file.
+    """Arguments of the active command of a ``VIS_XXXX_REDO.bat`` (or ``.sh``) file.
 
-    The batch written by the alignment keeps one active ``python ...`` command; the
-    alternatives (other NIR ranks) are commented with ``REM``. The interpreter and
-    the script are dropped: the caller supplies them.
+    The script written by the alignment keeps one active command running
+    ``automatic_registration.py``; the alternatives (other NIR ranks) are commented
+    with ``REM`` (Windows) or ``#``. The interpreter and the script are dropped:
+    the caller supplies them.
     """
     text = Path(batch_path).read_text(encoding=locale.getpreferredencoding(False), errors="replace")
     for line in text.splitlines():
         stripped = line.strip()
-        if not stripped.lower().startswith("python "):
+        if not stripped or stripped.startswith("#") or stripped.lower().startswith("rem"):
             continue
         tokens = [token.strip('"') for token in shlex.split(stripped, posix=False)]
+        if len(tokens) < 2 or not tokens[1].endswith("automatic_registration.py"):
+            continue
         arguments = tokens[2:]
         if "--images" not in arguments or "--redo" not in arguments:
             raise ValueError(f"Unexpected REDO command in {Path(batch_path).name}")
