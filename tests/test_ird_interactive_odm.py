@@ -13,6 +13,7 @@ from affine import Affine
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "irdrone Interactive"))
 from IRD_Interactive_ODM import (
+    resolve_docker_context,
     ODM_PROJECT_NAME,
     ODM_RESULTS_FOLDER,
     ODMMappingError,
@@ -48,6 +49,51 @@ class BestMappingTests(unittest.TestCase):
         self.assertEqual(executable, "docker")
         self.assertEqual(version, "29.9.2")
         self.assertEqual(run.call_args.args[0][1:3], ["--context", "desktop-linux"])
+
+    @patch("IRD_Interactive_ODM.subprocess.run")
+    @patch("IRD_Interactive_ODM.shutil.which", return_value="docker")
+    def test_check_docker_falls_back_to_current_context(self, _which, run):
+        # `docker context inspect desktop-linux` fails (plain Docker Engine), info succeeds.
+        run.side_effect = [
+            subprocess.CompletedProcess(args=["docker"], returncode=1, stdout="", stderr="not found"),
+            subprocess.CompletedProcess(args=["docker"], returncode=0, stdout="29.9.3\n", stderr=""),
+        ]
+
+        executable, version = check_docker()
+
+        self.assertEqual(version, "29.9.3")
+        self.assertEqual(run.call_args.args[0], ["docker", "info", "--format", "{{.ServerVersion}}"])
+
+    @patch.dict(os.environ, {"IRDRONE_DOCKER_CONTEXT": "my-context"})
+    @patch("IRD_Interactive_ODM.subprocess.run")
+    def test_docker_context_from_environment(self, run):
+        self.assertEqual(resolve_docker_context(), "my-context")
+        run.assert_not_called()
+
+    def test_builds_docker_command_without_context(self):
+        command = build_odm_command(Path("/mission/mapping_MULTI"), 3.3, docker_context=None)
+
+        self.assertEqual(command[0:2], ["docker", "run"])
+
+    @patch.dict(os.environ, {}, clear=False)
+    @patch("IRD_Interactive_ODM.subprocess.run")
+    @patch("IRD_Interactive_ODM.shutil.which", return_value="docker")
+    def test_docker_desktop_context_is_kept_when_it_exists(self, _which, run):
+        # Windows / Docker Desktop: the desktop-linux context exists, so every
+        # Docker call keeps using it exactly as before.
+        os.environ.pop("IRDRONE_DOCKER_CONTEXT", None)
+        run.return_value = subprocess.CompletedProcess(
+            args=["docker"], returncode=0, stdout="29.9.2\n", stderr=""
+        )
+
+        context = resolve_docker_context("docker")
+        check_docker(context)
+        command = build_odm_command(Path("/mission/mapping_MULTI"), 3.3, "docker", context)
+
+        self.assertEqual(context, "desktop-linux")
+        self.assertEqual(run.call_args_list[0].args[0], ["docker", "context", "inspect", "desktop-linux"])
+        self.assertEqual(run.call_args.args[0][:4], ["docker", "--context", "desktop-linux", "info"])
+        self.assertEqual(command[0:4], ["docker", "--context", "desktop-linux", "run"])
 
     @patch("IRD_Interactive_ODM.shutil.which", return_value=None)
     def test_check_docker_reports_missing_cli(self, _which):

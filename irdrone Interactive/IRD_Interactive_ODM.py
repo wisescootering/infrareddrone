@@ -24,6 +24,9 @@ MANIFEST_NAME = "img_best_mappping.json"
 ODM_PROJECT_NAME = "mapping_MULTI"
 ODM_RESULTS_FOLDER = "mapping_result"
 ODM_IMAGE = "opendronemap/odm:latest"
+# Preferred Docker context (Docker Desktop). When it does not exist (e.g. plain
+# Docker Engine on Linux) Docker's current context is used instead.
+# Override with environment variable IRDRONE_DOCKER_CONTEXT.
 ODM_CONTEXT = "desktop-linux"
 ODM_MAX_CONCURRENCY = 4
 BAND_NAMES = ("red", "green", "blue", "nir")
@@ -57,22 +60,54 @@ class DockerUnavailableError(ODMMappingError):
     """Raised when the Docker CLI or selected Docker engine is unavailable."""
 
 
-def check_docker() -> Tuple[str, str]:
-    """Return the Docker executable and server version, or explain how to start it."""
+def resolve_docker_context(docker_executable: str = "docker") -> Optional[str]:
+    """Return the Docker context to use, or None for Docker's current context.
+
+    Order: IRDRONE_DOCKER_CONTEXT if set, then ODM_CONTEXT (Docker Desktop) if
+    that context exists, otherwise None.
+    """
+    if "IRDRONE_DOCKER_CONTEXT" in os.environ:
+        return os.environ["IRDRONE_DOCKER_CONTEXT"].strip() or None
+    try:
+        inspect = subprocess.run(
+            [docker_executable, "context", "inspect", ODM_CONTEXT],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return ODM_CONTEXT if inspect.returncode == 0 else None
+
+
+def _context_args(docker_context: Optional[str]) -> List[str]:
+    return ["--context", docker_context] if docker_context else []
+
+
+def check_docker(docker_context: Any = ...) -> Tuple[str, str]:
+    """Return the Docker executable and server version, or explain how to start it.
+
+    docker_context: context name, None for Docker's current context, or omitted
+    to auto-detect with resolve_docker_context().
+    """
     docker_executable = shutil.which("docker")
     if docker_executable is None:
         raise DockerUnavailableError(
             "Docker CLI was not found on PATH. Start or install Docker Desktop, then "
-            "verify that `docker --context desktop-linux version` shows both Client "
-            "and Server."
+            "verify that `docker version` shows both Client and Server."
         )
+    if docker_context is ...:
+        docker_context = resolve_docker_context(docker_executable)
+    context_label = f"Docker context '{docker_context}'" if docker_context else "Docker engine"
 
     try:
         docker_check = subprocess.run(
             [
                 docker_executable,
-                "--context",
-                ODM_CONTEXT,
+                *_context_args(docker_context),
                 "info",
                 "--format",
                 "{{.ServerVersion}}",
@@ -86,16 +121,16 @@ def check_docker() -> Tuple[str, str]:
         )
     except (OSError, subprocess.SubprocessError) as error:
         raise DockerUnavailableError(
-            f"Could not contact Docker Desktop: {error}. Start Docker Desktop and "
-            "retry."
+            f"Could not contact the {context_label}: {error}. Start Docker "
+            "(Docker Desktop or the docker service) and retry."
         ) from error
 
     server_version = docker_check.stdout.strip()
     if docker_check.returncode != 0 or not server_version:
         details = (docker_check.stderr or docker_check.stdout).strip()
         raise DockerUnavailableError(
-            f"Docker Desktop context '{ODM_CONTEXT}' is not responding. Start Docker "
-            "Desktop, wait until it reports that the engine is running, then retry."
+            f"{context_label} is not responding. Start Docker (Docker Desktop or "
+            "the docker service), wait until the engine is running, then retry."
             + (f"\nDocker response: {details}" if details else "")
         )
     return docker_executable, server_version
@@ -334,6 +369,7 @@ def build_odm_command(
     mapping_folder: Path,
     orthophoto_resolution_cm: float,
     docker_executable: str = "docker",
+    docker_context: Optional[str] = ODM_CONTEXT,
 ) -> List[str]:
     """Build the Docker command for the mission's mapping_MULTI project."""
     resolution = _positive_number(
@@ -350,8 +386,7 @@ def build_odm_command(
     )
     return [
         docker_executable,
-        "--context",
-        ODM_CONTEXT,
+        *_context_args(docker_context),
         "run",
         "--rm",
         "-v",
@@ -1002,7 +1037,7 @@ def run_odm(
     dt_tolerance_s: float = 0.5,
     sample_every: int = 3,
 ) -> Dict[str, Any]:
-    """Prepare the selected dataset and run ODM through the Docker Desktop engine."""
+    """Prepare the selected dataset and run ODM through Docker."""
     mission_folder = Path(mission_folder).expanduser().resolve()
     mapping_folder = mission_folder / "mapping_MULTI"
     manifest_path = mapping_folder / MANIFEST_NAME
@@ -1013,8 +1048,9 @@ def run_odm(
         raise ODMMappingError(f"ODM mapping folder does not exist: {mapping_folder}")
     _check_mapping_outputs_available(mapping_folder)
 
-    stage("Checking Docker Desktop")
-    docker_executable, docker_server_version = check_docker()
+    stage("Checking Docker")
+    docker_context = resolve_docker_context(shutil.which("docker") or "docker")
+    docker_executable, docker_server_version = check_docker(docker_context)
     worker_log(f"Docker Engine {docker_server_version} is available.")
 
     stage("Building image selection and estimating GSD")
@@ -1036,7 +1072,9 @@ def run_odm(
 
     stage("Preparing selected TIFF quartets")
     images_folder = prepare_odm_input(mission_folder, manifest)
-    command = build_odm_command(mapping_folder, resolution_cm, docker_executable)
+    command = build_odm_command(
+        mapping_folder, resolution_cm, docker_executable, docker_context
+    )
     timestamp = datetime.now(timezone.utc)
     started_at = timestamp.isoformat()
     log_path = mapping_folder / f"odm_run_{timestamp.strftime('%Y%m%d_%H%M%S_%f')}.log"

@@ -691,12 +691,13 @@ class DialogGeoRef(QDialog):
     def _on_ODM_docker_unavailable(self, message: str) -> None:
         """Offer to retry once Docker Desktop is started (the selection is then kept)."""
         self._finish_ODM_ui()
-        self._log(f"Docker Desktop is unavailable: {message}")
+        self._log(f"Docker is unavailable: {message}")
         retry = QMessageBox.question(
             self,
-            "Docker Desktop is not running",
+            "Docker is not running",
             f"{message}\n\n"
-            "Please start Docker Desktop and wait until its engine is running. "
+            "Please start Docker (Docker Desktop, or the docker service on Linux) "
+            "and wait until its engine is running. "
             "Then choose Retry to check the engine again, or Cancel to stop here.",
             QMessageBox.StandardButton.Retry | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Retry,
@@ -704,7 +705,7 @@ class DialogGeoRef(QDialog):
         if retry == QMessageBox.StandardButton.Retry:
             self._start_ODM_worker(Path(self.folderMissionPath))
         else:
-            self.progress_label.setText("ODM cancelled: Docker Desktop is unavailable.")
+            self.progress_label.setText("ODM cancelled: Docker is unavailable.")
 
     def _on_ODM_stage(self, stage: str) -> None:
         self.progress_label.setText(f"ODM – {stage}")
