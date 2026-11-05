@@ -399,12 +399,13 @@ def detect_aruco_marker(
 
     """
 
-    try:
+    if hasattr(cv2.aruco, "ArucoDetector"):
+        # OpenCV >= 4.7 (the legacy detectMarkers function is removed in 5.x)
+        detector = cv2.aruco.ArucoDetector(arucoDict, cv2.aruco.DetectorParameters())
+        corners_list, ids, _ = detector.detectMarkers(image_cv)
+    else:
         arucoParams = cv2.aruco.DetectorParameters_create()
-    except AttributeError:
-        arucoParams = cv2.aruco.DetectorParameters()
-
-    corners_list, ids, _ = cv2.aruco.detectMarkers(image_cv, arucoDict, parameters=arucoParams)
+        corners_list, ids, _ = cv2.aruco.detectMarkers(image_cv, arucoDict, parameters=arucoParams)
 
     if corners_list is None or len(corners_list) == 0:
         if verbose:
