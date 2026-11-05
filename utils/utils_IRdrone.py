@@ -1744,10 +1744,10 @@ def lectureCameraIrdrone():
 def shootPoint2imgMappingOdm(listPts, dirMission=None):
     """
     Creation of the list of images that check the 'best-mapping' criterion.
-    This list (of dictionaries) is written in the 'images.json' file of the 'dirMission\maping_MULTI' folder.
+    This list (of dictionaries) is written in the 'images.json' file of the 'dirMission\\maping_MULTI' folder.
     The form of dictionary is imposed by Open Drone Map.
     During the ODM process, if this file 'images.json' exists and is valid, it takes precedence.
-    Otherwise ODM creates this list itself from the images contained in 'dirMission\mapping_MULTI\images'.
+    Otherwise ODM creates this list itself from the images contained in 'dirMission\\mapping_MULTI\\images'.
     :param listPts:
     :param filepath:
     :return:
@@ -1880,14 +1880,14 @@ def logoIRDrone_2():
 def logoIRDrone_3():
     print(Style.CYAN + '\n ')
     print(' _______   __________      ___________    ')
-    print('   |I|     |R|      \R\     |D|      \D\  ' )
-    print('   |I|     |R|       |R|    |D|       \D\ ' )
+    print('   |I|     |R|      \\R\\     |D|      \\D\\  ' )
+    print('   |I|     |R|       |R|    |D|       \\D\\ ' )
     print('   |I|     |R|      /R/     |D|        |D|   --- _----_    _------_      _------_       _-------_    ')
-    print('   |I|     |R|_____/R/      |D|        |D|   |R|/      \  /O/     \O\   |N|     \I\    /E/     \E\   ')
-    print('   |I|     |R|    \R\       |D|        |D|   |R|         |0|       |O|  |N|      |N|  |E|       |E|  ')
-    print('   |I|     |R|     \R\      |D|        |D|   |R|         |0|       |O|  |N|      |N|  |E|______/E/   ')
-    print('   |I|     |R|      \R\     |D|       /D/    |R|         |O|       |O|  |N|      |N|  |E|            ')
-    print(' __|I|__  _|R|_     _\R\_  _|D|______/D/    _|R|_         \O\_____/O/  _|N|_     |N|_  \E\______/E/  ')
+    print('   |I|     |R|_____/R/      |D|        |D|   |R|/      \\  /O/     \\O\\   |N|     \\I\\    /E/     \\E\\   ')
+    print('   |I|     |R|    \\R\\       |D|        |D|   |R|         |0|       |O|  |N|      |N|  |E|       |E|  ')
+    print('   |I|     |R|     \\R\\      |D|        |D|   |R|         |0|       |O|  |N|      |N|  |E|______/E/   ')
+    print('   |I|     |R|      \\R\\     |D|       /D/    |R|         |O|       |O|  |N|      |N|  |E|            ')
+    print(' __|I|__  _|R|_     _\\R\\_  _|D|______/D/    _|R|_         \\O\\_____/O/  _|N|_     |N|_  \\E\\______/E/  ')
     print('')
     print('=====================================================================================================')
     return

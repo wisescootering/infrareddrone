@@ -2310,8 +2310,8 @@ def build_time_line_dictionnary(
         - delta_img: interval since previous image (s)
         - relative_timeline: cumulative time since first image (s)
 
-    rem:  if f = C:\ ....\folder_name\hyperlapse.DNG
-        Path(f).parent =  C:\ ....\folder_name
+    rem:  if f = C:\\ ....\folder_name\\hyperlapse.DNG
+        Path(f).parent =  C:\\ ....\folder_name
         Path(f).parent.name = folder_name
         Path(f).name  = "hyperlapse.DNG"
         Path(f).stem  = "hyperlapse"

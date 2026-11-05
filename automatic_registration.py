@@ -26,8 +26,7 @@ from registration.pyramid_wrapper import pyramid_reduce
 try:
     conda_env_name = os.environ['CONDA_DEFAULT_ENV']
 except:
-    conda_env_name = None
-    logging.warning("cannot retrieve conda env")
+    conda_env_name = None  # not running in conda (e.g. uv/venv): no activate line in the generated .bat
 exif_dict_minimal = np.load(osp.join(osp.dirname(__file__), "utils", "minimum_exif_dji.npy"), allow_pickle=True).item()
 TRACES = ["vis", "nir", "vir", "ndvi"]
 VIS, NIR, VIR, NDVI = TRACES

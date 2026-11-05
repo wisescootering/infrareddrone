@@ -75,7 +75,7 @@ def get_EXIF_XMP(pth: Path, index, utilise_cache=False, verbose: bool = False):
     EXIFTOOLPATH = Path(__file__).parent.parent / "irdrone" / "exiftool" / "exiftool.exe"
 
     Ici  Path(__file__)  représente sur ma machine le chemin complet depuis lequel j'éxécute le code :
-    C:\Documents-Alain\Projet-IRdrone\Code_Python\irdrone\irdrone Interactive\IRD_Interactive_Exif_Xmp.py
+    C:\\Documents-Alain\\Projet-IRdrone\\Code_Python\\irdrone\\irdrone Interactive\\IRD_Interactive_Exif_Xmp.py
     Ensuite il faut remonter de deux niveaux  DEPUIS LE FICHIER IRD_Interactive_Exif_Xmp.py
     pour atteindre irdrone (celui sous Code_Python)
     et ensuite on va descendre  de trois niveaux pour attteindre le fichier exe exiftool.exe

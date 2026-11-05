@@ -7,7 +7,7 @@ import json
 
 
 def get_exif_info(scr, dst, tmp):
-    EXIFTOOLPATH = osp.join("C:\Documents-Alain\Projet-IRdrone\Code_Python\irdrone\irdrone\exiftool\exiftool.exe")
+    EXIFTOOLPATH = osp.join("C:\\Documents-Alain\\Projet-IRdrone\\Code_Python\\irdrone\\irdrone\\exiftool\\exiftool.exe")
     #EXIFTOOLPATH = Path(__file__).parent/"Code_Python"/ "irdrone"/ "irdrone" / "exiftool" / "exiftool.exe"
 
     print(EXIFTOOLPATH)
@@ -107,9 +107,9 @@ def get_exif_info(scr, dst, tmp):
 if __name__ == "__main__":
     print("debut test Exiftool")
     # fichier source contenant les données
-    strPathImage_dng = 'C:\Air-Mission\FLY-20220125-1159-Blassac\HYPERLAPSE_0216.DNG'
+    strPathImage_dng = 'C:\\Air-Mission\\FLY-20220125-1159-Blassac\\HYPERLAPSE_0216.DNG'
     # fichier de destination où seront copiées les données
-    strPathImage_dst = 'C:\Air-Mission\FLY-20220125-1159-Blassac\essai-dst.tif'
+    strPathImage_dst = 'C:\\Air-Mission\\FLY-20220125-1159-Blassac\\essai-dst.tif'
     # fichier temporaire
-    strPathImage_tmp = 'C:\Air-Mission\FLY-20220125-1159-Blassac\essai-tmp.tif'
+    strPathImage_tmp = 'C:\\Air-Mission\\FLY-20220125-1159-Blassac\\essai-tmp.tif'
     dico = get_exif_info(strPathImage_dng, strPathImage_dst, strPathImage_tmp)

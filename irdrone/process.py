@@ -48,7 +48,17 @@ SJCAM_M20_PROFILE_CONTROL_POINTS = {
 def load_tif(in_file):
     flags = cv2.IMREAD_ANYDEPTH | cv2.IMREAD_ANYCOLOR
     flags |= cv2.IMREAD_IGNORE_ORIENTATION
-    image = cv2.imread(in_file, flags=flags)
+    # RawTherapee TIFFs carry DNG-specific tags unknown to libtiff, which makes
+    # OpenCV print harmless "TIFF_Warning ... Unknown field" lines: mute them here.
+    cv_logging = getattr(getattr(cv2, "utils", None), "logging", None)
+    previous_level = cv_logging.getLogLevel() if cv_logging else None
+    if cv_logging:
+        cv_logging.setLogLevel(cv_logging.LOG_LEVEL_ERROR)
+    try:
+        image = cv2.imread(in_file, flags=flags)
+    finally:
+        if cv_logging:
+            cv_logging.setLogLevel(previous_level)
     if image is None:
         raise OSError(f"Could not read TIFF image: {in_file}")
     return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)/(2.**16-1)

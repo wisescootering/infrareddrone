@@ -17,7 +17,7 @@ import time
 
 
 '''
-Usage:  C:\Documents-Alain\Projet-IRdrone\Code_Python\irdrone\thirdparty\sjcam_raw2dng\sjcam_raw2dng.exe [options] file1|dir1 file2|dir2 ...
+Usage:  C:\\Documents-Alain\\Projet-IRdrone\\Code_Python\\irdrone\thirdparty\\sjcam_raw2dng\\sjcam_raw2dng.exe [options] file1|dir1 file2|dir2 ...
 
 Valid options:
 -h, --help          Help
@@ -306,7 +306,7 @@ def convert_raw_to_dng(
     - The "--thumb" option is automatically applied.
 
     Converter:  https://github.com/yanburman/sjcam_raw2dng/releases
-    Usage:  C:\Documents-Alain\Projet-IRdrone\Code_Python\irdrone\thirdparty\sjcam_raw2dng\sjcam_raw2dng.exe [options] file1|dir1 file2|dir2 ...
+    Usage:  C:\\Documents-Alain\\Projet-IRdrone\\Code_Python\\irdrone\thirdparty\\sjcam_raw2dng\\sjcam_raw2dng.exe [options] file1|dir1 file2|dir2 ...
 
         Valid options:
         -h, --help          Help
