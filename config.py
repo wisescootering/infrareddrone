@@ -35,8 +35,13 @@ COPYRIGHT = "Copyright"
 ARTIST = "Artist"
 
 # Default folders
-OUTPUT_FOLDER_NAME = os.environ.get("IRDRONE_WORKING_DIR", r"C://Air-Mission")
-OUTPUT_FOLDER_NAME = Path(OUTPUT_FOLDER_NAME)
+# Override with environment variable IRDRONE_WORKING_DIR.
+# Default: C://Air-Mission on Windows, ~/Air-Mission elsewhere (created if missing).
+if "IRDRONE_WORKING_DIR" in os.environ:
+    OUTPUT_FOLDER_NAME = Path(os.environ["IRDRONE_WORKING_DIR"])
+else:
+    OUTPUT_FOLDER_NAME = Path(r"C://Air-Mission") if os.name == 'nt' else Path.home() / "Air-Mission"
+    OUTPUT_FOLDER_NAME.mkdir(parents=True, exist_ok=True)
 
 
 # ------------------------------------------------------
@@ -64,7 +69,12 @@ if os.name == 'nt':
         "thirdparty", "sjcam_raw2dng", "sjcam_raw2dng.exe"
     )
 else:
-    SJCONVERTERPATH = os.environ.get("SJCONVERTERPATH", "sjcam_raw2dng")
+    # Override with environment variable SJCONVERTERPATH.
+    # Default: converter bundled in thirdparty/sjcam_raw2dng_linux.
+    SJCONVERTERPATH = os.environ.get("SJCONVERTERPATH", os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "thirdparty", "sjcam_raw2dng_linux", "sjcam_raw2dng"
+    ))
 if os.name == 'nt' and not os.path.exists(SJCONVERTERPATH):
     print(f"[WARNING] SJCam RAW converter not found at {SJCONVERTERPATH}")
 
