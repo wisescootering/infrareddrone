@@ -1,0 +1,32 @@
+name: Build help PDF
+
+on:
+  push:
+    paths:
+      - "help/**"
+      - ".github/workflows/build-help-pdf.yml"
+  pull_request:
+    paths:
+      - "help/**"
+      - ".github/workflows/build-help-pdf.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile LaTeX
+        uses: xu-cheng/latex-action@v3
+        with:
+          working_directory: help
+          root_file: irdrone_help.tex
+          latexmk_use_lualatex: false
+
+      - name: Upload PDF
+        uses: actions/upload-artifact@v4
+        with:
+          name: irdrone_help
+          path: help/irdrone_help.pdf
+          if-no-files-found: error
