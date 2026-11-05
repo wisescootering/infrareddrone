@@ -1063,7 +1063,7 @@ class Window_create_file_structure(QDialog):
         try:
             self.mission_parameters_light["original name image take-off"] = self.name_image_takeoff
             num = int(Path(self.name_image_takeoff).stem.split("_")[-1])
-            suffix = self.suffix_image_takeoff[1:]  # example "DNG"
+            suffix = self.suffix_image_takeoff[1:].lower()  # example "dng", like the other copied images
             self.mission_parameters_light["name image take-off"] = f"VIS_{num:04d}.{suffix}"
             self.mission_parameters_light["suffix image take-off"] = suffix
         except Exception as e:
@@ -1705,8 +1705,8 @@ class Window_create_file_structure(QDialog):
                 "camera NIR filter band": int(self.image_NIR_filter_band_field.text()),
                 "synchro": "Synchro/synchro.npy",
                 "output": "ImgIRdrone",
-                "visible": "AerialPhotography/VIS/*.DNG",
-                "nir": "AerialPhotography/NIR/*.DNG",
+                "visible": "AerialPhotography/VIS/*.dng",
+                "nir": "AerialPhotography/NIR/*.dng",
                 "AerialPhotography folder": self.AerialPhotoFolder,
                 "FlightAnalytics folder": self.AnalyticFolder,
                 "ImgIRdrone folder": self.ImgIRdroneFolder,
@@ -2148,7 +2148,7 @@ class Window_Load_TakeOff_Image(QDialog):
         try:
             self.mission_parameters_light["original name image take-off"] = self.name_image_takeoff
             num = int(Path(self.name_image_takeoff).stem.split("_")[-1])
-            suffix = self.suffix_image_takeoff[1:]  # example "DNG"
+            suffix = self.suffix_image_takeoff[1:].lower()  # example "dng", like the other copied images
             self.mission_parameters_light["name image take-off"] = f"VIS_{num:04d}.{suffix}"
             self.mission_parameters_light["suffix image take-off"] = suffix
         except Exception as e:
