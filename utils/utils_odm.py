@@ -2,6 +2,7 @@
 # pylint: disable=C0103, C0301, W0703
 from pathlib import Path
 import shutil
+import os
 import os.path as osp
 import matplotlib
 import numpy as np
@@ -57,8 +58,14 @@ def create_odm_folder(
         cmd += " --use-fixed-camera-params"
     for extra_option in extra_options:
         cmd += " " + extra_option
-    with open(path_database / "odm_mapping.bat", "w") as fi:
-        fi.write(cmd)
+    if os.name == "nt":
+        with open(path_database / "odm_mapping.bat", "w") as fi:
+            fi.write(cmd)
+    else:
+        script = path_database / "odm_mapping.sh"
+        with open(script, "w") as fi:
+            fi.write("#!/bin/sh\n" + cmd + "\n")
+        os.chmod(script, 0o755)
     return image_database
 
 
