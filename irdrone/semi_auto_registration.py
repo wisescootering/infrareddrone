@@ -380,7 +380,13 @@ class Transparency(ipipe.ProcessBlock):
             alpha_crop = 1-np.abs(alpha)
             limits_y = [int(shp[0]*alpha_crop), int(shp[0]*(1-alpha_crop))]
             limits_x = [int(shp[1]*alpha_crop), int(shp[1]*(1-alpha_crop))]
-            cmp[limits_y[0]:limits_y[1], limits_x[0]: limits_x[1]] = im1[limits_y[0]:limits_y[1], limits_x[0]: limits_x[1]]
+            region = (slice(limits_y[0], limits_y[1]), slice(limits_x[0], limits_x[1]))
+            # rectangle_opacity < 1 lets the underlying image show through (default 1: opaque)
+            opacity = getattr(self, "rectangle_opacity", 1.0)
+            if opacity >= 1.0:
+                cmp[region] = im1[region]
+            else:
+                cmp[region] = opacity * im1[region] + (1. - opacity) * im2[region]
             return cmp
         elif alpha<=0.:
             return ((1-np.abs(alpha))*im1 + 2.*np.abs(alpha)*np.abs(im1-im2)).clip(0, 255)

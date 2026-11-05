@@ -133,8 +133,9 @@ def user_assisted_manual_alignment(ref, mov, cals, yaw=0, pitch=0, roll=0):
     )
     rotate3d.set_movingcalib(cals["movingcalib"])
     rotate3d.set_refcalib(cals["refcalib"])
-    alpha = Transparency("Alpha", inputs=[0, 1], vrange=(-1., 1., -0.45))
-    absgrad_viz = Absgrad("Absgrad visualize", inputs=[0, 1], outputs=[0, 1], vrange=(0, 1, 1))
+    alpha = Transparency("Alpha", inputs=[0, 1], vrange=(-1., 1., -0.75))
+    alpha.rectangle_opacity = 0.65  # NIR rectangle slightly transparent over the VIS image
+    absgrad_viz = Absgrad("Absgrad visualize", inputs=[0, 1], outputs=[0, 1], vrange=(0, 1, 0.3))
     ipi = ipipe.ImagePipe(
         [ref, mov],
         rescale=None,
@@ -144,6 +145,9 @@ def user_assisted_manual_alignment(ref, mov, cals, yaw=0, pitch=0, roll=0):
             alpha
         ]
     )
+    # The five sliders only need the lowest ~20% of the window: leave the rest to the image
+    ipi.bottom_margin = 0.2
+    ipi.top_margin = 0.99
     ipi.gui()
     return rotate3d.alignment_parameters
 

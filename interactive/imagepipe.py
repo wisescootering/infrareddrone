@@ -430,7 +430,14 @@ class ImagePipe:
                 plt.gcf().canvas.manager.set_window_title(self.winname)
             totalSliders = int(np.array([len(pa.slidersName) for pa in self.sliders if pa is not None]).sum())
             # RESIZE ONLY TO ADD SLIDERS IF NECESSARY : USEFUL FOR INPUT PLOTS WITHOUT INTERACTIVE SLIDERS
-            if totalSliders > 0: plt.subplots_adjust(left=0. if not self.signalOut else 0.1, bottom=0.4)
+            # Optional attributes (set after construction) let a caller give more room to the image
+            bottom_margin = getattr(self, "bottom_margin", 0.4)
+            top_margin = getattr(self, "top_margin", None)
+            if totalSliders > 0:
+                if top_margin is None:
+                    plt.subplots_adjust(left=0. if not self.signalOut else 0.1, bottom=bottom_margin)
+                else:
+                    plt.subplots_adjust(left=0. if not self.signalOut else 0.1, bottom=bottom_margin, top=top_margin)
             self.resetsliders(addslider=False)
             result = self.engine(self.imglistThumbs, geometricscale=self.geometricscale)
             if self.signalIn:

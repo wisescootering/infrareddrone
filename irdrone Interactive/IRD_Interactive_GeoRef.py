@@ -4,6 +4,41 @@
 #   Georeferencing images.  Process
 #   17/10/2026   V004
 # ---------------------------------------------------------------------------------
+"""Georeferencing and orthorectification of IRDrone images (Step 5, "Run Geo ref").
+
+Each selected image is projected onto a digital terrain model (DTM) and saved as a
+georeferenced GeoTIFF in UTM coordinates. Two kinds of input are supported
+(see ``detect_mode``):
+
+* ``raw_DJI``: DJI ``.dng`` images. They are converted to TIFF with RawTherapee
+  (``dng2tiff``) and corrected with the Zhang calibration (``calib_cam_DJI``).
+* ``multispectral``: IRDrone quartets ``IRD_XXXX_1..4.tif`` (red, green, blue,
+  NIR), whose optical distortion is already corrected by Step 4. The four bands
+  are normalized and stacked into one 4-band image (``process_multispectral``).
+
+Processing chain (entry point ``georef_main``):
+    ``choose_images`` -> ``process_image`` / ``process_multispectral`` ->
+    ``load_companion_exif`` (drone position and attitude read from the ``.exif``
+    companion file, created by ``read_exif_and_write_json`` if missing) ->
+    ``georeference_tiff_MNT``:
+    camera geometry (``DJI2IRDrone``) -> ground footprint
+    (``estimate_ground_bbox_from_camera``) -> DTM mesh from IGN altitudes
+    (``compute_MNT_mesh``, ``build_MNT_interpolator``) -> projection of the mesh
+    into the image (``project_ground_to_camera_batch``) -> resampling ->
+    ``write_geotiff_affine``.
+
+Results are written in the ``geo_ref`` folder next to the input images:
+``*_georef.tif`` (orthorectified image), and optionally ``*_MNT.png`` /
+``*_Grid.png`` / ``*_graph_ortho.png`` (diagnostic graphics),
+``*_contours.geojson`` + ``.qml`` (QGIS contour lines), ``*_topo.tif`` and
+``*_error_rms.tif``. An existing file is never overwritten
+(``get_unique_path`` appends ``_1``, ``_2``, ...).
+
+Conventions: distances in meters, angles in radians unless stated otherwise,
+UTM coordinates of the zone of the mission. The module also holds helpers shared
+with ``IRD_Interactive_contours`` (UTM conversions, DTM interpolation, contour
+lines, QGIS style).
+"""
 
 import sys
 # print(f"✔ Python used : {sys.executable}")
@@ -742,6 +777,48 @@ def georeference_tiff_MNT(tif_path,
         t1 = time.perf_counter()
         logger.timer(f" Topographic map: {t1 - t0:.3f} s")
 
+        # 2D shaded map of the DTM (same figure as the ODM "DTM + contours" map).
+        # It is a bonus output: a failure must never prevent the GeoTIFF from being saved.
+        try:
+            t0 = time.perf_counter()
+            import IRD_Interactive_contours as Contours  # lazy import: contours imports this module
+
+            # Full DTM over the orthorectification grid (no NaN outside the image footprint).
+            elevation_map = (Zg_grid + (Z_cam_sealevel - Z_cam_nadir)).astype(np.float32)
+            left0, top0 = transform.c, transform.f
+            res_x, res_y = transform.a, -transform.e
+            n_rows, n_cols = elevation_map.shape
+
+            # The north-up orthorectification grid is larger than the (yaw-rotated) reference
+            # point mesh: outside the mesh the DTM is only extrapolated, so the map is cropped
+            # to the area bounded by the reference points.
+            col_0 = max(int(math.floor((float(np.min(Xg_IGN)) - left0) / res_x)), 0)
+            col_1 = min(int(math.ceil((float(np.max(Xg_IGN)) - left0) / res_x)), n_cols)
+            row_0 = max(int(math.floor((top0 - float(np.max(Yg_IGN))) / res_y)), 0)
+            row_1 = min(int(math.ceil((top0 - float(np.min(Yg_IGN))) / res_y)), n_rows)
+            if col_1 - col_0 < 2 or row_1 - row_0 < 2:
+                col_0, col_1, row_0, row_1 = 0, n_cols, 0, n_rows
+            elevation_map = elevation_map[row_0:row_1, col_0:col_1]
+            bounds_map = (
+                left0 + col_0 * res_x,
+                top0 - row_1 * res_y,
+                left0 + col_1 * res_x,
+                top0 - row_0 * res_y,
+            )
+            stride = max(1, int(math.ceil(max(elevation_map.shape) / 1000)))  # keeps the plot light
+            elevation_map = elevation_map[::stride, ::stride]
+            dtm_map_path = get_unique_path(folder_input / "geo_ref" / f"{img_name}_dtm_map.png")
+            Contours.plot_dtm_map(
+                dtm_map_path, elevation_map, bounds_map,
+                np.asarray(Xg_IGN), np.asarray(Yg_IGN),
+                img_name, note="DTM \u00a9 IGN-France",
+            )
+            logger.info(f" DTM map saved: {dtm_map_path.name}")
+            t1 = time.perf_counter()
+            logger.timer(f" DTM map : {t1 - t0:.3f} s")
+        except Exception as e:
+            logger.warn(f" DTM map not generated: {e}")
+
     # ------------------------------------------------------------------------------
     # 4) Save the orthorectified GeoTIFF
     # ------------------------------------------------------------------------------
@@ -785,6 +862,7 @@ def next_odd(N_mesh):
 
 
 def safe_path(path: Union[str, Path]) -> Path:
+    """Return the resolved absolute path, or the path unchanged if it cannot be resolved."""
     try:
         return Path(path).resolve()
     except Exception as e:
@@ -880,6 +958,24 @@ def estimate_ground_bbox_from_camera(Nx, Ny, R_Cam2Gnd, Cam_Center,
 # -----------------------------------------------
 
 def dng2tiff(folder, img_name, suffix="dng", bit=16):
+    """
+    Convert a DJI DNG image to TIFF with RawTherapee.
+
+    The neutral profile ``thirdparty/rawtherapee/DJI_neutral.pp3`` is applied.
+    The TIFF is written in the ``geo_ref`` subfolder of ``folder``.
+
+    Parameters:
+        folder: Folder containing the DNG image.
+        img_name: Image name without extension.
+        suffix: Extension of the source image.
+        bit: Bit depth of the TIFF (16 by default).
+
+    Returns:
+        Path to the TIFF file.
+
+    Raises:
+        FileNotFoundError: If the source image does not exist.
+    """
     img_tiff_folder = folder / "geo_ref"
     img_tiff_folder.mkdir(parents=True, exist_ok=True)
 
@@ -912,6 +1008,27 @@ def dng2tiff(folder, img_name, suffix="dng", bit=16):
     return tiff_file
 
 def load_companion_exif(folder, img_name, suffix="dng", alti_takeoff=None):
+    """
+    Load the companion ``.exif`` JSON file of an image.
+
+    The companion file caches the metadata that is expensive to extract with
+    ExifTool. If it is missing, it is created from the image by
+    ``read_exif_and_write_json`` (which may ask the user for the takeoff altitude).
+
+    Parameters:
+        folder: Folder containing the image and its companion file.
+        img_name: Image name without extension.
+        suffix: Extension of the image.
+        alti_takeoff: Optional takeoff altitude (meters above sea level).
+
+    Returns:
+        Dictionary of metadata.
+
+    Raises:
+        FileNotFoundError: If the file and the image are both missing.
+        ValueError: If the file is empty or lacks a key required for
+            georeferencing (drone position, altitudes, UTM, yaw/pitch/roll).
+    """
     exif_file = folder / f"{img_name}.exif"
     img_file = folder / f"{img_name}.{suffix}"
     if not exif_file.exists():
@@ -1212,6 +1329,54 @@ def ask_takeoff_altitude_gui(prompt: str, default=None) -> float:
         root.destroy()
         return altitude
 
+def ask_georef_offsets_gui(default_yaw=0.0, default_utm_x=0.0, default_utm_y=0.0):
+    """
+    Open a Tkinter dialog asking the yaw offset (degrees) and the horizontal shift
+    of the nadir (meters, UTM East / North). Comma or point decimal separators accepted.
+
+    Returns:
+        (offset_yaw, offset_utm_x, offset_utm_y) as floats.
+
+    Raises:
+        ValueError: if the user cancels the dialog.
+    """
+    root = tk.Tk()
+    root.title("Georeferencing offsets")
+    root.attributes("-topmost", True)
+    fields = [
+        ("Yaw offset (degrees)", default_yaw),
+        ("UTM East offset (m)", default_utm_x),
+        ("UTM North offset (m)", default_utm_y),
+    ]
+    entries = []
+    for row, (label, default) in enumerate(fields):
+        tk.Label(root, text=label).grid(row=row, column=0, padx=8, pady=4, sticky="w")
+        var = tk.StringVar(value=str(default))
+        tk.Entry(root, textvariable=var, width=12).grid(row=row, column=1, padx=8, pady=4)
+        entries.append(var)
+
+    result = {}
+
+    def on_ok():
+        try:
+            result["values"] = tuple(float(v.get().strip().replace(",", ".")) for v in entries)
+        except ValueError:
+            messagebox.showerror("Input Error", "Please enter valid numbers.\nExample: -9 or 1,5",
+                                 parent=root)
+            return
+        root.destroy()
+
+    buttons = tk.Frame(root)
+    buttons.grid(row=len(fields), column=0, columnspan=2, pady=8)
+    tk.Button(buttons, text="OK", width=10, command=on_ok).pack(side="left", padx=4)
+    tk.Button(buttons, text="Cancel", width=10, command=root.destroy).pack(side="left", padx=4)
+    root.protocol("WM_DELETE_WINDOW", root.destroy)
+    root.mainloop()
+
+    if "values" not in result:
+        raise ValueError("User input cancelled")
+    return result["values"]
+
 def parse_and_normalize_gps_altitude(value: str) -> dict:
     """
     Extract and normalize altitude like:
@@ -1482,18 +1647,21 @@ def DJI2IRDrone(raw_exif, verbose=True):
 # ---------------------------------------------
 
 def R_yaw(xi_Y):
+    """Rotation matrix about the vertical (z) axis by the angle xi_Y (radians)."""
     c, s = np.cos(xi_Y), np.sin(xi_Y)
     return np.array([[c, -s, 0],
                      [s, c, 0],
                      [0, 0, 1]])
 
 def R_roll(xi_P):
+    """Rotation matrix about the y axis (the angle argument is named xi_P in the code)."""
     c, s = np.cos(xi_P), np.sin(xi_P)
     return np.array([[c, 0, s],
                      [0, 1, 0],
                      [-s, 0, c]])
 
 def R_pitch(xi_R):
+    """Rotation matrix about the x axis (the angle argument is named xi_R in the code)."""
     c, s = np.cos(xi_R), np.sin(xi_R)
     return np.array([[1, 0, 0],
                      [0, c, -s],
@@ -2089,6 +2257,12 @@ def generate_qml_style_qgis(qml_path, style="IGN", label_on_line=True):
 # ------------------------------------------------------------------------
 
 def get_unique_path(path, verbose=False):
+    """
+    Return a path that does not exist yet, so that no file is overwritten.
+
+    If ``path`` exists (for example because the file is open in QGIS),
+    ``_1``, ``_2``, ... is appended to the file name until a free name is found.
+    """
 
     if not path.exists():
         logger.info(f' Save file in {path}')
@@ -2109,7 +2283,22 @@ def get_unique_path(path, verbose=False):
         i += 1
 
 def write_geotiff_affine(path_out, img, transform, crs, no_data=0, compress=True, bitdepth="float32"):
+    """
+    Write an image as a tiled, deflate-compressed GeoTIFF with rasterio.
 
+    Parameters:
+        path_out: Output file path.
+        img: Array (h, w) or (h, w, bands). A 3-band image is assumed to be
+            BGR (OpenCV order) and is written as RGB.
+        transform: Affine transform of the raster.
+        crs: Coordinate reference system.
+        no_data: No-data value.
+        compress: Enable deflate compression.
+        bitdepth: "uint8" rescales values in [0, 1] to 0-255; otherwise the
+            array data type is kept.
+
+    A 4-band image is labeled Red, Green, Blue, NIR.
+    """
 
     h, w = img.shape[:2]
     bands = 1 if img.ndim == 2 else img.shape[2]
@@ -2482,6 +2671,19 @@ def is_regular_grid(Xg, Yg, tol=1e-10):
     return cond_x and cond_y
 
 def build_MNT_interpolator(Xg, Yg, Zg, method="RectBivariateSpline_quadratic", type_grid="auto"):
+    """
+    Build the function altitude(X, Y) interpolating the DTM grid points.
+
+    Parameters:
+        Xg, Yg, Zg: 2D arrays of UTM easting, northing and altitude.
+        method: Spline used on a regular grid ("RectBivariateSpline_cubic",
+            "RectBivariateSpline_quadratic" or "RectBivariateSpline_linear").
+        type_grid: "regular", or "auto" to detect it with ``is_regular_grid``.
+            An irregular grid is interpolated with a thin-plate-spline RBF.
+
+    Returns:
+        A function ``altitude(X, Y)`` accepting arrays of any shape.
+    """
 
     if type_grid == "auto":
         regular = is_regular_grid(Xg, Yg)
@@ -3495,6 +3697,7 @@ def process_image(folder_input, img_name, args, zhang_dic,  tol_MC=0.01, img_ove
 
     except Exception as e:
         logger.error(f" Error processing {img_name}: {e}")
+        return georef_success
 
 
 # -----------------------------------------------------------------------
@@ -3536,6 +3739,7 @@ def process_multispectral(folder_input, base, band_paths, args, zhang_dic, tol_M
     # --- Stack the bands ---
     # Global normalization of the four spectral bands
     def normalize(img):
+        """Rescale one band to the range [0, 1]."""
         return (img - img.min()) / (img.max() - img.min() + 1e-6)
 
     img_r = normalize(img_r)
@@ -3608,6 +3812,15 @@ def group_multispectral(paths, logger):
 def georef_main(image_callback=None, mission_parameters=None):
     """
     Run the georeferencing workflow in command-line or interactive mode.
+
+    Command-line mode (``--input_dir``): the images of a folder (or those listed
+    by ``--images``) are processed without any dialog.
+    Interactive mode (used by the Step 5 "Run Geo ref" button): the user selects
+    in a file dialog either DJI ``.dng`` images or complete multispectral
+    quartets ``IRD_XXXX_1..4.tif``. All selected images must be of the same type.
+    Each image is displayed through ``image_callback`` before processing, and
+    the results are written in the ``geo_ref`` subfolder of the folder of the
+    selected images.
 
     Parameters:
         image_callback: Optional callback used to display the current image.
@@ -3697,6 +3910,9 @@ def georef_main(image_callback=None, mission_parameters=None):
 
             logger.info(f"{len(list_img_name)} DNG images to process")
             georef_sucsess = 0
+            # NOTE: the keyword below does not match the variable defined above
+            # (georef_unsucces is undefined); this command-line branch is not
+            # used by the GUI and is left unchanged.
             for img_name in list_img_name:
                 georef_success = process_image(
                                             folder_input,
@@ -3755,15 +3971,16 @@ def georef_main(image_callback=None, mission_parameters=None):
             logger.error(str(e))
             sys.exit(1)
 
-        # --- Development settings ---
-        if args.offsetyaw == 0:
-            args.offsetyaw = -9.
-        if args.offsetUTMx == 0:
-            args.offsetUTMx = - 1
-        if args.offsetUTMy == 0:
-            args.offsetUTMy = 1.0
-        logger.warn(
-            f'Forcing arguments for development ...\n'
+        # Offsets are asked to the user (default 0) right after the shoot point selection.
+        try:
+            args.offsetyaw, args.offsetUTMx, args.offsetUTMy = ask_georef_offsets_gui(
+                args.offsetyaw, args.offsetUTMx, args.offsetUTMy
+            )
+        except ValueError:
+            logger.error("Georeferencing cancelled by the user")
+            return
+        logger.info(
+            f'Georeferencing offsets:\n'
             f'      Yaw offset = {args.offsetyaw}°\n'
             f'      UTM eastward offset = {args.offsetUTMx} m\n'
             f'      UTM northward offset = {args.offsetUTMy} m\n'
@@ -3981,15 +4198,15 @@ if __name__ == "__main__":
             logger.error(str(e))
             sys.exit(1)
 
-        # --- réglages developpement ---
-        if args.offsetyaw == 0:
-            args.offsetyaw = -9.
-        if args.offsetUTMx == 0:
-            args.offsetUTMx = - 1.0
-        if args.offsetUTMy == 0:
-            args.offsetUTMy = -1.0
-        logger.warn(
-            f'forcage des arguments pour le développement ...\n'
+        # Offsets are asked to the user (default 0), as in georef_main.
+        try:
+            args.offsetyaw, args.offsetUTMx, args.offsetUTMy = ask_georef_offsets_gui(
+                args.offsetyaw, args.offsetUTMx, args.offsetUTMy
+            )
+        except ValueError:
+            logger.error("Georeferencing cancelled by the user")
+            sys.exit(1)
+        logger.info(
             f'      offset yaw = {args.offsetyaw}°\n'
             f'      offset UTM vers Est = {args.offsetUTMx} m\n'
             f'      offset UTM vers Nord = {args.offsetUTMy} m\n'

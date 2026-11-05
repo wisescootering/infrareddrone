@@ -287,6 +287,19 @@ class LoadVisNirImagesDialog(QDialog):
             self.btn_help.setStyleSheet(BUTTON_STYLE)
             self.btn_help.setFixedWidth(button_width)
 
+            step2_help = (
+                ("btn:step2_Load_first_mission_image", "Choose the take-off (first mission) image."),
+                ("btn:step2_Load_synchro_image", "Choose the first image of the synchronisation phase."),
+                ("btn:step2_Load_synchro_image", "Choose the last image of the synchronisation phase."),
+                ("btn:step2_Load_mission_image", "Choose the first image of the mission flight."),
+                ("btn:step2_Load_mission_image", "Choose the last image of the mission flight."),
+            )
+            for btn, (label, tip) in zip(self.btn_command, step2_help):
+                Help.attach_help(btn, label, tip, parent=self)
+            Help.attach_help(
+                self.btn_load_all_images, "btn:step2_validate",
+                "Validate the five reference images and load all the mission images.", parent=self)
+
             # button_width = int(0.7 * (self.screen_width // self.number_images_reference))
             # self.btn_validate_load_all_images = QPushButton("Validate (next step) >>>")
             # self.btn_validate_load_all_images.setFixedWidth(button_width)

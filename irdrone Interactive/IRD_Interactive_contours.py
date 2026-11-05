@@ -11,6 +11,21 @@
 #   4. Build a spline DTM and export: elevation GeoTIFF, QGIS contour lines
 #      (1 m equidistance), shaded 2D map and 3D surface.
 # ---------------------------------------------------------------------------------
+"""DTM and contour lines of the ODM orthophoto (Step 5, "DTM + contours").
+
+Entry point: ``generate_ortho_dtm``. Output files are written next to the
+orthophoto (``mapping_MULTI/mapping_result``); an existing file is never
+overwritten (a numeric suffix is added). They are named ``ortho_dtm.tif``
+(elevation raster), ``ortho_contours.geojson`` + ``.qml`` (contour lines every
+1 m, bold every 10 m, with the QGIS style), ``ortho_dtm_map.png`` (2D shaded map
+with UTM grid), ``ortho_dtm_3d.png`` and ``ortho_dtm_grid.json`` (grid points
+and altitude sources).
+
+The altitudes are requested online (IGN, OpenTopoData as fallback), so the
+number of grid points is capped (``DEFAULT_MAX_GRID_POINTS``) by enlarging the
+step. The computation fails with ``AltitudeUnavailableError`` if one altitude is
+missing, without any effect on the ODM results.
+"""
 
 import json
 import math

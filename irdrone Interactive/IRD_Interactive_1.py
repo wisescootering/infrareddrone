@@ -37,6 +37,30 @@ from IRD_Interactive_styles import BUTTON_STYLE
 from config import OUTPUT_FOLDER_NAME
 assert OUTPUT_FOLDER_NAME.exists(), f"Output folder does not exist: {OUTPUT_FOLDER_NAME} Use export IRDRONE_WORKING_DIR=your_path_to_folder to set it."
 
+# Geocoding results (keys of Geo.extract_geoTag) saved in mission_parameters.json.
+# "Location" (the town) is already a mission parameter, so it is not repeated here.
+GEO_PARAMETER_KEYS = {
+    "lieu_dit": "Place name",
+    "code_postal": "Postal code",
+    "region": "Region",
+    "pays": "Country",
+}
+
+
+def store_geo_parameters(parameters: dict, dic_geo: Optional[dict]) -> None:
+    """
+    Copy the geocoding results into a mission parameters dictionary.
+
+    A key is created only if the information exists (not None, not empty). Keys left
+    by a previous take-off image are removed first, so that they never go stale.
+    """
+    for key in GEO_PARAMETER_KEYS.values():
+        parameters.pop(key, None)
+    for geo_key, key in GEO_PARAMETER_KEYS.items():
+        value = (dic_geo or {}).get(geo_key)
+        if value is not None and str(value).strip() != "":
+            parameters[key] = str(value).strip()
+
 # --------------------------------------------------------------------------------------------
 #
 #                     Window_create_file_structure
@@ -305,6 +329,10 @@ class Window_create_file_structure(QDialog):
             self.btn_help.setStyleSheet(BUTTON_STYLE)
             self.btn_help.clicked.connect(lambda: Help.show_help("btn:step1_form", parent=self))
             self.zone_122_layout.addWidget(self.btn_help)
+            Help.attach_help(self.btn_1221, "btn:step1_validate",
+                             "Create the mission folders and files from the form.", parent=self)
+            Help.attach_help(self.btn_1222, "btn:step1_navigation",
+                             "Go back to the previous step.", parent=self)
             zone_122_vlayout.addLayout(self.zone_122_layout)
 
             # Connect buttons to slots
@@ -1006,6 +1034,7 @@ class Window_create_file_structure(QDialog):
             self.mission_parameters_light['Date Exif'] = str(date_time_excif)
             self.py_date_time = datetime.strptime(str(date_time_excif), "%Y:%m:%d %H:%M:%S")
             self.mission_parameters_light['Location'] = self.dic_info_geo['ville']
+            store_geo_parameters(self.mission_parameters_light, self.dic_info_geo)
             if self.dic_info_geo['lat'] >= 0:
                 self.mission_parameters_light["GPS N-S"] = "N"
             else:
@@ -1685,6 +1714,10 @@ class Window_create_file_structure(QDialog):
                 "ODM folder": self.MappingFolder,
                 "cameras folder": self.CameraFolder
             }
+            # Geocoding information, only when available
+            for key in GEO_PARAMETER_KEYS.values():
+                if key in self.mission_parameters_light:
+                    self.mission_parameters[key] = self.mission_parameters_light[key]
 
             # print(f'DEBUG  update_mission_parameters  original name image take-off {self.mission_parameters_light["original name image take-off"]}')
             # print(f'DEBUG  update_mission_parameters  name image take-off {self.mission_parameters_light["name image take-off"]}')
@@ -1909,6 +1942,11 @@ class Window_Load_TakeOff_Image(QDialog):
         self.btn_help.setStyleSheet(BUTTON_STYLE)
         self.btn_help.clicked.connect(lambda: Help.show_help("btn:step1_load_takeoff", parent=self))
         zone4_layout.addWidget(self.btn_help)
+        Help.attach_help(self.btn_load_image, "btn:step1_load_takeoff",
+                         "Choose the image taken at take-off to define the mission location.", parent=self)
+        Help.attach_help(self.btnPreviousStep, "btn:step1_navigation", "Go back to the previous step.", parent=self)
+        Help.attach_help(self.btn_NextStep, "btn:step1_navigation",
+                         "Go to the next step (available once the mission is created).", parent=self)
 
         # Progress bar
         self.progress_bar = QProgressBar(self)
@@ -2081,6 +2119,7 @@ class Window_Load_TakeOff_Image(QDialog):
             self.mission_parameters_light['Date Exif'] = str(date_time_excif)
             self.py_date_time = datetime.strptime(str(date_time_excif), "%Y:%m:%d %H:%M:%S")
             self.mission_parameters_light['Location'] = self.dic_info_geo['ville']
+            store_geo_parameters(self.mission_parameters_light, self.dic_info_geo)
             if self.dic_info_geo['lat'] >= 0:
                 self.mission_parameters_light["GPS N-S"] = "N"
             else:

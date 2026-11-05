@@ -13,6 +13,8 @@ Usage
     import IRD_Interactive_help as Help
     Help.show_help("ch:step2")
 
+Buttons are documented with :func:`attach_help` (tooltip + right-click help).
+
 Notes
 -----
 * The page is passed with the ``#page=N`` fragment, understood by the PDF viewer
@@ -165,6 +167,42 @@ def _open_with_acrobat(pdf_path: Path, page: int) -> bool:
     import subprocess
     subprocess.Popen([exe, "/A", f"page={page}", str(pdf_path)])
     return True
+
+
+def attach_help(widget, label: str, tooltip: str = "", parent=None) -> None:
+    """
+    Add a tooltip and a right-click "Help on this button" entry to a widget.
+
+    The context-menu entry opens the manual at the section linked to ``label``.
+
+    Parameters
+    ----------
+    widget : QWidget
+        Button (or check box, ...) to document.
+    label : str
+        LaTeX label of the manual section (e.g. ``"btn:step4_redo"``).
+    tooltip : str, optional
+        One-sentence description. A reminder of the right-click help is appended.
+    parent : QWidget, optional
+        Parent of the message box shown if the manual cannot be opened
+        (default: the widget itself).
+    """
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtGui import QAction
+    from PyQt6.QtWidgets import QMenu
+
+    if tooltip:
+        widget.setToolTip(f"{tooltip}\n(Right-click: help on this button)")
+    widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+
+    def _menu(position):
+        menu = QMenu(widget)
+        action = QAction("Help on this button", menu)
+        action.triggered.connect(lambda: show_help(label, parent=parent or widget))
+        menu.addAction(action)
+        menu.exec(widget.mapToGlobal(position))
+
+    widget.customContextMenuRequested.connect(_menu)
 
 
 def _warn(parent, message: str) -> None:

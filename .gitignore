@@ -3,3 +3,13 @@ __pycache__/
 *.py[cod]
 _*
 *$py.class
+# Full user manual (too large for GitHub)
+help/irdrone_help.pdf
+# LaTeX auxiliary files
+help/*.aux
+help/*.log
+help/*.out
+help/*.toc
+help/*.synctex.gz
+# Generated low-resolution manual images
+help/images_light/

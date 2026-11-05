@@ -270,6 +270,14 @@ class DialogSynchroAruco(QDialog):
         self.btn_help.clicked.connect(lambda: Help.show_help("ch:step3", parent=self))
         close_layout.addWidget(self.btn_help)
 
+        for widget, label, tip in (
+            (self.btn_run_aruco, "btn:step3_aruco", "Detect the ArUco targets in the synchronisation images of both cameras."),
+            (self.btn_compute_time_shift, "btn:step3_time_shift", "Compute the time offset between the VIS and NIR cameras."),
+            (self.btn_image_pairing, "btn:step3_pairing", "Pair each VIS image with the closest NIR images in time."),
+            (self.btn_close, "btn:step3_close", "Close this window."),
+        ):
+            Help.attach_help(widget, label, tip, parent=self)
+
         main_layout.addLayout(close_layout)
 
     # ------------------------------------------------------------------

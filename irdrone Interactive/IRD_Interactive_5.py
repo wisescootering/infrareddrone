@@ -4,6 +4,25 @@
 #   Georeferencing images.  User interface
 #   17/10/2026   V004
 # ---------------------------------------------------------------------------------
+"""Step 5 dialog: georeferencing, ODM mapping, DTM and contour lines.
+
+``DialogGeoRef`` offers three buttons:
+
+* **Run Geo ref**: georeferences images selected by the user
+  (``IRD_Interactive_GeoRef.georef_main``). Runs in the GUI thread.
+* **Run Mapping**: selects the image quartets (``ODMSelectionDialog``: maximum
+  |dt| and one image every n), then runs OpenDroneMap in Docker through
+  ``IRD_Interactive_ODM.run_odm`` in a background worker (``ODMRunWorker``).
+  The orthophoto is archived in ``mapping_MULTI/mapping_result`` and displayed
+  as an RGB preview (``ODMPreviewWorker``). The DTM and contour lines are then
+  generated automatically.
+* **DTM + contours**: (re)builds the DTM and the contour lines of the archived
+  orthophoto with a user-defined grid step (``DtmStepDialog``, ``DtmWorker``,
+  ``IRD_Interactive_contours.generate_ortho_dtm``).
+
+Long tasks run in ``QRunnable`` workers that report to the dialog only through
+Qt signals; the buttons and the window are locked while ODM or the DTM run.
+"""
 
 import os
 import os.path as osp
@@ -122,6 +141,7 @@ class ODMRunWorker(QRunnable):
         self.signals = ODMRunSignals()
 
     def run(self) -> None:
+        """Run ODM and emit ``finished`` (result), ``docker_unavailable`` or ``error``."""
         try:
             result = run_odm(
                 self.mission_folder,
@@ -215,6 +235,7 @@ class ODMSelectionDialog(QDialog):
         self._update_selection_controls()
 
     def _update_selection_controls(self) -> None:
+        """Enable only the controls of the selected criterion."""
         sample_selected = self.sample_radio.isChecked()
         self.sample_every.setEnabled(sample_selected)
         self.overlap_x.setEnabled(not sample_selected)
@@ -222,6 +243,7 @@ class ODMSelectionDialog(QDialog):
         self.overlap_warning.setVisible(not sample_selected)
 
     def accept(self) -> None:
+        """Validate the dialog; the overlap criterion is not implemented yet and is refused."""
         if self.overlap_radio.isChecked():
             QMessageBox.information(
                 self,
@@ -234,11 +256,15 @@ class ODMSelectionDialog(QDialog):
 
 
 class ODMPreviewSignals(QObject):
+    """Signals of ``ODMPreviewWorker``: ``ready`` (RGB array) or ``error``."""
+
     ready = pyqtSignal(object)
     error = pyqtSignal(str)
 
 
 class DtmSignals(QObject):
+    """Signals of ``DtmWorker``: ``log``, ``finished`` (paths of results) or ``error``."""
+
     log = pyqtSignal(str)
     finished = pyqtSignal(dict)
     error = pyqtSignal(str)
@@ -441,6 +467,14 @@ class DialogGeoRef(QDialog):
         self.btn_help.clicked.connect(lambda: Help.show_help("ch:step5", parent=self))
         close_layout.addWidget(self.btn_help)
 
+        for widget, label, tip in (
+            (self.btn_run_GeoRef, "btn:step5_georef", "Georeference and orthorectify the selected shoot points."),
+            (self.btn_run_Mapping, "btn:step5_mapping", "Prepare the images and run the ODM mapping."),
+            (self.btn_run_DTM, "btn:step5_dtm", "Build the DTM and the contour lines from the mapped image."),
+            (self.btn_close, "btn:step5_close", "Close this window."),
+        ):
+            Help.attach_help(widget, label, tip, parent=self)
+
         main_layout.addLayout(close_layout)
 
     # ------------------------------------------------------------------
@@ -458,6 +492,7 @@ class DialogGeoRef(QDialog):
     # ------------------------------------------------------------------
 
     def on_close(self) -> None:
+        """Close the dialog, refused while ODM or the DTM is running."""
         if self.odm_worker is not None or self.dtm_worker is not None:
             QMessageBox.warning(
                 self,
@@ -629,6 +664,7 @@ class DialogGeoRef(QDialog):
         dt_tolerance_s: Optional[float] = None,
         sample_every: Optional[int] = None,
     ) -> None:
+        """Start ``ODMRunWorker`` in the thread pool and lock the buttons until it ends."""
         if dt_tolerance_s is not None:
             self.odm_dt_tolerance_s = dt_tolerance_s
         if sample_every is not None:
@@ -653,6 +689,7 @@ class DialogGeoRef(QDialog):
         QThreadPool.globalInstance().start(worker)
 
     def _on_ODM_docker_unavailable(self, message: str) -> None:
+        """Offer to retry once Docker Desktop is started (the selection is then kept)."""
         self._finish_ODM_ui()
         self._log(f"Docker Desktop is unavailable: {message}")
         retry = QMessageBox.question(
@@ -673,6 +710,7 @@ class DialogGeoRef(QDialog):
         self.progress_label.setText(f"ODM – {stage}")
 
     def _finish_ODM_ui(self) -> None:
+        """Release the worker and re-enable the buttons and the progress bar."""
         self.odm_worker = None
         self.btn_run_GeoRef.setEnabled(True)
         self.btn_run_Mapping.setEnabled(True)
@@ -681,6 +719,7 @@ class DialogGeoRef(QDialog):
         self.progress_bar.setValue(0)
 
     def _on_ODM_finished(self, result: dict) -> None:
+        """Display the orthophoto preview, then chain the DTM and contour lines."""
         self._finish_ODM_ui()
         orthophoto = result["orthophoto"]
         completion_message = f"Orthophoto:\n{orthophoto['path']}"
@@ -704,6 +743,7 @@ class DialogGeoRef(QDialog):
         QThreadPool.globalInstance().start(worker)
 
     def _on_ODM_preview_ready(self, rgb: np.ndarray) -> None:
+        """Show the RGB array (bands 1-3 of the orthophoto) in the preview zone."""
         height, width, _channels = rgb.shape
         image = QImage(
             rgb.data,
@@ -733,6 +773,7 @@ class DialogGeoRef(QDialog):
     # --------------------------------------------
 
     def _set_busy_buttons(self, enabled: bool) -> None:
+        """Enable or disable all action buttons (disabled while the DTM is computed)."""
         for button in (
             self.btn_run_GeoRef,
             self.btn_run_Mapping,
@@ -788,6 +829,7 @@ class DialogGeoRef(QDialog):
         self.progress_bar.setValue(0)
 
     def _on_DTM_finished(self, result: dict, manual: bool) -> None:
+        """Log the generated files; the message box is shown only for a manual run."""
         self._finish_DTM_ui()
         self.progress_label.setText("DTM and contour lines completed.")
         self._log(
@@ -803,6 +845,7 @@ class DialogGeoRef(QDialog):
             )
 
     def _on_DTM_error(self, error_message: str) -> None:
+        """Warn the user; the DTM failure never affects the archived ODM result."""
         self._finish_DTM_ui()
         self.progress_label.setText("DTM and contour lines failed.")
         self._log(f"DTM and contour lines failed: {error_message}")
@@ -814,6 +857,7 @@ class DialogGeoRef(QDialog):
         )
 
     def _on_ODM_error(self, error_message: str) -> None:
+        """Report an ODM failure (details are in the ``odm_run_*.log`` file)."""
         self._finish_ODM_ui()
         self._log(f"ODM failed: {error_message}")
         QMessageBox.critical(
@@ -824,6 +868,7 @@ class DialogGeoRef(QDialog):
         self.progress_label.setText("ODM failed.")
 
     def closeEvent(self, event) -> None:
+        """Refuse to close the window while ODM or the DTM is running."""
         if self.odm_worker is not None or self.dtm_worker is not None:
             QMessageBox.warning(
                 self,
