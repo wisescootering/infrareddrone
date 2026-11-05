@@ -46,13 +46,16 @@ import sys
 import numpy as np
 # print(f"✔ Version NumPy : {np.__version__}")
 import math
+# GDAL is optional: it is only used to generate contour lines (topographic map).
+# Without it, the application runs normally and contour generation is skipped.
 try:
-    from osgeo import gdal
+    from osgeo import gdal, ogr, osr
     gdal.UseExceptions()
-    # print(f"✔ Version GDAL : {gdal.__version__}")
-    # print(f"✔ File GDAL : {gdal.__file__}")
-except Exception as e:
-    print(f"✖ Error GDAL : {e}")
+    GDAL_AVAILABLE = True
+except ImportError as e:
+    gdal = ogr = osr = None
+    GDAL_AVAILABLE = False
+    print(f"[WARNING] GDAL not available ({e}): contour lines will not be generated.")
 
 import os
 import os.path as osp
@@ -83,8 +86,6 @@ from rasterio.transform import Affine, from_origin
 from rasterio.warp import reproject, Resampling, calculate_default_transform
 from rasterio.enums import ColorInterp
 from rasterio.crs import CRS
-from osgeo import gdal, ogr, osr
-
 from datetime import datetime
 import time
 
@@ -763,16 +764,19 @@ def georeference_tiff_MNT(tif_path,
             write_geotiff_affine(topo_path, map_topo.astype(np.float32), transform, crs_utm, no_data=np.nan)
 
         # Generate a contour-line file (.geojson) for QGIS.
-        contour_path = get_unique_path(folder_input / "geo_ref" / f"{img_name}_contours.geojson")
-        generate_contours_dual(map_topo.astype(np.float32), transform, crs_utm, contour_path)
+        if GDAL_AVAILABLE:
+            contour_path = get_unique_path(folder_input / "geo_ref" / f"{img_name}_contours.geojson")
+            generate_contours_dual(map_topo.astype(np.float32), transform, crs_utm, contour_path)
 
-        # Generate a QGIS style file (.qml).
-        # Use the same base name ({img_name}_contours) as the contour-line file.
-        # QGIS will automatically apply this style to the contour-line file.
-        # Available styles: "IGN", "BW", "SOFT".
-        topo_style = "IGN"
-        qml_path = contour_path.with_suffix(".qml")
-        generate_qml_style_qgis(qml_path, style=topo_style, label_on_line=True)
+            # Generate a QGIS style file (.qml).
+            # Use the same base name ({img_name}_contours) as the contour-line file.
+            # QGIS will automatically apply this style to the contour-line file.
+            # Available styles: "IGN", "BW", "SOFT".
+            topo_style = "IGN"
+            qml_path = contour_path.with_suffix(".qml")
+            generate_qml_style_qgis(qml_path, style=topo_style, label_on_line=True)
+        else:
+            logger.warning("GDAL not installed: contour lines (.geojson) skipped.")
 
         t1 = time.perf_counter()
         logger.timer(f" Topographic map: {t1 - t0:.3f} s")
@@ -1971,6 +1975,12 @@ def build_continuous_ground_mesh(XB, YB, Nx=11, Ny=9):
 
     return Xg, Yg
 
+def _require_gdal():
+    if not GDAL_AVAILABLE:
+        raise ImportError("GDAL (osgeo) is required to generate contour lines. "
+                          "Install it (e.g. libgdal-dev + pip install gdal==$(gdal-config --version)).")
+
+
 def generate_contours(
     topo_array,
     transform,
@@ -1982,6 +1992,7 @@ def generate_contours(
     """
     Generate vector contour lines from a NumPy raster.
     """
+    _require_gdal()
 
     # Dimensions
     h, w = topo_array.shape
@@ -2054,6 +2065,7 @@ def generate_contours_dual(
     - 'type' field: 1 = minor, 10 = major
     - Optional labels for each contour line
     """
+    _require_gdal()
 
     h, w = topo_array.shape
 

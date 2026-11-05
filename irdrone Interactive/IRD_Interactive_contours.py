@@ -342,13 +342,17 @@ def generate_ortho_dtm(
     dtm_path = GeoRef.get_unique_path(output_folder / "ortho_dtm.tif")
     GeoRef.write_geotiff_affine(dtm_path, elevation, transform, crs, no_data=np.nan)
 
-    contour_path = GeoRef.get_unique_path(output_folder / "ortho_contours.geojson")
-    GeoRef.generate_contours_dual(
-        elevation, transform, crs, contour_path,
-        interval_minor=CONTOUR_MINOR_M, interval_major=CONTOUR_MAJOR_M,
-    )
-    qml_path = contour_path.with_suffix(".qml")
-    GeoRef.generate_qml_style_qgis(qml_path, style="IGN", label_on_line=True)
+    contour_path = qml_path = None
+    if GeoRef.GDAL_AVAILABLE:
+        contour_path = GeoRef.get_unique_path(output_folder / "ortho_contours.geojson")
+        GeoRef.generate_contours_dual(
+            elevation, transform, crs, contour_path,
+            interval_minor=CONTOUR_MINOR_M, interval_major=CONTOUR_MAJOR_M,
+        )
+        qml_path = contour_path.with_suffix(".qml")
+        GeoRef.generate_qml_style_qgis(qml_path, style="IGN", label_on_line=True)
+    else:
+        log("Warning: GDAL not installed, contour lines (.geojson) skipped.")
 
     source_label = ", ".join("\u00a9 IGN-France" if name == "IGN" else name for name in source_counts)
     title = f"DTM from {source_label} - grid step {step_used:.0f} m"
@@ -384,8 +388,8 @@ def generate_ortho_dtm(
     log(f"DTM and contour lines saved in {output_folder}")
     return {
         "dtm": str(dtm_path),
-        "contours": str(contour_path),
-        "contours_style": str(qml_path),
+        "contours": str(contour_path) if contour_path else None,
+        "contours_style": str(qml_path) if qml_path else None,
         "map": str(map_path),
         "surface_3d": str(surface_path),
         "grid": str(report_path),

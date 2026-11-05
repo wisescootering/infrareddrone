@@ -834,14 +834,14 @@ class DialogGeoRef(QDialog):
         self.progress_label.setText("DTM and contour lines completed.")
         self._log(
             "Contour lines (QGIS): "
-            f"{result['contours']}\nDTM raster: {result['dtm']}\n"
+            f"{result['contours'] or 'skipped (GDAL not installed)'}\nDTM raster: {result['dtm']}\n"
             f"2D map: {result['map']}\n3D surface: {result['surface_3d']}"
         )
         if manual:
             QMessageBox.information(
                 self,
                 "DTM and contour lines",
-                f"Files saved next to the orthophoto:\n{Path(result['contours']).parent}",
+                f"Files saved next to the orthophoto:\n{Path(result['dtm']).parent}",
             )
 
     def _on_DTM_error(self, error_message: str) -> None:
