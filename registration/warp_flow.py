@@ -5,7 +5,7 @@ root = osp.join(osp.dirname(__file__), "..")
 sys.path.append(root)
 import numpy as np
 import logging
-from scipy.interpolate import interp2d
+from scipy.interpolate import bisplrep, bisplev
 import cv2
 import irdrone.process as pr
 
@@ -39,11 +39,13 @@ def warp_from_sparse_vector_field(img, vector_field, debug=False, get_remap=Fals
             y_coords.append(y_center)
     vf_x = -vector_field[:, :, 0]
     vf_y = -vector_field[:, :, 1]
-    vf_x_interpolator = interp2d(x_coords, y_coords, vf_x)
-    vf_y_interpolator = interp2d(x_coords, y_coords, vf_y)
+    # Bilinear spline through the block centers. This is exactly what the former
+    # scipy interp2d(x_coords, y_coords, vf) did (interp2d was removed in SciPy 1.14).
+    tck_x = bisplrep(x_coords, y_coords, vf_x.ravel(), kx=1, ky=1, s=0.0)
+    tck_y = bisplrep(x_coords, y_coords, vf_y.ravel(), kx=1, ky=1, s=0.0)
     coord_continuous_x, coord_continuous_y = np.linspace(0, x_s, x_s, endpoint=True), np.linspace(0, y_s, y_s, endpoint=True)
-    displacement_x = vf_x_interpolator(coord_continuous_x, coord_continuous_y)
-    displacement_y = vf_y_interpolator(coord_continuous_x, coord_continuous_y)
+    displacement_x = bisplev(coord_continuous_x, coord_continuous_y, tck_x).T
+    displacement_y = bisplev(coord_continuous_x, coord_continuous_y, tck_y).T
     xx, yy = np.meshgrid(coord_continuous_x, coord_continuous_y)
     if get_remap:
         # import matplotlib.pyplot as plt
