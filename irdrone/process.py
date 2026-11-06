@@ -267,7 +267,7 @@ class Image:
                 cv2.COLOR_RGB2BGR)
             )
         if self.path is not None:
-            logging.warning(f"copy metadata from {self.path} to {path}")
+            logging.info(f"copy metadata from {self.path} to {path}")
             copy_metadata(self.path, path)
         return
     def save_multispectral(self, path, bands=[1, 2, 3, 4]):

@@ -530,7 +530,7 @@ def post_warp(ref, mov, params, img_name="img", linear=False):
         )
         if img_name is not None:
             pr.Image(mov_warped_fullres_refined, "IR registered refined").save("{}_IR_registered_semi_auto_REFINED.{}".format(img_name, extension))
-            logging.warning("SAVE WITH REFINING WITH {}".format(params["homography"]))
+            logging.info("SAVE WITH REFINING WITH {}".format(params["homography"]))
             if not isinstance(ref, pr.Image):
                 ref = pr.Image(ref)
             ref.save("{}_REF.{}".format(img_name, extension))

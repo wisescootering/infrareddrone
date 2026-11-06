@@ -200,7 +200,7 @@ def coarse_alignment(ref_full, mov_full, cals, yaw_main, pitch_main, roll_main, 
     pitch_refine = np.rad2deg(np.arctan(translation[1]/focal))
     print("2D translation {}".format(translation, yaw_refine, pitch_refine))
     ts_end_coarse_search = time.perf_counter()
-    logging.warning("{:.2f}s elapsed in coarse search".format(ts_end_coarse_search - ts_start_coarse_search))
+    logging.info("{:.2f}s elapsed in coarse search".format(ts_end_coarse_search - ts_start_coarse_search))
     ts_start_warp = time.perf_counter()
     if debug_dir is not None and debug:
         mov_wr = manual_warp(
@@ -219,7 +219,7 @@ def coarse_alignment(ref_full, mov_full, cals, yaw_main, pitch_main, roll_main, 
         geometric_scale=None, refinement_homography=None,
     )
     ts_end_warp = time.perf_counter()
-    logging.warning("{:.2f}s elapsed in warping from coarse search".format(ts_end_warp - ts_start_warp))
+    logging.info("{:.2f}s elapsed in warping from coarse search".format(ts_end_warp - ts_start_warp))
     if debug_dir is not None:
         pr.Image(ref_full).save(osp.join(debug_dir, "FULLRES_REF.jpg"))
         pr.Image(mov_wr_fullres).save(osp.join(debug_dir, "FULLRES_REGISTERED_COARSE.jpg"))
@@ -253,7 +253,7 @@ def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extens
     ref_full = vis_undist.data
     mov_full = nir.data
     ts_end_load = time.perf_counter()
-    logging.warning("{:.2f}s elapsed in loading full resolution RAW".format(ts_end_load - ts_start))
+    logging.info("{:.2f}s elapsed in loading full resolution RAW".format(ts_end_load - ts_start))
     if motion_model_file is None or not osp.isfile(motion_model_file+".npy"):
         if manual:
             alignment_params = user_assisted_manual_alignment(ref_full, mov_full, cals, init_angles[0], init_angles[1], init_angles[2])
@@ -283,7 +283,7 @@ def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extens
         if motion_model_file is not None:
             np.save(motion_model_file, full_motion_model, allow_pickle=True)
     else:
-        logging.warning("Loading motion model!")
+        logging.info("Loading motion model!")
         full_motion_model = np.load(motion_model_file+".npy", allow_pickle=True).item()
 
     if debug_dir is not None:
@@ -313,8 +313,8 @@ def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extens
         refinement_homography=full_motion_model["homography"],
     )  # global warp!
     ts_end = time.perf_counter()
-    logging.warning("{:.2f}s elapsed in global and local unique warp".format(ts_end - ts_start_yowo))
-    logging.warning("{:.2f}s elapsed in total alignment".format(ts_end - ts_start))
+    logging.info("{:.2f}s elapsed in global and local unique warp".format(ts_end - ts_start_yowo))
+    logging.info("{:.2f}s elapsed in total alignment".format(ts_end - ts_start))
     full_motion_model["initialization_angles"] = init_angles
     full_motion_model["initialization"] = {"yaw": init_angles[0], "pitch": init_angles[1], "roll": init_angles[2]}
     return vis_undist_lin, mov_w_linear_local, mov_w_linear_global, full_motion_model
@@ -562,7 +562,7 @@ def _process_raw_pairs_serial(
                         osp.basename(vis_pth),
                     )
                 continue
-        logging.warning("processing {} {}".format(osp.basename(vis_pth), osp.basename(nir_pth)))
+        logging.info("processing {} {}".format(osp.basename(vis_pth), osp.basename(nir_pth)))
         
         # DEBUG FOLDER
         if debug_folder is not None:
