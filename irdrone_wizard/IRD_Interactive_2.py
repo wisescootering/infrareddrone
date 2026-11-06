@@ -381,6 +381,14 @@ class LoadVisNirImagesDialog(QDialog):
                 self.open_takeOff_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 0)
             elif self.image_takeoff_available and self.spectral_band == "VIS":
                 self.open_takeoff_image(self.path_image_takeoff)
+            elif self.spectral_band == "NIR":
+                # The NIR camera is triggered just before take-off: its first image
+                # is the take-off image, so it is pre-selected (still changeable).
+                first_nir = self.first_image_in_folder(
+                    Path(self.folderMissionPath) / "AerialPhotography" / "NIR", self.img_suffix)
+                if first_nir is not None:
+                    print(Style.GREEN + f'Take-off image NIR pre-selected: {first_nir.name}' + Style.RESET)
+                    self.open_and_display_new_image(first_nir, self.img_suffix, 0)
 
             if self.image_first_sync_available:
                 print(Style.GREEN + 'Loading first sync image' + Style.RESET)
@@ -1359,6 +1367,14 @@ class LoadVisNirImagesDialog(QDialog):
         # Filter the list to keep only .suffix type files
         listInputImages = [f for f in files if f.lower().endswith('.' + suffix.lower())]
         return listInputImages
+
+    @staticmethod
+    def first_image_in_folder(folder: Union[str, Path], suffix: str) -> Optional[Path]:
+        """First image (by name) with the given suffix in folder, or None if there is none."""
+        names = LoadVisNirImagesDialog.create_list_image_in_input_folder(str(folder), suffix)
+        if not names:
+            return None
+        return Path(folder) / sorted(names)[0]
 
     @staticmethod
     def extract_num_image(imgPath: str) -> Tuple[int, str]:
