@@ -830,7 +830,7 @@ class DialogGeoRef(QDialog):
         self.progress_bar.setValue(0)
 
     def _on_DTM_finished(self, result: dict, manual: bool) -> None:
-        """Log the generated files; the message box is shown only for a manual run."""
+        """Log the generated files; a manual run also shows the 2D map and a message box."""
         self._finish_DTM_ui()
         self.progress_label.setText("DTM and contour lines completed.")
         self._log(
@@ -839,6 +839,8 @@ class DialogGeoRef(QDialog):
             f"2D map: {result['map']}\n3D surface: {result['surface_3d']}"
         )
         if manual:
+            # After a chained ODM run, keep the orthophoto preview on screen.
+            self._display_image(result["map"])
             QMessageBox.information(
                 self,
                 "DTM and contour lines",
