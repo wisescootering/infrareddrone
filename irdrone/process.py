@@ -477,12 +477,6 @@ class Image:
         if item == 1:
             return  self.name
 
-    def __repr__(self):
-        if self._data is None:
-            return "Image %s not loaded"%self.path
-        else:
-            return "%s - Image %s loaded"%(self._data.shape, self.path)
-
     def clear(self):
         self._data = None
 

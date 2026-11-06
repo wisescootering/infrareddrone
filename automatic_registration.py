@@ -8,7 +8,6 @@ import registration.rigid as rigid
 from irdrone.semi_auto_registration import manual_warp, ManualAlignment, Transparency, Absgrad
 import os
 import sys
-osp = os.path
 import time
 from matplotlib.colors import LinearSegmentedColormap
 import interactive.imagepipe as ipipe

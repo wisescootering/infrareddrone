@@ -79,7 +79,6 @@ import json
 import subprocess
 import rasterio
 # print(f"✔ Version rasterio : {rasterio.__version__}")
-from rasterio.transform import Affine
 from rasterio.crs import CRS
 import time
 
