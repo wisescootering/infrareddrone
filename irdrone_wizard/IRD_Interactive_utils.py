@@ -48,6 +48,7 @@ from IRD_Interactive_color_style import Style
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
 from irdrone.file_utils import glob_ci
 import config as cf
+from IRD_Interactive_diskspace import DiskFullError, raise_if_disk_full, write_json_atomic
 
 
 
@@ -1170,10 +1171,11 @@ def save_time_line_json(
         for d in timeline_dicts:
             merged.update(d)
 
-        with open(out_file, "w", encoding="utf-8") as f:
-            json.dump(merged, f, indent=4, ensure_ascii=False)
+        write_json_atomic(out_file, merged, indent=4, ensure_ascii=False)
 
         print(Style.GREEN + f"💾 JSON file saved: {out_file}" + Style.RESET)
+    except DiskFullError:
+        raise
     except Exception as e:
         print(f'error in (Uti)   save_time_line_json   {e}')
     return out_file
@@ -1483,6 +1485,12 @@ def copy_and_rename_images(input_dir: Path,
             shutil.copy2(src, dst)   # copy2 keeps metadata
             if verbose: print(Style.GREEN + f"Copied: {src} → {dst}" + Style.RESET)
     except Exception as e:
+        # A half-copied image would be kept as "already exists" by the next run.
+        try:
+            dst.unlink()
+        except OSError:
+            pass
+        raise_if_disk_full(e, dst)
         print(Style.RED + f"ERROR copying file: {e}" + Style.RESET)
 
 def read_exif_and_write_json(dng_path: Path, exiftool_path: str) -> dict:
@@ -1541,11 +1549,12 @@ def read_exif_and_write_json(dng_path: Path, exiftool_path: str) -> dict:
 
         # 3) Write the companion .exif JSON
         out_path = dng_path.with_suffix(".exif")
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(cleaned, f, indent=2)
+        write_json_atomic(out_path, cleaned, indent=2)
 
         return cleaned
 
+    except DiskFullError:
+        raise  # stop the whole step, not one error per image
     except Exception as e:
         print(f"[ERROR] read_exif_and_write_json failed for {dng_path}: {e}")
         return {}

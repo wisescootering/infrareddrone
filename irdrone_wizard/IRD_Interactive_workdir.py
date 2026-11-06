@@ -11,7 +11,7 @@ environment variable IRDRONE_WORKING_DIR, when set, still wins at each launch.
 """
 from pathlib import Path
 
-from PyQt6.QtCore import pyqtSignal, QUrl
+from PyQt6.QtCore import pyqtSignal, QTimer, QUrl
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
     QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout, QLabel, QLayout, QLineEdit,
@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
 )
 
 import config
+import IRD_Interactive_diskspace as Disk
 from IRD_Interactive_styles import BUTTON_STYLE
 
 GEAR_STYLE = BUTTON_STYLE + "QPushButton { font-size: 16px; padding: 2px; }"
@@ -141,6 +142,12 @@ class WorkingDirBar(QWidget):
         self.gear.setToolTip("Options: change the working folder")
         self.gear.clicked.connect(self.open_options)
         layout.addWidget(self.gear)
+        # Free space of the working folder's disk, kept up to date while processing.
+        self.free_label = QLabel()
+        layout.addWidget(self.free_label)
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.refresh_free_space)
+        self.timer.start(30_000)
         self.refresh()
 
     def refresh(self):
@@ -148,6 +155,19 @@ class WorkingDirBar(QWidget):
         source = " (from IRDRONE_WORKING_DIR)" if config.WORKING_DIR_SOURCE == "environment" else ""
         self.label.setText(f'Working folder: <a href="open">{folder}</a>{source}')
         self.label.setToolTip("Click to open the folder")
+        self.refresh_free_space()
+
+    def refresh_free_space(self):
+        free = Disk.free_bytes(config.OUTPUT_FOLDER_NAME)
+        if free is None:
+            self.free_label.setText("")
+            return
+        low = free < Disk.LOW_SPACE_BYTES
+        color = "darkred; font-weight: bold" if low else "gray"
+        self.free_label.setText(f'<span style="color: {color};">{Disk.format_bytes(free)} free</span>')
+        self.free_label.setToolTip(
+            "Low disk space: a mission needs several GB (images, aligned TIFs, mapping)."
+            if low else "Free space on the disk of the working folder")
 
     def _open_folder(self, _link=None):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(config.OUTPUT_FOLDER_NAME)))

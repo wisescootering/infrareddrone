@@ -33,6 +33,7 @@ import IRD_interactive_geo as Geo
 from IRD_Interactive_utils import Prefrence_Screen
 import IRD_Interactive_workers as Worker
 from IRD_Interactive_color_style import Style
+import IRD_Interactive_diskspace as Disk
 from IRD_Interactive_styles import BUTTON_STYLE
 import config
 
@@ -436,6 +437,14 @@ class Window_create_file_structure(QDialog):
             self.output_dir_VIS = Path(self.mission_parameters["File path mission"]) / "AerialPhotography" / "VIS"
             assert self.input_dir_VIS.exists(), f"Input VIS directory does not exist: {self.input_dir_VIS}"
             assert self.output_dir_VIS.exists(), f"Output VIS directory does not exist: {self.output_dir_VIS}"
+            # --- Enough disk space? The VIS copy, plus about as much for the NIR DNG.
+            vis_size = Disk.folder_size(self.input_dir_VIS, {".dng"})
+            already_copied = Disk.folder_size(self.output_dir_VIS, {".dng"})
+            needed = 2 * max(0, vis_size - already_copied) + Disk.DISK_NEARLY_FULL_BYTES
+            if not Disk.confirm_free_space(self, self.output_dir_VIS, needed,
+                                           "Step 1 (copy of the VIS images, conversion of the NIR images)"):
+                self.btn_1221.setEnabled(True)
+                return
             # --- Launch pipeline ---
             self.start_mission_pipeline()
 
@@ -532,7 +541,7 @@ class Window_create_file_structure(QDialog):
         try:
             self.btn_1221.setEnabled(True)
             print("[ERROR] TRANSFER worker:", message)
-            Uti.show_info_message("IRDrone", "EXIF worker error", message)
+            Uti.show_info_message("IRDrone", "VIS transfer error", message)
             self.close()
         except Exception as e:
             print(f'error in on_transfer_VIS_error {e}')
@@ -573,6 +582,16 @@ class Window_create_file_structure(QDialog):
 
         dest_nir_folder = Path(self.mission_parameters["File path mission"]) / "AerialPhotography" / "NIR"
         self.output_dir_NIR = dest_nir_folder
+        if src_nir_folder is None:
+            self._stop_pipeline("NIR folder not selected: Step 1 stopped.\n"
+                                "The VIS images are kept; run Step 1 again to add the NIR images.")
+            return
+        # A converted DNG is about the size of its RAW file.
+        needed = (Disk.folder_size(src_nir_folder, {".raw"})
+                  - Disk.folder_size(dest_nir_folder, {".dng"}) + Disk.DISK_NEARLY_FULL_BYTES)
+        if not Disk.confirm_free_space(self, dest_nir_folder, needed, "The conversion of the NIR images"):
+            self._stop_pipeline("Step 1 stopped before the NIR conversion (disk space).")
+            return
 
         self.thread_nir = QtCore.QThread()
         self.worker_nir = Worker.Transfer_NIR(src_nir_folder, dest_nir_folder)
@@ -581,6 +600,8 @@ class Window_create_file_structure(QDialog):
         self.thread_nir.started.connect(self.worker_nir.run)
         self.worker_nir.progress.connect(self.on_nir_progress)
         self.worker_nir.finished.connect(lambda msg: done("NIR_TRANSFER_OK", msg))
+        self.worker_nir.error.connect(self.on_nir_error)
+        self.worker_nir.error.connect(self.thread_nir.quit)
 
         self.worker_nir.finished.connect(self.thread_nir.quit)
         self.worker_nir.finished.connect(self.worker_nir.deleteLater)
@@ -617,12 +638,16 @@ class Window_create_file_structure(QDialog):
         except Exception as e:
             print("error in on_nir_finished:", e)
 
-    def on_nir_error(self, message: str) -> None:
-        """
-        Display a NIR worker error and close the dialog.
+    def _stop_pipeline(self, message: str) -> None:
+        """Stop Step 1 cleanly (the user cancelled a choice): tell why, allow a new run."""
+        print(Style.YELLOW + f"⚠  {message}" + Style.RESET)
+        self.progress_bar.setValue(0)
+        self.phase_label.setText("Stopped")
+        self.btn_1221.setEnabled(True)
+        Uti.show_info_message("IRDrone", "Step 1 stopped", message)
 
-        Not connected to Transfer_NIR.error in the current pipeline.
-        """
+    def on_nir_error(self, message: str) -> None:
+        """Display a NIR worker error (e.g. disk full) and close the dialog."""
         try:
             print("[ERROR] NIR worker:", message)
             self.nir_started = False
@@ -649,14 +674,13 @@ class Window_create_file_structure(QDialog):
             dlg.setFileMode(QFileDialog.FileMode.ExistingFile)
             dlg.setNameFilter("SJCam Images (*.RAW *.JPG *.JPEG)")
 
-            # --- Ouvre sur C:
-            dlg.setDirectory("C:/")
+            # Start next to the VIS images folder, else at the drive root.
+            root = "C:/" if os.name == "nt" else "/"
+            vis_folder = getattr(self, "input_dir_VIS", None)
+            start = Path(vis_folder).parent if vis_folder and Path(vis_folder).parent.exists() else Path(root)
+            dlg.setDirectory(str(start))
 
-            # --- Ajoute des entrées utiles dans la sidebar
-            dlg.setSidebarUrls([
-                QUrl.fromLocalFile("C:/"),
-                QUrl("file:///"),  # Montages de disques, cartes SD, USB
-            ])
+            dlg.setSidebarUrls([QUrl.fromLocalFile(root), QUrl.fromLocalFile(str(Path.home()))])
 
             if dlg.exec():
                 file_path = dlg.selectedFiles()[0]
