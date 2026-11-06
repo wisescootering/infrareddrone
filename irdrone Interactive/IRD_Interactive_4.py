@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QCheckBox,
+    QComboBox,
     QDoubleSpinBox,
     QFileDialog,
     QGroupBox,
@@ -57,6 +58,13 @@ REDO_BATCH_SUFFIX = "_REDO.bat" if os.name == "nt" else "_REDO.sh"
 SETTINGS_ORGANIZATION = "IRdrone"
 SETTINGS_APPLICATION = "IRD_Interactive"
 WORKERS_SETTING_KEY = "step4/alignment_workers"
+LOG_LEVEL_SETTING_KEY = "step4/log_level"
+# (run_after_preprocessing.py --log-level value, label shown in the settings)
+LOG_LEVELS = (
+    ("warning", "Warnings only"),
+    ("info", "Info (processing steps)"),
+    ("debug", "Debug (detailed timings)"),
+)
 
 
 def _settings() -> QSettings:
@@ -76,10 +84,22 @@ def save_worker_setting(value: int) -> None:
     _settings().setValue(WORKERS_SETTING_KEY, max(0, int(value)))
 
 
+def load_log_level_setting() -> str:
+    """Saved console detail level of the processing script."""
+    value = str(_settings().value(LOG_LEVEL_SETTING_KEY, LOG_LEVELS[0][0]))
+    return value if value in dict(LOG_LEVELS) else LOG_LEVELS[0][0]
+
+
+def save_log_level_setting(value: str) -> None:
+    if value not in dict(LOG_LEVELS):
+        raise ValueError(f"Unknown log level: {value!r}")
+    _settings().setValue(LOG_LEVEL_SETTING_KEY, value)
+
+
 class Step4SettingsDialog(QDialog):
     """Processing settings of Step 4 (opened with the gear button)."""
 
-    def __init__(self, workers: int, parent=None):
+    def __init__(self, workers: int, log_level: str = LOG_LEVELS[0][0], parent=None):
         super().__init__(parent)
         self.setWindowTitle("Step 4 – Settings")
         layout = QVBoxLayout(self)
@@ -110,6 +130,17 @@ class Step4SettingsDialog(QDialog):
         explanation.setWordWrap(True)
         layout.addWidget(explanation)
 
+        log_layout = QHBoxLayout()
+        log_layout.addWidget(QLabel("Log detail:"))
+        self.log_level_combo = QComboBox()
+        for value, label in LOG_LEVELS:
+            self.log_level_combo.addItem(label, value)
+        index = self.log_level_combo.findData(log_level)
+        self.log_level_combo.setCurrentIndex(max(0, index))
+        log_layout.addWidget(self.log_level_combo)
+        log_layout.addStretch()
+        layout.addLayout(log_layout)
+
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
@@ -119,6 +150,9 @@ class Step4SettingsDialog(QDialog):
 
     def workers(self) -> int:
         return self.workers_spin.value()
+
+    def log_level(self) -> str:
+        return self.log_level_combo.currentData()
 
 
 def select_local_jpegs(parent, folder: Path) -> list[str]:
@@ -639,7 +673,7 @@ class DialogImageProcessing(QDialog):
             (self.flag_button, "btn:step4_flag_misaligned", "Select in the explorer the misaligned VIR images and flag them as failed."),
             (self.redo_button, "btn:step4_redo", "Manually realign the shoot points flagged as failed, then validate the result."),
             (self.close_button, "btn:step4_close", "Close this window."),
-            (self.settings_button, "btn:step4_options", "Processing settings (number of worker processes, safe mode)."),
+            (self.settings_button, "btn:step4_options", "Processing settings (worker processes / safe mode, log detail)."),
         ):
             Help.attach_help(widget, label, tip, parent=self)
 
@@ -650,9 +684,12 @@ class DialogImageProcessing(QDialog):
         layout.addLayout(button_layout)
 
     def _open_settings(self) -> None:
-        dialog = Step4SettingsDialog(load_worker_setting(), parent=self)
+        dialog = Step4SettingsDialog(
+            load_worker_setting(), load_log_level_setting(), parent=self
+        )
         if dialog.exec() == QDialog.DialogCode.Accepted:
             save_worker_setting(dialog.workers())
+            save_log_level_setting(dialog.log_level())
 
     def _flag_misaligned_points(self) -> None:
         output_folder = self.mission_folder / "ImgIRdrone"
@@ -922,6 +959,8 @@ class DialogImageProcessing(QDialog):
             f"{self.max_time_difference.value():.1f}",
             "--workers",
             str(load_worker_setting()),
+            "--log-level",
+            load_log_level_setting(),
             "--progress",
         ]
         if self.ndvi_checkbox.isChecked():
