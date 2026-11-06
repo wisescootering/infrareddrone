@@ -43,12 +43,14 @@ class FindToolTest(unittest.TestCase):
             self.assertEqual(config._find_tool("MY_TOOL", [usual], ["tool"]), (str(usual), True))
 
     def test_falls_back_to_path(self):
+        # On Windows shutil.which only finds names with a PATHEXT extension.
+        name = "tool.exe" if os.name == "nt" else "tool"
         on_path = self.folder / "bin"
         on_path.mkdir()
-        tool = make_executable(on_path / "tool")
+        tool = make_executable(on_path / name)
         with mock.patch.dict(os.environ, {"PATH": str(on_path)}):
             os.environ.pop("MY_TOOL", None)
-            self.assertEqual(config._find_tool("MY_TOOL", [self.folder / "usual"], ["tool"]),
+            self.assertEqual(config._find_tool("MY_TOOL", [self.folder / "usual"], [name]),
                              (str(tool), True))
 
     def test_not_found_keeps_the_default(self):
