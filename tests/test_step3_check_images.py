@@ -44,6 +44,23 @@ class CheckImageDisplayTests(unittest.TestCase):
         self.dialog._show_pending_check_image()
         self.assertEqual(self.shown, ["VIS_0_aruco.jpg", "VIS_3_aruco.jpg"])
 
+    def test_older_images_arriving_late_are_ignored(self):
+        # Threads finish out of order: never step back to an older capture
+        for name in ["VIS_9_aruco.jpg", "VIS_8_aruco.jpg", "VIS_11_aruco.jpg", "VIS_10_aruco.jpg"]:
+            self.dialog._on_check_image(_write(self.folder, name, 10))
+        self.assertEqual(self.dialog._pending_check_image, str(self.folder / "VIS_11_aruco.jpg"))
+        self.dialog._check_image_timer.stop()
+        self.dialog._show_pending_check_image()
+        self.dialog._on_check_image(_write(self.folder, "VIS_10_aruco.jpg", 10))
+        self.assertIsNone(self.dialog._pending_check_image)
+        self.assertEqual(self.shown, ["VIS_9_aruco.jpg", "VIS_11_aruco.jpg"])
+
+    def test_new_stage_restarts_ordering(self):
+        self.dialog._on_check_image(_write(self.folder, "VIS_50_aruco.jpg", 10))
+        self.dialog._on_aruco_stage("Detect ArUco NIR")
+        self.dialog._on_check_image(_write(self.folder, "NIR_1_aruco.jpg", 10))
+        self.assertEqual(self.shown[-1], "NIR_1_aruco.jpg")
+
     def test_stage_change_shows_generic_image_and_drops_pending(self):
         self.dialog._on_check_image(_write(self.folder, "VIS_0_aruco.jpg", 10))
         self.dialog._on_check_image(_write(self.folder, "VIS_1_aruco.jpg", 20))

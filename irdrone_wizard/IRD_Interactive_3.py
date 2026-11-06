@@ -13,6 +13,7 @@ import cv2
 import matplotlib.pyplot as plt
 import time
 import json
+import re
 from json import JSONDecodeError
 from typing import List, Tuple, Optional, Sequence, Dict, Any, Union
 import copy
@@ -33,6 +34,11 @@ IMAGE_ARUCO_NIR_PATH = RESOURCE_ICON_DIR / "Image_ArUco_NIR.jpg"
 # Short enough for the mobile marker to visibly spin, long enough to keep
 # the GUI responsive when images arrive from several threads.
 CHECK_IMAGE_HOLD_MS = 200
+
+
+def _natural_key(name: str) -> list:
+    """Sort key comparing the numbers in a file name numerically (IMG_9 < IMG_10)."""
+    return [(0, int(t), "") if t.isdigit() else (1, 0, t.lower()) for t in re.split(r"(\d+)", name)]
 
 # ----------------------------------------------------
 #     bib Multi Thread
@@ -161,6 +167,7 @@ class DialogSynchroAruco(QDialog):
 
         # Live display of the check images saved during ArUco detection
         self._pending_check_image = None
+        self._last_check_image_key = None
         self._check_image_timer = QTimer(self)
         self._check_image_timer.setSingleShot(True)
         self._check_image_timer.timeout.connect(self._show_pending_check_image)
@@ -450,9 +457,10 @@ class DialogSynchroAruco(QDialog):
 
     def _reset_check_image_display(self) -> None:
         """
-        Stop the hold timer and forget any pending check image.
+        Stop the hold timer and forget any pending or last shown check image.
         """
         self._pending_check_image = None
+        self._last_check_image_key = None
         timer = getattr(self, "_check_image_timer", None)
         if timer is not None:
             timer.stop()
@@ -489,9 +497,19 @@ class DialogSynchroAruco(QDialog):
         CHECK_IMAGE_HOLD_MS; during this time only the most recent image is
         remembered and shown when the delay expires.
 
+        Worker threads finish out of order: an image older (by file name, i.e.
+        capture order) than the one shown or pending is ignored, so that the
+        mobile marker is seen rotating forward instead of jittering.
+
         Args:
             image_path: Path of the check image just saved.
         """
+        key = _natural_key(Path(image_path).name)
+        newest = self._last_check_image_key
+        if self._pending_check_image is not None:
+            newest = _natural_key(Path(self._pending_check_image).name)
+        if newest is not None and key <= newest:
+            return
         self._pending_check_image = image_path
         if self._check_image_timer.isActive():
             return
@@ -506,6 +524,7 @@ class DialogSynchroAruco(QDialog):
         if image_path is None:
             return
         self._show_image_file(Path(image_path))
+        self._last_check_image_key = _natural_key(Path(image_path).name)
         self._check_image_timer.start(CHECK_IMAGE_HOLD_MS)
 
     def _on_aruco_error(self, error_msg: str) -> None:
