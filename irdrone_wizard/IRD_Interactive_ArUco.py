@@ -173,24 +173,16 @@ def process_aruco_images(
         # --------------------------------------------------------
         # Save check detection images (thread-safe and no GUI)
         # --------------------------------------------------------
-        if save_check_detection_img and result is not None:
+        if save_check_detection_img and result is not None and marker_data_ID is not None:
             check_detection_dir = safe_path(Path(folderMissionPath.parent) / "Synchro" / "Check_ARUCO")
             check_detection_dir.mkdir(exist_ok=True)
 
-            if save_check_detection_img and result is not None and marker_data_ID is not None:
-
-                img_check = draw_aruco_overlay(
-                    img_cv,
-                    result,
-                    marker_data_ID,
-                    fixed_ids=[5, 22, 16, 13]
-                )
-
-                out_path = check_detection_dir / f"{img_path.stem}_aruco.{img_check_suffix}"
-                if img_check_suffix == "jpg":
-                    cv2.imwrite(str(out_path), img_check, [cv2.IMWRITE_JPEG_QUALITY, 90])
-                else:
-                    cv2.imwrite(str(out_path), img_check)
+            img_check = draw_aruco_overlay(
+                img_cv,
+                result,
+                marker_data_ID,
+                fixed_ids=[5, 22, 16, 13]
+            )
 
             out_path = check_detection_dir / f"{img_path.stem}_aruco.{img_check_suffix}"
             if img_check_suffix == "jpg":
