@@ -299,7 +299,7 @@ for instance, you have to copy/paste into the excel
 
 
 ## Alignment and Fusion
-* Data can be processed by double cliking on [`bat_helpers/run.bat`](/bat_helpers/run.bat). This will use [run.py](`run.py`) to select a given config.json or excel file.
+* Data can be processed by double cliking on [`bat_helpers/run.bat`](/bat_helpers/run.bat). This will use [`run.py`](./run.py) to select a given config.json or excel file.
 * Advanced users can also use CLI (command line interface) to process the batch of images. Use `--config` option to 
 * CLI users can register pairs of images [automatic_registration.py](automatic_registration.py) 
 
