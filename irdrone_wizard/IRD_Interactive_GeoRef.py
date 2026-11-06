@@ -2477,7 +2477,7 @@ def project_camera_to_MNT(
 
         if verbose:
             print(f"[DEBUG] iter intersection = {count_iter}   |  altitude Z_t = {Z_t} m'\n"
-                  f"[DEBUG] pixel ({u_pix},{v_pix}) -> sol ({P[0]:.2f},{P[1]:.2f},{P[2]:.2f})")
+                  f"[DEBUG] pixel ({u},{v}) -> sol ({P[0]:.2f},{P[1]:.2f},{P[2]:.2f})")
 
     return np.array(X_s), np.array(Y_s), np.array(Z_s)
 
