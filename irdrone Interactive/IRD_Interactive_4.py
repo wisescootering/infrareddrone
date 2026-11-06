@@ -13,10 +13,11 @@ import shlex
 import shutil
 import sys
 
-from PyQt6.QtCore import QProcess, QProcessEnvironment, Qt
+from PyQt6.QtCore import QProcess, QProcessEnvironment, QSettings, Qt
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QDialog,
+    QDialogButtonBox,
     QCheckBox,
     QDoubleSpinBox,
     QFileDialog,
@@ -36,6 +37,11 @@ from PyQt6.QtWidgets import (
 from IRD_Interactive_styles import BUTTON_STYLE
 import IRD_Interactive_help as Help
 from config import SJCONVERTERPATH
+from alignment_workers import (
+    ALIGNMENT_WORKER_MEMORY_GB,
+    MAX_WORKERS,
+    available_alignment_workers,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -48,6 +54,71 @@ LOCAL_JPEG_PATTERN = re.compile(r"^VIR_(\d+)_local\.jpg$", re.IGNORECASE)
 FAILED_SUMMARY_FILENAME = "shoot_points_failed_summary.json"
 # Same as automatic_registration.REDO_SCRIPT_SUFFIX (not imported: heavy module).
 REDO_BATCH_SUFFIX = "_REDO.bat" if os.name == "nt" else "_REDO.sh"
+SETTINGS_ORGANIZATION = "IRdrone"
+SETTINGS_APPLICATION = "IRD_Interactive"
+WORKERS_SETTING_KEY = "step4/alignment_workers"
+
+
+def _settings() -> QSettings:
+    return QSettings(SETTINGS_ORGANIZATION, SETTINGS_APPLICATION)
+
+
+def load_worker_setting() -> int:
+    """Saved number of alignment workers; 0 means automatic."""
+    try:
+        value = int(_settings().value(WORKERS_SETTING_KEY, 0))
+    except (TypeError, ValueError):
+        return 0
+    return max(0, value)
+
+
+def save_worker_setting(value: int) -> None:
+    _settings().setValue(WORKERS_SETTING_KEY, max(0, int(value)))
+
+
+class Step4SettingsDialog(QDialog):
+    """Processing settings of Step 4 (opened with the gear button)."""
+
+    def __init__(self, workers: int, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Step 4 – Settings")
+        layout = QVBoxLayout(self)
+
+        workers_layout = QHBoxLayout()
+        workers_layout.addWidget(QLabel("Alignment worker processes:"))
+        self.workers_spin = QSpinBox()
+        self.workers_spin.setRange(0, min(MAX_WORKERS, max(1, os.cpu_count() or 1)))
+        self.workers_spin.setSpecialValueText(
+            f"Auto ({available_alignment_workers()})"
+        )
+        self.workers_spin.setValue(workers)
+        self.workers_spin.setMinimumWidth(110)
+        workers_layout.addWidget(self.workers_spin)
+        safe_button = QPushButton("Safe mode (1)")
+        safe_button.setStyleSheet(BUTTON_STYLE)
+        safe_button.clicked.connect(lambda: self.workers_spin.setValue(1))
+        workers_layout.addWidget(safe_button)
+        workers_layout.addStretch()
+        layout.addLayout(workers_layout)
+
+        explanation = QLabel(
+            "Each worker aligns one shoot point and needs about "
+            f"{ALIGNMENT_WORKER_MEMORY_GB:g} GB of memory. Auto uses the physical "
+            "cores, limited by the RAM available when the run starts. "
+            "Use 1 (safe mode) if the computer freezes or the run is killed."
+        )
+        explanation.setWordWrap(True)
+        layout.addWidget(explanation)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def workers(self) -> int:
+        return self.workers_spin.value()
 
 
 def select_local_jpegs(parent, folder: Path) -> list[str]:
@@ -544,6 +615,14 @@ class DialogImageProcessing(QDialog):
         self.close_button = QPushButton("Close")
         self.close_button.clicked.connect(self.close)
         button_layout.addWidget(self.close_button)
+        self.settings_button = QPushButton("\u2699")
+        self.settings_button.setFixedWidth(30)
+        # The gear glyph renders small: enlarge it, keep the button height.
+        self.settings_button.setStyleSheet(
+            BUTTON_STYLE + "QPushButton { font-size: 16px; padding: 2px; }"
+        )
+        self.settings_button.clicked.connect(self._open_settings)
+        button_layout.addWidget(self.settings_button)
         self.help_button = QPushButton("?")
         self.help_button.setFixedWidth(30)
         self.help_button.setStyleSheet(BUTTON_STYLE)
@@ -560,6 +639,7 @@ class DialogImageProcessing(QDialog):
             (self.flag_button, "btn:step4_flag_misaligned", "Select in the explorer the misaligned VIR images and flag them as failed."),
             (self.redo_button, "btn:step4_redo", "Manually realign the shoot points flagged as failed, then validate the result."),
             (self.close_button, "btn:step4_close", "Close this window."),
+            (self.settings_button, "btn:step4_options", "Processing settings (number of worker processes, safe mode)."),
         ):
             Help.attach_help(widget, label, tip, parent=self)
 
@@ -568,6 +648,11 @@ class DialogImageProcessing(QDialog):
         self.close_button.setStyleSheet(BUTTON_STYLE)
 
         layout.addLayout(button_layout)
+
+    def _open_settings(self) -> None:
+        dialog = Step4SettingsDialog(load_worker_setting(), parent=self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            save_worker_setting(dialog.workers())
 
     def _flag_misaligned_points(self) -> None:
         output_folder = self.mission_folder / "ImgIRdrone"
@@ -835,6 +920,8 @@ class DialogImageProcessing(QDialog):
             *alignment_modes,
             "--max-time-difference",
             f"{self.max_time_difference.value():.1f}",
+            "--workers",
+            str(load_worker_setting()),
             "--progress",
         ]
         if self.ndvi_checkbox.isChecked():
@@ -854,6 +941,7 @@ class DialogImageProcessing(QDialog):
         self.flag_button.setEnabled(False)
         self.redo_button.setEnabled(False)
         self.close_button.setEnabled(False)
+        self.settings_button.setEnabled(False)
         self.start_image_number.setEnabled(False)
         self.end_image_number.setEnabled(False)
         self.ndvi_checkbox.setEnabled(False)
@@ -923,6 +1011,7 @@ class DialogImageProcessing(QDialog):
         self.flag_button.setEnabled(True)
         self.redo_button.setEnabled(True)
         self.close_button.setEnabled(True)
+        self.settings_button.setEnabled(True)
         self.start_image_number.setEnabled(True)
         self.end_image_number.setEnabled(True)
         self.ndvi_checkbox.setEnabled(True)
@@ -958,6 +1047,7 @@ class DialogImageProcessing(QDialog):
         self.flag_button.setEnabled(True)
         self.redo_button.setEnabled(True)
         self.close_button.setEnabled(True)
+        self.settings_button.setEnabled(True)
         self.start_image_number.setEnabled(True)
         self.end_image_number.setEnabled(True)
         self.ndvi_checkbox.setEnabled(True)
