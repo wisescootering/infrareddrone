@@ -104,5 +104,64 @@ class MainWindowStepsTest(unittest.TestCase):
         self.assertNotIn(CHECK, self.text(2))
 
 
+class OpenMissionButtonTest(unittest.TestCase):
+    """'Open mission...' at the bottom: switch to an existing mission directly."""
+
+    @classmethod
+    def setUpClass(cls):
+        import IRD_Interactive_Main as main
+        cls.main = main
+
+    def make_mission(self, name, done=()):
+        mission = Path(tempfile.mkdtemp()) / name
+        (mission / "FlightAnalytics").mkdir(parents=True)
+        (mission / "FlightAnalytics" / "mission_parameters.json").write_text(
+            json.dumps({"File path mission": "/other/computer/" + name, "Location": "Blassac"}))
+        for step in done:
+            Progress.mark_step_done(mission, step)
+        return mission
+
+    def open(self, window, mission):
+        with mock.patch.object(self.main.Uti, "choose_mission_folder_phase_2", return_value=(mission, True)):
+            window.btn_open_mission.click()
+
+    def test_open_shows_the_mission_and_its_done_steps(self):
+        window = self.main.Main_Window()
+        mission = self.make_mission("FLY-20220125-1159-Blassac", done=(1, 2, 3))
+        self.open(window, mission)
+        self.assertEqual(window.folderMissionPath, mission)
+        self.assertIn("FLY-20220125-1159-Blassac", window.mission_label.text())
+        texts = [window.step_buttons[s][0].text() for s in Progress.STEPS]
+        self.assertEqual([t.startswith(CHECK) for t in texts], [True, True, True, False, False, False])
+        # a step opened afterwards uses this mission without asking again
+        self.assertTrue(window.ensure_mission_parameters())
+
+    def test_switching_mission_replaces_the_previous_one(self):
+        window = self.main.Main_Window()
+        self.open(window, self.make_mission("FLY-A", done=(1,)))
+        second = self.make_mission("FLY-B")
+        self.open(window, second)
+        self.assertEqual(window.mission_parameters["folderMissionPath"], second)
+        self.assertNotIn(CHECK, window.step_buttons[1][0].text())
+
+    def test_cancel_keeps_the_current_mission(self):
+        window = self.main.Main_Window()
+        first = self.make_mission("FLY-A")
+        self.open(window, first)
+        with mock.patch.object(self.main.Uti, "choose_mission_folder_phase_2", return_value=(None, False)):
+            window.btn_open_mission.click()
+        self.assertEqual(window.folderMissionPath, first)
+
+    def test_refused_while_a_step_window_is_open(self):
+        window = self.main.Main_Window()
+        window.dialog_image_processing = mock.MagicMock()
+        window.dialog_image_processing.isVisible.return_value = True
+        with mock.patch.object(self.main.QMessageBox, "warning") as warning, \
+                mock.patch.object(self.main.Uti, "choose_mission_folder_phase_2") as choose:
+            window.btn_open_mission.click()
+        choose.assert_not_called()
+        self.assertIn("Step 4", warning.call_args[0][2])
+
+
 if __name__ == "__main__":
     unittest.main()

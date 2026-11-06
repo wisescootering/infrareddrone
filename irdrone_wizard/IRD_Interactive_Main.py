@@ -245,6 +245,11 @@ class Main_Window(QMainWindow):
         # Current mission (defined in Step 1, or chosen when opening another step)
         self.mission_label = MissionLabel(self)
         bottom_layout.addWidget(self.mission_label)
+        self.btn_open_mission = QPushButton("Open mission...", self)
+        self.btn_open_mission.setStyleSheet(BUTTON_STYLE)
+        self.btn_open_mission.setToolTip("Open an existing mission folder (FLY-YYYYMMDD-hhmm-location)")
+        self.btn_open_mission.clicked.connect(self.on_open_mission)
+        bottom_layout.addWidget(self.btn_open_mission)
         bottom_layout.addStretch()
         bottom_layout.addWidget(self.btn_help)
         self.main_layout.addLayout(bottom_layout)
@@ -564,35 +569,30 @@ class Main_Window(QMainWindow):
 
     def ensure_mission_parameters(self) -> bool:
         """
-        Ensure that mission_parameters are available.
-        If not, ask the user to select an existing mission folder
-        and load mission_parameters from disk.
+        Ensure that mission_parameters are available: if no mission is loaded,
+        ask for an existing mission folder and load it.
 
         Returns
         -------
         bool
             True if mission_parameters are available, False otherwise.
         """
-        try:
-            if self.mission_parameters is not None:
-                folderMissionPath = self.mission_parameters.get("File path mission")
-                return True
+        if self.mission_parameters is not None:
+            return True
+        QMessageBox.information(self, "IRDrone", "Choose the mission folder\n"
+                                                 "(format FLY-YYYYMMDD-hhmm-location).")
+        return self.choose_and_load_mission()
 
-            # Ask user to select a mission folder
+    def choose_and_load_mission(self) -> bool:
+        """Ask for an existing mission folder and make it the current mission."""
+        folder, ok = Uti.choose_mission_folder_phase_2(self, default_user_dir=str(config.OUTPUT_FOLDER_NAME))
+        if not ok or not folder:
+            return False
+        return self.load_mission(Path(folder))
 
-            QMessageBox.information(self, "Post Process. Géoréférencement",
-                                    "Sélectionnez le dossier de la mission \n"
-                                    "Format  FLY-YYYYMMDD-HHMM")
-
-            default_user_dir = config.OUTPUT_FOLDER_NAME
-            folderMissionPath, ok = Uti.choose_mission_folder_phase_2(self, default_user_dir=str(default_user_dir))
-
-            if not ok:
-                return False
-            folderMissionPath = Path(folderMissionPath)
-        except Exception as e:
-            print(f'DEBUG  in ensure_mission_parameters  {e}  ')
-
+    def load_mission(self, folderMissionPath: Path) -> bool:
+        """Load FlightAnalytics/mission_parameters.json of folderMissionPath and
+        make it the current mission (bottom bar and step buttons updated)."""
         try:
             mission_json = Uti.safe_path(folderMissionPath / "FlightAnalytics" / "mission_parameters.json")
             if not mission_json.exists():
@@ -605,7 +605,6 @@ class Main_Window(QMainWindow):
             self.mission_parameters["folderMissionPath"] = folderMissionPath
             self.folderMissionPath = folderMissionPath
             self._show_current_mission()
-
             return True
 
         except Exception as e:
@@ -615,6 +614,29 @@ class Main_Window(QMainWindow):
                 f"Unable to load mission parameters:\n{e}"
             )
             return False
+
+    def _open_step_window(self):
+        """Name of a Step 3-6 window still open (it works on the current mission), else None."""
+        for attr, name in (("dialog_synchro_aruco", "Step 3"),
+                           ("dialog_image_processing", "Step 4"),
+                           ("dialog_GeoRef", "Step 5"),
+                           ("dialog_archive", "Step 6")):
+            dialog = getattr(self, attr, None)
+            try:
+                if dialog is not None and dialog.isVisible():
+                    return name
+            except RuntimeError:
+                pass  # window already destroyed
+        return None
+
+    def on_open_mission(self):
+        """'Open mission...' button: switch to another existing mission."""
+        busy = self._open_step_window()
+        if busy:
+            QMessageBox.warning(self, "IRDrone", f"Close the {busy} window before opening another mission.")
+            return
+        if self.choose_and_load_mission():
+            print(f"Mission opened: {self.folderMissionPath}")
 
 
 def warn_missing_tools(parent=None):

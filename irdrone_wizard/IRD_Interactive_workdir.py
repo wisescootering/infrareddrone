@@ -194,7 +194,7 @@ class MissionLabel(QLabel):
     def set_mission(self, mission_parameters, folder=None):
         self.folder = mission_folder(mission_parameters, folder)
         if self.folder is None:
-            self.setText('<span style="color: gray;">No mission yet: define one in Step 1</span>')
+            self.setText('<span style="color: gray;">No mission yet: define one in Step 1, or open one</span>')
             self.setToolTip("")
             return
         self.setText(f'Mission: <a href="open"><b>{self.folder.name}</b></a>')
