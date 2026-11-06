@@ -97,6 +97,7 @@ import matplotlib.pyplot as plt
 # ----------------------------------------------------
 import IRD_Interactive_utils as Uti
 import IRD_Interactive_help as Help
+from IRD_Interactive_progress import mark_step_done
 import IRD_Interactive_GeoRef as GeoRef
 from IRD_Interactive_contours import DEFAULT_GRID_STEP_M, generate_ortho_dtm
 from IRD_Interactive_utils import safe_path
@@ -617,6 +618,7 @@ class DialogGeoRef(QDialog):
         count = len(self.georef_results)
         if count:
             message = f"Georeferencing completed: {count} image(s) georeferenced."
+            mark_step_done(self.folderMissionPath, 5)
         else:
             message = "Georeferencing finished: no image was georeferenced."
         self.progress_label.setText(message)
@@ -747,6 +749,7 @@ class DialogGeoRef(QDialog):
         orthophoto = result["orthophoto"]
         completion_message = f"Orthophoto:\n{orthophoto['path']}"
         self._log(f"ODM completed successfully: {orthophoto['path']}")
+        mark_step_done(self.folderMissionPath, 5)
         self.progress_label.setText("ODM completed successfully.")
         self.image_preview_label.setText("Loading orthophoto preview...")
         self.image_preview_label.setPixmap(QPixmap())

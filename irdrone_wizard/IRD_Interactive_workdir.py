@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 
 import config
 import IRD_Interactive_diskspace as Disk
+from IRD_Interactive_progress import mission_folder
 from IRD_Interactive_styles import BUTTON_STYLE
 
 GEAR_STYLE = BUTTON_STYLE + "QPushButton { font-size: 16px; padding: 2px; }"
@@ -178,19 +179,6 @@ class WorkingDirBar(QWidget):
             self.refresh()
             if config.OUTPUT_FOLDER_NAME != before:
                 self.changed.emit(config.OUTPUT_FOLDER_NAME)
-
-
-def mission_folder(mission_parameters, folder=None):
-    """Mission folder from the main window state: the folder chosen in this
-    session first (mission_parameters.json may hold a path from another computer)."""
-    if folder:
-        return Path(folder)
-    if not mission_parameters:
-        return None
-    for key in ("folderMissionPath", "File path mission"):
-        if mission_parameters.get(key):
-            return Path(mission_parameters[key])
-    return None
 
 
 class MissionLabel(QLabel):

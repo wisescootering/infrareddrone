@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
     QProgressBar,
     QMessageBox,
     QFileDialog,
+    QDialog,
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap, QColor, QIcon, QImage, QPainter, QFont
@@ -77,6 +78,7 @@ import config
 from config import missing_tools_message
 import IRD_Interactive_help as Help
 from IRD_Interactive_workdir import MissionLabel, WorkingDirBar, ensure_working_dir_at_startup
+import IRD_Interactive_progress as Progress
 
 
 class Main_Window(QMainWindow):
@@ -189,6 +191,17 @@ class Main_Window(QMainWindow):
         self.btn_help.setFixedWidth(30)
         self.btn_help.clicked.connect(self.on_help)
 
+        # Step buttons: (button, text, color) to grey them out once the step is done
+        self.step_buttons = {
+            1: (self.btn_create_mission, "Step 1\nDefine the mission", "darkGreen"),
+            2: (self.btn_load_images, "Step 2\nSelect reference images", "purple"),
+            3: (self.btn_pre_process_images, "Step 3\nImage pre-processing", "#505050"),
+            4: (self.btn_process_images, "Step 4\nImage processing", "darkRed"),
+            5: (self.btn_post_process_images, "Step 5\nImage post-processing", "#C87800"),
+            6: (self.btn_archive, "Step 6\nArchive the mission", "#2E5C8A"),
+        }
+        Progress.notifier.changed.connect(lambda _folder: self._show_current_mission())
+
         # Layout for command bar
         self.command_layout = QHBoxLayout()
         self.command_layout.addWidget(self.btn_create_mission)
@@ -253,8 +266,24 @@ class Main_Window(QMainWindow):
         print(f"Working folder: {folder}")
 
     def _show_current_mission(self):
-        """Refresh the mission shown at the bottom of the window."""
+        """Refresh the mission shown at the bottom of the window and the step buttons."""
         self.mission_label.set_mission(self.mission_parameters, self.folderMissionPath)
+        self._show_done_steps()
+
+    def _show_done_steps(self):
+        """Grey out the steps done for the current mission, with a check mark.
+        They stay clickable (a step can be run again)."""
+        folder = Progress.mission_folder(self.mission_parameters, self.folderMissionPath)
+        done = Progress.done_steps(folder)
+        for step, (button, text, color) in self.step_buttons.items():
+            if step in done:
+                button.setText("\u2705 " + text)
+                button.setStyleSheet(colored_button_style("#A9A9A9"))
+                button.setToolTip(f"Done ({done[step].replace('T', ' ')}). Click to run it again.")
+            else:
+                button.setText(text)
+                button.setStyleSheet(colored_button_style(color))
+                button.setToolTip("")
 
     # ===================================================================================
     #                   Button #1 click handlers
@@ -299,12 +328,13 @@ class Main_Window(QMainWindow):
         if validate:
             self.mission_parameters = mission_parameters
             self.folderMissionPath = self.mission_parameters['File path mission']
+            Progress.mark_step_done(self.folderMissionPath, 1)
             self._show_current_mission()
             self.dialog_create_file_structure.data_signal_from_dialog_create_file_structure_to_main_window.disconnect()  # Disconnect the signal
             self.dialog_create_file_structure.close()  # Close dialog_create_file_structure
             self.btn_load_images.setAutoDefault(True)
             self.btn_load_images.setEnabled(True)
-            self.btn_load_images.setStyleSheet(colored_button_style("purple"))
+            self._show_done_steps()  # Step 2 keeps its color, or its check mark if already done
         else:
             print("The user has not validated his entries.")
 
@@ -365,7 +395,7 @@ class Main_Window(QMainWindow):
                                             path_image_takeoff=self.pathImageTakeoff,
                                             original_path_image_takeoff=self.original_pathImageTakeoff)
 
-        dialog_VIS.exec()
+        vis_loaded = dialog_VIS.exec() == QDialog.DialogCode.Accepted
         dialog_VIS.reset_flags()
         # ---------------- Loads the 5 reference “NIR” images --------------------------------------------
         dialog_NIR = LoadVisNirImagesDialog(width,
@@ -374,8 +404,10 @@ class Main_Window(QMainWindow):
                                             suffix="dng",
                                             folderMission=folderMissionPath,
                                             path_image_takeoff=self.pathImageTakeoff)
-        dialog_NIR.exec()
+        nir_loaded = dialog_NIR.exec() == QDialog.DialogCode.Accepted
         dialog_NIR.reset_flags()
+        if vis_loaded and nir_loaded:
+            Progress.mark_step_done(folderMissionPath, 2)
 
 
 

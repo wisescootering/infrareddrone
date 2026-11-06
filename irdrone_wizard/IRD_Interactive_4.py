@@ -38,6 +38,7 @@ from PyQt6.QtWidgets import (
 
 from IRD_Interactive_styles import BUTTON_STYLE
 import IRD_Interactive_help as Help
+from IRD_Interactive_progress import mark_step_done
 from config import SJCONVERTERPATH
 from alignment_workers import (
     ALIGNMENT_WORKER_MEMORY_GB,
@@ -1098,6 +1099,7 @@ class DialogImageProcessing(QDialog):
             else:
                 self.status_label.setText("Processing completed successfully.")
             self.log_text.append("\nProcessing completed successfully.")
+            mark_step_done(self.mission_folder, 4)
         else:
             self.status_label.setText(f"Processing failed (exit code {exit_code}).")
             self.log_text.append(f"\nProcessing failed (exit code {exit_code}).")

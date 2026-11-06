@@ -87,6 +87,7 @@ from matplotlib.figure import Figure
 # ----------------------------------------------------
 import IRD_Interactive_utils as Uti
 import IRD_Interactive_help as Help
+from IRD_Interactive_progress import mark_step_done
 from IRD_Interactive_utils import safe_path
 import IRD_Interactive_ArUco as Aru
 from IRD_Interactive_workers import ArucoWorker
@@ -803,6 +804,7 @@ class DialogSynchroAruco(QDialog):
             f"({len(pairing_result.get('shoot_points', []))} pairs)."
         )
         self.image_pairing_done = True
+        mark_step_done(self.folderMissionPath, 3)
         self.timeshift_plot_label.setText("Image pairing completed.")
         self.progress_label.setText("Image pairing completed.")
         self.progress_bar.setValue(100)
