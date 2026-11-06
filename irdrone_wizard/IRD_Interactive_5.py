@@ -110,9 +110,6 @@ from IRD_Interactive_ODM import (
     read_orthophoto_preview,
     run_odm,
 )
-from config import RAWTHERAPEEPATH, EXIFTOOLPATH
-assert Path(EXIFTOOLPATH).exists(), f"ExifTool not found at {EXIFTOOLPATH}, Use environment variable EXIFTOOLPATH to set the path."
-assert Path(RAWTHERAPEEPATH).exists(), f"RawTherapee not found at {RAWTHERAPEEPATH}, Use environment variable RAWTHERAPEEPATH to set the path."
 
 
 class ODMRunSignals(QObject):

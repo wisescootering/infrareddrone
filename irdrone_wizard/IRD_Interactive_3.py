@@ -94,9 +94,6 @@ from IRD_Interactive_workers import TimeShiftWorker
 from IRD_Interactive_workers import ImagePairingWorker
 from IRD_Interactive_color_style import Style
 from IRD_Interactive_styles import BUTTON_STYLE
-from config import RAWTHERAPEEPATH, EXIFTOOLPATH
-assert Path(EXIFTOOLPATH).exists(), f"ExifTool not found at {EXIFTOOLPATH}, Use environment variable EXIFTOOLPATH to set the path."
-assert Path(RAWTHERAPEEPATH).exists(), f"RawTherapee not found at {RAWTHERAPEEPATH}, Use environment variable RAWTHERAPEEPATH to set the path."
 
 
 class DialogSynchroAruco(QDialog):

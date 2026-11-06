@@ -73,7 +73,7 @@ from IRD_Interactive_GeoRef import georef_main
 import IRD_Interactive_utils as Uti
 from IRD_Interactive_utils import Prefrence_Screen
 from IRD_Interactive_color_style import Style
-from config import OUTPUT_FOLDER_NAME
+from config import OUTPUT_FOLDER_NAME, missing_tools_message
 import IRD_Interactive_help as Help
 assert (
     OUTPUT_FOLDER_NAME.exists()
@@ -565,6 +565,18 @@ class Main_Window(QMainWindow):
             return False
 
 
+def warn_missing_tools(parent=None):
+    """Tell the user which external tools (ExifTool, RawTherapee, SJCam converter)
+    were not found. The wizard still opens: only the steps using them will fail."""
+    message = missing_tools_message()
+    if message:
+        QMessageBox.warning(
+            parent, "External tools not found",
+            "Some external tools were not found:\n\n" + message +
+            "\n\nThe wizard will open, but the steps that need them will fail.")
+    return message
+
+
 def main():
     """Main function to run the interactive application.."""
     app = _app
@@ -581,6 +593,7 @@ def main():
     screen = Prefrence_Screen()
     Uti.center_on_screen(main_window, screen_Id=screen.defaultScreenID, screen_adjust=screen.screenAdjust, window_display_size=screen.windowDisplaySize)
     main_window.show()
+    warn_missing_tools(main_window)
     sys.exit(app.exec())
 
 

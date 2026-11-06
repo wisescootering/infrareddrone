@@ -39,10 +39,8 @@ from IRD_Interactive_utils import safe_path
 import IRD_interactive_geo as Geo
 from IRD_Interactive_color_style import Style
 import IRD_Interactive_ArUco as Aru
-from config import SJCONVERTERPATH, EXIFTOOLPATH
+from config import SJCONVERTERPATH, EXIFTOOLPATH, require_tool
 from irdrone.file_utils import glob_ci
-assert Path(EXIFTOOLPATH).exists(), f"ExifTool not found at {EXIFTOOLPATH}, Use environment variable EXIFTOOLPATH to set the path."
-assert Path(SJCONVERTERPATH).exists(), f"SJCam RAW converter not found at {SJCONVERTERPATH}, Use environment variable SJCONVERTERPATH to set the path."
 
 
 # --------------------------------------------------------------------------------------------
@@ -937,6 +935,8 @@ class ExifToolPersist:
         """Start persistent ExifTool process (no-op if already started)."""
         if self.process is not None:
             return
+        if self.exiftool_path == EXIFTOOLPATH:
+            require_tool("EXIFTOOLPATH")  # clear message if ExifTool is missing
 
         # Launch exiftool in stay_open mode, reading/writing text
         self.process = subprocess.Popen(
@@ -1323,6 +1323,8 @@ class Transfer_NIR(QtCore.QObject):
                 self.progress.emit(100)
                 self.finished.emit("No NIR RAW files found")
                 return
+            if self.exe_path == SJCONVERTERPATH:
+                require_tool("SJCONVERTERPATH")  # clear message if the converter is missing
 
             # Determine worker count
             if self.max_workers is None:

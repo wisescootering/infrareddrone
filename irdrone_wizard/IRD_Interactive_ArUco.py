@@ -27,8 +27,7 @@ from IRD_Interactive_utils import to_json_safe
 from IRD_Interactive_utils import safe_path
 from IRD_Interactive_color_style import Style
 
-from config import RAWTHERAPEEPATH
-assert Path(RAWTHERAPEEPATH).exists(), "Please install raw therapee first http://www.rawtherapee.com/downloads/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
+from config import require_tool
 
 # ------------------------------------
 # Available ArUco dictionaries
@@ -1019,19 +1018,18 @@ def load_dng_for_aruco(path, folder_mission):
         The RawTherapee command uses JPEG quality 95.
     """
     out_file = cached_jpeg(path, folder_mission)
-    cmd = [
-        RAWTHERAPEEPATH,
-        "-t",
-        "-o", out_file,
-        "-j95",
-        "-p", osp.join(
-            osp.dirname(__file__),
-            "..", "thirdparty", "rawtherapee", "Aruco_Detection.pp3"
-        ),
-        "-c", path
-    ]
-
     if not osp.isfile(out_file):
+        cmd = [
+            require_tool("RAWTHERAPEEPATH"),
+            "-t",
+            "-o", out_file,
+            "-j95",
+            "-p", osp.join(
+                osp.dirname(__file__),
+                "..", "thirdparty", "rawtherapee", "Aruco_Detection.pp3"
+            ),
+            "-c", path
+        ]
         subprocess.call(cmd)
 
     img_cv = cv2.imread(out_file, cv2.IMREAD_COLOR)

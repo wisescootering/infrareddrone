@@ -85,19 +85,28 @@ except ImportError:
 print("Python packages OK")
 EOF
 
-# External tools: config.py reads EXIFTOOLPATH and RAWTHERAPEEPATH
-# (defaults /usr/bin/exiftool and /usr/bin/rawtherapee-cli).
-exiftool_path="${EXIFTOOLPATH:-/usr/bin/exiftool}"
-rawtherapee_path="${RAWTHERAPEEPATH:-/usr/bin/rawtherapee-cli}"
-if [ ! -x "$exiftool_path" ]; then
-    echo "WARNING: exiftool not found at $exiftool_path (required)."
-    echo "         On Debian / Ubuntu: sudo apt install libimage-exiftool-perl"
-    echo "         or set EXIFTOOLPATH."
+# External tools, looked up like config.py does: environment variable,
+# usual location (bundled copy for the SJCam converter), then the PATH.
+find_tool() {  # variable default name
+    local value="${!1:-}"
+    if [ -n "$value" ]; then [ -x "$value" ] && echo "$value"; return; fi
+    if [ -x "$2" ]; then echo "$2"; return; fi
+    command -v "$3" 2>/dev/null || true
+}
+if [ -z "$(find_tool EXIFTOOLPATH /usr/bin/exiftool exiftool)" ]; then
+    echo "WARNING: exiftool not found (required)."
+    echo "         On Debian / Ubuntu: sudo apt install libimage-exiftool-perl, or set EXIFTOOLPATH."
 fi
-if [ ! -x "$rawtherapee_path" ]; then
-    echo "WARNING: rawtherapee-cli not found at $rawtherapee_path (needed for DNG images)."
-    echo "         On Debian / Ubuntu: sudo apt install rawtherapee"
-    echo "         or set RAWTHERAPEEPATH."
+if [ -z "$(find_tool RAWTHERAPEEPATH /usr/bin/rawtherapee-cli rawtherapee-cli)" ]; then
+    echo "WARNING: rawtherapee-cli not found (needed for DNG images)."
+    echo "         On Debian / Ubuntu: sudo apt install rawtherapee, or set RAWTHERAPEEPATH."
+fi
+sjcam_bundled="$ROOT/thirdparty/sjcam_raw2dng_linux/sjcam_raw2dng"
+[ "$(uname -s)-$(uname -m)" = "Linux-x86_64" ] || sjcam_bundled=""
+if [ -z "$(find_tool SJCONVERTERPATH "$sjcam_bundled" sjcam_raw2dng)" ]; then
+    echo "WARNING: SJCam RAW converter not found (needed for SJCam .RAW images)."
+    echo "         The bundled copy only runs on Linux x86-64: build it from"
+    echo "         https://github.com/yanburman/sjcam_raw2dng and set SJCONVERTERPATH."
 fi
 if ! command -v docker >/dev/null 2>&1; then
     echo "NOTE: docker not found: ODM mapping (Step 5) needs it."
