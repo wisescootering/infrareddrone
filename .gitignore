@@ -14,3 +14,4 @@ help/*.toc
 help/*.synctex.gz
 # Generated low-resolution manual images
 help/images_light/
+.vscode/
