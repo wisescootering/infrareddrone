@@ -2,6 +2,7 @@
 
 [![Tests](https://github.com/wisescootering/infrareddrone/actions/workflows/tests.yml/badge.svg)](https://github.com/wisescootering/infrareddrone/actions/workflows/tests.yml)
 [![Docker](https://github.com/wisescootering/infrareddrone/actions/workflows/docker.yml/badge.svg)](https://github.com/wisescootering/infrareddrone/actions/workflows/docker.yml)
+[![Lint](https://github.com/wisescootering/infrareddrone/actions/workflows/lint.yml/badge.svg)](https://github.com/wisescootering/infrareddrone/actions/workflows/lint.yml)
 [![Documentation](https://github.com/wisescootering/infrareddrone/actions/workflows/pages.yml/badge.svg)](https://wisescootering.github.io/infrareddrone/)
 [![User manual (PDF)](https://img.shields.io/badge/manual-PDF-orange)](https://github.com/wisescootering/infrareddrone/releases/download/help-latest/irdrone_help.pdf)
 ![Python 3.9 | 3.12](https://img.shields.io/badge/python-3.9%20%7C%203.12-blue)
