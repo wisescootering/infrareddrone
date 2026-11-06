@@ -63,7 +63,7 @@ import shlex
 from pathlib import Path
 import argparse
 import tkinter as tk
-from tkinter import filedialog, simpledialog, messagebox
+from tkinter import simpledialog, messagebox
 import cv2
 # print(f"✔ Version cv2 : {cv2.__version__}")
 import re
@@ -3365,64 +3365,34 @@ def draw_square_outline(img, x_center, y_center, size, color, thickness=3):
 # Interactive image selection
 # --------------------------------------------------
 
-def choose_images(folder_mission: Path):
-    """
-    Interactively select image files from a file dialog.
+# Name filters of the image selection dialog. The combined filter comes first so
+# that it is the default: the processing mode (raw_DJI or multispectral) is then
+# detected from the selected files, no format is forced. Both letter cases are
+# listed because native dialogs on Linux match patterns case-sensitively.
+GEOREF_IMAGE_FILTERS = ";;".join([
+    "DJI RAW and multispectral TIFF (*.dng *.DNG *.tif *.TIF *.tiff *.TIFF)",
+    "DJI RAW (*.dng *.DNG)",
+    "Multispectral TIFF (*.tif *.TIF *.tiff *.TIFF)",
+    "All files (*)",
+])
 
-    Parameters:
-        folder_mission: Mission folder used as the initial directory.
+
+def _select_images_dialog(initial_dir: str = ""):
+    """
+    Ask for image files with the Qt file dialog used by the other steps.
+
+    Must be called from the GUI thread (``georef_main`` runs there).
 
     Returns:
         A tuple containing the input folder, image names without extensions,
-        image filenames, and full image paths.
+        image filenames, and full image paths. Exits if nothing is selected.
     """
-
-    root = tk.Tk()
-    root.withdraw()
-
-    filepaths = filedialog.askopenfilenames(
-        parent=root,
-        title="Select images.",
-        initialdir=str(folder_mission),
-        filetypes=[
-            ("DNG and TIFF images", "*.dng *.tif"),
-            ("All files", "*.*")
-        ]
-    )
-
-    root.destroy()
-
-    if not filepaths:
-        logger.warn("No image selected.")
-        sys.exit(0)
-
-    paths = [Path(p) for p in filepaths]
-
-    folder_input = paths[0].parent
-    list_path = sorted(paths)
-    list_img = sorted([p.name for p in paths])
-    list_img_name = sorted([p.stem for p in paths])
-
-    return folder_input, list_img_name, list_img, list_path
-
-def choose_images_dev():
-    """
-    Keep this method available for development.
-
-    It supports command-line launching while providing access to interactive
-    image selection.
-
-    Returns:
-        A tuple containing the input folder, image names without extensions,
-        image filenames, and full image paths.
-    """
-
-    root = tk.Tk()
-    root.withdraw()
-
-    filepaths = filedialog.askopenfilenames(
-        title="Select images",
-        filetypes=[("DNG and TIFF images", "*.dng  *.tif"), ("All files", "*.*")]
+    app = QApplication.instance() or QApplication(sys.argv)
+    filepaths, _ = QFileDialog.getOpenFileNames(
+        app.activeWindow(),
+        "Select images",
+        initial_dir,
+        GEOREF_IMAGE_FILTERS,
     )
 
     if not filepaths:
@@ -3437,6 +3407,23 @@ def choose_images_dev():
     list_img_name = sorted([p.stem for p in paths])  # name
 
     return folder_input, list_img_name, list_img, list_path
+
+
+def choose_images(folder_mission: Path):
+    """
+    Interactively select image files, starting in the mission folder.
+
+    For multispectral images, selecting one band per shot is enough: the
+    other bands are picked up from the same folder (see ``group_multispectral``).
+    """
+    return _select_images_dialog(str(folder_mission))
+
+
+def choose_images_dev():
+    """
+    Keep this method available for development (command-line launching).
+    """
+    return _select_images_dialog()
 
 # --------------------------------------------------
 # Command-line interface
@@ -3805,6 +3792,19 @@ def group_multispectral(paths, logger):
 
         base, band, _ = m.groups()
         groups[base][int(band)] = p
+
+    # Selecting a single band (e.g. IRD_0227_1.tif) is enough: complete the
+    # quartet with the sibling band files found next to it on disk.
+    for base, bands in groups.items():
+        folder = next(iter(bands.values())).parent
+        for band in (1, 2, 3, 4):
+            if band in bands:
+                continue
+            for ext in ("tif", "TIF", "tiff", "TIFF"):
+                candidate = folder / f"{base}_{band}.{ext}"
+                if candidate.is_file():
+                    bands[band] = candidate
+                    break
 
     valid = {}
     rejected = {}
