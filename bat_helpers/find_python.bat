@@ -37,7 +37,7 @@ if not errorlevel 1 (
 )
 
 echo ERROR: no Python environment found for IRDrone.
-echo Create the conda environment (bat_helpers\install.bat), or set IRDRONE_PYTHON
+echo Run bat_helpers\install.bat to create .venv, or set IRDRONE_PYTHON
 echo to the full path of the python.exe to use.
 exit /b 1
 

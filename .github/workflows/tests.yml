@@ -48,8 +48,16 @@ jobs:
             libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 \
             libimage-exiftool-perl
 
-      - name: Install Python packages
-        run: uv pip install -r requirements.txt
+      # The installers of the readme, into the .venv created above with the
+      # Python version of the matrix: tests them at the same time.
+      - name: Install Python packages (Linux, setup.sh)
+        if: runner.os == 'Linux'
+        run: ./setup.sh
+
+      - name: Install Python packages (Windows, install.bat)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: call bat_helpers\install.bat
 
       - name: Run tests
         run: python -m unittest discover -s tests -v
