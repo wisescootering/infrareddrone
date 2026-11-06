@@ -455,7 +455,11 @@ def run_postprocessing(
     alignment_modes: tuple[str, ...] = ("local",),
     max_time_difference_s: float = 0.5,
     progress_callback=None,
+    max_workers: int = None,
 ):
+    """``max_workers``: alignment worker processes; ``None`` picks it from cores and RAM."""
+    if max_workers is None:
+        max_workers = automatic_registration.available_alignment_workers()
     json_file = preprocessed_folder / "AerialPhotography" / "shoot_points.json"
     assert json_file.exists(), f"JSON file does not exist: {json_file}"
     with open(json_file, "r") as f:
@@ -620,7 +624,7 @@ def run_postprocessing(
         redo_nir_candidates=redo_nir_candidates,
         skip=skip,
         progress_callback=on_image_processed,
-        max_workers=automatic_registration.available_alignment_workers(),
+        max_workers=max_workers,
         # debug=True
     )
     report_angle_analysis(shoot_points["shoot_points"], preprocessed_folder, out_dir)
@@ -681,19 +685,32 @@ if __name__ == "__main__":
         help="Maximum absolute VIS/NIR rank-1 time difference in seconds (0.1 to 6.0).",
     )
     parser.add_argument(
+        "--workers",
+        dest="workers",
+        type=int,
+        default=0,
+        help=(
+            "Number of alignment worker processes. 0 (default) picks it from the "
+            "physical cores and the available RAM; 1 is the safe sequential mode."
+        ),
+    )
+    parser.add_argument(
         "--progress",
         action="store_true",
         help="Emit machine-readable progress updates for the interactive UI.",
     )
     args = parser.parse_args()
+    if args.workers < 0:
+        parser.error("--workers must be 0 (automatic) or a positive integer.")
+    worker_count_setting = (
+        args.workers or automatic_registration.available_alignment_workers()
+    )
 
     progress_started_at = time.monotonic()
 
     def report_progress(current: int, total: int, vis_filename: str) -> None:
         elapsed = time.monotonic() - progress_started_at
-        worker_count = min(
-            automatic_registration.available_alignment_workers(), total
-        )
+        worker_count = min(worker_count_setting, total)
         eta = -1.0
         if current == total:
             eta = 0.0
@@ -719,4 +736,5 @@ if __name__ == "__main__":
         alignment_modes=tuple(args.alignment_modes),
         max_time_difference_s=args.max_time_difference_s,
         progress_callback=report_progress if args.progress else None,
+        max_workers=worker_count_setting,
     )
