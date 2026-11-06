@@ -27,6 +27,14 @@
 
 ------------
 
+## 🐧 Linux / macOS: `./setup.sh`
+Creates a `.venv` at the repository root with the packages of [requirements.txt](./requirements.txt).
+It uses [uv](https://docs.astral.sh/uv/) when installed (Python 3.12 by default, `IRDRONE_PYTHON_VERSION` to change it),
+otherwise `python3 -m venv` + pip (needs `python3-venv` and `python3-tk` on Debian / Ubuntu).
+Run it again to update the environment, or `./setup.sh --recreate` to start from scratch.
+It also checks for `exiftool`, `rawtherapee-cli` and `docker`, which are installed separately
+(`sudo apt install libimage-exiftool-perl rawtherapee`).
+
 ## 🧙 Launch the IRDrone wizard (GUI)
 * Windows: double-click `irdrone_wizard.bat`
 * Linux / macOS: `./irdrone_wizard.sh`

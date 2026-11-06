@@ -1,0 +1,26 @@
+# Python packages for IRDrone (pip / uv). Used by setup.sh on Linux / macOS.
+# Windows uses the conda environment in environment.yml instead.
+#
+# Optional, not listed here:
+#   - GDAL (osgeo): contour lines in Step 5. The pip package needs the system
+#     libgdal headers; without it the wizard runs and skips contour lines.
+#   - torch, kornia, lightglue: the LightGlue matcher in irdrone/ign_registration.py.
+
+numpy
+scipy
+matplotlib
+opencv-contrib-python
+scikit-image
+imageio
+numba
+pandas
+openpyxl
+piexif
+exifread
+rawpy
+rasterio
+geopy
+requests
+psutil
+PyQt6
+qrcode
