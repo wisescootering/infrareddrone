@@ -270,8 +270,9 @@ def image_processing_engine(ImgMatchProcess: List[Tuple[Path, Path]], ptsProcess
         if traces is None:
             traces = automatic_registration.TRACES
     nbImgProcess = len(ptsProcess)
-    print(Style.YELLOW + 'WARNING : The processing of these %i images will take %.2f h.  Do you want to continue?'
-          % (nbImgProcess, 1.5 * nbImgProcess / 60.) + Style.RESET)
+    worker_count = configuration.get("workers") or automatic_registration.available_alignment_workers()
+    print(Style.YELLOW + 'WARNING : The processing of these %i images with %i alignment worker(s) will take about %.2f h.  Do you want to continue?'
+          % (nbImgProcess, worker_count, 1.5 * nbImgProcess / 60. / min(worker_count, max(nbImgProcess, 1))) + Style.RESET)
     autoRegistration = IRd.answerYesNo('Yes (y/1) |  No (n/0):')
     if autoRegistration:
         print(Style.CYAN + 'INFO : ------ Automatic_registration.process_raw_pairs \n' + Style.RESET)
@@ -279,7 +280,8 @@ def image_processing_engine(ImgMatchProcess: List[Tuple[Path, Path]], ptsProcess
                 ImgMatchProcess, out_dir=configuration["out_images_folder"], crop=CROP, listPts=ptsProcess,
                 option_alti=configuration['option_alti'], clean_proxy=configuration.get("clean_proxy", False), multispectral_folder=odm_image_directory,
                 traces=traces,
-                skip=skip
+                skip=skip,
+                max_workers=worker_count,
             )
     else:
         print(
@@ -374,7 +376,8 @@ def configure(args: argparse.Namespace) -> dict:
         disable_altitude_api=args.disable_altitude_api, # disable calls to IGN API (not recommended), False by default
         traces=args.traces,                             # list of traces
         offset=args.offset,                             # ["manual", "auto"] default manual
-        selection=args.selection                        # pairs sub-selection, by default all. best-mapping is recommended for the right c
+        selection=args.selection,                       # pairs sub-selection, by default all. best-mapping is recommended for the right c
+        workers=getattr(args, "workers", 0),            # alignment worker processes, 0 = automatic (cores and RAM)
     )
     # --------------------------------------------------------------------------
     #                    options       (for rapid tests and analysis)
@@ -420,7 +423,13 @@ def parse_arguments(argv) -> argparse.Namespace:
         + 'best-mapping: select best synchronized images + granting a decent overlap'
     )
     parser.add_argument('--offset', type=str, default="manual", choices=["manual", "auto"],  help='offset angles choice - auto allows pre-computing offsets')
+    parser.add_argument('--workers', type=int, default=0,
+        help='number of alignment worker processes. 0 (default) picks it from the physical cores and the available RAM; '
+        + '1 is the safe sequential mode'
+    )
     args = parser.parse_args(argv)
+    if args.workers < 0:
+        parser.error("--workers must be 0 (automatic) or a positive integer.")
 
     if args.config is None or not os.path.isfile(args.config):
         print(Style.GREEN + "File browser")
