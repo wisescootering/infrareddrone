@@ -463,7 +463,9 @@ def read_orthophoto_preview(
         raise ValueError("Preview maximum dimension must be positive.")
 
     try:
-        with rasterio.open(orthophoto_path) as dataset:
+        # ODM's internal overviews can be empty (all zeros), and a decimated read
+        # would be served from them, so read and average the full-resolution data.
+        with rasterio.open(orthophoto_path, OVERVIEW_LEVEL="NONE") as dataset:
             if dataset.count < 3:
                 raise ODMMappingError(
                     f"Cannot create RGB preview from an orthophoto with "
@@ -479,6 +481,22 @@ def read_orthophoto_preview(
                 masked=True,
             )
             rgb_bands = np.ma.asarray(rgb_bands)
+            alpha_indexes = [
+                index
+                for index, interpretation in enumerate(dataset.colorinterp, start=1)
+                if getattr(interpretation, "name", "") == "alpha"
+            ]
+            if alpha_indexes:
+                alpha = dataset.read(
+                    alpha_indexes[0],
+                    out_shape=(preview_height, preview_width),
+                    resampling=Resampling.nearest,
+                )
+                rgb_bands = np.ma.masked_where(
+                    np.broadcast_to(alpha == 0, rgb_bands.shape)
+                    | np.ma.getmaskarray(rgb_bands),
+                    rgb_bands,
+                )
             preview = np.zeros(
                 (preview_height, preview_width, 3),
                 dtype=np.uint8,
@@ -496,7 +514,9 @@ def read_orthophoto_preview(
                     low = float(np.min(band[valid]))
                     high = float(np.max(band[valid]))
                 if high > low:
-                    normalized = np.clip((band - low) / (high - low), 0, 1)
+                    normalized = np.where(
+                        valid, np.clip((band - low) / (high - low), 0, 1), 0
+                    )
                     preview[:, :, channel] = np.rint(normalized * 255).astype(np.uint8)
             return preview
     except rasterio.errors.RasterioError as error:
