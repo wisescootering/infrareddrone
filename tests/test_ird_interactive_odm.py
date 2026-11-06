@@ -35,6 +35,19 @@ from IRD_Interactive_ODM import (
 )
 
 
+_original_tempdir = tempfile.tempdir
+
+
+def setUpModule():
+    # The mapping code resolves paths; on Windows the default temp folder is an 8.3 short
+    # path (C:\Users\RUNNER~1\...), so expected paths must start from the resolved one.
+    tempfile.tempdir = str(Path(tempfile.gettempdir()).resolve())
+
+
+def tearDownModule():
+    tempfile.tempdir = _original_tempdir
+
+
 class BestMappingTests(unittest.TestCase):
     def test_formats_elapsed_duration(self):
         self.assertEqual(format_elapsed_duration(42.2), "42 s")
