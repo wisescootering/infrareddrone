@@ -3385,7 +3385,7 @@ def _select_images_dialog(initial_dir: str = ""):
 
     Returns:
         A tuple containing the input folder, image names without extensions,
-        image filenames, and full image paths. Exits if nothing is selected.
+        image filenames, and full image paths. All are empty if nothing is selected.
     """
     app = QApplication.instance() or QApplication(sys.argv)
     filepaths, _ = QFileDialog.getOpenFileNames(
@@ -3396,8 +3396,7 @@ def _select_images_dialog(initial_dir: str = ""):
     )
 
     if not filepaths:
-        logger.warn("No image selected.")
-        sys.exit(0)
+        return None, [], [], []
 
     paths = [Path(p) for p in filepaths]
 
@@ -3635,11 +3634,9 @@ def process_image(folder_input, img_name, args, zhang_dic,  tol_MC=0.01, img_ove
             if args.suffix.lower() == "dng":
                 tif_path = dng2tiff(folder_input, img_name)  # Create a .tif image from the .dng image
             elif args.suffix.lower() == "tif":
-                logger.warn(f'  The suffix {args.suffix} is not supported in raw_DJI mode')
-                sys.exit(1)
+                raise ValueError(f"The suffix {args.suffix} is not supported in raw_DJI mode")
             else:
-                logger.error(f' The suffix {args.suffix} is not supported.')
-                sys.exit(1)
+                raise ValueError(f"The suffix {args.suffix} is not supported.")
 
             img = cv2.imread(str(tif_path), cv2.IMREAD_UNCHANGED)
             if img is None:
@@ -3919,6 +3916,7 @@ def georef_main(image_callback=None, mission_parameters=None, result_callback=No
         except ValueError as e:
             logger.error(str(e))
             sys.exit(1)
+        args.mode = mode  # process_image names its outputs from args.mode
         logger.info(f"Detected processing mode: {mode}")
 
         # ----------------------------------------------
@@ -3929,10 +3927,7 @@ def georef_main(image_callback=None, mission_parameters=None, result_callback=No
             list_img_name = sorted(p.stem for p in paths if p.suffix.lower() == ".dng")
 
             logger.info(f"{len(list_img_name)} DNG images to process")
-            georef_sucsess = 0
-            # NOTE: the keyword below does not match the variable defined above
-            # (georef_unsucces is undefined); this command-line branch is not
-            # used by the GUI and is left unchanged.
+            georef_success = 0
             for img_name in list_img_name:
                 georef_success = process_image(
                                             folder_input,
@@ -3941,9 +3936,9 @@ def georef_main(image_callback=None, mission_parameters=None, result_callback=No
                                             zhang_dic,
                                             logger=logger,
                                             tol_MC=tolerence_Monte_Carlo,
-                                            georef_sucsess=georef_unsucces
+                                            georef_success=georef_success
                                         )
-            Uti.show_info_message("IRDrone", f"{georef_success }image georeferencing succesfully ...", "")
+            Uti.show_info_message("IRDrone", f"{georef_success} images successfully georeferenced ...", "")
 
 
         # ----------------------------------------------
@@ -3980,16 +3975,17 @@ def georef_main(image_callback=None, mission_parameters=None, result_callback=No
             folder_mission
         )
 
+        # Return instead of sys.exit: this runs inside the GUI process.
         if not list_path:
-            logger.error("No images selected")
-            sys.exit(1)
+            logger.warn("No image selected.")
+            return
 
         try:
             args.mode = None
             mode = detect_mode(list_path, args.mode)
         except ValueError as e:
             logger.error(str(e))
-            sys.exit(1)
+            return
 
         # Offsets are asked to the user (default 0) right after the shoot point selection.
         try:
