@@ -2189,7 +2189,7 @@ def generate_qml_style_qgis(qml_path, style="IGN", label_on_line=True):
         <settings>
           <text-style 
                 fieldName="elev"
-                fontSize="{font_Size_minor}"
+                fontSize="{font_Size_major}"
                 fontFamily="{font_Family_major}"
                 textColor="{font_color_major}">
             <text-buffer bufferSize="{buffer_major}" 
