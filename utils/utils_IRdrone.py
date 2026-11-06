@@ -1710,7 +1710,7 @@ def save_motion_camera(dirMission, shootingPts, planVol, listImgMatch, mute=True
                 shootingPts[shootPt.num - 1].rollCoarseAlign = mouvement["roll"]
                 k += 1
             except Exception as exc:
-                print(Style.RED + "erreur lors de la lectures des angles process \nError = {}"%exc + Style.RESET)
+                print(Style.RED + "erreur lors de la lectures des angles process \nError = {}".format(exc) + Style.RESET)
     SaveSummaryInExcelFormat(dirMission, True, shootingPts, listImgMatch, mute=mute)
     SaveSummaryInNpyFormat(dirMission, False, planVol, shootingPts)
     return
