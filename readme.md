@@ -68,9 +68,10 @@ uv venv --python 3.12 .venv
 uv pip install -r requirements.txt
 ```
 
-*Conda still works if you prefer it*: [environment.yml](./environment.yml) describes the `py39_clean`
-environment used on Windows (it also brings GDAL, used for the contour lines of the maps).
-The launchers find it automatically, see below.
+*Conda works too if you prefer it*: `conda env create -f environment.yml` creates the `irdrone`
+environment ([environment.yml](./environment.yml): Python and GDAL from conda-forge, the rest from `requirements.txt`).
+GDAL is optional: it draws the contour lines of the maps, which are skipped without it.
+The launchers find this environment automatically, see below.
 
 ## 3. External tools
 | Tool | Needed for | Windows | Linux (Debian / Ubuntu) | macOS |
@@ -91,8 +92,8 @@ Download our sample flight [FLY_TEST](https://drive.google.com/drive/folders/1kh
 * Linux / macOS: `./irdrone_wizard.sh`
 
 Both launchers use the first Python found among: the `IRDRONE_PYTHON` environment variable,
-the `.venv` folder at the repository root, the conda environment `py39_clean`
-(`~/miniforge3`, `~/miniconda3`, `~/anaconda3`; change the name with `IRDRONE_CONDA_ENV`),
+the `.venv` folder at the repository root, the conda environment `irdrone` (or the former `py39_clean`)
+in `~/miniforge3`, `~/miniconda3` or `~/anaconda3` (another name: set `IRDRONE_CONDA_ENV`),
 then the Python on the PATH. The wizard code lives in [irdrone_wizard](./irdrone_wizard).
 
 At the first launch the wizard asks for the working folder where missions are stored
