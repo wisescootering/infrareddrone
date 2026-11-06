@@ -54,6 +54,8 @@ class ODMMappingError(ValueError):
 
 
 ANSI_ESCAPE_PATTERN = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+# One line of the ASCII-art logo ODM prints at the end of a run.
+ODM_LOGO_LINE_PATTERN = re.compile(r"^\[INFO\]\s+M\S[^\n]{60,}M$")
 
 
 class DockerUnavailableError(ODMMappingError):
@@ -1191,7 +1193,9 @@ def run_odm(
                     or "[ERROR]" in line
                     or "ODM app finished" in line
                 ):
-                    worker_log(ANSI_ESCAPE_PATTERN.sub("", line).strip())
+                    clean_line = ANSI_ESCAPE_PATTERN.sub("", line).strip()
+                    if not ODM_LOGO_LINE_PATTERN.match(clean_line):
+                        worker_log(clean_line)
             return_code = process.wait()
             elapsed_seconds = time.perf_counter() - run_started_monotonic
         _restore_output_ownership(
