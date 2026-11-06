@@ -10,7 +10,6 @@ help/*.aux
 # ...except the one of the committed light manual: page of each help label
 !help/irdrone_help_light.aux
 help/*.log
-help/*.out
 help/*.toc
 help/*.synctex.gz
 # Generated low-resolution manual images

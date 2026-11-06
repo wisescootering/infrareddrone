@@ -5,8 +5,9 @@ REM   irdrone_help_light.pdf  : version legere pour l'aide du logiciel (images_l
 setlocal
 cd /d "%~dp0"
 
-set "PY=C:\Users\Alain\miniforge3\envs\py39_clean\python.exe"
-if not exist "%PY%" set "PY=python"
+call ..\bat_helpers\find_python.bat
+if errorlevel 1 goto end
+set "PY=%PYTHON%"
 
 "%PY%" make_images_light.py
 
@@ -19,4 +20,5 @@ pdflatex -interaction=nonstopmode -jobname=irdrone_help_light "\def\IRDlight{1}\
 pdflatex -interaction=nonstopmode -jobname=irdrone_help_light "\def\IRDlight{1}\input{irdrone_help.tex}" | findstr /b "! Output"
 
 echo.
+:end
 pause

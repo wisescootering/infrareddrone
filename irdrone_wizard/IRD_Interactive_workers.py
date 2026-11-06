@@ -39,10 +39,10 @@ from IRD_Interactive_utils import safe_path
 import IRD_interactive_geo as Geo
 from IRD_Interactive_color_style import Style
 import IRD_Interactive_ArUco as Aru
-from config import SJCONVERTERPATH, EXIFTOOLPATH
+from config import SJCONVERTERPATH, EXIFTOOLPATH, require_tool
+from IRD_Interactive_diskspace import (DiskFullError, DISK_NEARLY_FULL_BYTES, free_bytes,
+                                       is_valid_json_file, write_json_atomic)
 from irdrone.file_utils import glob_ci
-assert Path(EXIFTOOLPATH).exists(), f"ExifTool not found at {EXIFTOOLPATH}, Use environment variable EXIFTOOLPATH to set the path."
-assert Path(SJCONVERTERPATH).exists(), f"SJCam RAW converter not found at {SJCONVERTERPATH}, Use environment variable SJCONVERTERPATH to set the path."
 
 
 # --------------------------------------------------------------------------------------------
@@ -623,8 +623,8 @@ class ImagePairingWorker(QRunnable):
                 for k, v in pairing_result.items()
             }
 
-            with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(pairing_result_json_safe, f, indent=4, ensure_ascii=False)
+            # Atomic: a full disk must not leave an empty file (it marks Step 3 as done).
+            write_json_atomic(file_path, pairing_result_json_safe, indent=4, ensure_ascii=False)
 
             return file_path
 
@@ -937,6 +937,8 @@ class ExifToolPersist:
         """Start persistent ExifTool process (no-op if already started)."""
         if self.process is not None:
             return
+        if self.exiftool_path == EXIFTOOLPATH:
+            require_tool("EXIFTOOLPATH")  # clear message if ExifTool is missing
 
         # Launch exiftool in stay_open mode, reading/writing text
         self.process = subprocess.Popen(
@@ -1101,8 +1103,10 @@ class CreateExif(QtCore.QObject):
 
             data[key] = value
 
-            with exif_path.open("w", encoding="utf-8") as f:
-                json.dump(data, f, indent=4, ensure_ascii=False)
+            # Atomic: a full disk must not leave an empty .exif in place of a good one.
+            write_json_atomic(exif_path, data, indent=4, ensure_ascii=False)
+        except DiskFullError:
+            raise
         except Exception as e2:
             print(f"[ERROR] in update_exif_json: {e2}")
 
@@ -1128,7 +1132,7 @@ class CreateExif(QtCore.QObject):
             to_process = []
             for f in files:
                 out_path = f.with_suffix(".exif")
-                if not out_path.exists():
+                if not is_valid_json_file(out_path):  # missing, empty or truncated
                     to_process.append(f)
 
             total = len(to_process)
@@ -1158,7 +1162,11 @@ class CreateExif(QtCore.QObject):
                         futures.append((f, fut))
 
                     for (f, fut) in futures:
-                        cleaned_meta = fut.result()  # already filtered + saved as .exif
+                        try:
+                            cleaned_meta = fut.result()  # already filtered + saved as .exif
+                        except DiskFullError:
+                            executor.shutdown(wait=False, cancel_futures=True)
+                            raise
                         results[f.name] = cleaned_meta
 
             else:
@@ -1195,6 +1203,8 @@ class CreateExif(QtCore.QObject):
                         "RelativeTimeLine",
                         pt["relative_timeline"]
                     )
+                except DiskFullError:
+                    raise
                 except Exception as e:
                     print(f"[ERROR] {my_path.name}: {e}")
 
@@ -1239,7 +1249,7 @@ class Transfer_VIS(QtCore.QObject):
             to_process = []
             for f in list_file:
                 out_path = f.with_suffix(".exif")
-                if out_path.exists() and cached:
+                if is_valid_json_file(out_path) and cached:
                     pass
                 else:
                     to_process.append(f)
@@ -1264,6 +1274,8 @@ class Transfer_VIS(QtCore.QObject):
                         output_img_name,
                         verbose=False,
                     )
+                except DiskFullError:
+                    raise
                 except Exception as e:
                     print(f"[ERROR] transfer failed for {file}: {e}")
 
@@ -1323,6 +1335,8 @@ class Transfer_NIR(QtCore.QObject):
                 self.progress.emit(100)
                 self.finished.emit("No NIR RAW files found")
                 return
+            if self.exe_path == SJCONVERTERPATH:
+                require_tool("SJCONVERTERPATH")  # clear message if the converter is missing
 
             # Determine worker count
             if self.max_workers is None:
@@ -1364,6 +1378,12 @@ class Transfer_NIR(QtCore.QObject):
                             dng_results.append(dng_path)
                     except Exception as e:
                         print(f"[ERROR] conversion failed for {raw}: {e}")
+                        # The converter is an external program: a full disk only
+                        # shows up as failed conversions. Stop instead of failing them all.
+                        free = free_bytes(self.output_folder)
+                        if free is not None and free < DISK_NEARLY_FULL_BYTES:
+                            executor.shutdown(wait=False, cancel_futures=True)
+                            raise DiskFullError(self.output_folder) from e
                     finally:
                         completed += 1
                         pct = int(100 * completed / n)

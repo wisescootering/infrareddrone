@@ -148,17 +148,12 @@ class Step4MultispectralOutputTests(unittest.TestCase):
                 return sidecar
 
             progress_updates = []
-            with (
-                patch("run_after_preprocessing.create_odm_folder") as create_odm_folder,
-                patch(
-                    "run_after_preprocessing.automatic_registration.process_raw_pairs",
-                    side_effect=create_multispectral_output,
-                ),
-                patch(
-                    "run_after_preprocessing.write_multispectral_exif",
-                    side_effect=write_exif_sidecar,
-                ) as write_exif,
-            ):
+            # Backslash continuations rather than "with (...)": that form needs Python 3.10.
+            with patch("run_after_preprocessing.create_odm_folder") as create_odm_folder, \
+                    patch("run_after_preprocessing.automatic_registration.process_raw_pairs",
+                          side_effect=create_multispectral_output), \
+                    patch("run_after_preprocessing.write_multispectral_exif",
+                          side_effect=write_exif_sidecar) as write_exif:
                 run_after_preprocessing.run_postprocessing(
                     mission,
                     progress_callback=lambda current, total, filename: (

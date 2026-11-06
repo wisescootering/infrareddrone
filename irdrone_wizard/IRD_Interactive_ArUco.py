@@ -27,8 +27,7 @@ from IRD_Interactive_utils import to_json_safe
 from IRD_Interactive_utils import safe_path
 from IRD_Interactive_color_style import Style
 
-from config import RAWTHERAPEEPATH
-assert Path(RAWTHERAPEEPATH).exists(), "Please install raw therapee first http://www.rawtherapee.com/downloads/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
+from config import require_tool
 
 # ------------------------------------
 # Available ArUco dictionaries
@@ -174,24 +173,16 @@ def process_aruco_images(
         # --------------------------------------------------------
         # Save check detection images (thread-safe and no GUI)
         # --------------------------------------------------------
-        if save_check_detection_img and result is not None:
+        if save_check_detection_img and result is not None and marker_data_ID is not None:
             check_detection_dir = safe_path(Path(folderMissionPath.parent) / "Synchro" / "Check_ARUCO")
             check_detection_dir.mkdir(exist_ok=True)
 
-            if save_check_detection_img and result is not None and marker_data_ID is not None:
-
-                img_check = draw_aruco_overlay(
-                    img_cv,
-                    result,
-                    marker_data_ID,
-                    fixed_ids=[5, 22, 16, 13]
-                )
-
-                out_path = check_detection_dir / f"{img_path.stem}_aruco.{img_check_suffix}"
-                if img_check_suffix == "jpg":
-                    cv2.imwrite(str(out_path), img_check, [cv2.IMWRITE_JPEG_QUALITY, 90])
-                else:
-                    cv2.imwrite(str(out_path), img_check)
+            img_check = draw_aruco_overlay(
+                img_cv,
+                result,
+                marker_data_ID,
+                fixed_ids=[5, 22, 16, 13]
+            )
 
             out_path = check_detection_dir / f"{img_path.stem}_aruco.{img_check_suffix}"
             if img_check_suffix == "jpg":
@@ -738,6 +729,40 @@ def compute_time_shift_L2(
 
     return time_shift, omega, metrics
 
+
+def angle_mismatch_rms(
+    time_line_VIS: Sequence[float],
+    angles_VIS: Sequence[float],
+    time_line_NIR: Sequence[float],
+    angles_NIR: Sequence[float],
+    time_shift: float,
+) -> Tuple[Optional[float], int]:
+    """
+    RMS gap (degrees) between the VIS angles and the NIR curve shifted by ``time_shift``.
+
+    The NIR samples are moved to ``t + time_shift`` (same convention as the
+    alignment plot and the image pairing), linearly interpolated at the VIS
+    times, and compared only where both curves overlap.
+
+    Returns:
+        (rms, n): the RMS gap, or None when fewer than one VIS sample overlaps
+        the shifted NIR curve, and the number of VIS samples used.
+    """
+    t_vis = np.asarray(time_line_VIS, dtype=float)
+    th_vis = np.asarray(angles_VIS, dtype=float)
+    t_nir = np.asarray(time_line_NIR, dtype=float) + float(time_shift)
+    th_nir = np.asarray(angles_NIR, dtype=float)
+    if t_vis.size == 0 or t_nir.size < 2:
+        return None, 0
+    order = np.argsort(t_nir)
+    t_nir, th_nir = t_nir[order], th_nir[order]
+    inside = (t_vis >= t_nir[0]) & (t_vis <= t_nir[-1])
+    if not np.any(inside):
+        return None, 0
+    gap = th_vis[inside] - np.interp(t_vis[inside], t_nir, th_nir)
+    return float(np.sqrt(np.mean(gap ** 2))), int(np.count_nonzero(inside))
+
+
 def load_relative_time_line(folderMissionPath, spectral_band, log_message=None):
     """
     Load the relative timeline JSON file into self.dic_relative_time_line.
@@ -985,19 +1010,18 @@ def load_dng_for_aruco(path, folder_mission):
         The RawTherapee command uses JPEG quality 95.
     """
     out_file = cached_jpeg(path, folder_mission)
-    cmd = [
-        RAWTHERAPEEPATH,
-        "-t",
-        "-o", out_file,
-        "-j95",
-        "-p", osp.join(
-            osp.dirname(__file__),
-            "..", "thirdparty", "rawtherapee", "Aruco_Detection.pp3"
-        ),
-        "-c", path
-    ]
-
     if not osp.isfile(out_file):
+        cmd = [
+            require_tool("RAWTHERAPEEPATH"),
+            "-t",
+            "-o", out_file,
+            "-j95",
+            "-p", osp.join(
+                osp.dirname(__file__),
+                "..", "thirdparty", "rawtherapee", "Aruco_Detection.pp3"
+            ),
+            "-c", path
+        ]
         subprocess.call(cmd)
 
     img_cv = cv2.imread(out_file, cv2.IMREAD_COLOR)

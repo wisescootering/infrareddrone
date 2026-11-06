@@ -35,6 +35,7 @@ from PyQt6.QtWidgets import (
 )
 
 import IRD_Interactive_help as Help
+from IRD_Interactive_progress import mark_step_done
 import IRD_Interactive_archive as Archive
 from IRD_Interactive_styles import BUTTON_STYLE
 
@@ -238,6 +239,7 @@ class DialogArchive(QDialog):
                                 f"{n_errors} item(s) could not be deleted. See the log.")
         else:
             self._log("<span style='color:green'>Archiving completed.</span>")
+            mark_step_done(self.folderMissionPath, 6)
             QMessageBox.information(self, "Archiving completed",
                                     f"{Archive.format_size(manifest['deleted_bytes'])} freed.")
 

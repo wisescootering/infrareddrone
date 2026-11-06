@@ -38,7 +38,7 @@ import IRD_Interactive_help as Help
 from IRD_Interactive_utils import center_on_screen
 from IRD_Interactive_color_style import Style
 from IRD_Interactive_styles import BUTTON_STYLE
-from config import OUTPUT_FOLDER_NAME
+import config
 
 """
       This code allows you to choose the reference images for a mission and then distribute the different images in the
@@ -381,6 +381,14 @@ class LoadVisNirImagesDialog(QDialog):
                 self.open_takeOff_sync_and_fly_image_VIS_or_NIR(self.spectral_band, self.img_suffix, 0)
             elif self.image_takeoff_available and self.spectral_band == "VIS":
                 self.open_takeoff_image(self.path_image_takeoff)
+            elif self.spectral_band == "NIR":
+                # The NIR camera is triggered just before take-off: its first image
+                # is the take-off image, so it is pre-selected (still changeable).
+                first_nir = self.first_image_in_folder(
+                    Path(self.folderMissionPath) / "AerialPhotography" / "NIR", self.img_suffix)
+                if first_nir is not None:
+                    print(Style.GREEN + f'Take-off image NIR pre-selected: {first_nir.name}' + Style.RESET)
+                    self.open_and_display_new_image(first_nir, self.img_suffix, 0)
 
             if self.image_first_sync_available:
                 print(Style.GREEN + 'Loading first sync image' + Style.RESET)
@@ -1361,6 +1369,14 @@ class LoadVisNirImagesDialog(QDialog):
         return listInputImages
 
     @staticmethod
+    def first_image_in_folder(folder: Union[str, Path], suffix: str) -> Optional[Path]:
+        """First image (by name) with the given suffix in folder, or None if there is none."""
+        names = LoadVisNirImagesDialog.create_list_image_in_input_folder(str(folder), suffix)
+        if not names:
+            return None
+        return Path(folder) / sorted(names)[0]
+
+    @staticmethod
     def extract_num_image(imgPath: str) -> Tuple[int, str]:
         """
         Extract the frame index and frame name from an image path.
@@ -1390,11 +1406,11 @@ class LoadVisNirImagesDialog(QDialog):
             We can then make the “load all images” button visible.
         """
         cls.flags = [False] * cls.num_images
-        cls.currentUserDir = OUTPUT_FOLDER_NAME
+        cls.currentUserDir = config.OUTPUT_FOLDER_NAME
 
     @classmethod
     def reset_flag_AllImageOK(cls):
         cls.flagAllImageOK = False
-        cls.currentUserDir = OUTPUT_FOLDER_NAME
+        cls.currentUserDir = config.OUTPUT_FOLDER_NAME
 
 

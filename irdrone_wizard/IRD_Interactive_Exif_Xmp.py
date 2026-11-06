@@ -67,7 +67,7 @@ def get_EXIF_XMP(pth: Path, index, utilise_cache=False, verbose: bool = False):
                 │   ├── exiftool/
                 │   │   └── exiftool.exe
                 │   └── ...
-                └── irdrone Interactive/
+                └── irdrone_wizard/
                     └── IRD_Interactive_Exif_Xmp.py
 
     Définir le chemin relatif vers "exiftool.exe" en utilisant Path
@@ -75,25 +75,22 @@ def get_EXIF_XMP(pth: Path, index, utilise_cache=False, verbose: bool = False):
     EXIFTOOLPATH = Path(__file__).parent.parent / "irdrone" / "exiftool" / "exiftool.exe"
 
     Ici  Path(__file__)  représente sur ma machine le chemin complet depuis lequel j'éxécute le code :
-    C:\\Documents-Alain\\Projet-IRdrone\\Code_Python\\irdrone\\irdrone Interactive\\IRD_Interactive_Exif_Xmp.py
+    C:\\Documents-Alain\\Projet-IRdrone\\Code_Python\\irdrone\\irdrone_wizard\\IRD_Interactive_Exif_Xmp.py
     Ensuite il faut remonter de deux niveaux  DEPUIS LE FICHIER IRD_Interactive_Exif_Xmp.py
     pour atteindre irdrone (celui sous Code_Python)
     et ensuite on va descendre  de trois niveaux pour attteindre le fichier exe exiftool.exe
 
     Note: ATTENTION avec os.path le niveau du fichier est IMPLICITE et on remonterai d'un seul niveau.
-    La commande  osp.dirname(__file__)  part de irdrone Interactive  et pas de IRD_Interactive_Exif_Xmp.py
+    La commande  osp.dirname(__file__)  part de irdrone_wizard  et pas de IRD_Interactive_Exif_Xmp.py
     On écrirait donc  (si  le signe ":" signifie remonte d'un niveau et   ":",":" de deux etc) :
 
     EXIFTOOLPATH = osp.join(osp.dirname(__file__), "::", "irdrone", "exiftool", "exiftool.exe")
 
     """
 
-    EXIFTOOLPATH = Path(__file__).parent.parent / "irdrone" / "exiftool" / "exiftool.exe"
-    # Vérifie si le fichier existe
-    if EXIFTOOLPATH.exists():
-        pass
-    else:
-        print(f"error  'exiftool.exe' was not found at {EXIFTOOLPATH}")
+    from config import EXIFTOOLPATH
+    if not Path(EXIFTOOLPATH).exists():
+        print(f"error  ExifTool was not found at {EXIFTOOLPATH} (set EXIFTOOLPATH)")
         return
 
     exif_file = pth.with_suffix(".exif")

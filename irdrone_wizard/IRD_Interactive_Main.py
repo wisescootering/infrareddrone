@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
     QProgressBar,
     QMessageBox,
     QFileDialog,
+    QDialog,
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap, QColor, QIcon, QImage, QPainter, QFont
@@ -73,11 +74,11 @@ from IRD_Interactive_GeoRef import georef_main
 import IRD_Interactive_utils as Uti
 from IRD_Interactive_utils import Prefrence_Screen
 from IRD_Interactive_color_style import Style
-from config import OUTPUT_FOLDER_NAME
+import config
+from config import missing_tools_message
 import IRD_Interactive_help as Help
-assert (
-    OUTPUT_FOLDER_NAME.exists()
-), f"Output folder does not exist: {OUTPUT_FOLDER_NAME} Use export IRDRONE_WORKING_DIR=your_path_to_folder to set it."
+from IRD_Interactive_workdir import MissionLabel, WorkingDirBar, ensure_working_dir_at_startup
+import IRD_Interactive_progress as Progress
 
 
 class Main_Window(QMainWindow):
@@ -190,6 +191,17 @@ class Main_Window(QMainWindow):
         self.btn_help.setFixedWidth(30)
         self.btn_help.clicked.connect(self.on_help)
 
+        # Step buttons: (button, text, color) to grey them out once the step is done
+        self.step_buttons = {
+            1: (self.btn_create_mission, "Step 1\nDefine the mission", "darkGreen"),
+            2: (self.btn_load_images, "Step 2\nSelect reference images", "purple"),
+            3: (self.btn_pre_process_images, "Step 3\nImage pre-processing", "#505050"),
+            4: (self.btn_process_images, "Step 4\nImage processing", "darkRed"),
+            5: (self.btn_post_process_images, "Step 5\nImage post-processing", "#C87800"),
+            6: (self.btn_archive, "Step 6\nArchive the mission", "#2E5C8A"),
+        }
+        Progress.notifier.changed.connect(lambda _folder: self._show_current_mission())
+
         # Layout for command bar
         self.command_layout = QHBoxLayout()
         self.command_layout.addWidget(self.btn_create_mission)
@@ -224,8 +236,20 @@ class Main_Window(QMainWindow):
 
         self.main_layout.addWidget(self.image_label)
 
-        # Help button, bottom right
+        # Bottom bar: working folder + gear (left), help button (right)
         bottom_layout = QHBoxLayout()
+        self.working_dir_bar = WorkingDirBar(self)
+        self.working_dir_bar.changed.connect(self._on_working_dir_changed)
+        bottom_layout.addWidget(self.working_dir_bar)
+        bottom_layout.addSpacing(30)
+        # Current mission (defined in Step 1, or chosen when opening another step)
+        self.mission_label = MissionLabel(self)
+        bottom_layout.addWidget(self.mission_label)
+        self.btn_open_mission = QPushButton("Open mission...", self)
+        self.btn_open_mission.setStyleSheet(BUTTON_STYLE)
+        self.btn_open_mission.setToolTip("Open an existing mission folder (FLY-YYYYMMDD-hhmm-location)")
+        self.btn_open_mission.clicked.connect(self.on_open_mission)
+        bottom_layout.addWidget(self.btn_open_mission)
         bottom_layout.addStretch()
         bottom_layout.addWidget(self.btn_help)
         self.main_layout.addLayout(bottom_layout)
@@ -239,6 +263,32 @@ class Main_Window(QMainWindow):
             (self.btn_archive, "ch:step6", "Archive the mission (cleans the mission folder)."),
         ):
             Help.attach_help(widget, label, tip, parent=self)
+
+    def _on_working_dir_changed(self, folder):
+        """New working folder chosen with the gear button."""
+        self.pref_screen.default_user_dir = folder
+        self.def_user_dir = folder
+        print(f"Working folder: {folder}")
+
+    def _show_current_mission(self):
+        """Refresh the mission shown at the bottom of the window and the step buttons."""
+        self.mission_label.set_mission(self.mission_parameters, self.folderMissionPath)
+        self._show_done_steps()
+
+    def _show_done_steps(self):
+        """Grey out the steps done for the current mission, with a check mark.
+        They stay clickable (a step can be run again)."""
+        folder = Progress.mission_folder(self.mission_parameters, self.folderMissionPath)
+        done = Progress.done_steps(folder)
+        for step, (button, text, color) in self.step_buttons.items():
+            if step in done:
+                button.setText("\u2705 " + text)
+                button.setStyleSheet(colored_button_style("#A9A9A9"))
+                button.setToolTip(f"Done ({done[step].replace('T', ' ')}). Click to run it again.")
+            else:
+                button.setText(text)
+                button.setStyleSheet(colored_button_style(color))
+                button.setToolTip("")
 
     # ===================================================================================
     #                   Button #1 click handlers
@@ -283,11 +333,13 @@ class Main_Window(QMainWindow):
         if validate:
             self.mission_parameters = mission_parameters
             self.folderMissionPath = self.mission_parameters['File path mission']
+            Progress.mark_step_done(self.folderMissionPath, 1)
+            self._show_current_mission()
             self.dialog_create_file_structure.data_signal_from_dialog_create_file_structure_to_main_window.disconnect()  # Disconnect the signal
             self.dialog_create_file_structure.close()  # Close dialog_create_file_structure
             self.btn_load_images.setAutoDefault(True)
             self.btn_load_images.setEnabled(True)
-            self.btn_load_images.setStyleSheet(colored_button_style("purple"))
+            self._show_done_steps()  # Step 2 keeps its color, or its check mark if already done
         else:
             print("The user has not validated his entries.")
 
@@ -311,28 +363,12 @@ class Main_Window(QMainWindow):
         height = 500  # height of the window
 
         # ----------------------- Choice of mission file -------------------------------------------------
+        # The current mission (Step 1, "Open mission..." or another step) is used
+        # directly: the folder is only asked when no mission is loaded yet.
         try:
-            if self.folderMissionPath and self.dialog_create_file_structure:
-                folderMissionPath, coherent_answer = Uti.choose_folder_mission(self.mission_parameters,
-                                                                               self.pref_screen.default_user_dir,
-                                                                               self.dialog_create_file_structure.AerialPhotoFolder,
-                                                                               self.dialog_create_file_structure.SynchroFolder
-                                                                               )
-                if not coherent_answer: return
-            else:
-                if self.folderMissionPath:
-                    default_user_dir = Uti.safe_path(self.folderMissionPath)
-                else:
-                    default_user_dir = OUTPUT_FOLDER_NAME
-                    default_user_dir.mkdir(parents=True, exist_ok=True)
-                Uti.show_info_message("IRDrone", f"Choose the mission folder.", "")
-                folderMissionPath, coherent_answer = Uti.choose_mission_folder_phase_2(self, verbose=True, default_user_dir=default_user_dir)
-                if not coherent_answer: return
-                if folderMissionPath:
-                    self.folderMissionPath = folderMissionPath
-                    self._load_mission_json()
-                    if not self.mission_parameters:
-                        raise RuntimeError("Mission parameters not loaded")
+            if not self.ensure_mission_parameters():
+                return
+            folderMissionPath = Path(Progress.mission_folder(self.mission_parameters, self.folderMissionPath))
             self.pathImageTakeoff = Uti.safe_path(Path(self.mission_parameters["path mission image take-off"]).parent)
             self.original_pathImageTakeoff = Uti.safe_path(Path(self.mission_parameters["original File path take-off"]))
 
@@ -347,7 +383,7 @@ class Main_Window(QMainWindow):
                                             path_image_takeoff=self.pathImageTakeoff,
                                             original_path_image_takeoff=self.original_pathImageTakeoff)
 
-        dialog_VIS.exec()
+        vis_loaded = dialog_VIS.exec() == QDialog.DialogCode.Accepted
         dialog_VIS.reset_flags()
         # ---------------- Loads the 5 reference “NIR” images --------------------------------------------
         dialog_NIR = LoadVisNirImagesDialog(width,
@@ -356,8 +392,10 @@ class Main_Window(QMainWindow):
                                             suffix="dng",
                                             folderMission=folderMissionPath,
                                             path_image_takeoff=self.pathImageTakeoff)
-        dialog_NIR.exec()
+        nir_loaded = dialog_NIR.exec() == QDialog.DialogCode.Accepted
         dialog_NIR.reset_flags()
+        if vis_loaded and nir_loaded:
+            Progress.mark_step_done(folderMissionPath, 2)
 
 
 
@@ -514,35 +552,30 @@ class Main_Window(QMainWindow):
 
     def ensure_mission_parameters(self) -> bool:
         """
-        Ensure that mission_parameters are available.
-        If not, ask the user to select an existing mission folder
-        and load mission_parameters from disk.
+        Ensure that mission_parameters are available: if no mission is loaded,
+        ask for an existing mission folder and load it.
 
         Returns
         -------
         bool
             True if mission_parameters are available, False otherwise.
         """
-        try:
-            if self.mission_parameters is not None:
-                folderMissionPath = self.mission_parameters.get("File path mission")
-                return True
+        if self.mission_parameters is not None:
+            return True
+        QMessageBox.information(self, "IRDrone", "Choose the mission folder\n"
+                                                 "(format FLY-YYYYMMDD-hhmm-location).")
+        return self.choose_and_load_mission()
 
-            # Ask user to select a mission folder
+    def choose_and_load_mission(self) -> bool:
+        """Ask for an existing mission folder and make it the current mission."""
+        folder, ok = Uti.choose_mission_folder_phase_2(self, default_user_dir=str(config.OUTPUT_FOLDER_NAME))
+        if not ok or not folder:
+            return False
+        return self.load_mission(Path(folder))
 
-            QMessageBox.information(self, "Post Process. Géoréférencement",
-                                    "Sélectionnez le dossier de la mission \n"
-                                    "Format  FLY-YYYYMMDD-HHMM")
-
-            default_user_dir = OUTPUT_FOLDER_NAME
-            folderMissionPath, ok = Uti.choose_mission_folder_phase_2(self, default_user_dir=str(default_user_dir))
-
-            if not ok:
-                return False
-            folderMissionPath = Path(folderMissionPath)
-        except Exception as e:
-            print(f'DEBUG  in ensure_mission_parameters  {e}  ')
-
+    def load_mission(self, folderMissionPath: Path) -> bool:
+        """Load FlightAnalytics/mission_parameters.json of folderMissionPath and
+        make it the current mission (bottom bar and step buttons updated)."""
         try:
             mission_json = Uti.safe_path(folderMissionPath / "FlightAnalytics" / "mission_parameters.json")
             if not mission_json.exists():
@@ -553,7 +586,8 @@ class Main_Window(QMainWindow):
 
             # Inject mission path explicitly
             self.mission_parameters["folderMissionPath"] = folderMissionPath
-
+            self.folderMissionPath = folderMissionPath
+            self._show_current_mission()
             return True
 
         except Exception as e:
@@ -564,10 +598,48 @@ class Main_Window(QMainWindow):
             )
             return False
 
+    def _open_step_window(self):
+        """Name of a Step 3-6 window still open (it works on the current mission), else None."""
+        for attr, name in (("dialog_synchro_aruco", "Step 3"),
+                           ("dialog_image_processing", "Step 4"),
+                           ("dialog_GeoRef", "Step 5"),
+                           ("dialog_archive", "Step 6")):
+            dialog = getattr(self, attr, None)
+            try:
+                if dialog is not None and dialog.isVisible():
+                    return name
+            except RuntimeError:
+                pass  # window already destroyed
+        return None
+
+    def on_open_mission(self):
+        """'Open mission...' button: switch to another existing mission."""
+        busy = self._open_step_window()
+        if busy:
+            QMessageBox.warning(self, "IRDrone", f"Close the {busy} window before opening another mission.")
+            return
+        if self.choose_and_load_mission():
+            print(f"Mission opened: {self.folderMissionPath}")
+
+
+def warn_missing_tools(parent=None):
+    """Tell the user which external tools (ExifTool, RawTherapee, SJCam converter)
+    were not found. The wizard still opens: only the steps using them will fail."""
+    message = missing_tools_message()
+    if message:
+        QMessageBox.warning(
+            parent, "External tools not found",
+            "Some external tools were not found:\n\n" + message +
+            "\n\nThe wizard will open, but the steps that need them will fail.")
+    return message
+
 
 def main():
     """Main function to run the interactive application.."""
     app = _app
+    # Close the splash first: it stays on top and would hide the first-launch dialog.
+    _splash.close()
+    ensure_working_dir_at_startup()
     main_window = Main_Window()
     # Check if main_window is modal or not
     if main_window.isModal():
@@ -576,11 +648,11 @@ def main():
     else:
         # print("TEST   main_window is not a modal window.")
         pass
-    # The splash must be closed first: center_on_screen uses the active window to choose the screen
-    _splash.close()
+    # The splash is closed above: center_on_screen uses the active window to choose the screen
     screen = Prefrence_Screen()
     Uti.center_on_screen(main_window, screen_Id=screen.defaultScreenID, screen_adjust=screen.screenAdjust, window_display_size=screen.windowDisplaySize)
     main_window.show()
+    warn_missing_tools(main_window)
     sys.exit(app.exec())
 
 

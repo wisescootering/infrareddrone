@@ -1,0 +1,77 @@
+\BOOKMARK [0][-]{chapter.1}{Le projet IRDrone}{}% 1
+\BOOKMARK [1][-]{section.1.1}{Observer le couvert v\351g\351tal.}{chapter.1}% 2
+\BOOKMARK [2][-]{subsection.1.1.1}{Contexte g\351n\351ral.}{section.1.1}% 3
+\BOOKMARK [2][-]{subsection.1.1.2}{Int\351r\352t des images multispectrales.}{section.1.1}% 4
+\BOOKMARK [2][-]{subsection.1.1.3}{Que cherchons-nous \340 observer ?}{section.1.1}% 5
+\BOOKMARK [2][-]{subsection.1.1.4}{Principe de l'observation.}{section.1.1}% 6
+\BOOKMARK [2][-]{subsection.1.1.5}{Le mat\351riel pour l'observation.}{section.1.1}% 7
+\BOOKMARK [1][-]{section.1.2}{Organisation d'une mission IRDrone}{chapter.1}% 8
+\BOOKMARK [2][-]{subsection.1.2.1}{Pr\351paration au bureau}{section.1.2}% 9
+\BOOKMARK [2][-]{subsection.1.2.2}{Pr\351paratifs du vol sur le terrain}{section.1.2}% 10
+\BOOKMARK [2][-]{subsection.1.2.3}{Le vol de la mission}{section.1.2}% 11
+\BOOKMARK [2][-]{subsection.1.2.4}{Exploitation des images}{section.1.2}% 12
+\BOOKMARK [1][-]{section.1.3}{Objectif du logiciel IRDrone}{chapter.1}% 13
+\BOOKMARK [1][-]{section.1.4}{Fonctionnalit\351s principales du logiciel IRDrone}{chapter.1}% 14
+\BOOKMARK [1][-]{section.1.5}{Organisation num\351rique d'une mission IRDrone}{chapter.1}% 15
+\BOOKMARK [1][-]{section.1.6}{Encha\356nement des \351tapes}{chapter.1}% 16
+\BOOKMARK [0][-]{chapter.2}{Step 1 \205 D\351finir la mission}{}% 17
+\BOOKMARK [1][-]{section.2.1}{Principe}{chapter.2}% 18
+\BOOKMARK [1][-]{section.2.2}{Bouton Load take-off image}{chapter.2}% 19
+\BOOKMARK [1][-]{section.2.3}{Boutons previous step et next step}{chapter.2}% 20
+\BOOKMARK [1][-]{section.2.4}{La fen\352tre \253 Create a mission \273}{chapter.2}% 21
+\BOOKMARK [1][-]{section.2.5}{Bouton Validate create mission.}{chapter.2}% 22
+\BOOKMARK [2][-]{subsection.2.5.1}{Dossiers cr\351\351s}{section.2.5}% 23
+\BOOKMARK [2][-]{subsection.2.5.2}{En cas de probl\350me}{section.2.5}% 24
+\BOOKMARK [0][-]{chapter.3}{Step 2 \205 S\351lectionner les images de r\351f\351rence}{}% 25
+\BOOKMARK [1][-]{section.3.1}{Principe}{chapter.3}% 26
+\BOOKMARK [1][-]{section.3.2}{Bouton Load first mission image.}{chapter.3}% 27
+\BOOKMARK [1][-]{section.3.3}{Boutons Load first sync image., Load last sync image.}{chapter.3}% 28
+\BOOKMARK [1][-]{section.3.4}{Boutons Load first fly image., Load last fly image.}{chapter.3}% 29
+\BOOKMARK [1][-]{section.3.5}{Bouton Validate mission images}{chapter.3}% 30
+\BOOKMARK [0][-]{chapter.4}{Step 3 \205 Synchronisation des cam\351ras}{}% 31
+\BOOKMARK [1][-]{section.4.1}{Principe}{chapter.4}% 32
+\BOOKMARK [2][-]{subsection.4.1.1}{Les trois phases de l'\351tape 3}{section.4.1}% 33
+\BOOKMARK [2][-]{subsection.4.1.2}{Principe du calcul}{section.4.1}% 34
+\BOOKMARK [2][-]{subsection.4.1.3}{Exemples de synchronisation}{section.4.1}% 35
+\BOOKMARK [1][-]{section.4.2}{Bouton Run ArUco detection \(VIS + NIR\)}{chapter.4}% 36
+\BOOKMARK [1][-]{section.4.3}{Bouton Compute time alignment}{chapter.4}% 37
+\BOOKMARK [1][-]{section.4.4}{Bouton Pair VIS / NIR images}{chapter.4}% 38
+\BOOKMARK [1][-]{section.4.5}{Bouton Close}{chapter.4}% 39
+\BOOKMARK [0][-]{chapter.5}{Step 4 \205 Traitement des images}{}% 40
+\BOOKMARK [1][-]{section.5.1}{Principe}{chapter.5}% 41
+\BOOKMARK [1][-]{section.5.2}{Dialogue de l'\351tape 4}{chapter.5}% 42
+\BOOKMARK [1][-]{section.5.3}{Options de sortie}{chapter.5}% 43
+\BOOKMARK [2][-]{subsection.5.3.1}{Case first VIS image number et last VIS image number}{section.5.3}% 44
+\BOOKMARK [2][-]{subsection.5.3.2}{Case NDVI, case NIR}{section.5.3}% 45
+\BOOKMARK [2][-]{subsection.5.3.3}{Cases Local alignment et Global alignment}{section.5.3}% 46
+\BOOKMARK [2][-]{subsection.5.3.4}{Case Maximum VIS/NIR time difference}{section.5.3}% 47
+\BOOKMARK [1][-]{section.5.4}{Bouton Run alignment}{chapter.5}% 48
+\BOOKMARK [1][-]{section.5.5}{Bouton Flag misaligned points}{chapter.5}% 49
+\BOOKMARK [2][-]{subsection.5.5.1}{Exemple de succ\350s d'alignement}{section.5.5}% 50
+\BOOKMARK [2][-]{subsection.5.5.2}{Exemple d'\351chec d'alignement}{section.5.5}% 51
+\BOOKMARK [1][-]{section.5.6}{Bouton Redo misaligned points}{chapter.5}% 52
+\BOOKMARK [1][-]{section.5.7}{Bouton Close}{chapter.5}% 53
+\BOOKMARK [0][-]{chapter.6}{Step 5 \205 Post-traitement}{}% 54
+\BOOKMARK [1][-]{section.6.1}{Principe}{chapter.6}% 55
+\BOOKMARK [1][-]{section.6.2}{Bouton Run Geo ref}{chapter.6}% 56
+\BOOKMARK [1][-]{section.6.3}{Bouton Run Mapping}{chapter.6}% 57
+\BOOKMARK [2][-]{subsection.6.3.1}{Choix des images}{section.6.3}% 58
+\BOOKMARK [2][-]{subsection.6.3.2}{Lancement du calcul}{section.6.3}% 59
+\BOOKMARK [2][-]{subsection.6.3.3}{Pr\351cautions}{section.6.3}% 60
+\BOOKMARK [1][-]{section.6.4}{Bouton DTM + contours}{chapter.6}% 61
+\BOOKMARK [2][-]{subsection.6.4.1}{Fichiers produits}{section.6.4}% 62
+\BOOKMARK [2][-]{subsection.6.4.2}{Ouverture dans QGIS}{section.6.4}% 63
+\BOOKMARK [1][-]{section.6.5}{Bouton Close}{chapter.6}% 64
+\BOOKMARK [0][-]{chapter.7}{Step 6 \205 Archivage de la mission}{}% 65
+\BOOKMARK [1][-]{section.7.1}{Ce qui est conserv\351}{chapter.7}% 66
+\BOOKMARK [1][-]{section.7.2}{Bouton Simulate \(dry run\)}{chapter.7}% 67
+\BOOKMARK [1][-]{section.7.3}{Bouton Archive and clean\203}{chapter.7}% 68
+\BOOKMARK [1][-]{section.7.4}{Bouton Close}{chapter.7}% 69
+\BOOKMARK [0][-]{appendix.A}{Alignement des images VIS et NIR \(Step 4\)}{}% 70
+\BOOKMARK [1][-]{section.A.1}{D\351termination des \253 Pitch \273 \040et \253 Yaw \273 \040th\351oriques.}{appendix.A}% 71
+\BOOKMARK [2][-]{subsection.A.1.1}{Description du positionnement des cam\351ras.}{section.A.1}% 72
+\BOOKMARK [2][-]{subsection.A.1.2}{Calcul du pitch th\351orique dans le cas synchronis\351.}{section.A.1}% 73
+\BOOKMARK [2][-]{subsection.A.1.3}{Estimation du pitch th\351orique dans le cas d\351synchronis\351.}{section.A.1}% 74
+\BOOKMARK [2][-]{subsection.A.1.4}{Analyse sur des donn\351es r\351elles.}{section.A.1}% 75
+\BOOKMARK [2][-]{subsection.A.1.5}{Conclusion.}{section.A.1}% 76
+\BOOKMARK [0][-]{appendix.B}{G\351or\351f\351rencement et orthorectification \(Step 5\)}{}% 77

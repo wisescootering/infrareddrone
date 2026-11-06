@@ -97,6 +97,7 @@ import matplotlib.pyplot as plt
 # ----------------------------------------------------
 import IRD_Interactive_utils as Uti
 import IRD_Interactive_help as Help
+from IRD_Interactive_progress import mark_step_done
 import IRD_Interactive_GeoRef as GeoRef
 from IRD_Interactive_contours import DEFAULT_GRID_STEP_M, generate_ortho_dtm
 from IRD_Interactive_utils import safe_path
@@ -110,9 +111,6 @@ from IRD_Interactive_ODM import (
     read_orthophoto_preview,
     run_odm,
 )
-from config import RAWTHERAPEEPATH, EXIFTOOLPATH
-assert Path(EXIFTOOLPATH).exists(), f"ExifTool not found at {EXIFTOOLPATH}, Use environment variable EXIFTOOLPATH to set the path."
-assert Path(RAWTHERAPEEPATH).exists(), f"RawTherapee not found at {RAWTHERAPEEPATH}, Use environment variable RAWTHERAPEEPATH to set the path."
 
 
 class ODMRunSignals(QObject):
@@ -750,6 +748,7 @@ class DialogGeoRef(QDialog):
         orthophoto = result["orthophoto"]
         completion_message = f"Orthophoto:\n{orthophoto['path']}"
         self._log(f"ODM completed successfully: {orthophoto['path']}")
+        mark_step_done(self.folderMissionPath, 5)  # Step 5 is done once the ODM mapping is
         self.progress_label.setText("ODM completed successfully.")
         self.image_preview_label.setText("Loading orthophoto preview...")
         self.image_preview_label.setPixmap(QPixmap())

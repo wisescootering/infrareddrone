@@ -5,7 +5,7 @@
 
 
 # General information
-* 🚀 Current version: 1.3
+* 🚀 Current version: 1.4
 * ⌨️ Authors : Balthazar Neveu , Alain Neveu
 * 🕹️ Testers: [Pépin Hugonnot](https://www.pepin-hugonnot.fr/vincent-hugonnot-florine-pepin-auvergne_fr.html) : Florine Pépin 
 
@@ -26,6 +26,29 @@
 # 🔋 Set up
 
 ------------
+
+## 🐧 Linux / macOS: `./setup.sh`
+Creates a `.venv` at the repository root with the packages of [requirements.txt](./requirements.txt).
+It uses [uv](https://docs.astral.sh/uv/) when installed (Python 3.12 by default, `IRDRONE_PYTHON_VERSION` to change it),
+otherwise `python3 -m venv` + pip (needs `python3-venv` and `python3-tk` on Debian / Ubuntu).
+Run it again to update the environment, or `./setup.sh --recreate` to start from scratch.
+It also checks for `exiftool`, `rawtherapee-cli` and `docker`, which are installed separately
+(`sudo apt install libimage-exiftool-perl rawtherapee`).
+
+## 🧙 Launch the IRDrone wizard (GUI)
+* Windows: double-click `irdrone_wizard.bat`
+* Linux / macOS: `./irdrone_wizard.sh`
+
+Both launchers use the first Python found among: the `IRDRONE_PYTHON` environment variable,
+a `.venv` folder at the repository root, the conda environment `py39_clean`
+(`~/miniforge3`, `~/miniconda3`, `~/anaconda3`; change the name with `IRDRONE_CONDA_ENV`),
+then the Python on the PATH. The wizard code lives in [irdrone_wizard](./irdrone_wizard).
+
+At the first launch the wizard asks for the working folder where missions are stored
+(default `C:/Air-Mission` on Windows, `~/Air-Mission` elsewhere). It is shown at the bottom of
+the main window, with a ⚙ button to change it, and saved in the user settings
+(`%APPDATA%\IRDrone\settings.json`, `~/.config/irdrone/settings.json` on Linux).
+The environment variable `IRDRONE_WORKING_DIR`, when set, takes priority.
 
 
 ------------
@@ -408,5 +431,22 @@ Refer to the calibration documents
 * Reduce computation by selecting less frames for processing: `--selection` option in `run.py` supports `best-synchro` & `best-mapping` & `all` ([#29](https://github.com/wisescootering/infrareddrone/issues/29))
 * Possibility to run alignment on pairs using file dialog ([#21](https://github.com/wisescootering/infrareddrone/issues/21))
 * Issues closed: [#14](https://github.com/wisescootering/infrareddrone/issues/14) [#18](https://github.com/wisescootering/infrareddrone/issues/18) [#22](https://github.com/wisescootering/infrareddrone/issues/22) [#26](https://github.com/wisescootering/infrareddrone/issues/26)
+
+
+## v1.4
+* November 2026
+* 🧙 **IRDrone wizard**: a step-by-step PyQt6 application ([irdrone_wizard](./irdrone_wizard)) covering the whole workflow,
+  from mission creation to georeferenced maps, with a user manual (help/irdrone_help.pdf)
+  * Step 1-2: mission creation (altitude, distance, heading), take-off image, VIS / NIR image loading
+  * Step 3: VIS / NIR time synchronization from the ArUco target, with a slider to adjust the time shift by hand
+  * Step 4: parallel alignment (worker count sized by CPU and RAM, gear settings dialog), redo of misaligned points from VIR / NDVI / NIR images
+  * Step 5: OpenDroneMap mapping, orthorectification of single images (DJI raw and multispectral), error map, DTM and contour lines (topographic map)
+  * Step 6: mission archive
+  * Launchers at the root: `irdrone_wizard.bat` (Windows) and `irdrone_wizard.sh` (Linux / macOS)
+* 4-channel multispectral TIF with an EXIF sidecar file
+* Linux support: `setup.sh` (uv or pip virtual environment), Docker context fallback for ODM, shell recovery scripts, case-insensitive image extensions
+* `run.py` and `run_after_preprocessing.py`: `--workers` option for parallel alignment, `--log-level`
+* Compatibility with recent libraries: OpenCV 4.7+ / 5.x ArUco API, SciPy 1.14+ (interp2d removed), scikit-image pyramids; GDAL is now optional
+* Fixes: black orthophoto preview after ODM (broken JPEG overviews on 16-bit data), angle interpolation across 360°, Windows tool paths, DJI RawTherapee profile
 
 

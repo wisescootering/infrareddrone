@@ -13,6 +13,7 @@ import cv2
 import matplotlib.pyplot as plt
 import time
 import json
+import re
 from json import JSONDecodeError
 from typing import List, Tuple, Optional, Sequence, Dict, Any, Union
 import copy
@@ -29,8 +30,15 @@ RESOURCE_ICON_DIR = (
 IMAGE_ARUCO_VIS_PATH = RESOURCE_ICON_DIR / "Image_ArUco_VIS.jpg"
 IMAGE_ARUCO_NIR_PATH = RESOURCE_ICON_DIR / "Image_ArUco_NIR.jpg"
 
-# Minimum display time of each ArUco check image during detection (ms)
-CHECK_IMAGE_HOLD_MS = 5000
+# Minimum display time of each ArUco check image during detection (ms).
+# Short enough for the mobile marker to visibly spin, long enough to keep
+# the GUI responsive when images arrive from several threads.
+CHECK_IMAGE_HOLD_MS = 200
+
+
+def _natural_key(name: str) -> list:
+    """Sort key comparing the numbers in a file name numerically (IMG_9 < IMG_10)."""
+    return [(0, int(t), "") if t.isdigit() else (1, 0, t.lower()) for t in re.split(r"(\d+)", name)]
 
 # ----------------------------------------------------
 #     bib Multi Thread
@@ -68,6 +76,7 @@ from PyQt6.QtWidgets import (
     QProgressBar,
     QLabel,
     QDoubleSpinBox,
+    QSlider,
 )
 
 
@@ -77,12 +86,16 @@ from PyQt6.QtWidgets import (
 import matplotlib
 matplotlib.use("Agg")  # backend non interactif. Fondamental ici avec PyQt
 import matplotlib.pyplot as plt
+# Explicit Qt canvas for the interactive adjustment dialog (pyplot stays on Agg).
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+from matplotlib.figure import Figure
 
 # ----------------------------------------------------
 #     bib IRD_Interactive
 # ----------------------------------------------------
 import IRD_Interactive_utils as Uti
 import IRD_Interactive_help as Help
+from IRD_Interactive_progress import mark_step_done
 from IRD_Interactive_utils import safe_path
 import IRD_Interactive_ArUco as Aru
 from IRD_Interactive_workers import ArucoWorker
@@ -90,9 +103,6 @@ from IRD_Interactive_workers import TimeShiftWorker
 from IRD_Interactive_workers import ImagePairingWorker
 from IRD_Interactive_color_style import Style
 from IRD_Interactive_styles import BUTTON_STYLE
-from config import RAWTHERAPEEPATH, EXIFTOOLPATH
-assert Path(EXIFTOOLPATH).exists(), f"ExifTool not found at {EXIFTOOLPATH}, Use environment variable EXIFTOOLPATH to set the path."
-assert Path(RAWTHERAPEEPATH).exists(), f"RawTherapee not found at {RAWTHERAPEEPATH}, Use environment variable RAWTHERAPEEPATH to set the path."
 
 
 class DialogSynchroAruco(QDialog):
@@ -157,11 +167,19 @@ class DialogSynchroAruco(QDialog):
 
         # Live display of the check images saved during ArUco detection
         self._pending_check_image = None
+        self._last_check_image_key = None
         self._check_image_timer = QTimer(self)
         self._check_image_timer.setSingleShot(True)
         self._check_image_timer.timeout.connect(self._show_pending_check_image)
 
         self.image_pairing_worker = None
+        self.image_pairing_done = False
+        self.time_shift = 0.0
+        self.computed_time_shift = 0.0
+        self.time_line_VIS = []
+        self.angles_VIS = []
+        self.time_line_NIR = []
+        self.angles_NIR = []
 
 
         self._log("Dialog initialized.")
@@ -197,6 +215,12 @@ class DialogSynchroAruco(QDialog):
         self.btn_compute_time_shift.setEnabled(False)
         btn_layout.addWidget(self.btn_compute_time_shift)
 
+        # Button 2b: manual adjustment of the time alignment
+        self.btn_adjust_time_shift = QPushButton("Adjust alignment...")
+        self.btn_adjust_time_shift.setFixedWidth(180)
+        self.btn_adjust_time_shift.setEnabled(False)
+        btn_layout.addWidget(self.btn_adjust_time_shift)
+
         # Button 3: Image pairing
         self.btn_image_pairing = QPushButton("Pair VIS / NIR images")
         self.btn_image_pairing.setFixedWidth(210)
@@ -209,6 +233,7 @@ class DialogSynchroAruco(QDialog):
         # Apply the common style to the three main buttons
         self.btn_run_aruco.setStyleSheet(BUTTON_STYLE)
         self.btn_compute_time_shift.setStyleSheet(BUTTON_STYLE)
+        self.btn_adjust_time_shift.setStyleSheet(BUTTON_STYLE)
         self.btn_image_pairing.setStyleSheet(BUTTON_STYLE)
 
         main_layout.addLayout(btn_layout)
@@ -273,6 +298,7 @@ class DialogSynchroAruco(QDialog):
         for widget, label, tip in (
             (self.btn_run_aruco, "btn:step3_aruco", "Detect the ArUco targets in the synchronisation images of both cameras."),
             (self.btn_compute_time_shift, "btn:step3_time_shift", "Compute the time offset between the VIS and NIR cameras."),
+            (self.btn_adjust_time_shift, "btn:step3_time_shift", "Move the NIR curve with a slider to correct the time offset by hand."),
             (self.btn_image_pairing, "btn:step3_pairing", "Pair each VIS image with the closest NIR images in time."),
             (self.btn_close, "btn:step3_close", "Close this window."),
         ):
@@ -292,6 +318,7 @@ class DialogSynchroAruco(QDialog):
         """
         self.btn_run_aruco.clicked.connect(self.on_run_aruco)
         self.btn_compute_time_shift.clicked.connect(self.on_compute_time_shift)
+        self.btn_adjust_time_shift.clicked.connect(self.on_adjust_time_shift)
         self.btn_image_pairing.clicked.connect(self.on_image_pairing)
         self.btn_close.clicked.connect(self.on_close)
 
@@ -430,9 +457,10 @@ class DialogSynchroAruco(QDialog):
 
     def _reset_check_image_display(self) -> None:
         """
-        Stop the hold timer and forget any pending check image.
+        Stop the hold timer and forget any pending or last shown check image.
         """
         self._pending_check_image = None
+        self._last_check_image_key = None
         timer = getattr(self, "_check_image_timer", None)
         if timer is not None:
             timer.stop()
@@ -469,9 +497,19 @@ class DialogSynchroAruco(QDialog):
         CHECK_IMAGE_HOLD_MS; during this time only the most recent image is
         remembered and shown when the delay expires.
 
+        Worker threads finish out of order: an image older (by file name, i.e.
+        capture order) than the one shown or pending is ignored, so that the
+        mobile marker is seen rotating forward instead of jittering.
+
         Args:
             image_path: Path of the check image just saved.
         """
+        key = _natural_key(Path(image_path).name)
+        newest = self._last_check_image_key
+        if self._pending_check_image is not None:
+            newest = _natural_key(Path(self._pending_check_image).name)
+        if newest is not None and key <= newest:
+            return
         self._pending_check_image = image_path
         if self._check_image_timer.isActive():
             return
@@ -486,6 +524,7 @@ class DialogSynchroAruco(QDialog):
         if image_path is None:
             return
         self._show_image_file(Path(image_path))
+        self._last_check_image_key = _natural_key(Path(image_path).name)
         self._check_image_timer.start(CHECK_IMAGE_HOLD_MS)
 
     def _on_aruco_error(self, error_msg: str) -> None:
@@ -619,66 +658,28 @@ class DialogSynchroAruco(QDialog):
         else:
             final_message = "Time shift successfully computed."
 
-            # ------------------------------------------------------------------
-            # 1) Save diagnostic plots (before / after alignment)
-            # ------------------------------------------------------------------
+            # 1) Save the diagnostic plots (before / after alignment)
+            # 2) and animate them in the GUI
             self.progress_bar.setValue(30)
-            output_dir = safe_path(Path(self.folderMissionPath) / "Synchro")
-
-            # Compute common x-limits (robust to empty timelines)
-            xlim = self.compute_x_limits(
-                time_line_VIS,
-                time_line_NIR,
-                time_shift=time_shift
+            self._save_and_show_alignment_plots(
+                time_shift, time_line_VIS, angles_VIS, time_line_NIR, angles_NIR
             )
-
-            # Before alignment
-            plot_before = self.save_timeshift_plot(
-                output_dir=output_dir,
-                time_line_VIS=time_line_VIS,
-                angles_VIS=angles_VIS,
-                time_line_NIR=time_line_NIR,
-                angles_NIR=angles_NIR,
-                time_shift=time_shift,
-                filename="check_time_before_alignment.png",
-                xlim=xlim,
-            )
-
-            # After alignment
-            time_NIR_shifted = [t + time_shift for t in time_line_NIR]
-
-            plot_after = self.save_timeshift_plot(
-                output_dir=output_dir,
-                time_line_VIS=time_line_VIS,
-                angles_VIS=angles_VIS,
-                time_line_NIR=time_NIR_shifted,
-                angles_NIR=angles_NIR,
-                time_shift=time_shift,
-                filename="check_time_alignment.png",
-                xlim=xlim,
-            )
-
-            # ------------------------------------------------------------------
-            # 2) Load and animate plots in the GUI
-            # ------------------------------------------------------------------
             self.progress_bar.setValue(50)
-            try:
-                self.animate_timeshift_plot(
-                    plot_before=plot_before,
-                    plot_after=plot_after
-                )
-            except Exception as e:
-                print(f"Error in animate_timeshift_plot: {e}")
 
         # ------------------------------------------------------------------
         # 3) Store internal synchronization state
         # ------------------------------------------------------------------
         self.progress_bar.setValue(70)
         self.time_shift = time_shift
+        self.computed_time_shift = time_shift
         self.time_line_VIS = time_line_VIS
         self.angles_VIS = angles_VIS
         self.time_line_NIR = time_line_NIR
         self.angles_NIR = angles_NIR
+        # The curves can be adjusted by hand whenever both cameras have samples.
+        self.btn_adjust_time_shift.setEnabled(
+            len(time_line_VIS) >= 1 and len(time_line_NIR) >= 2
+        )
 
         # ------------------------------------------------------------------
         # 4) Final UI update
@@ -686,6 +687,81 @@ class DialogSynchroAruco(QDialog):
         self.progress_bar.setValue(100)
         self.progress_label.setText(final_message)
         self.btn_image_pairing.setEnabled(True)
+
+    def _save_and_show_alignment_plots(
+            self,
+            time_shift: float,
+            time_line_VIS: List[float],
+            angles_VIS: List[float],
+            time_line_NIR: List[float],
+            angles_NIR: List[float],
+    ) -> None:
+        """Save check_time_before_alignment.png / check_time_alignment.png and animate them."""
+        self.stop_timeshift_animation()
+        output_dir = safe_path(Path(self.folderMissionPath) / "Synchro")
+
+        # Common x-limits (robust to empty timelines)
+        xlim = self.compute_x_limits(time_line_VIS, time_line_NIR, time_shift=time_shift)
+
+        plot_before = self.save_timeshift_plot(
+            output_dir=output_dir,
+            time_line_VIS=time_line_VIS,
+            angles_VIS=angles_VIS,
+            time_line_NIR=time_line_NIR,
+            angles_NIR=angles_NIR,
+            time_shift=time_shift,
+            filename="check_time_before_alignment.png",
+            xlim=xlim,
+        )
+        plot_after = self.save_timeshift_plot(
+            output_dir=output_dir,
+            time_line_VIS=time_line_VIS,
+            angles_VIS=angles_VIS,
+            time_line_NIR=[t + time_shift for t in time_line_NIR],
+            angles_NIR=angles_NIR,
+            time_shift=time_shift,
+            filename="check_time_alignment.png",
+            xlim=xlim,
+        )
+        try:
+            self.animate_timeshift_plot(plot_before=plot_before, plot_after=plot_after)
+        except Exception as e:
+            print(f"Error in animate_timeshift_plot: {e}")
+
+    def on_adjust_time_shift(self) -> None:
+        """Step 3.2b - Let the operator correct the time shift with a slider."""
+        dialog = TimeShiftAdjustDialog(
+            self.time_line_VIS,
+            self.angles_VIS,
+            self.time_line_NIR,
+            self.angles_NIR,
+            time_shift=self.time_shift,
+            computed_time_shift=self.computed_time_shift,
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        new_shift = dialog.value()
+        if abs(new_shift - self.time_shift) < 1e-9:
+            self._log("Time alignment unchanged.")
+            return
+        self._log(
+            f"Time shift adjusted by the operator: {self.time_shift:.3f} s -> {new_shift:.3f} s "
+            f"(computed: {self.computed_time_shift:.3f} s)"
+        )
+        self.time_shift = new_shift
+        self._save_and_show_alignment_plots(
+            new_shift, self.time_line_VIS, self.angles_VIS, self.time_line_NIR, self.angles_NIR
+        )
+        self.progress_label.setText(f"Time shift adjusted manually: {new_shift:.3f} s")
+        if self.image_pairing_done:
+            self._log("Run 'Pair VIS / NIR images' again to apply the new time shift.")
+            QMessageBox.information(
+                self,
+                "Time shift changed",
+                "The images were already paired with the previous time shift.\n"
+                "Run 'Pair VIS / NIR images' again to apply the new one.",
+            )
 
     # ------------------------------------------------------------------
     # Image pairing
@@ -748,6 +824,8 @@ class DialogSynchroAruco(QDialog):
             f"Image pairing completed "
             f"({len(pairing_result.get('shoot_points', []))} pairs)."
         )
+        self.image_pairing_done = True
+        mark_step_done(self.folderMissionPath, 3)
         self.timeshift_plot_label.setText("Image pairing completed.")
         self.progress_label.setText("Image pairing completed.")
         self.progress_bar.setValue(100)
@@ -1343,3 +1421,196 @@ class TimeShiftInputDialog(QDialog):
         """
         return float(self.spinbox.value())
 
+
+
+class TimeShiftAdjustDialog(QDialog):
+    """
+    Correct the VIS / NIR time shift by hand.
+
+    The VIS curve stays fixed; the NIR curve moves with the slider (NIR time
+    + time shift, the convention of the alignment plot and the image pairing).
+    The NIR curve at the computed shift stays visible as a dashed reference,
+    and the RMS angle gap between both curves is updated live.
+    """
+
+    SLIDER_UNITS_PER_SECOND = 1000  # 1 ms resolution
+
+    def __init__(
+        self,
+        time_line_VIS: Sequence[float],
+        angles_VIS: Sequence[float],
+        time_line_NIR: Sequence[float],
+        angles_NIR: Sequence[float],
+        time_shift: float,
+        computed_time_shift: Optional[float] = None,
+        parent=None,
+    ):
+        super().__init__(parent)
+        from matplotlib.backends.backend_qtagg import NavigationToolbar2QT
+
+        self.setWindowTitle("Adjust VIS / NIR time alignment")
+        self.setModal(True)
+        self.resize(1000, 720)
+
+        self.t_vis = np.asarray(time_line_VIS, dtype=float)
+        self.a_vis = np.asarray(angles_VIS, dtype=float)
+        self.t_nir = np.asarray(time_line_NIR, dtype=float)
+        self.a_nir = np.asarray(angles_NIR, dtype=float)
+        self.computed_time_shift = (
+            float(time_shift) if computed_time_shift is None or not np.isfinite(computed_time_shift)
+            else float(computed_time_shift)
+        )
+        self._updating = False
+
+        # Slider half-range: 20 % of the recorded span, at least 2 s.
+        spans = [np.ptp(t) for t in (self.t_vis, self.t_nir) if t.size > 1]
+        self.window_s = max(2.0, 0.2 * max(spans, default=0.0))
+
+        # ---------------- Plot ----------------
+        # Constrained layout keeps the title (updated on every move) inside the figure.
+        self.figure = Figure(figsize=(10, 6), layout="constrained")
+        self.canvas = FigureCanvasQTAgg(self.figure)
+        self.ax = self.figure.add_subplot(111)
+        # VIS drawn above NIR with larger markers so both stay visible when they overlap.
+        self.ax.plot(
+            self.t_vis, self.a_vis, label="VIS", color="g", lw=1.2, zorder=3,
+            marker="o", markersize=7, markeredgewidth=0.5, markeredgecolor="black",
+            markerfacecolor="none",
+        )
+        self.ax.plot(
+            self.t_nir + self.computed_time_shift, self.a_nir,
+            label=f"NIR at computed shift ({self.computed_time_shift:.3f} s)",
+            color="r", lw=1.0, ls="--", alpha=0.35,
+        )
+        (self.nir_line,) = self.ax.plot(
+            self.t_nir + time_shift, self.a_nir, label="NIR (adjusted)", color="r", lw=1.2,
+            marker="o", markersize=5, markeredgewidth=0.5, markeredgecolor="black",
+        )
+        all_times = np.concatenate([self.t_vis, self.t_nir + self.computed_time_shift])
+        if all_times.size:
+            padding = 0.05 * max(np.ptp(all_times), 1e-6) + self.window_s
+            self.ax.set_xlim(all_times.min() - padding, all_times.max() + padding)
+        self.ax.set_xlabel("Time (s)")
+        self.ax.set_ylabel("Angle (deg)")
+        self.ax.grid(True, alpha=0.3)
+        self.ax.legend(loc="best")
+
+        # ---------------- Controls ----------------
+        self.slider = QSlider(Qt.Orientation.Horizontal, self)
+        self.slider.setSingleStep(1)     # arrow keys: 1 ms
+        self.slider.setPageStep(100)     # page up / down: 0.1 s
+        self._center_slider(time_shift)
+
+        self.spinbox = QDoubleSpinBox(self)
+        self.spinbox.setDecimals(3)
+        self.spinbox.setRange(-600.0, 600.0)
+        self.spinbox.setSingleStep(0.01)
+        self.spinbox.setSuffix(" s")
+        self.spinbox.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.spinbox.setValue(time_shift)
+
+        self.info_label = QLabel(self)
+        self.info_label.setWordWrap(True)
+
+        btn_reset = QPushButton("Reset to computed", self)
+        btn_apply = QPushButton("Apply", self)
+        btn_cancel = QPushButton("Cancel", self)
+        for button in (btn_reset, btn_apply, btn_cancel):
+            button.setStyleSheet(BUTTON_STYLE)
+        btn_apply.setDefault(True)
+
+        self.slider.valueChanged.connect(self._on_slider)
+        self.spinbox.valueChanged.connect(self._on_spinbox)
+        btn_reset.clicked.connect(lambda: self.spinbox.setValue(self.computed_time_shift))
+        btn_apply.clicked.connect(self.accept)
+        btn_cancel.clicked.connect(self.reject)
+
+        # ---------------- Layout ----------------
+        help_label = QLabel(
+            "Drag the slider until the red NIR curve lies on the green VIS curve. "
+            "Arrow keys move by 1 ms, Page Up / Down by 0.1 s; type a value for a larger change. "
+            "Use the toolbar magnifier to zoom on a detail.",
+            self,
+        )
+        help_label.setWordWrap(True)
+
+        slider_row = QHBoxLayout()
+        slider_row.addWidget(QLabel("Time shift:", self))
+        slider_row.addWidget(self.slider, stretch=1)
+        slider_row.addWidget(self.spinbox)
+
+        button_row = QHBoxLayout()
+        button_row.addWidget(btn_reset)
+        button_row.addStretch()
+        button_row.addWidget(btn_apply)
+        button_row.addWidget(btn_cancel)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(help_label)
+        layout.addWidget(NavigationToolbar2QT(self.canvas, self))
+        layout.addWidget(self.canvas, stretch=1)
+        layout.addLayout(slider_row)
+        layout.addWidget(self.info_label)
+        layout.addLayout(button_row)
+
+        self._computed_rms, _ = Aru.angle_mismatch_rms(
+            self.t_vis, self.a_vis, self.t_nir, self.a_nir, self.computed_time_shift
+        )
+        self._update_plot(time_shift)
+
+    # ------------------------------------------------------------------
+    def _center_slider(self, time_shift: float) -> None:
+        """Center the slider range on ``time_shift`` (+/- window_s)."""
+        units = self.SLIDER_UNITS_PER_SECOND
+        center = int(round(time_shift * units))
+        half = int(round(self.window_s * units))
+        self.slider.blockSignals(True)
+        self.slider.setRange(center - half, center + half)
+        self.slider.setValue(center)
+        self.slider.blockSignals(False)
+
+    def _on_slider(self, position: int) -> None:
+        if self._updating:
+            return
+        self._updating = True
+        self.spinbox.setValue(position / self.SLIDER_UNITS_PER_SECOND)
+        self._updating = False
+        self._update_plot(self.value())
+
+    def _on_spinbox(self, value: float) -> None:
+        if self._updating:
+            return
+        position = int(round(value * self.SLIDER_UNITS_PER_SECOND))
+        if not self.slider.minimum() <= position <= self.slider.maximum():
+            self._center_slider(value)
+        else:
+            self._updating = True
+            self.slider.setValue(position)
+            self._updating = False
+        self._update_plot(value)
+
+    def _update_plot(self, time_shift: float) -> None:
+        self.nir_line.set_xdata(self.t_nir + time_shift)
+        self.ax.set_title(f"Time shift VIS / NIR = {time_shift:.3f} s")
+        self.canvas.draw_idle()
+
+        rms, count = Aru.angle_mismatch_rms(
+            self.t_vis, self.a_vis, self.t_nir, self.a_nir, time_shift
+        )
+        delta = time_shift - self.computed_time_shift
+        text = (
+            f"Time shift: <b>{time_shift:.3f} s</b> "
+            f"(computed {self.computed_time_shift:.3f} s, change {delta:+.3f} s). "
+        )
+        if rms is None:
+            text += "<span style='color:#b00'>The curves do not overlap.</span>"
+        else:
+            text += f"RMS angle gap: <b>{rms:.2f}°</b> on {count} VIS images"
+            if self._computed_rms is not None:
+                text += f" (computed shift: {self._computed_rms:.2f}°)"
+            text += "."
+        self.info_label.setText(text)
+
+    def value(self) -> float:
+        """Return the selected time shift (seconds)."""
+        return float(self.spinbox.value())

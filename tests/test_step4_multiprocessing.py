@@ -125,13 +125,10 @@ class Step4MultiprocessingTests(unittest.TestCase):
                 proxy.write_bytes(b"regenerated TIFF")
                 return type("Completed", (), {"returncode": 0})()
 
-            with (
-                patch(
-                    "irdrone.process.cv2.imread",
-                    side_effect=[None, valid_image],
-                ),
-                patch("irdrone.process.subprocess.run", side_effect=convert) as run,
-            ):
+            # Backslash continuations rather than "with (...)": that form needs Python 3.10.
+            with patch("irdrone.process.cv2.imread", side_effect=[None, valid_image]), \
+                    patch("irdrone.process.subprocess.run", side_effect=convert) as run, \
+                    patch("irdrone.process.cf.require_tool", return_value="rawtherapee-cli"):
                 image, output_path = image_process.load_dng(str(source))
 
             self.assertEqual(output_path, str(proxy))
