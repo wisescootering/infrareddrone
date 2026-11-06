@@ -12,6 +12,7 @@ import re
 import shlex
 import shutil
 import sys
+import time
 
 from PyQt6.QtCore import QProcess, QProcessEnvironment, QSettings, Qt
 from PyQt6.QtGui import QPixmap
@@ -51,7 +52,14 @@ VIS_FILENAME_PATTERN = re.compile(r"^VIS_(\d+)\.dng$", re.IGNORECASE)
 PROGRESS_LINE_PATTERN = re.compile(
     r"^STEP4_PROGRESS (\d+) (\d+)(?: (\S+))?(?: ([\d.]+) (-?[\d.]+))?$"
 )
-LOCAL_JPEG_PATTERN = re.compile(r"^VIR_(\d+)_local\.jpg$", re.IGNORECASE)
+# Aligned images written by automatic_registration: {trace}_{number}_{mode}.jpg
+# for the VIR / NIR / NDVI traces and the local / global alignment modes.
+ALIGNED_TRACES = ("VIR", "NDVI", "NIR")
+ALIGNMENT_MODES = ("local", "global")
+ALIGNED_JPEG_PATTERN = re.compile(
+    r"^(?:VIR|NDVI|NIR)_(\d+)_(?:local|global)\.jpg$", re.IGNORECASE
+)
+ALIGNED_JPEG_LABEL = "VIR / NDVI / NIR _XXXX_local or _global.jpg"
 FAILED_SUMMARY_FILENAME = "shoot_points_failed_summary.json"
 # Same as automatic_registration.REDO_SCRIPT_SUFFIX (not imported: heavy module).
 REDO_BATCH_SUFFIX = "_REDO.bat" if os.name == "nt" else "_REDO.sh"
@@ -155,29 +163,45 @@ class Step4SettingsDialog(QDialog):
         return self.log_level_combo.currentData()
 
 
-def select_local_jpegs(parent, folder: Path) -> list[str]:
-    """Ask for VIR_*_local.jpg files with the native file explorer."""
+def select_aligned_jpegs(parent, folder: Path) -> list[str]:
+    """Ask for aligned VIR / NDVI / NIR images with the native file explorer."""
     files, _ = QFileDialog.getOpenFileNames(
         parent,
         "Select misaligned images",
         str(folder),
-        "Local alignment (VIR_*_local.jpg)",
+        "Aligned images (VIR_*.jpg NDVI_*.jpg NIR_*.jpg);;All files (*)",
     )
     return files
 
 
-def image_numbers_from_local_jpegs(paths) -> tuple[set[int], list[str]]:
-    """Return the image numbers of VIR_XXXX_local.jpg files and the ignored names."""
+def image_numbers_from_aligned_jpegs(paths) -> tuple[set[int], list[str]]:
+    """Return the image numbers of aligned VIR / NDVI / NIR images and the ignored names."""
     numbers = set()
     ignored = []
     for path in paths:
         name = Path(path).name
-        match = LOCAL_JPEG_PATTERN.fullmatch(name)
+        match = ALIGNED_JPEG_PATTERN.fullmatch(name)
         if match is None:
             ignored.append(name)
         else:
             numbers.add(int(match.group(1)))
     return numbers, ignored
+
+
+def redo_check_image(output_folder: Path, vis_stem: str, written_after: float = 0.0):
+    """Aligned image to show after a redo: VIR first, local before global.
+
+    Only files written after ``written_after`` (redo start time) are considered,
+    so an image left by an earlier run with other options is never shown.
+    """
+    image_number = vis_stem.removeprefix("VIS_")
+    for trace in ALIGNED_TRACES:
+        for mode in ALIGNMENT_MODES:
+            path = output_folder / f"{trace}_{image_number}_{mode}.jpg"
+            # 1 s margin: some file systems store coarse modification times.
+            if path.is_file() and path.stat().st_mtime >= written_after - 1.0:
+                return path
+    return None
 
 
 def apply_failed_selection(inventory: dict, selected_numbers) -> dict:
@@ -504,6 +528,7 @@ class DialogImageProcessing(QDialog):
         self.redo_process.errorOccurred.connect(self._on_redo_error)
         self._redo_queue = []
         self._redo_current = None
+        self._redo_started_at = 0.0
         self._redo_validated = []
         self._redo_rejected = []
         self._redo_errors = []
@@ -705,21 +730,21 @@ class DialogImageProcessing(QDialog):
         QMessageBox.information(
             self,
             "Flag misaligned points",
-            "Select the images (VIR_XXXX_local.jpg) that you consider "
+            f"Select the images ({ALIGNED_JPEG_LABEL}) that you consider "
             "misaligned. The matching shoot points will be marked as failed.",
         )
-        selected_files = select_local_jpegs(self, output_folder)
+        selected_files = select_aligned_jpegs(self, output_folder)
         if not selected_files:
             return
 
-        numbers, ignored = image_numbers_from_local_jpegs(selected_files)
+        numbers, ignored = image_numbers_from_aligned_jpegs(selected_files)
         if ignored:
             self.log_text.append(
-                "Ignored files (not VIR_XXXX_local.jpg): " + ", ".join(ignored)
+                f"Ignored files (not {ALIGNED_JPEG_LABEL}): " + ", ".join(ignored)
             )
         if not numbers:
             QMessageBox.warning(
-                self, "No valid image", "No VIR_XXXX_local.jpg image was selected."
+                self, "No valid image", f"No {ALIGNED_JPEG_LABEL} image was selected."
             )
             return
 
@@ -782,7 +807,7 @@ class DialogImageProcessing(QDialog):
                 self,
                 "Misaligned points not flagged yet",
                 "No list of failed shoot points exists yet.\n\n"
-                "Examine the images of the ImgIRdrone folder (VIR_XXXX_local.jpg), "
+                f"Examine the images of the ImgIRdrone folder ({ALIGNED_JPEG_LABEL}), "
                 "use 'Flag misaligned points' to mark the misaligned ones, "
                 "then come back here.",
             )
@@ -847,6 +872,7 @@ class DialogImageProcessing(QDialog):
             return
         number, stem, arguments = self._redo_queue.pop(0)
         self._redo_current = (number, stem)
+        self._redo_started_at = time.time()
         full_arguments = [str(PROJECT_ROOT / "automatic_registration.py"), *arguments]
         self.redo_process.setProcessEnvironment(self._project_environment())
         self.redo_process.setWorkingDirectory(str(PROJECT_ROOT))
@@ -884,9 +910,11 @@ class DialogImageProcessing(QDialog):
             return
 
         output_folder = self.mission_folder / "ImgIRdrone"
-        vir_path = output_folder / f"VIR_{stem.removeprefix('VIS_')}_local.jpg"
-        if not vir_path.is_file():
-            self.log_text.append(f"Redo of {stem}: {vir_path.name} was not generated.")
+        vir_path = redo_check_image(output_folder, stem, self._redo_started_at)
+        if vir_path is None:
+            self.log_text.append(
+                f"Redo of {stem}: no aligned image ({ALIGNED_JPEG_LABEL}) was generated."
+            )
             self._redo_errors.append(stem)
             self._start_next_redo()
             return
