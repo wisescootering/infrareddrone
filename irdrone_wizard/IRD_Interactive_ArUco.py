@@ -738,6 +738,40 @@ def compute_time_shift_L2(
 
     return time_shift, omega, metrics
 
+
+def angle_mismatch_rms(
+    time_line_VIS: Sequence[float],
+    angles_VIS: Sequence[float],
+    time_line_NIR: Sequence[float],
+    angles_NIR: Sequence[float],
+    time_shift: float,
+) -> Tuple[Optional[float], int]:
+    """
+    RMS gap (degrees) between the VIS angles and the NIR curve shifted by ``time_shift``.
+
+    The NIR samples are moved to ``t + time_shift`` (same convention as the
+    alignment plot and the image pairing), linearly interpolated at the VIS
+    times, and compared only where both curves overlap.
+
+    Returns:
+        (rms, n): the RMS gap, or None when fewer than one VIS sample overlaps
+        the shifted NIR curve, and the number of VIS samples used.
+    """
+    t_vis = np.asarray(time_line_VIS, dtype=float)
+    th_vis = np.asarray(angles_VIS, dtype=float)
+    t_nir = np.asarray(time_line_NIR, dtype=float) + float(time_shift)
+    th_nir = np.asarray(angles_NIR, dtype=float)
+    if t_vis.size == 0 or t_nir.size < 2:
+        return None, 0
+    order = np.argsort(t_nir)
+    t_nir, th_nir = t_nir[order], th_nir[order]
+    inside = (t_vis >= t_nir[0]) & (t_vis <= t_nir[-1])
+    if not np.any(inside):
+        return None, 0
+    gap = th_vis[inside] - np.interp(t_vis[inside], t_nir, th_nir)
+    return float(np.sqrt(np.mean(gap ** 2))), int(np.count_nonzero(inside))
+
+
 def load_relative_time_line(folderMissionPath, spectral_band, log_message=None):
     """
     Load the relative timeline JSON file into self.dic_relative_time_line.
