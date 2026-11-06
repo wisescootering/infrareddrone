@@ -111,6 +111,16 @@ python automatic_registration.py --images VISIBLE.DNG INFRARED.RAW --outdir alig
 All the `run.py` options are described in *Details* below. `tests/cli_smoke.sh` checks these tools on the sample pair of `samples/`.
 
 
+## 🧪 Tests
+```bash
+uv pip install -r requirements-dev.txt   # pytest
+python -m pytest                         # unit tests (tests/), headless
+uvx ruff@0.17.1 check .                  # lint
+tests/cli_smoke.sh                       # command line tools on the sample pair (needs RawTherapee, ExifTool)
+```
+They also run on every pull request (Linux and Windows, Python 3.9 and 3.12), together with the Docker image.
+
+
 ------------
 ## 🐋 Docker
 
