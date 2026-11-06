@@ -1,4 +1,5 @@
 import argparse
+import logging
 import math
 from pathlib import Path
 import numpy as np
@@ -695,11 +696,20 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
+        "--log-level",
+        dest="log_level",
+        choices=("warning", "info", "debug"),
+        default="warning",
+        help="Console detail: warning (problems only), info (steps), debug (timings).",
+    )
+    parser.add_argument(
         "--progress",
         action="store_true",
         help="Emit machine-readable progress updates for the interactive UI.",
     )
     args = parser.parse_args()
+    logging.basicConfig(level=getattr(logging, args.log_level.upper()))
+    logging.getLogger().setLevel(getattr(logging, args.log_level.upper()))
     if args.workers < 0:
         parser.error("--workers must be 0 (automatic) or a positive integer.")
     worker_count_setting = (

@@ -697,8 +697,11 @@ def _process_raw_pairs_serial(
     return motion_model_list
 
 
-def _initialize_alignment_worker() -> None:
+def _initialize_alignment_worker(log_level: int = logging.WARNING) -> None:
     cv2.setNumThreads(1)
+    # Spawned workers (Windows) do not inherit the parent logging configuration.
+    logging.basicConfig(level=log_level)
+    logging.getLogger().setLevel(log_level)
 
 
 def _alignment_task_waves(tasks, worker_count):
@@ -841,6 +844,7 @@ def process_raw_pairs(
     with ProcessPoolExecutor(
         max_workers=worker_count,
         initializer=_initialize_alignment_worker,
+        initargs=(logging.getLogger().getEffectiveLevel(),),
     ) as executor:
         completed = 0
         for wave in _alignment_task_waves(tasks, worker_count):
