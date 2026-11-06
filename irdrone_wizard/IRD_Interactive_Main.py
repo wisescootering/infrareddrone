@@ -76,7 +76,7 @@ from IRD_Interactive_color_style import Style
 import config
 from config import missing_tools_message
 import IRD_Interactive_help as Help
-from IRD_Interactive_workdir import WorkingDirBar, ensure_working_dir_at_startup
+from IRD_Interactive_workdir import MissionLabel, WorkingDirBar, ensure_working_dir_at_startup
 
 
 class Main_Window(QMainWindow):
@@ -228,6 +228,10 @@ class Main_Window(QMainWindow):
         self.working_dir_bar = WorkingDirBar(self)
         self.working_dir_bar.changed.connect(self._on_working_dir_changed)
         bottom_layout.addWidget(self.working_dir_bar)
+        bottom_layout.addSpacing(30)
+        # Current mission (defined in Step 1, or chosen when opening another step)
+        self.mission_label = MissionLabel(self)
+        bottom_layout.addWidget(self.mission_label)
         bottom_layout.addStretch()
         bottom_layout.addWidget(self.btn_help)
         self.main_layout.addLayout(bottom_layout)
@@ -247,6 +251,10 @@ class Main_Window(QMainWindow):
         self.pref_screen.default_user_dir = folder
         self.def_user_dir = folder
         print(f"Working folder: {folder}")
+
+    def _show_current_mission(self):
+        """Refresh the mission shown at the bottom of the window."""
+        self.mission_label.set_mission(self.mission_parameters, self.folderMissionPath)
 
     # ===================================================================================
     #                   Button #1 click handlers
@@ -291,6 +299,7 @@ class Main_Window(QMainWindow):
         if validate:
             self.mission_parameters = mission_parameters
             self.folderMissionPath = self.mission_parameters['File path mission']
+            self._show_current_mission()
             self.dialog_create_file_structure.data_signal_from_dialog_create_file_structure_to_main_window.disconnect()  # Disconnect the signal
             self.dialog_create_file_structure.close()  # Close dialog_create_file_structure
             self.btn_load_images.setAutoDefault(True)
@@ -341,6 +350,7 @@ class Main_Window(QMainWindow):
                     self._load_mission_json()
                     if not self.mission_parameters:
                         raise RuntimeError("Mission parameters not loaded")
+                    self._show_current_mission()
             self.pathImageTakeoff = Uti.safe_path(Path(self.mission_parameters["path mission image take-off"]).parent)
             self.original_pathImageTakeoff = Uti.safe_path(Path(self.mission_parameters["original File path take-off"]))
 
@@ -561,6 +571,8 @@ class Main_Window(QMainWindow):
 
             # Inject mission path explicitly
             self.mission_parameters["folderMissionPath"] = folderMissionPath
+            self.folderMissionPath = folderMissionPath
+            self._show_current_mission()
 
             return True
 

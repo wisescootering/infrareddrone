@@ -178,3 +178,43 @@ class WorkingDirBar(QWidget):
             self.refresh()
             if config.OUTPUT_FOLDER_NAME != before:
                 self.changed.emit(config.OUTPUT_FOLDER_NAME)
+
+
+def mission_folder(mission_parameters, folder=None):
+    """Mission folder from the main window state: the folder chosen in this
+    session first (mission_parameters.json may hold a path from another computer)."""
+    if folder:
+        return Path(folder)
+    if not mission_parameters:
+        return None
+    for key in ("folderMissionPath", "File path mission"):
+        if mission_parameters.get(key):
+            return Path(mission_parameters[key])
+    return None
+
+
+class MissionLabel(QLabel):
+    """'Mission: FLY-YYYYMMDD-hhmm-location' (click opens the folder), or a grey
+    hint while no mission is defined (Step 1) or loaded (other steps)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.folder = None
+        self.linkActivated.connect(self._open_folder)
+        self.set_mission(None)
+
+    def set_mission(self, mission_parameters, folder=None):
+        self.folder = mission_folder(mission_parameters, folder)
+        if self.folder is None:
+            self.setText('<span style="color: gray;">No mission yet: define one in Step 1</span>')
+            self.setToolTip("")
+            return
+        self.setText(f'Mission: <a href="open"><b>{self.folder.name}</b></a>')
+        details = [f"{key}: {mission_parameters[key]}"
+                   for key in ("Location", "Date", "Time", "Pilot", "Description")
+                   if mission_parameters and mission_parameters.get(key)]
+        self.setToolTip("\n".join([str(self.folder)] + details + ["", "Click to open the folder"]))
+
+    def _open_folder(self, _link=None):
+        if self.folder is not None:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.folder)))
