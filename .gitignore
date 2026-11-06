@@ -16,3 +16,5 @@ help/*.out
 # Generated low-resolution manual images
 help/images_light/
 .vscode/
+# Generated GitHub Pages site (website/prepare.py + mkdocs)
+website/build/

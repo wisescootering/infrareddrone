@@ -1,0 +1,63 @@
+name: GitHub Pages
+
+# The site is built from readme.md, docs/, calibration/readme.md and illustrations/
+# by website/prepare.py. Pull requests only build it (strict: broken links fail),
+# master also deploys it to https://wisescootering.github.io/infrareddrone/
+on:
+  push:
+    branches: [master]
+    paths:
+      - "readme.md"
+      - "docs/**"
+      - "calibration/readme.md"
+      - "illustrations/**"
+      - "website/**"
+      - ".github/workflows/pages.yml"
+  pull_request:
+    paths:
+      - "readme.md"
+      - "docs/**"
+      - "calibration/readme.md"
+      - "illustrations/**"
+      - "website/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build site
+        run: |
+          python -m pip install -r website/requirements.txt
+          python website/prepare.py
+          mkdocs build --strict -f website/mkdocs.yml
+      - uses: actions/upload-pages-artifact@v3
+        if: github.ref == 'refs/heads/master'
+        with:
+          path: website/build/site
+
+  deploy:
+    if: github.ref == 'refs/heads/master'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
