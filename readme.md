@@ -27,6 +27,15 @@
 
 ------------
 
+## 🧙 Launch the IRDrone wizard (GUI)
+* Windows: double-click `irdrone_wizard.bat`
+* Linux / macOS: `./irdrone_wizard.sh`
+
+Both launchers use the first Python found among: the `IRDRONE_PYTHON` environment variable,
+a `.venv` folder at the repository root, the conda environment `py39_clean`
+(`~/miniforge3`, `~/miniconda3`, `~/anaconda3`; change the name with `IRDRONE_CONDA_ENV`),
+then the Python on the PATH. The wizard code lives in [irdrone_wizard](./irdrone_wizard).
+
 
 ------------
 ## 🐋 Docker 

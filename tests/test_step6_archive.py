@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "irdrone Interactive"))
+sys.path.insert(0, str(ROOT / "irdrone_wizard"))
 
 import IRD_Interactive_archive as arc
 

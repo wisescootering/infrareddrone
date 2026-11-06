@@ -13,7 +13,7 @@ import rasterio
 from rasterio.enums import Resampling
 from affine import Affine
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "irdrone Interactive"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "irdrone_wizard"))
 from IRD_Interactive_ODM import (
     _restore_output_ownership,
     resolve_docker_context,

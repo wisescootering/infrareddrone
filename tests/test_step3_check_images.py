@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "irdrone Interactive"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "irdrone_wizard"))
 
 import numpy as np
 import cv2

@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-INTERACTIVE = ROOT / "irdrone Interactive"
+INTERACTIVE = ROOT / "irdrone_wizard"
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(INTERACTIVE))
 

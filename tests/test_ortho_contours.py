@@ -7,7 +7,7 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "irdrone Interactive"))
+sys.path.insert(0, str(ROOT / "irdrone_wizard"))
 
 import rasterio
 from rasterio.transform import from_origin

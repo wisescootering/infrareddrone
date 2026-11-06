@@ -1,0 +1,4 @@
+# Windows batch files need CRLF (cmd.exe can miss goto labels with LF only);
+# shell scripts need LF to run on Linux / macOS. Enforced on every OS.
+*.bat text eol=crlf
+*.sh text eol=lf
