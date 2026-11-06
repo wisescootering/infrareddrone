@@ -146,8 +146,8 @@ class MainWindowStepsTest(unittest.TestCase):
         self.assertNotIn(CHECK, self.text(2))
 
 
-class OpenMissionButtonTest(unittest.TestCase):
-    """'Open mission...' at the bottom: switch to an existing mission directly."""
+class _MissionHelpers(unittest.TestCase):
+    """Main window + mission folders on disk."""
 
     @classmethod
     def setUpClass(cls):
@@ -166,6 +166,11 @@ class OpenMissionButtonTest(unittest.TestCase):
     def open(self, window, mission):
         with mock.patch.object(self.main.Uti, "choose_mission_folder_phase_2", return_value=(mission, True)):
             window.btn_open_mission.click()
+
+
+
+class OpenMissionButtonTest(_MissionHelpers):
+    """'Open mission...' at the bottom: switch to an existing mission directly."""
 
     def test_open_shows_the_mission_and_its_done_steps(self):
         window = self.main.Main_Window()
@@ -203,6 +208,39 @@ class OpenMissionButtonTest(unittest.TestCase):
             window.btn_open_mission.click()
         choose.assert_not_called()
         self.assertIn("Step 4", warning.call_args[0][2])
+
+
+class Step2UsesCurrentMissionTest(_MissionHelpers):
+    """Step 2 asks for the mission folder only when no mission is loaded."""
+
+    def click_step2(self, window, chooser):
+        with mock.patch.object(self.main.Uti, "choose_mission_folder_phase_2", chooser), \
+                mock.patch.object(self.main.QMessageBox, "information"), \
+                mock.patch.object(self.main, "LoadVisNirImagesDialog") as dialog:
+            dialog.return_value.exec.return_value = 0
+            window.btn_load_images.click()
+        return dialog
+
+    def test_asked_once_then_reused(self):
+        window = self.main.Main_Window()
+        mission = self.make_mission("FLY-A")
+        params = json.loads((mission / "FlightAnalytics" / "mission_parameters.json").read_text())
+        params.update({"path mission image take-off": str(mission / "VIS_0001.dng"),
+                       "original File path take-off": str(mission / "VIS_0001.dng")})
+        (mission / "FlightAnalytics" / "mission_parameters.json").write_text(json.dumps(params))
+        chooser = mock.MagicMock(return_value=(mission, True))
+        dialog = self.click_step2(window, chooser)
+        self.click_step2(window, chooser)
+        self.assertEqual(chooser.call_count, 1)
+        self.assertEqual(dialog.call_args.kwargs["folderMission"], mission)
+
+    def test_not_asked_after_open_mission(self):
+        window = self.main.Main_Window()
+        mission = self.make_mission("FLY-B")
+        self.open(window, mission)
+        chooser = mock.MagicMock()
+        self.click_step2(window, chooser)
+        chooser.assert_not_called()
 
 
 if __name__ == "__main__":

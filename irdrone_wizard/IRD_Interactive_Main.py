@@ -363,29 +363,12 @@ class Main_Window(QMainWindow):
         height = 500  # height of the window
 
         # ----------------------- Choice of mission file -------------------------------------------------
+        # The current mission (Step 1, "Open mission..." or another step) is used
+        # directly: the folder is only asked when no mission is loaded yet.
         try:
-            if self.folderMissionPath and self.dialog_create_file_structure:
-                folderMissionPath, coherent_answer = Uti.choose_folder_mission(self.mission_parameters,
-                                                                               self.pref_screen.default_user_dir,
-                                                                               self.dialog_create_file_structure.AerialPhotoFolder,
-                                                                               self.dialog_create_file_structure.SynchroFolder
-                                                                               )
-                if not coherent_answer: return
-            else:
-                if self.folderMissionPath:
-                    default_user_dir = Uti.safe_path(self.folderMissionPath)
-                else:
-                    default_user_dir = config.OUTPUT_FOLDER_NAME
-                    default_user_dir.mkdir(parents=True, exist_ok=True)
-                Uti.show_info_message("IRDrone", f"Choose the mission folder.", "")
-                folderMissionPath, coherent_answer = Uti.choose_mission_folder_phase_2(self, verbose=True, default_user_dir=default_user_dir)
-                if not coherent_answer: return
-                if folderMissionPath:
-                    self.folderMissionPath = folderMissionPath
-                    self._load_mission_json()
-                    if not self.mission_parameters:
-                        raise RuntimeError("Mission parameters not loaded")
-                    self._show_current_mission()
+            if not self.ensure_mission_parameters():
+                return
+            folderMissionPath = Path(Progress.mission_folder(self.mission_parameters, self.folderMissionPath))
             self.pathImageTakeoff = Uti.safe_path(Path(self.mission_parameters["path mission image take-off"]).parent)
             self.original_pathImageTakeoff = Uti.safe_path(Path(self.mission_parameters["original File path take-off"]))
 
