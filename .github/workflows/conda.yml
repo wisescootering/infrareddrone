@@ -48,6 +48,8 @@ jobs:
       - name: Check GDAL and run the tests
         run: |
           python -c "from osgeo import gdal; print('GDAL', gdal.__version__)"
+          python -c "from PyQt6 import QtCore, QtWidgets; print('PyQt6', QtCore.PYQT_VERSION_STR)"
+          python -m pip show PyQt6 | grep -E "^(Version|Location|Installer)" || true
           python -m pip install pytest
           python -m pytest -q
 

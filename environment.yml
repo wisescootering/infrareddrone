@@ -12,6 +12,9 @@ channels:
 dependencies:
   - python=3.12
   - gdal
+  # PyQt6 from conda-forge too: on Windows the pip wheel loads the environment's
+  # DLLs and fails ("DLL load failed while importing QtWidgets").
+  - pyqt6
   - pip
   - pip:
       - -r requirements.txt
