@@ -8,7 +8,6 @@ help/irdrone_help.pdf
 # LaTeX auxiliary files
 help/*.aux
 help/*.log
-help/*.out
 help/*.toc
 help/*.synctex.gz
 # Generated low-resolution manual images
