@@ -4,9 +4,11 @@ REM Un raccourci de ce fichier peut etre place sur le bureau.
 setlocal
 cd /d "%~dp0"
 
-set "PY=C:\Users\Alain\miniforge3\envs\py39_clean\python.exe"
-if not exist "%PY%" set "PY=python"
+call ..\bat_helpers\find_python.bat
+if errorlevel 1 goto end
+set "PY=%PYTHON%"
 
 "%PY%" make_images_light.py %*
 echo.
+:end
 pause
