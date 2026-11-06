@@ -1,15 +1,17 @@
 name: Build help PDF
 
+# Only runs on master (when the manual changes) or on demand
+# (Actions tab > "Build help PDF" > Run workflow, on any branch).
 on:
   push:
-    paths:
-      - "help/**"
-      - ".github/workflows/build-help-pdf.yml"
-  pull_request:
+    branches: [master]
     paths:
       - "help/**"
       - ".github/workflows/build-help-pdf.yml"
   workflow_dispatch:
+
+permissions:
+  contents: write  # needed to update the rolling "help-latest" release
 
 jobs:
   build:
@@ -24,9 +26,23 @@ jobs:
           root_file: irdrone_help.tex
           latexmk_use_lualatex: false
 
+      # Build artifact: shown at the bottom of the workflow run page.
       - name: Upload PDF
         uses: actions/upload-artifact@v4
         with:
           name: irdrone_help
           path: help/irdrone_help.pdf
           if-no-files-found: error
+
+      # Rolling release: stable link on the repo's "Releases" sidebar,
+      # only refreshed from master (manual runs on other branches skip it).
+      - name: Publish to "help-latest" release
+        if: github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view help-latest >/dev/null 2>&1 || \
+            gh release create help-latest --title "Help manual (latest)" \
+              --notes "Automatically rebuilt from master by the Build help PDF workflow." \
+              --target "$GITHUB_SHA"
+          gh release upload help-latest help/irdrone_help.pdf --clobber
