@@ -5,7 +5,7 @@
 
 
 # General information
-* 🚀 Current version: 1.3
+* 🚀 Current version: 1.4
 * ⌨️ Authors : Balthazar Neveu , Alain Neveu
 * 🕹️ Testers: [Pépin Hugonnot](https://www.pepin-hugonnot.fr/vincent-hugonnot-florine-pepin-auvergne_fr.html) : Florine Pépin 
 
@@ -425,5 +425,22 @@ Refer to the calibration documents
 * Reduce computation by selecting less frames for processing: `--selection` option in `run.py` supports `best-synchro` & `best-mapping` & `all` ([#29](https://github.com/wisescootering/infrareddrone/issues/29))
 * Possibility to run alignment on pairs using file dialog ([#21](https://github.com/wisescootering/infrareddrone/issues/21))
 * Issues closed: [#14](https://github.com/wisescootering/infrareddrone/issues/14) [#18](https://github.com/wisescootering/infrareddrone/issues/18) [#22](https://github.com/wisescootering/infrareddrone/issues/22) [#26](https://github.com/wisescootering/infrareddrone/issues/26)
+
+
+## v1.4
+* November 2026
+* 🧙 **IRDrone wizard**: a step-by-step PyQt6 application ([irdrone_wizard](./irdrone_wizard)) covering the whole workflow,
+  from mission creation to georeferenced maps, with a user manual (help/irdrone_help.pdf)
+  * Step 1-2: mission creation (altitude, distance, heading), take-off image, VIS / NIR image loading
+  * Step 3: VIS / NIR time synchronization from the ArUco target, with a slider to adjust the time shift by hand
+  * Step 4: parallel alignment (worker count sized by CPU and RAM, gear settings dialog), redo of misaligned points from VIR / NDVI / NIR images
+  * Step 5: OpenDroneMap mapping, orthorectification of single images (DJI raw and multispectral), error map, DTM and contour lines (topographic map)
+  * Step 6: mission archive
+  * Launchers at the root: `irdrone_wizard.bat` (Windows) and `irdrone_wizard.sh` (Linux / macOS)
+* 4-channel multispectral TIF with an EXIF sidecar file
+* Linux support: `setup.sh` (uv or pip virtual environment), Docker context fallback for ODM, shell recovery scripts, case-insensitive image extensions
+* `run.py` and `run_after_preprocessing.py`: `--workers` option for parallel alignment, `--log-level`
+* Compatibility with recent libraries: OpenCV 4.7+ / 5.x ArUco API, SciPy 1.14+ (interp2d removed), scikit-image pyramids; GDAL is now optional
+* Fixes: black orthophoto preview after ODM (broken JPEG overviews on 16-bit data), angle interpolation across 360°, Windows tool paths, DJI RawTherapee profile
 
 

@@ -1,6 +1,6 @@
 from pathlib import Path
 import os
-__version__ = 1.30
+from version import __version__  # single source of truth: version.py
 
 #  Expert User Settings ! -------------------------------------------------------------------------------------
 NIR_CAMERA = "M20_RAW"  # Format of the original near infrared image
