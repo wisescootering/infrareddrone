@@ -36,14 +36,88 @@ NIR_FILTER_MODEL = 830              # cut wavelength ( in nanometers nm) of the 
 COPYRIGHT = "Copyright"
 ARTIST = "Artist"
 
-# Default folders
-# Override with environment variable IRDRONE_WORKING_DIR.
-# Default: C://Air-Mission on Windows, ~/Air-Mission elsewhere (created if missing).
-if "IRDRONE_WORKING_DIR" in os.environ:
-    OUTPUT_FOLDER_NAME = Path(os.environ["IRDRONE_WORKING_DIR"])
-else:
-    OUTPUT_FOLDER_NAME = Path(r"C://Air-Mission") if os.name == 'nt' else Path.home() / "Air-Mission"
-    OUTPUT_FOLDER_NAME.mkdir(parents=True, exist_ok=True)
+# ------------------------------------------------------
+# Working folder (where the missions are stored)
+# ------------------------------------------------------
+# Chosen in this order:
+#   1. environment variable IRDRONE_WORKING_DIR (wins at every launch)
+#   2. the folder saved in the user settings file (chosen in the wizard)
+#   3. the default: C:/Air-Mission on Windows, ~/Air-Mission elsewhere
+# The folder is not created here: set_working_dir() / ensure_working_dir() do it.
+import json  # noqa: E402
+
+DEFAULT_WORKING_DIR = Path(r"C:/Air-Mission") if os.name == "nt" else Path.home() / "Air-Mission"
+
+
+def _settings_file():
+    """Per-user settings file, override with IRDRONE_SETTINGS_FILE."""
+    if os.environ.get("IRDRONE_SETTINGS_FILE"):
+        return Path(os.environ["IRDRONE_SETTINGS_FILE"])
+    if os.name == "nt":
+        base = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming") / "IRDrone"
+    elif platform.system() == "Darwin":
+        base = Path.home() / "Library" / "Application Support" / "IRDrone"
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "irdrone"
+    return base / "settings.json"
+
+
+SETTINGS_FILE = _settings_file()
+
+
+def load_user_settings():
+    """Saved user settings (empty dict when missing or unreadable)."""
+    try:
+        with open(SETTINGS_FILE, encoding="utf-8") as file:
+            settings = json.load(file)
+        return settings if isinstance(settings, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_user_settings(**changes):
+    """Merge changes into the user settings file."""
+    settings = load_user_settings()
+    settings.update(changes)
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as file:
+        json.dump(settings, file, indent=2)
+
+
+def _resolve_working_dir():
+    """(folder, source) with source "environment", "saved" or "default"."""
+    if os.environ.get("IRDRONE_WORKING_DIR"):
+        return Path(os.environ["IRDRONE_WORKING_DIR"]), "environment"
+    saved = load_user_settings().get("working_dir")
+    if saved:
+        return Path(saved), "saved"
+    return DEFAULT_WORKING_DIR, "default"
+
+
+OUTPUT_FOLDER_NAME, WORKING_DIR_SOURCE = _resolve_working_dir()
+
+
+def set_working_dir(folder, remember=True):
+    """Use folder as the working folder (created if missing) and save it.
+    Modules must read config.OUTPUT_FOLDER_NAME when they need it, not copy it
+    at import, to see the change."""
+    global OUTPUT_FOLDER_NAME, WORKING_DIR_SOURCE
+    folder = Path(folder).expanduser().resolve()
+    folder.mkdir(parents=True, exist_ok=True)
+    OUTPUT_FOLDER_NAME = folder
+    if remember:
+        save_user_settings(working_dir=str(folder))
+        WORKING_DIR_SOURCE = "saved"
+    return folder
+
+
+def ensure_working_dir():
+    """Create the current working folder if needed; False if that fails."""
+    try:
+        OUTPUT_FOLDER_NAME.mkdir(parents=True, exist_ok=True)
+        return True
+    except OSError:
+        return False
 
 
 # ------------------------------------------------------

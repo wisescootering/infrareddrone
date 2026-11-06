@@ -34,8 +34,7 @@ from IRD_Interactive_utils import Prefrence_Screen
 import IRD_Interactive_workers as Worker
 from IRD_Interactive_color_style import Style
 from IRD_Interactive_styles import BUTTON_STYLE
-from config import OUTPUT_FOLDER_NAME
-assert OUTPUT_FOLDER_NAME.exists(), f"Output folder does not exist: {OUTPUT_FOLDER_NAME} Use export IRDRONE_WORKING_DIR=your_path_to_folder to set it."
+import config
 
 # Geocoding results (keys of Geo.extract_geoTag) saved in mission_parameters.json.
 # "Location" (the town) is already a mission parameter, so it is not repeated here.
@@ -1820,8 +1819,8 @@ class Window_Load_TakeOff_Image(QDialog):
         self.name_image_takeoff: str = None
         self.suffix_image_takeoff: str = None
 
-        self.default_user_dir = OUTPUT_FOLDER_NAME
-        assert self.default_user_dir.exists(), f"User directory does not exist: {self.default_user_dir}"
+        self.default_user_dir = config.OUTPUT_FOLDER_NAME
+        self.default_user_dir.mkdir(parents=True, exist_ok=True)
         # self.default_user_dir.mkdir(parents=True, exist_ok=True)
 
         self.prefScreen = Uti.Prefrence_Screen()  # Initializing screen preferences

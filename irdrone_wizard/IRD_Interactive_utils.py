@@ -32,7 +32,6 @@ import matplotlib.pyplot as plt
 import copy
 
 from IRD_Interactive_color_style import Style
-from config import OUTPUT_FOLDER_NAME
 
 
 # -------------------- Exif Library -------------------------------
@@ -1289,7 +1288,7 @@ def choose_folder_mission(
 
 def choose_mission_folder_phase_2(
     parent: Optional[QWidget] = None,
-    default_user_dir: Union[str, Path] = OUTPUT_FOLDER_NAME,
+    default_user_dir: Union[str, Path, None] = None,
     verbose: bool = False
 ):
     """
@@ -1301,6 +1300,8 @@ def choose_mission_folder_phase_2(
         - Path to the selected folder (or None if cancelled)
         - coherence flag
     """
+    if default_user_dir is None:
+        default_user_dir = cf.OUTPUT_FOLDER_NAME
 
     try:
 

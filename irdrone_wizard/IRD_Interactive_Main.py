@@ -73,11 +73,10 @@ from IRD_Interactive_GeoRef import georef_main
 import IRD_Interactive_utils as Uti
 from IRD_Interactive_utils import Prefrence_Screen
 from IRD_Interactive_color_style import Style
-from config import OUTPUT_FOLDER_NAME, missing_tools_message
+import config
+from config import missing_tools_message
 import IRD_Interactive_help as Help
-assert (
-    OUTPUT_FOLDER_NAME.exists()
-), f"Output folder does not exist: {OUTPUT_FOLDER_NAME} Use export IRDRONE_WORKING_DIR=your_path_to_folder to set it."
+from IRD_Interactive_workdir import WorkingDirBar, ensure_working_dir_at_startup
 
 
 class Main_Window(QMainWindow):
@@ -224,8 +223,11 @@ class Main_Window(QMainWindow):
 
         self.main_layout.addWidget(self.image_label)
 
-        # Help button, bottom right
+        # Bottom bar: working folder + gear (left), help button (right)
         bottom_layout = QHBoxLayout()
+        self.working_dir_bar = WorkingDirBar(self)
+        self.working_dir_bar.changed.connect(self._on_working_dir_changed)
+        bottom_layout.addWidget(self.working_dir_bar)
         bottom_layout.addStretch()
         bottom_layout.addWidget(self.btn_help)
         self.main_layout.addLayout(bottom_layout)
@@ -239,6 +241,12 @@ class Main_Window(QMainWindow):
             (self.btn_archive, "ch:step6", "Archive the mission (cleans the mission folder)."),
         ):
             Help.attach_help(widget, label, tip, parent=self)
+
+    def _on_working_dir_changed(self, folder):
+        """New working folder chosen with the gear button."""
+        self.pref_screen.default_user_dir = folder
+        self.def_user_dir = folder
+        print(f"Working folder: {folder}")
 
     # ===================================================================================
     #                   Button #1 click handlers
@@ -323,7 +331,7 @@ class Main_Window(QMainWindow):
                 if self.folderMissionPath:
                     default_user_dir = Uti.safe_path(self.folderMissionPath)
                 else:
-                    default_user_dir = OUTPUT_FOLDER_NAME
+                    default_user_dir = config.OUTPUT_FOLDER_NAME
                     default_user_dir.mkdir(parents=True, exist_ok=True)
                 Uti.show_info_message("IRDrone", f"Choose the mission folder.", "")
                 folderMissionPath, coherent_answer = Uti.choose_mission_folder_phase_2(self, verbose=True, default_user_dir=default_user_dir)
@@ -534,7 +542,7 @@ class Main_Window(QMainWindow):
                                     "Sélectionnez le dossier de la mission \n"
                                     "Format  FLY-YYYYMMDD-HHMM")
 
-            default_user_dir = OUTPUT_FOLDER_NAME
+            default_user_dir = config.OUTPUT_FOLDER_NAME
             folderMissionPath, ok = Uti.choose_mission_folder_phase_2(self, default_user_dir=str(default_user_dir))
 
             if not ok:
@@ -580,6 +588,9 @@ def warn_missing_tools(parent=None):
 def main():
     """Main function to run the interactive application.."""
     app = _app
+    # Close the splash first: it stays on top and would hide the first-launch dialog.
+    _splash.close()
+    ensure_working_dir_at_startup()
     main_window = Main_Window()
     # Check if main_window is modal or not
     if main_window.isModal():
@@ -588,8 +599,7 @@ def main():
     else:
         # print("TEST   main_window is not a modal window.")
         pass
-    # The splash must be closed first: center_on_screen uses the active window to choose the screen
-    _splash.close()
+    # The splash is closed above: center_on_screen uses the active window to choose the screen
     screen = Prefrence_Screen()
     Uti.center_on_screen(main_window, screen_Id=screen.defaultScreenID, screen_adjust=screen.screenAdjust, window_display_size=screen.windowDisplaySize)
     main_window.show()

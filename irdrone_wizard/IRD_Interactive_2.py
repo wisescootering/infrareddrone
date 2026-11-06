@@ -38,7 +38,7 @@ import IRD_Interactive_help as Help
 from IRD_Interactive_utils import center_on_screen
 from IRD_Interactive_color_style import Style
 from IRD_Interactive_styles import BUTTON_STYLE
-from config import OUTPUT_FOLDER_NAME
+import config
 
 """
       This code allows you to choose the reference images for a mission and then distribute the different images in the
@@ -1390,11 +1390,11 @@ class LoadVisNirImagesDialog(QDialog):
             We can then make the “load all images” button visible.
         """
         cls.flags = [False] * cls.num_images
-        cls.currentUserDir = OUTPUT_FOLDER_NAME
+        cls.currentUserDir = config.OUTPUT_FOLDER_NAME
 
     @classmethod
     def reset_flag_AllImageOK(cls):
         cls.flagAllImageOK = False
-        cls.currentUserDir = OUTPUT_FOLDER_NAME
+        cls.currentUserDir = config.OUTPUT_FOLDER_NAME
 
 

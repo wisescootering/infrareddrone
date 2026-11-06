@@ -44,6 +44,12 @@ a `.venv` folder at the repository root, the conda environment `py39_clean`
 (`~/miniforge3`, `~/miniconda3`, `~/anaconda3`; change the name with `IRDRONE_CONDA_ENV`),
 then the Python on the PATH. The wizard code lives in [irdrone_wizard](./irdrone_wizard).
 
+At the first launch the wizard asks for the working folder where missions are stored
+(default `C:/Air-Mission` on Windows, `~/Air-Mission` elsewhere). It is shown at the bottom of
+the main window, with a ⚙ button to change it, and saved in the user settings
+(`%APPDATA%\IRDrone\settings.json`, `~/.config/irdrone/settings.json` on Linux).
+The environment variable `IRDRONE_WORKING_DIR`, when set, takes priority.
+
 
 ------------
 ## 🐋 Docker 

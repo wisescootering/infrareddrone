@@ -318,6 +318,8 @@ Chaque fenêtre comporte un bouton \bouton{?} qui ouvre ce manuel au chapitre de
 
 %\todo{Dossier \texttt{FLY-YYYYMMDD-HHmm-localit\'e}, sous-dossiers \texttt{ImgIRdrone}, \texttt{mapping\_MULTI}, etc.}
 On suppose ici que votre ordinateur sous Windows comporte un dossier \texttt{C:/Air-Mission}.
+Ce dossier de travail est choisi au premier lancement de l'application ; il est rappel\'e en bas de la fen\^etre
+principale et peut \^etre chang\'e avec le bouton \og engrenage \fg{} plac\'e \`a c\^ot\'e.
 
 Chaque mission est placée dans un dossier \texttt{C:/Air-Mission/FLY-YYYYMMDD-hhmm-location}. 
 
@@ -406,8 +408,9 @@ Le Step~1 cr\'ee le dossier de la mission et y range les images du vol. Il se d\
         et l'adresse du lieu \`a OpenStreetMap.
   \item Les images du drone (visible) au format DNG, et les images de la cam\'era proche infrarouge (SJCam M20, fichiers RAW)
         copi\'ees sur le disque de l'ordinateur.
-  \item Un dossier de travail existant (par d\'efaut \texttt{C:/Air-Mission}, modifiable avec la variable d'environnement
-        \texttt{IRDRONE\_WORKING\_DIR}).
+  \item Un dossier de travail (par d\'efaut \texttt{C:/Air-Mission}), choisi au premier lancement et modifiable
+        avec le bouton \og engrenage \fg{} en bas de la fen\^etre principale. La variable d'environnement
+        \texttt{IRDRONE\_WORKING\_DIR}, si elle est d\'efinie, reste prioritaire.
 \end{itemize}
 
 % \figureIRD{step1_load_takeoff_1.png}{Premi\`ere fen\^etre du Step 1 avant chargement de l'image de d\'ecollage.}{0.8}
