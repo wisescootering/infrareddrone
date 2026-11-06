@@ -2,7 +2,6 @@
 from matplotlib.colors import hsv_to_rgb
 from scipy.interpolate import interp1d
 from skimage import exposure
-import glob
 import itertools
 from irdrone.file_utils import glob_path_ci
 import logging

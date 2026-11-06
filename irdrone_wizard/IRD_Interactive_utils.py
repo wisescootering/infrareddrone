@@ -10,26 +10,21 @@ import os
 import os.path as osp
 import sys
 import json
-from json import JSONDecodeError
 import shutil
 from datetime import datetime, date
 import time
-from typing import Any, Dict, Optional, Tuple, List, Union, Sequence, Iterable
+from typing import Dict, Optional, Tuple, List, Union, Sequence, Iterable
 from pathlib import Path
 from fractions import Fraction
 import re
 import numpy as np
-from fractions import Fraction
 import tempfile
 import subprocess
-from concurrent.futures import ProcessPoolExecutor, as_completed
-import multiprocessing
 from collections import Counter
 
 
 import cv2
 import matplotlib.pyplot as plt
-import copy
 
 from IRD_Interactive_color_style import Style
 
@@ -37,13 +32,10 @@ from IRD_Interactive_color_style import Style
 # -------------------- Exif Library -------------------------------
 import piexif
 import exifread
-from PIL import Image
-import rawpy
 # -----------------------PyQt6 Library ----------------------------
 from PyQt6.QtWidgets import QMessageBox, QApplication, QFileDialog, QWidget
 # -----------------------------------------------------------------
 from IRD_interactive_geo import geo2UTM
-from IRD_Interactive_color_style import Style
 
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
 from irdrone.file_utils import glob_ci
@@ -2053,7 +2045,7 @@ def time_line_analyser_images(list_dic_exif,
         deltas = np.array([])
 
     if len(deltas) == 0:
-        print(Style.YELLOW + f"⚠️ Not enough images to compute intervals." + Style.RESET)
+        print(Style.YELLOW + "⚠️ Not enough images to compute intervals." + Style.RESET)
         return {"dates": dates, "numeros": numeros, "deltas": deltas}
 
     print(Style.GREEN + f"🔍 {len(dates)} {img_suffix.upper()} files found" + Style.RESET)
@@ -2076,7 +2068,7 @@ def time_line_analyser_images(list_dic_exif,
         periode_filtre = np.mean(filtered_deltas)
     else:
         periode_filtre = periode_mediane
-        print(Style.YELLOW + f"⚠️ No intervals within defined tolerance for filtering." + Style.RESET)
+        print(Style.YELLOW + "⚠️ No intervals within defined tolerance for filtering." + Style.RESET)
 
     # --- Best time-lapse estimate ---
     estims = np.array([periode_mediane, periode_mode, periode_filtre])

@@ -2,7 +2,6 @@ import sys
 import os.path as osp
 opj = osp.join
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
-import config
 import irdrone.process as pr
 import irdrone.utils as ut
 from joblib import Memory
@@ -108,7 +107,7 @@ def get_corners_from_crop(im, _corners, resize_thumb, resize=None, debug=False, 
         corners[:, :, 1] = corners[:, :, 1]+float(y_start)
     if debug and debug_img is not None:
         pr.Image(im_crop).save(osp.join(debug_img+"detection_{}.jpg".format("ok" if ret else "failed")))
-        pr.Image(out).save(osp.join(debug_img+"_corners_detection_{}.jpg".format(0, "ok" if ret else "failed")))
+        pr.Image(out).save(osp.join(debug_img+"_corners_detection_{}.jpg".format(0, )))
     return ret, corners, out, imsize_full
 
 

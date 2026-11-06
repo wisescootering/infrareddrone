@@ -4,7 +4,6 @@ import matplotlib.transforms as mtrans
 import scipy.fft
 from irdrone.utils import Style
 import os.path as osp
-import os
 
 
 def flightProfil_plot(d_list, elev_Drone, elev_Ground, dirSaveFig=None, mute=True):

@@ -14,8 +14,6 @@ Created on 2023-12-02 00:35:10
 
 import numpy as np
 import math
-import re
-import json
 import os
 import time
 from typing import Optional, Any, List, Tuple, Dict
@@ -133,7 +131,7 @@ def extract_alti_IGN(coordinates: list[tuple[float, float]], interpolation: int 
         return dico_coordinates_IGN['elevations']
     else:
         # Gérez le cas où 'elevations' n'est pas une liste ou est vide
-        print(Style.YELLOW + f'⚠️  \'elevations\' n\'est pas une liste ou est vide' + Style.RESET)
+        print(Style.YELLOW + '⚠️  \'elevations\' n\'est pas une liste ou est vide' + Style.RESET)
         return {'elevations': {'lon': coordinates[0][1], 'lat': coordinates[0][0], 'z': 0., 'acc': 0.}}
 
 
@@ -168,7 +166,7 @@ def get_altitudes(coordinates, verbose=False, bypass=False):
 
     if bypass:
         dico_coordinates_GPS = force_sea_Level(coordinates)
-        print( Style.YELLOW + f"⚠    Ground level set to zero (bypass)" +  Style.RESET)
+        print( Style.YELLOW + "⚠    Ground level set to zero (bypass)" +  Style.RESET)
         return dico_coordinates_GPS
 
     if verbose:
@@ -178,7 +176,7 @@ def get_altitudes(coordinates, verbose=False, bypass=False):
     # Check if IGN completely failed
     if all(p["z"] == -99999.00 for p in dico_coordinates_GPS):
         if verbose:
-            print( Style.YELLOW + f"⚠️ IGN unavailable. Switching completely to OpenTopoData..." +  Style.RESET)
+            print( Style.YELLOW + "⚠️ IGN unavailable. Switching completely to OpenTopoData..." +  Style.RESET)
         dico_coordinates_GPS = get_altitudes_OpenTopo(coordinates)
         return dico_coordinates_GPS
 
@@ -286,7 +284,7 @@ def get_altitudes_IGN(points, pause=0.3, batch_size=100, max_tries: int = 3, res
                 time.sleep(2)
 
         if not success:
-            print( Style.YELLOW + f"⚠ IGN unavailable for this batch, altitudes set to -99999.00" +  Style.RESET)
+            print( Style.YELLOW + "⚠ IGN unavailable for this batch, altitudes set to -99999.00" +  Style.RESET)
             results.extend([
                 {"lat": lat, "lon": lon, "z": -99999.00, "acc": "IGN_error"}
                 for lat, lon in batch
@@ -362,7 +360,7 @@ def get_altitudes_OpenTopo(points, pause=0.3, batch_size=100, max_tries: int = 3
                         success = True
                         break
                     else:
-                        print( Style.YELLOW + f"⚠️ OpenTopo response missing 'results'" +  Style.RESET)
+                        print( Style.YELLOW + "⚠️ OpenTopo response missing 'results'" +  Style.RESET)
                 else:
                     print( Style.RED + f"❌ HTTP Error OpenTopo {response.status_code}" +  Style.RESET)
             except requests.RequestException as e:
@@ -370,7 +368,7 @@ def get_altitudes_OpenTopo(points, pause=0.3, batch_size=100, max_tries: int = 3
                 time.sleep(2)
 
         if not success:
-            print( Style.YELLOW + f"⚠  OpenTopo unavailable, altitudes set to 0 m" +  Style.RESET)
+            print( Style.YELLOW + "⚠  OpenTopo unavailable, altitudes set to 0 m" +  Style.RESET)
             results.extend([
                 {"lat": lat, "lon": lon, "z": 0, "acc": "unavailable"}
                 for lat, lon in batch
@@ -494,7 +492,7 @@ def extract_geoTag(dic_geo: dict[str, Any],
     # Vérification des coordonnées
     if 'lat' not in dic_geo or 'lon' not in dic_geo:
         if verbose:
-            print( Style.YELLOW + f"⚠️ Pas de coordonnées GPS valides dans dic_geo." +  Style.RESET)
+            print( Style.YELLOW + "⚠️ Pas de coordonnées GPS valides dans dic_geo." +  Style.RESET)
         return dic_geo
 
     lat, lon = dic_geo['lat'], dic_geo['lon']
@@ -502,7 +500,7 @@ def extract_geoTag(dic_geo: dict[str, Any],
     # Mode bypass : retourne des valeurs factices/simulées sans appeler l'API
     if bypass:
         if verbose:
-            print( Style.YELLOW + f"⚠   ️ bypass activé : pas d'appel réseau pour la géolocalisation." +  Style.RESET)
+            print( Style.YELLOW + "⚠   ️ bypass activé : pas d'appel réseau pour la géolocalisation." +  Style.RESET)
         if bypass_data:
             # On remplit uniquement les clés attendues depuis bypass_data
             for k in fields:
@@ -838,7 +836,7 @@ def writeGPX(listPts, dirNameVol, dateEtude, mute=True):
         Construction d'un fichier gpx contenant le tracé du plan de vol
         Il y a au début une tres grosse étiquette !!
     """
-    print( Style.GREEN + f'Write Garmin .gpx file' +  Style.RESET)
+    print( Style.GREEN + 'Write Garmin .gpx file' +  Style.RESET)
     #  mise en forme de la date pour le format gpx Garmin
     if dateEtude.month < 10:
         monthGpx = str('0' + str(dateEtude.month))

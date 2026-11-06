@@ -2,7 +2,7 @@ from pathlib import Path
 import os
 import platform
 import shutil
-from version import __version__  # single source of truth: version.py
+from version import __version__  # noqa: F401 (re-exported; single source of truth: version.py)
 
 #  Expert User Settings ! -------------------------------------------------------------------------------------
 NIR_CAMERA = "M20_RAW"  # Format of the original near infrared image

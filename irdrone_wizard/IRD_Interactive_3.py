@@ -5,18 +5,11 @@
 #   20/10/2026   V003
 # ---------------------------------------------------------------------------------
 
-import os
-import os.path as osp
 from pathlib import Path
 import numpy as np
-import cv2
 import matplotlib.pyplot as plt
-import time
-import json
 import re
-from json import JSONDecodeError
-from typing import List, Tuple, Optional, Sequence, Dict, Any, Union
-import copy
+from typing import List, Optional, Sequence
 
 # ----------------------------------------------------
 #     Resource paths
@@ -44,9 +37,6 @@ def _natural_key(name: str) -> list:
 #     bib Multi Thread
 # ----------------------------------------------------
 
-import multiprocessing
-import subprocess
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import psutil
 
 
@@ -56,7 +46,6 @@ import psutil
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtCore import (
     Qt,
-    QThreadPool,
     QObject,
     pyqtSignal,
     QThreadPool,
@@ -66,8 +55,6 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QApplication,
     QSizePolicy,
-    QWidget,
-    QFileDialog,
     QDialog,
     QVBoxLayout,
     QHBoxLayout,
@@ -85,7 +72,6 @@ from PyQt6.QtWidgets import (
 # ----------------------------------------------------
 import matplotlib
 matplotlib.use("Agg")  # backend non interactif. Fondamental ici avec PyQt
-import matplotlib.pyplot as plt
 # Explicit Qt canvas for the interactive adjustment dialog (pyplot stays on Agg).
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
@@ -93,7 +79,6 @@ from matplotlib.figure import Figure
 # ----------------------------------------------------
 #     bib IRD_Interactive
 # ----------------------------------------------------
-import IRD_Interactive_utils as Uti
 import IRD_Interactive_help as Help
 from IRD_Interactive_progress import mark_step_done
 from IRD_Interactive_utils import safe_path
@@ -101,7 +86,6 @@ import IRD_Interactive_ArUco as Aru
 from IRD_Interactive_workers import ArucoWorker
 from IRD_Interactive_workers import TimeShiftWorker
 from IRD_Interactive_workers import ImagePairingWorker
-from IRD_Interactive_color_style import Style
 from IRD_Interactive_styles import BUTTON_STYLE
 
 

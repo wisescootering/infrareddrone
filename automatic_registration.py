@@ -6,12 +6,10 @@ import logging
 import os.path as osp
 import registration.rigid as rigid
 from irdrone.semi_auto_registration import manual_warp, ManualAlignment, Transparency, Absgrad
-from skimage import transform
 import os
 import sys
 osp = os.path
 import time
-from datetime import datetime, timedelta
 from matplotlib.colors import LinearSegmentedColormap
 import interactive.imagepipe as ipipe
 import shutil
@@ -198,7 +196,7 @@ def coarse_alignment(ref_full, mov_full, cals, yaw_main, pitch_main, roll_main, 
         translation = -ds*trans
     yaw_refine = np.rad2deg(np.arctan(translation[0]/focal))
     pitch_refine = np.rad2deg(np.arctan(translation[1]/focal))
-    print("2D translation {}".format(translation, yaw_refine, pitch_refine))
+    print("2D translation {}".format(translation, ))
     ts_end_coarse_search = time.perf_counter()
     logging.info("{:.2f}s elapsed in coarse search".format(ts_end_coarse_search - ts_start_coarse_search))
     ts_start_warp = time.perf_counter()

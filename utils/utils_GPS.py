@@ -9,7 +9,6 @@ Created on 2021-10-05 19:17:16
 
 import numpy as np
 import math
-import re
 import json
 import requests
 from irdrone.utils import Style
@@ -318,7 +317,7 @@ def altitude_trk(coordGPS, interpolation=0):
     altitude = []
     latLongZGPS = []
     resource = "ign_rge_alti_par_territoires"
-    base_url = f"https://data.geopf.fr/altimetrie/1.0/calcul/alti/rest/elevation.json"
+    base_url = "https://data.geopf.fr/altimetrie/1.0/calcul/alti/rest/elevation.json"
     print(f'URL API IGN : {base_url}')
 
     # Construire les chaînes de latitudes / longitudes (séparées par '|')
@@ -359,7 +358,7 @@ def altitude_IGN(coordGPS, mute=True, bypass=False):
                         f' et non {type(coordGPS)}')
     altitude = []
     resource = "ign_rge_alti_par_territoires"
-    base_url = f"https://data.geopf.fr/altimetrie/1.0/calcul/alti/rest/elevation.json"
+    base_url = "https://data.geopf.fr/altimetrie/1.0/calcul/alti/rest/elevation.json"
     # Construire les chaînes de latitudes / longitudes (séparées par '|')
     latitudes = "|".join(str(lat) for lat, lon in coordGPS)
     longitudes = "|".join(str(lon) for lat, lon in coordGPS)

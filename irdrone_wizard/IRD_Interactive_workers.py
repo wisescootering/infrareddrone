@@ -5,36 +5,24 @@
 #   20/10/2026   V003
 # ---------------------------------------------------------------------------------
 
-from typing import Any, Dict, Optional, Tuple, List, Union, Callable
-import sys
+from typing import Dict, Optional, List, Union
 import os
-import os.path as osp
 from pathlib import Path
-import shutil
 import json
 import numpy as np
-from datetime import date, time, datetime
-import time
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 import subprocess
 import psutil
-import piexif
 # -------------------- Image Library ------------------------------
-import rawpy
-import imageio
 # -------------- PyQt6 Library ------------------------------------
-from PyQt6.QtWidgets import QFileDialog, QWidget,  QLineEdit, QFrame,  QPushButton,\
-                            QProgressBar, QHBoxLayout,  QVBoxLayout, QLabel, QMessageBox, QDialog
-from PyQt6.QtGui import QPixmap, QImage, QColor, QIcon, QRegularExpressionValidator
 from PyQt6 import QtCore
-from PyQt6.QtCore import Qt, pyqtSignal, QRegularExpression, QUrl, QObject, pyqtSignal, QRunnable, QThreadPool
+from PyQt6.QtCore import QObject, pyqtSignal, QRunnable
 
-import matplotlib.pyplot as plt
 
 # -------------- IRDrone Library ------------------------------------
 import IRD_Interactive_utils as Uti
-from IRD_Interactive_utils import interpolate_scalar_with_extrapolation
 from IRD_Interactive_utils import safe_path
 import IRD_interactive_geo as Geo
 from IRD_Interactive_color_style import Style
@@ -753,7 +741,7 @@ class TimeShiftWorker(QRunnable):
                 angles_unwrapped_NIR = self.unwrap_from_end(angles_abs_NIR, Aru.unwrap_angles)
                 time_line_VIS = timeline_abs_VIS
                 time_line_NIR = timeline_abs_NIR
-                print(Style.GREEN + f"Time shift calculated using absolute angles" + Style.RESET)
+                print(Style.GREEN + "Time shift calculated using absolute angles" + Style.RESET)
                 if ignored_abs_VIS > 0:
                     print(Style.YELLOW + f"⚠  {ignored_abs_VIS} images VIS skipped because fixed or mobile ArUco not detected" + Style.RESET)
                 if ignored_abs_NIR > 0:
@@ -764,7 +752,7 @@ class TimeShiftWorker(QRunnable):
                 angles_unwrapped_NIR = self.unwrap_from_end(angles_img_NIR, Aru.unwrap_angles)
                 time_line_VIS = timeline_img_VIS
                 time_line_NIR = timeline_img_NIR
-                print(Style.GREEN + f"Time shift calculated using relative angles" + Style.RESET)
+                print(Style.GREEN + "Time shift calculated using relative angles" + Style.RESET)
                 if ignored_VIS > 0:
                     print(Style.YELLOW + f"⚠  {ignored_VIS} images VIS skipped because fixed or mobile ArUco not detected" + Style.RESET)
                 if ignored_NIR > 0:
@@ -1345,7 +1333,7 @@ class Transfer_NIR(QtCore.QObject):
                     if cpu_physical is None:
                         raise ValueError("psutil returned None")
                     self.max_workers = max(1, cpu_physical)
-                except Exception as e:
+                except Exception:
                     self.max_workers = max(1, (os.cpu_count() or 1))
 
             if self.verbose:
@@ -1673,7 +1661,7 @@ class Alti_GPS(QtCore.QObject):
             # print("[INFO] Altitudes IGN récupérées (avec gestion des erreurs)")
 
             # --- Load the image timeline ---
-            time_line_path = next(self.folder.glob(f"time_line.json"), None)
+            time_line_path = next(self.folder.glob("time_line.json"), None)
 
             if not time_line_path:
                 print(

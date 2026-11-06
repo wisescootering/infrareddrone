@@ -9,7 +9,7 @@ import subprocess
 import time
 from utils.utils_IRdrone_Class import ShootPoint
 import automatic_registration
-from utils.utils_odm import create_odm_folder, odm_mapping_optim
+from utils.utils_odm import create_odm_folder
 from config import CROP, EXIFTOOLPATH, CNIRCVIS_0
 
 

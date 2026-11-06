@@ -18,7 +18,7 @@ import os.path as osp
 import json
 import logging
 import pickle
-from copy import copy, deepcopy
+from copy import copy
 from pathlib import Path
 
 import pandas as pd
@@ -337,10 +337,10 @@ def offsetAnglesCheck(planVol, mute=False):
                 angle = 0.
             offsetTheoretical.append(angle)
         logging.info("Found offset angles")
-    except AssertionError as e:
+    except AssertionError:
         print(
             Style.YELLOW + '[warning] Offset angles have not been found or are incorrect in xlsx file. Using [0., 0., 0.]' + Style.RESET)
-    except ValueError as e:
+    except ValueError:
         print(
             Style.YELLOW + '[warning] Offset angles have not been found or are incorrect in xlsx file. Using [0., 0., 0.]' + Style.RESET)
     if not mute: print(offsetTheoretical)

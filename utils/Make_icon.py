@@ -245,7 +245,7 @@ class ImageToIconeApp(QWidget):
                 self.save_as_ico(square_image, icon_path)
                 if icon_path != default_icon_path:
                     # Affiche une QMessageBox pour résumer la procédure si l'emplacement ou le nom ne sont pas ceux par défaut
-                    self.show_info_message("IRdrone interactive utility v01", f"Le fichier a été sauvegardé avec succès.",
+                    self.show_info_message("IRdrone interactive utility v01", "Le fichier a été sauvegardé avec succès.",
                                            f"Emplacement : {icon_path}", QMessageBox.Icon.Information)
         except Exception as e:
             print("open_save_dialog Ereur est: ", e)

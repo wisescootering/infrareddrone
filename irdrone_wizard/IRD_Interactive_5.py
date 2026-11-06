@@ -24,17 +24,9 @@ Long tasks run in ``QRunnable`` workers that report to the dialog only through
 Qt signals; the buttons and the window are locked while ODM or the DTM run.
 """
 
-import os
-import os.path as osp
 from pathlib import Path
 import numpy as np
-import cv2
-import matplotlib.pyplot as plt
-import time
-import json
-from json import JSONDecodeError
-from typing import List, Tuple, Optional, Sequence, Dict, Any, Union
-import copy
+from typing import List, Optional
 import rawpy
 import imageio
 
@@ -42,10 +34,6 @@ import imageio
 #     bib Multi Thread
 # ----------------------------------------------------
 
-import multiprocessing
-import subprocess
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import psutil
 
 
 # ----------------------------------------------------
@@ -66,9 +54,6 @@ from PyQt6.QtCore import (
 
 from PyQt6.QtWidgets import (
     QMessageBox,
-    QApplication,
-    QWidget,
-    QFileDialog,
     QDialog,
     QVBoxLayout,
     QHBoxLayout,
@@ -90,20 +75,14 @@ from PyQt6.QtWidgets import (
 # ----------------------------------------------------
 import matplotlib
 matplotlib.use("Agg")  # Non-interactive backend. Essential here when using PyQt.
-import matplotlib.pyplot as plt
 
 # ----------------------------------------------------
 #     bib IRD_Interactive
 # ----------------------------------------------------
-import IRD_Interactive_utils as Uti
 import IRD_Interactive_help as Help
 from IRD_Interactive_progress import mark_step_done
 import IRD_Interactive_GeoRef as GeoRef
 from IRD_Interactive_contours import DEFAULT_GRID_STEP_M, generate_ortho_dtm
-from IRD_Interactive_utils import safe_path
-from IRD_Interactive_workers import TimeShiftWorker
-from IRD_Interactive_workers import ImagePairingWorker
-from IRD_Interactive_color_style import Style
 from IRD_Interactive_styles import BUTTON_STYLE
 from IRD_Interactive_ODM import (
     DockerUnavailableError,

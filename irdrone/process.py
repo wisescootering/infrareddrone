@@ -2,7 +2,6 @@
 """
 image processing utilities
 """
-import shutil
 import cv2
 import sys
 import matplotlib.pyplot as plt
@@ -11,19 +10,16 @@ import os
 import os.path as osp
 import PIL.Image
 import PIL.ExifTags
-import piexif
 import exifread
 import datetime
 from pathlib import Path
 import logging
 from os import mkdir
-import utils.utils_IRdrone as IRd
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
 from irdrone.utils import Style, conversionGPSdms2dd, get_polar_shading_map, contrast_stretching
 from irdrone.file_utils import has_suffix, with_suffix_ci
 import config as cf
 import subprocess
-from pathlib import Path
 import json
 
 

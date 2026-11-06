@@ -69,50 +69,26 @@ import cv2
 import re
 from collections import defaultdict
 import matplotlib.pyplot as plt
-from scipy.signal import savgol_filter
 from scipy.interpolate import RectBivariateSpline
-from scipy.interpolate import LinearNDInterpolator
 from scipy.interpolate import RBFInterpolator
-from scipy.interpolate import griddata
 from scipy.ndimage import map_coordinates
 from affine import Affine
 
-from typing import Any, Dict, Optional, Tuple, List, Union, Sequence, Iterable
+from typing import Union
 import json
 import subprocess
 import rasterio
 # print(f"✔ Version rasterio : {rasterio.__version__}")
-from rasterio.transform import Affine, from_origin
-from rasterio.warp import reproject, Resampling, calculate_default_transform
-from rasterio.enums import ColorInterp
+from rasterio.transform import Affine
 from rasterio.crs import CRS
-from datetime import datetime
 import time
 
 # ----------------------------------------------------
 #     bib PyQt 6
 # ----------------------------------------------------
-from PyQt6.QtGui import QPixmap
-from PyQt6.QtCore import (
-    Qt,
-    QThreadPool,
-    QObject,
-    pyqtSignal,
-    QThreadPool,
-    QTimer,
-)
 from PyQt6.QtWidgets import (
-    QMessageBox,
     QApplication,
-    QWidget,
     QFileDialog,
-    QDialog,
-    QVBoxLayout,
-    QHBoxLayout,
-    QPushButton,
-    QTextEdit,
-    QProgressBar,
-    QLabel,
 )
 
 
@@ -122,7 +98,7 @@ from irdrone.file_utils import find_ci, glob_ci
 
 
 # External tool paths: one lookup for the whole project, see config.py.
-from config import RAWTHERAPEEPATH, EXIFTOOLPATH, require_tool
+from config import require_tool
 
 # ============================================================
 #  CLASS
@@ -440,7 +416,7 @@ def georeference_tiff_MNT(tif_path,
         else:
 
             focal_pix = 2918
-            logger.warn(f' IRDrone default   FOV.')
+            logger.warn(' IRDrone default   FOV.')
         fx, fy, cx, cy = focal_pix, focal_pix, Nx / 2, Ny / 2
         txt = "Image with corrected optical distortion."
         dist = None
@@ -1282,7 +1258,7 @@ def ask_takeoff_altitude_gui(prompt: str, default=None) -> float:
     Robust to comma/point decimal separators.
     """
     import tkinter as tk
-    from tkinter import simpledialog, messagebox
+    from tkinter import messagebox
 
     root = tk.Tk()
     root.withdraw()
@@ -3685,7 +3661,7 @@ def process_image(folder_input, img_name, args, zhang_dic,  tol_MC=0.01, img_ove
                 result_callback(str(new_geo_path))
 
         else:
-            logger.warn(f" Processing completed without generating the georeferenced file")
+            logger.warn(" Processing completed without generating the georeferenced file")
         return georef_success
 
     except Exception as e:
@@ -3958,7 +3934,7 @@ def georef_main(image_callback=None, mission_parameters=None, result_callback=No
     # ==================================================
     else:
 
-        logger.info(f"Interactive mode: selecting images ...\n", _bold=True)
+        logger.info("Interactive mode: selecting images ...\n", _bold=True)
 
         folder_mission = Path(
             mission_parameters["File path mission"]
@@ -4194,7 +4170,7 @@ if __name__ == "__main__":
     # ==================================================
     else:
 
-        logger.info(f"Mode interactif : sélection des images ...\n", _bold=True)
+        logger.info("Mode interactif : sélection des images ...\n", _bold=True)
 
         folder_input, list_img_name, list_img, list_path = choose_images_dev()
 

@@ -4,7 +4,6 @@ from irdrone.file_utils import with_suffix_ci
 import numpy as np
 import os
 osp = os.path
-import platform
 from datetime import datetime, timedelta
 
 
