@@ -38,21 +38,52 @@ def mission_folder(mission_parameters, folder=None):
     return None
 
 
-# Files that only exist once Step 1 went through to the end: the EXIF stage of
-# each band writes its time_line.json after the images are copied / converted.
-# (mission_parameters.json alone is not enough: it is written when Step 1 starts.)
-STEP1_FILES = (
-    Path("FlightAnalytics") / "mission_parameters.json",
-    Path("AerialPhotography") / "VIS" / "time_line.json",
-    Path("AerialPhotography") / "NIR" / "time_line.json",
-)
+# For missions processed before the progress record existed (or outside the
+# wizard), a step also counts as done when the files it writes at its very end
+# are there. Earlier outputs are not enough, e.g. mission_parameters.json is
+# written as soon as Step 1 starts, the ArUco images and the delay plots of
+# Step 3 before its image pairing. Step 2 has no output of its own: not guessed.
+def _json_with_points(path):
+    """JSON object with a non-empty 'shoot_points' list."""
+    if not is_valid_json_file(path):
+        return False
+    import json
+    with open(path, encoding="utf-8") as file:
+        return bool(json.load(file).get("shoot_points"))
 
 
-def _step1_done_from_files(folder):
-    """Completion date of Step 1 guessed from its output files, or None.
-    For missions processed before the progress record existed."""
-    paths = [Path(folder) / name for name in STEP1_FILES]
-    if not all(is_valid_json_file(path) for path in paths):
+def _file_exists(path):
+    return path.is_file() and path.stat().st_size > 0
+
+
+STEP_OUTPUTS = {
+    # Step 1: the EXIF stage of each band writes time_line.json after the copy / conversion
+    1: ((Path("FlightAnalytics") / "mission_parameters.json", is_valid_json_file),
+        (Path("AerialPhotography") / "VIS" / "time_line.json", is_valid_json_file),
+        (Path("AerialPhotography") / "NIR" / "time_line.json", is_valid_json_file)),
+    # Step 3: written by the image pairing (time shift + VIS / NIR pairs), its last stage
+    3: ((Path("AerialPhotography") / "shoot_points.json", _json_with_points),),
+    # Step 4: inventory written at the end of the alignment
+    4: ((Path("ImgIRdrone") / "shoot_points.json", _json_with_points),),
+    # Step 5: orthophoto copied once ODM succeeded
+    5: ((Path("mapping_MULTI") / "mapping_result" / "odm_orthophoto.tif", _file_exists),),
+    # Step 6: written by the archiving
+    6: ((Path("archive_manifest.json"), is_valid_json_file),),
+}
+
+
+def _done_from_outputs(folder, step):
+    """Completion date of step guessed from its output files, or None."""
+    paths = []
+    for name, check in STEP_OUTPUTS.get(step, ()):
+        path = Path(folder) / name
+        try:
+            if not check(path):
+                return None
+        except (OSError, ValueError, AttributeError):
+            return None
+        paths.append(path)
+    if not paths:
         return None
     latest = max(path.stat().st_mtime for path in paths)
     return datetime.datetime.fromtimestamp(latest).isoformat(timespec="seconds")
@@ -70,11 +101,12 @@ def done_steps(folder):
             data = json.load(file)
         steps = {int(step): date for step, date in data.get("done", {}).items()
                  if str(step).isdigit() and int(step) in STEPS}
-    if 1 not in steps:
-        found = _step1_done_from_files(folder)
-        if found:
-            steps[1] = found
-    return steps
+    for step in STEP_OUTPUTS:
+        if step not in steps:
+            found = _done_from_outputs(folder, step)
+            if found:
+                steps[step] = found
+    return dict(sorted(steps.items()))
 
 
 def mark_step_done(folder, step):

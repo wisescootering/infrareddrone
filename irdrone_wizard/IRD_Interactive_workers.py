@@ -623,8 +623,8 @@ class ImagePairingWorker(QRunnable):
                 for k, v in pairing_result.items()
             }
 
-            with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(pairing_result_json_safe, f, indent=4, ensure_ascii=False)
+            # Atomic: a full disk must not leave an empty file (it marks Step 3 as done).
+            write_json_atomic(file_path, pairing_result_json_safe, indent=4, ensure_ascii=False)
 
             return file_path
 

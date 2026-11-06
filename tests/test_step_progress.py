@@ -61,16 +61,40 @@ class ProgressRecordTest(unittest.TestCase):
             path.write_text('{"VIS": []}')
 
     def test_step1_found_from_its_files_for_older_missions(self):
-        self.write_step1_files(*Progress.STEP1_FILES)
+        self.write_step1_files(*(name for name, _ in Progress.STEP_OUTPUTS[1]))
         self.assertEqual(list(Progress.done_steps(self.mission)), [1])
 
     def test_step1_started_but_not_finished_is_not_done(self):
         # mission_parameters.json is written as soon as Step 1 starts
-        self.write_step1_files(Progress.STEP1_FILES[0], Progress.STEP1_FILES[1])
+        self.write_step1_files(Progress.STEP_OUTPUTS[1][0][0], Progress.STEP_OUTPUTS[1][1][0])
         self.assertEqual(Progress.done_steps(self.mission), {})
-        (self.mission / Progress.STEP1_FILES[2]).parent.mkdir(parents=True)
-        (self.mission / Progress.STEP1_FILES[2]).write_text("")  # left by a full disk
+        (self.mission / Progress.STEP_OUTPUTS[1][2][0]).parent.mkdir(parents=True)
+        (self.mission / Progress.STEP_OUTPUTS[1][2][0]).write_text("")  # left by a full disk
         self.assertEqual(Progress.done_steps(self.mission), {})
+
+    def write(self, name, content):
+        path = self.mission / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+
+    def test_steps_3_to_6_found_from_their_final_outputs(self):
+        self.write("AerialPhotography/shoot_points.json", '{"time_shift": 1.2, "shoot_points": [{}]}')
+        self.write("ImgIRdrone/shoot_points.json", '{"shoot_points": [{}]}')
+        self.write("mapping_MULTI/mapping_result/odm_orthophoto.tif", "tif")
+        self.write("archive_manifest.json", "{}")
+        self.assertEqual(list(Progress.done_steps(self.mission)), [3, 4, 5, 6])
+
+    def test_step3_needs_the_pairing_not_only_aruco_and_delay(self):
+        self.write("Synchro/check_time_alignment.png", "png")       # time shift computed
+        self.write("Synchro/Check_ARUCO/VIS_0001_aruco.jpg", "jpg")  # ArUco detected
+        self.assertEqual(Progress.done_steps(self.mission), {})
+        self.write("AerialPhotography/shoot_points.json", '{"shoot_points": []}')  # no pair
+        self.assertEqual(Progress.done_steps(self.mission), {})
+
+    def test_record_and_outputs_combine(self):
+        Progress.mark_step_done(self.mission, 2)
+        self.write("AerialPhotography/shoot_points.json", '{"shoot_points": [{}]}')
+        self.assertEqual(list(Progress.done_steps(self.mission)), [2, 3])
 
 
 class MainWindowStepsTest(unittest.TestCase):
