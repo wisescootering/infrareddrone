@@ -618,7 +618,6 @@ class DialogGeoRef(QDialog):
         count = len(self.georef_results)
         if count:
             message = f"Georeferencing completed: {count} image(s) georeferenced."
-            mark_step_done(self.folderMissionPath, 5)
         else:
             message = "Georeferencing finished: no image was georeferenced."
         self.progress_label.setText(message)
@@ -749,7 +748,7 @@ class DialogGeoRef(QDialog):
         orthophoto = result["orthophoto"]
         completion_message = f"Orthophoto:\n{orthophoto['path']}"
         self._log(f"ODM completed successfully: {orthophoto['path']}")
-        mark_step_done(self.folderMissionPath, 5)
+        mark_step_done(self.folderMissionPath, 5)  # Step 5 is done once the ODM mapping is
         self.progress_label.setText("ODM completed successfully.")
         self.image_preview_label.setText("Loading orthophoto preview...")
         self.image_preview_label.setPixmap(QPixmap())
