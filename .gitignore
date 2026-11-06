@@ -12,5 +12,7 @@ help/*.aux
 help/*.log
 help/*.toc
 help/*.synctex.gz
+help/*.out
 # Generated low-resolution manual images
 help/images_light/
+.vscode/
