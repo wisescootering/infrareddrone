@@ -384,7 +384,6 @@ def georeference_tiff_MNT(tif_path,
         dist = np.array(zhang_dic["dist"][0] if isinstance(zhang_dic["dist"][0], list)
                         else zhang_dic["dist"],
                         dtype=np.float64)
-        K = np.array(zhang_dic["mtx"], dtype=np.float64)
 
     else:
         # --- 1.02-2 Default parameters for single-band or four-band multispectral images
@@ -1804,10 +1803,6 @@ def compute_MNT_mesh(
     # The grid is centered on the nadir. The nadir altitude is Z = 0 m.
     # These grid points serve as reference points for constructing
     # the DTM interpolator.
-    # Expanded sensor boundaries
-    cx_a, cy_a = cx * ampli, cy * ampli  # Left and top boundaries
-    Nx_a, Ny_a = Nx * ampli, Ny * ampli  # Right and bottom boundaries
-
     # Make the boundaries symmetric
     Nn_x = int(max(cx * ampli, (Nx - cx) * ampli - 1))  # Left and right boundaries
     Nn_y = int(max(cy * ampli, (Ny - cy) * ampli - 1))  # Top and bottom boundaries
@@ -2853,7 +2848,7 @@ def plot_terrain_3d(Xg_abs, Yg_abs, Zg_abs, X0, Y0, Z0, xi_Yaw, N_mesh_x, N_mesh
     z_ref = np.min(Zg) - 30
     if axes_terrain:
         # Horizontal ground reference axes
-        x0, y0, z0 = 0, 0, z_ref
+        x0, y0 = 0, 0
         Lg = 20  # Arrow length in meters
 
         arrow3d(ax, (x0, y0, z_ref), (Lg, 0, 0), 'blue')
@@ -2959,7 +2954,7 @@ def force_square_xy(ax):
     ax.set_ylim3d(yc - L / 2, yc + L / 2)
 
     # Optional: also adjust Z to create a true cubic box
-    zc = 0.6 * (zmax + zmin)
+    # zc = 0.6 * (zmax + zmin)
     # ax.set_zlim3d(zc - L / 2, zc + L / 2)
 
 def graph_mesh_2D(Xg_abs, Yg_abs, X_Bound_abs, Y_Bound_abs, UTM_x, UTM_y, xi_Yaw,
@@ -2992,7 +2987,7 @@ def graph_mesh_2D(Xg_abs, Yg_abs, X_Bound_abs, Y_Bound_abs, UTM_x, UTM_y, xi_Yaw
     geo_path = folder_input / "geo_ref" / f"{img_name}_Grid.png"
 
     fig = plt.figure(figsize=(12, 8))
-    ax = fig.add_subplot(111)
+    fig.add_subplot(111)
 
     Xg = Xg_abs - UTM_x
     Yg = Yg_abs - UTM_y
@@ -3110,7 +3105,7 @@ def graph_ortho(ortho_display, xo, yo, ortho_path, graphic_ortho=False, view_gra
     """
     if graphic_ortho:
         fig = plt.figure(figsize=(12, 8))
-        ax = fig.add_subplot(111)
+        fig.add_subplot(111)
         plt.imshow(ortho_display, origin="lower")  # , extent=extent)
         # plt.scatter(xo, yo, c="red", marker="+", s=100)
         plt.gca().invert_yaxis()
@@ -3175,7 +3170,6 @@ def tag_image(img_raw,
 
     # - 1) Image without markers
     Ny_raw, Nx_raw = img_raw.shape[:2]
-    bands = 1 if img_raw.ndim == 2 else img_raw.shape[2]
 
     # - 2) Dynamic color-range adjustment based on bit depth
     if img_raw.dtype == np.uint16:
@@ -3228,7 +3222,6 @@ def tag_image(img_raw,
     if draw_square_tag:
         S = 200
         Dx = Nx_raw // 4
-        Dy = Ny_raw // 4
 
         # --------- 3.2.1) Quadrant I: Black
         draw_square(img, cx + Dx, cy - Dx, S, (20, 20, 20))

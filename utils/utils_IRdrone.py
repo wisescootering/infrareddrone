@@ -470,7 +470,6 @@ def creatListImgVIS(dirName, dateMission, rege, timelapse, deltatime, cameraMode
             debug = True
             cameraMakerImg = img.camera['maker']
             cameraModelImg = img.camera['model']
-            serial_number = img.camera['serial number']
 
             if cameraModel is None or cameraModelImg == cameraModel or ( cameraMakerImg == 'irdrone' and cameraModelImg == 'multispectral'):
                 dateImg = img.date
@@ -1586,7 +1585,6 @@ def select_Images(listPts, planVol,  overlap_x=0.30, overlap_y=0.75, ratioSynchr
     Pts = []
     camera_make, camera_type, width_capteur, height_capteur, focal_factor, focalPix = lectureCameraIrdrone()
 
-    lCapt_x = width_capteur  # TODO  prendre en compte la trajectoire exacte et pas seulement le mouvement  suivant e_2
     lCapt_y = height_capteur
     f = focalPix
     DTmin = planVol['drone']['timelapse'] * ratioSynchro
