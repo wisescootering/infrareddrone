@@ -18,11 +18,11 @@ import shutil
 import cv2
 import argparse
 import json
-import psutil
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from copy import deepcopy
 from config import CROP
+from alignment_workers import available_alignment_workers, clamp_workers  # noqa: F401 (re-exported)
 from registration.pyramid_wrapper import pyramid_reduce
 try:
     conda_env_name = os.environ['CONDA_DEFAULT_ENV']
@@ -697,11 +697,6 @@ def _process_raw_pairs_serial(
     return motion_model_list
 
 
-def available_alignment_workers() -> int:
-    """Return the number of physical CPU cores, with a safe single-core fallback."""
-    return max(1, psutil.cpu_count(logical=False) or 1)
-
-
 def _initialize_alignment_worker() -> None:
     cv2.setNumThreads(1)
 
@@ -776,7 +771,7 @@ def process_raw_pairs(
         return []
     if isinstance(max_workers, bool) or not isinstance(max_workers, int) or max_workers < 1:
         raise ValueError("max_workers must be a positive integer.")
-    worker_count = min(max_workers, len(sync_pairs))
+    worker_count = min(clamp_workers(max_workers), len(sync_pairs))
     if worker_count == 1:
         print(f"Aligning {len(sync_pairs)} shoot points sequentially (1 worker).")
         return _process_raw_pairs_serial(

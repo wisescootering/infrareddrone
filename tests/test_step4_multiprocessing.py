@@ -3,24 +3,46 @@ import tempfile
 import unittest
 from concurrent.futures import Future
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import alignment_workers
 import automatic_registration
 import irdrone.process as image_process
 
 
 class Step4MultiprocessingTests(unittest.TestCase):
-    def test_worker_count_uses_physical_cores(self):
-        with patch.object(automatic_registration.psutil, "cpu_count", return_value=4) as cpu_count:
+    @staticmethod
+    def _patch_resources(cores, available_gb):
+        memory = SimpleNamespace(available=int(available_gb * 2**30))
+        return (
+            patch.object(alignment_workers.psutil, "cpu_count", return_value=cores),
+            patch.object(alignment_workers.psutil, "virtual_memory", return_value=memory),
+        )
+
+    def test_worker_count_uses_physical_cores_when_ram_allows(self):
+        cpu_patch, memory_patch = self._patch_resources(4, 64)
+        with cpu_patch as cpu_count, memory_patch:
             self.assertEqual(automatic_registration.available_alignment_workers(), 4)
 
         cpu_count.assert_called_once_with(logical=False)
 
+    def test_worker_count_is_limited_by_available_ram(self):
+        cpu_patch, memory_patch = self._patch_resources(4, 13)
+        with cpu_patch, memory_patch:
+            self.assertEqual(automatic_registration.available_alignment_workers(), 2)
+
+    def test_worker_count_never_drops_below_one(self):
+        cpu_patch, memory_patch = self._patch_resources(4, 2)
+        with cpu_patch, memory_patch:
+            self.assertEqual(automatic_registration.available_alignment_workers(), 1)
+
     def test_worker_count_falls_back_to_one_core(self):
-        with patch.object(automatic_registration.psutil, "cpu_count", return_value=None):
+        cpu_patch, memory_patch = self._patch_resources(None, 64)
+        with cpu_patch, memory_patch:
             self.assertEqual(automatic_registration.available_alignment_workers(), 1)
 
     def test_single_worker_uses_sequential_pipeline(self):
