@@ -4,7 +4,6 @@
 # imports / variables. No style rules: the code base does not follow one.
 target-version = "py39"
 extend-exclude = [
-    "notebooks",      # Jupytext notebooks: IPython magics are not Python
     "website/build",
 ]
 

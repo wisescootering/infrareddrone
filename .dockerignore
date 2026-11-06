@@ -8,7 +8,6 @@
 samples
 help
 website/build
-notebooks
 dist
 thirdparty/exiftool
 thirdparty/sjcam_raw2dng
