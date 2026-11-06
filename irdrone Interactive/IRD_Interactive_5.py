@@ -379,6 +379,7 @@ class DialogGeoRef(QDialog):
         self.odm_worker: Optional[ODMRunWorker] = None
         self.odm_preview_worker: Optional[ODMPreviewWorker] = None
         self.dtm_worker: Optional[DtmWorker] = None
+        self.georef_results: List[str] = []
         self.odm_dt_tolerance_s = 0.5
         self.odm_sample_every = 3
 
@@ -559,6 +560,8 @@ class DialogGeoRef(QDialog):
         )
 
         self.image_preview_label.setPixmap(scaled_pixmap)
+        # GeoRef runs on the GUI thread: repaint now instead of at the end of the run.
+        self.image_preview_label.repaint()
         self._log(f"Image preview loaded: {image_path}")
 
     # ------------------------------------------------------------------
@@ -584,10 +587,15 @@ class DialogGeoRef(QDialog):
                 "               HYPERLAPSE_0121_3.tif, HYPERLAPSE_0121_4.tif\n"
                 "    In the latter case, select all four images."
             )
+            self.georef_results = []
+            self.progress_label.setText("Geo Ref – running...")
+            self.progress_label.repaint()
             GeoRef.georef_main(
                 image_callback=self.image_signal.emit,
-                mission_parameters=self.mission_parameters)
-
+                mission_parameters=self.mission_parameters,
+                result_callback=self._display_georef_result,
+            )
+            self.on_GeoRef_finished()
 
         except Exception as e:
             self.progress_bar.setValue(0)
@@ -595,10 +603,27 @@ class DialogGeoRef(QDialog):
             import traceback
             traceback.print_exc()
 
-    def on_GeoRef_finished(self):
+    def _display_georef_result(self, geotiff_path: str) -> None:
+        """Show the RGB bands of a georeferenced GeoTIFF once it is written."""
+        self.georef_results.append(geotiff_path)
+        self.progress_label.setText(f"Geo Ref – {Path(geotiff_path).name} done")
+        try:
+            rgb = read_orthophoto_preview(Path(geotiff_path))
+        except Exception as error:
+            self._log(f"Georeferenced preview failed: {type(error).__name__}: {error}")
+            return
+        self._show_rgb_preview(rgb)
+        self.image_preview_label.repaint()
+        self._log(f"Georeferenced image displayed: {geotiff_path}")
 
-        self.progress_label.setText("Georeferencing completed successfully.")
-        self._log("Georeferencing completed successfully.")
+    def on_GeoRef_finished(self):
+        count = len(self.georef_results)
+        if count:
+            message = f"Georeferencing completed: {count} image(s) georeferenced."
+        else:
+            message = "Georeferencing finished: no image was georeferenced."
+        self.progress_label.setText(message)
+        self._log(message)
         self.progress_bar.setValue(0)
 
 
@@ -745,6 +770,13 @@ class DialogGeoRef(QDialog):
 
     def _on_ODM_preview_ready(self, rgb: np.ndarray) -> None:
         """Show the RGB array (bands 1-3 of the orthophoto) in the preview zone."""
+        self._show_rgb_preview(rgb)
+        self._log("Orthophoto RGB preview displayed (bands 1-3).")
+        self.odm_preview_worker = None
+
+    def _show_rgb_preview(self, rgb: np.ndarray) -> None:
+        """Show an 8-bit RGB array in the preview zone, keeping its aspect ratio."""
+        rgb = np.ascontiguousarray(rgb)
         height, width, _channels = rgb.shape
         image = QImage(
             rgb.data,
@@ -761,8 +793,6 @@ class DialogGeoRef(QDialog):
                 Qt.TransformationMode.SmoothTransformation,
             )
         )
-        self._log("Orthophoto RGB preview displayed (bands 1-3).")
-        self.odm_preview_worker = None
 
     def _on_ODM_preview_error(self, error_message: str) -> None:
         self.image_preview_label.setText("Orthophoto preview could not be created.")

@@ -3588,7 +3588,8 @@ def detect_mode(paths, args_mode):
 # Process a single image
 # --------------------------------------------------
 
-def process_image(folder_input, img_name, args, zhang_dic,  tol_MC=0.01, img_override=None, tif_override=None, logger=None, georef_success=0):
+def process_image(folder_input, img_name, args, zhang_dic,  tol_MC=0.01, img_override=None, tif_override=None, logger=None, georef_success=0,
+                  result_callback=None):
     """
     Georeference a single image.
 
@@ -3690,6 +3691,8 @@ def process_image(folder_input, img_name, args, zhang_dic,  tol_MC=0.01, img_ove
         if new_geo_path:
             georef_success += 1
             logger.ok(f"{georef_success} Georeferencing completed: {new_geo_path}")
+            if result_callback is not None:
+                result_callback(str(new_geo_path))
 
         else:
             logger.warn(f" Processing completed without generating the georeferenced file")
@@ -3704,7 +3707,8 @@ def process_image(folder_input, img_name, args, zhang_dic,  tol_MC=0.01, img_ove
 # Process multispectral images
 # -----------------------------------------------------------------------
 
-def process_multispectral(folder_input, base, band_paths, args, zhang_dic, tol_MC=0.01, georef_success=0):
+def process_multispectral(folder_input, base, band_paths, args, zhang_dic, tol_MC=0.01, georef_success=0,
+                          result_callback=None):
     """
     Combine four spectral bands and georeference the resulting image.
 
@@ -3766,7 +3770,8 @@ def process_multispectral(folder_input, base, band_paths, args, zhang_dic, tol_M
                                     logger=logger,
                                     tol_MC=tol_MC,
                                     img_override=img,  # Direct injection of the four-channel image
-                                    georef_success=georef_success
+                                    georef_success=georef_success,
+                                    result_callback=result_callback,
                                 )
     return georef_success
 
@@ -3822,7 +3827,7 @@ def group_multispectral(paths, logger):
 
     return valid, rejected
 
-def georef_main(image_callback=None, mission_parameters=None):
+def georef_main(image_callback=None, mission_parameters=None, result_callback=None):
     """
     Run the georeferencing workflow in command-line or interactive mode.
 
@@ -3837,6 +3842,8 @@ def georef_main(image_callback=None, mission_parameters=None):
 
     Parameters:
         image_callback: Optional callback used to display the current image.
+        result_callback: Optional callback receiving the path of each georeferenced
+            GeoTIFF (interactive mode only).
         mission_parameters: Mission configuration parameters.
 
     Returns:
@@ -4029,7 +4036,8 @@ def georef_main(image_callback=None, mission_parameters=None):
                                                 zhang_dic,
                                                 logger=logger,
                                                 tol_MC=tolerence_Monte_Carlo,
-                                                georef_success=georef_success
+                                                georef_success=georef_success,
+                                                result_callback=result_callback,
                                             )
             Uti.show_info_message("IRDrone", f"{georef_success} images successfully georeferenced ...", "")
 
@@ -4058,7 +4066,8 @@ def georef_main(image_callback=None, mission_parameters=None):
                                                         args,
                                                         zhang_dic,
                                                         tolerence_Monte_Carlo,
-                                                        georef_success=georef_success
+                                                        georef_success=georef_success,
+                                                        result_callback=result_callback,
                                                     )
 
             Uti.show_info_message("IRDrone", f"{georef_success} multispectral images successfully georeferenced ...", "")
