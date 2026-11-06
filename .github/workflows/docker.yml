@@ -1,0 +1,36 @@
+name: Docker
+
+# Builds the Docker image and runs the command line tools inside it
+# (tests/cli_smoke.sh: --help of each script + alignment of the sample pair).
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: irdrone:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Command line tools in the image
+        run: docker run --rm -v "$PWD/samples:/samples:ro" irdrone:ci tests/cli_smoke.sh /samples

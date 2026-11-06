@@ -1,0 +1,16 @@
+# Keep the build context (and the image) small: no history, environments,
+# generated files or Windows-only binaries.
+.git
+.github
+.venv
+**/__pycache__
+**/*.py[cod]
+samples
+help
+website/build
+notebooks
+dist
+thirdparty/exiftool
+thirdparty/sjcam_raw2dng
+*.bat
+bat_helpers

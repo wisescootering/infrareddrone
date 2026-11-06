@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Set up IRDrone on Linux / macOS in a virtual environment at .venv/
 # (the one irdrone_wizard.sh picks up first).
-# Windows: use the conda environment (bat_helpers\install.bat) instead.
+# Windows: bat_helpers\install.bat does the same.
 #
 # Uses uv when it is installed (fast, can download the Python version itself),
 # otherwise python3 -m venv + pip.
