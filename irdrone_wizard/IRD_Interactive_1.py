@@ -5,17 +5,13 @@
 #   29/10/2023   V002
 # ---------------------------------------------------------------------------------
 
-from typing import Any, Dict, Optional, Tuple, List, Union, Callable
-import sys
+from typing import Any, Dict, Optional, List, Callable
 import os
 from pathlib import Path
 import shutil
 import json
-from datetime import date, time, datetime
-import time
-import psutil
+from datetime import datetime
 
-import piexif
 # -------------------- Image Library ------------------------------
 import rawpy
 import imageio
@@ -575,7 +571,7 @@ class Window_create_file_structure(QDialog):
         """
         print("[PIPE] Starting NIR transfer")
         self.progress_bar.setValue(0)
-        self.phase_label.setText(f"Waiting …")
+        self.phase_label.setText("Waiting …")
 
         Uti.show_info_message("IRDrone", "Choose the first image", "Near Infrared (NIR)")
         src_nir_folder = self.load_NIR_directory()
@@ -690,7 +686,7 @@ class Window_create_file_structure(QDialog):
                 sample_image_NIR = file_path
                 return folder
 
-            print(Style.YELLOW + f"⚠  NIR selection cancelled by user." + Style.RESET)
+            print(Style.YELLOW + "⚠  NIR selection cancelled by user." + Style.RESET)
             return None
 
         except Exception as e:
@@ -818,7 +814,7 @@ class Window_create_file_structure(QDialog):
         try:
             folder = getattr(self, "output_dir_NIR", None)
             if folder is None:
-                print(Style.YELLOW + f"⚠   start_exif_NIR_step: no output_dir_NIR set" + Style.RESET)
+                print(Style.YELLOW + "⚠   start_exif_NIR_step: no output_dir_NIR set" + Style.RESET)
                 done({}, "No NIR folder")
                 return
             cb = lambda exif_data, msg: done(exif_data, msg)
@@ -1282,7 +1278,7 @@ class Window_create_file_structure(QDialog):
             self.GPS_lat_field.setText("N ")
             self.GPS_lat_field.setInputMask(">A 99.99999;_")  # "A" will allow entry of any letter compatible with [NS] GPS_lat_pattern
             self.GPS_lat_field.setPlaceholderText("N  00.00000")
-            self.GPS_lat_field.setText(f"E 48.858370 ")
+            self.GPS_lat_field.setText("E 48.858370 ")
             self.GPS_lat_field.setStyleSheet("background-color: gray; color: white;")
             self.GPS_lat_field.setReadOnly(True)
 
@@ -1302,7 +1298,7 @@ class Window_create_file_structure(QDialog):
             self.GPS_lon_field.setText("E ")
             self.GPS_lon_field.setInputMask(">A 999.99999;_")
             self.GPS_lon_field.setPlaceholderText("E 000.00000")
-            self.GPS_lon_field.setText(f"E 2.294481 ")
+            self.GPS_lon_field.setText("E 2.294481 ")
             self.GPS_lon_field.setStyleSheet("background-color: gray; color: white;")
             self.GPS_lon_field.setReadOnly(True)
             try:
@@ -1648,28 +1644,28 @@ class Window_create_file_structure(QDialog):
                 # Comparaison complète sur spectral_band / img_suffix
                 for key in ["spectral_band", "img_suffix"]:
                     if not same_value(key):
-                        print(Style.YELLOW + f'⚠  ECART lors de Comparaison complète sur spectral_band / img_suffix")' + Style.RESET)
+                        print(Style.YELLOW + '⚠  ECART lors de Comparaison complète sur spectral_band / img_suffix")' + Style.RESET)
                         all_same = False
                         break
 
                 # Comparaison SEULEMENT outputFolder pour sync / fly
                 if all_same and not same_output_folder("sync"):
-                    print(Style.YELLOW + f"⚠ Modifications détectées → same_output_folder(sync)." + Style.RESET)
-                    print(Style.YELLOW + f'NEUTRALISE' + Style.RESET)
+                    print(Style.YELLOW + "⚠ Modifications détectées → same_output_folder(sync)." + Style.RESET)
+                    print(Style.YELLOW + 'NEUTRALISE' + Style.RESET)
                     all_same = True  # False
                     return
 
                 if all_same and not same_output_folder("fly"):
-                    print(Style.YELLOW + f"⚠ Modifications détectées → same_output_folder(fly)." + Style.RESET)
-                    print(Style.YELLOW + f'NEUTRALISE' + Style.RESET)
+                    print(Style.YELLOW + "⚠ Modifications détectées → same_output_folder(fly)." + Style.RESET)
+                    print(Style.YELLOW + 'NEUTRALISE' + Style.RESET)
                     all_same = True  # False
                     return
 
                 if all_same:
-                    if verbose: print(Style.GREEN + f"Aucun changement détecté → fichier conservé tel quel."+ Style.RESET)
+                    if verbose: print(Style.GREEN + "Aucun changement détecté → fichier conservé tel quel."+ Style.RESET)
                     return
 
-                print(Style.YELLOW + f"⚠ Modifications détectées → réécriture du fichier JSON." + Style.RESET)
+                print(Style.YELLOW + "⚠ Modifications détectées → réécriture du fichier JSON." + Style.RESET)
 
         # ----------------------------------------------------------
         # Écriture du fichier (nouveau ou mise à jour)
@@ -1935,14 +1931,14 @@ class Window_Load_TakeOff_Image(QDialog):
         self.info_Geo_label.setStyleSheet("background-color: gray;")
         self.info_Geo_label.setFixedHeight(150)
 
-        default_geo_data = f"Wpt:  \n" \
-                           f"image:\n" \
-                           f"Coordonnées:\n" \
-                           f"Date:  \n" \
-                           f"Lieu-dit: \n" \
-                           f"Commune: \n" \
-                           f"Région:   \n" \
-                           f"Pays: "
+        default_geo_data = "Wpt:  \n" \
+                           "image:\n" \
+                           "Coordonnées:\n" \
+                           "Date:  \n" \
+                           "Lieu-dit: \n" \
+                           "Commune: \n" \
+                           "Région:   \n" \
+                           "Pays: "
 
         self.info_Geo_label.setText(default_geo_data)
         self.info_Geo_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
@@ -2005,10 +2001,10 @@ class Window_Load_TakeOff_Image(QDialog):
                 "Body serial number": "570608",
                 "Date Exif": "1900:01:01 12:00:00",
                 "Date": '1900-01-01',
-                "Time": f"12:00:00",
+                "Time": "12:00:00",
                 "Location": "Paris",
                 "Description": "Eiffel tower",
-                "GPS coordinate": f"N 48.858370 E 2.294481",
+                "GPS coordinate": "N 48.858370 E 2.294481",
                 "GPS N-S": "N",
                 "GPS lat": 48.858370,
                 "GPS E-W": "E",

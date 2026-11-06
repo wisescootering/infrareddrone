@@ -1,0 +1,18 @@
+# Linting (https://docs.astral.sh/ruff/), checked in CI (.github/workflows/lint.yml):
+#   uvx ruff@0.17.1 check .
+# Only the Pyflakes rules (F): real errors such as undefined names, plus unused
+# imports / variables. No style rules: the code base does not follow one.
+target-version = "py39"
+extend-exclude = [
+    "notebooks",      # Jupytext notebooks: IPython magics are not Python
+    "website/build",
+]
+
+[lint]
+select = ["F"]
+ignore = [
+    "F403",  # from module import *: used on purpose in a few scripts
+    "F405",  # names coming from those star imports
+    "F841",  # unused local variables: ~40 leftovers, each needs a manual look
+             # (the right-hand side may matter), not worth an automatic fix
+]

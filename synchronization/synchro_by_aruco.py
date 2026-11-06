@@ -4,7 +4,6 @@ import os.path as osp
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
 import utils.utils_IRdrone as IRd
 import config
-import cv2
 import numpy as np
 import irdrone.utils as ut
 import irdrone.process as pr

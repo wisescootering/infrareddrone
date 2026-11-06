@@ -107,7 +107,7 @@ def plot_channels(cartesian_image):
             axs[1, ch].plot(im[angle, :, ch], "--", alpha=0.5, label="{}°".format(angle))
             diaglist.append(im[angle, :, ch])
         avg_radial_profile = np.average(np.array(diaglist), axis=0)
-        axs[1, ch].plot(avg_radial_profile, "k-", label="AVERAGE".format(angle))
+        axs[1, ch].plot(avg_radial_profile, "k-", label="AVERAGE".format())
         # axs[1, ch].set_legend(True)
         axs[1, ch].legend()
     plt.show()

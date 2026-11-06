@@ -235,7 +235,7 @@ class ImagePipe:
         self.backendcv = backendcv
         if jupyter is None:
             try:
-                __IPYTHON__
+                __IPYTHON__  # noqa: F821 (defined only inside IPython)
                 self.jupyter = True
             except:
                 self.jupyter = False

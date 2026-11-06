@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=C0103, C0301, W0703
-import os.path as osp
 import subprocess
 from pathlib import Path
-import json
 
 
 def get_exif_info(scr, dst, tmp):

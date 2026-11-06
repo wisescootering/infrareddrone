@@ -41,7 +41,7 @@ def viz_laplacian_energy(ms_img):
 def representation_visualization(rep):
     if rep.shape[-1] == 4:
         mode = LAPLACIAN_ENERGIES 
-        ttl = f"Directional energies"
+        ttl = "Directional energies"
         viz = [
             (g2ci(rep[:, :, 0]), "-"), (g2ci(rep[:, :, 1]), "|"),
             (g2ci(rep[:, :, 2]), "/"), (g2ci(rep[:, :, 3]), "\\")
