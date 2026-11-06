@@ -96,12 +96,17 @@ def get_gimbal_info(pth: Path):
         p = subprocess.run(cmd,  capture_output=True, text=True)
         output_text = p.stdout
         lines = output_text.split("\n")
-        selection = [li for li in lines if "Degree" in li]
         dic = dict()
-        for li in selection:
-            key = li.split(" Degree")[0]
-            val = float(li.split(": ")[1])
-            dic[key] = val
+        for li in lines:
+            # "Gimbal Yaw Degree : +70.20". Recent ExifTool versions also print
+            # "Gimbal Degree : 702,-899,0" (all three angles in 1/10 degree): skip it.
+            name, sep, value = li.partition(":")
+            if not sep or not name.strip().endswith(" Degree"):
+                continue
+            try:
+                dic[name.split(" Degree")[0].strip()] = float(value)
+            except ValueError:
+                continue
         with open(exif_file, "w") as fi:
             json.dump(dic, fi)
     return dic
