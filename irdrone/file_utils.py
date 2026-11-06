@@ -42,11 +42,16 @@ def glob_path_ci(path_pattern: PathLike) -> List[str]:
 
 
 def find_ci(path: PathLike) -> Optional[Path]:
-    """``path`` if it exists, else the file of the same folder whose name only differs by case."""
+    """The file of the folder of ``path`` whose name only differs by case, spelled as on disk.
+
+    An exact match wins. On a case-insensitive filesystem (Windows, macOS) ``path`` may exist
+    under another spelling, so the folder is always listed.
+    """
     path = Path(path)
-    if path.exists():
-        return path
     matches = glob_ci(path.parent, glob.escape(path.name))
+    for match in matches:
+        if match.name == path.name:
+            return match
     return matches[0] if matches else None
 
 
