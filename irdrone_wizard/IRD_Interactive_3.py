@@ -29,8 +29,10 @@ RESOURCE_ICON_DIR = (
 IMAGE_ARUCO_VIS_PATH = RESOURCE_ICON_DIR / "Image_ArUco_VIS.jpg"
 IMAGE_ARUCO_NIR_PATH = RESOURCE_ICON_DIR / "Image_ArUco_NIR.jpg"
 
-# Minimum display time of each ArUco check image during detection (ms)
-CHECK_IMAGE_HOLD_MS = 5000
+# Minimum display time of each ArUco check image during detection (ms).
+# Short enough for the mobile marker to visibly spin, long enough to keep
+# the GUI responsive when images arrive from several threads.
+CHECK_IMAGE_HOLD_MS = 200
 
 # ----------------------------------------------------
 #     bib Multi Thread
