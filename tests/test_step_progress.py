@@ -54,6 +54,24 @@ class ProgressRecordTest(unittest.TestCase):
         with mock.patch.object(Progress, "write_json_atomic", side_effect=OSError("read-only")):
             Progress.mark_step_done(self.mission, 4)  # no exception
 
+    def write_step1_files(self, *names):
+        for name in names:
+            path = self.mission / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('{"VIS": []}')
+
+    def test_step1_found_from_its_files_for_older_missions(self):
+        self.write_step1_files(*Progress.STEP1_FILES)
+        self.assertEqual(list(Progress.done_steps(self.mission)), [1])
+
+    def test_step1_started_but_not_finished_is_not_done(self):
+        # mission_parameters.json is written as soon as Step 1 starts
+        self.write_step1_files(Progress.STEP1_FILES[0], Progress.STEP1_FILES[1])
+        self.assertEqual(Progress.done_steps(self.mission), {})
+        (self.mission / Progress.STEP1_FILES[2]).parent.mkdir(parents=True)
+        (self.mission / Progress.STEP1_FILES[2]).write_text("")  # left by a full disk
+        self.assertEqual(Progress.done_steps(self.mission), {})
+
 
 class MainWindowStepsTest(unittest.TestCase):
     @classmethod

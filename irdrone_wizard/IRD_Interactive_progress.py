@@ -38,18 +38,43 @@ def mission_folder(mission_parameters, folder=None):
     return None
 
 
+# Files that only exist once Step 1 went through to the end: the EXIF stage of
+# each band writes its time_line.json after the images are copied / converted.
+# (mission_parameters.json alone is not enough: it is written when Step 1 starts.)
+STEP1_FILES = (
+    Path("FlightAnalytics") / "mission_parameters.json",
+    Path("AerialPhotography") / "VIS" / "time_line.json",
+    Path("AerialPhotography") / "NIR" / "time_line.json",
+)
+
+
+def _step1_done_from_files(folder):
+    """Completion date of Step 1 guessed from its output files, or None.
+    For missions processed before the progress record existed."""
+    paths = [Path(folder) / name for name in STEP1_FILES]
+    if not all(is_valid_json_file(path) for path in paths):
+        return None
+    latest = max(path.stat().st_mtime for path in paths)
+    return datetime.datetime.fromtimestamp(latest).isoformat(timespec="seconds")
+
+
 def done_steps(folder):
     """{step number: completion date} for the mission in folder."""
     if folder is None:
         return {}
+    steps = {}
     path = Path(folder) / PROGRESS_FILE
-    if not is_valid_json_file(path):
-        return {}
-    import json
-    with open(path, encoding="utf-8") as file:
-        data = json.load(file)
-    return {int(step): date for step, date in data.get("done", {}).items()
-            if str(step).isdigit() and int(step) in STEPS}
+    if is_valid_json_file(path):
+        import json
+        with open(path, encoding="utf-8") as file:
+            data = json.load(file)
+        steps = {int(step): date for step, date in data.get("done", {}).items()
+                 if str(step).isdigit() and int(step) in STEPS}
+    if 1 not in steps:
+        found = _step1_done_from_files(folder)
+        if found:
+            steps[1] = found
+    return steps
 
 
 def mark_step_done(folder, step):
