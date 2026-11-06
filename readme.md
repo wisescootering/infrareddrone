@@ -1,4 +1,15 @@
 # infrared & visible Aerial photography
+
+[![Tests](https://github.com/wisescootering/infrareddrone/actions/workflows/tests.yml/badge.svg)](https://github.com/wisescootering/infrareddrone/actions/workflows/tests.yml)
+[![Docker](https://github.com/wisescootering/infrareddrone/actions/workflows/docker.yml/badge.svg)](https://github.com/wisescootering/infrareddrone/actions/workflows/docker.yml)
+[![Documentation](https://github.com/wisescootering/infrareddrone/actions/workflows/pages.yml/badge.svg)](https://wisescootering.github.io/infrareddrone/)
+[![User manual (PDF)](https://img.shields.io/badge/manual-PDF-orange)](https://github.com/wisescootering/infrareddrone/releases/download/help-latest/irdrone_help.pdf)
+![Python 3.9 | 3.12](https://img.shields.io/badge/python-3.9%20%7C%203.12-blue)
+![Windows | Linux | macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
+[![License: AGPL v3](https://img.shields.io/badge/license-AGPL%20v3-green)](./LICENSE)
+
+📖 Documentation website: <https://wisescootering.github.io/infrareddrone/>
+
 ![our drone setup](./illustrations/drone.png)
 
 ![infrared+visible](./illustrations/irfusion_mini.gif)
@@ -26,21 +37,60 @@
 # 🔋 Set up
 
 ------------
+IRDrone runs on **Windows and Linux** (both tested on every change, Python 3.9 and 3.12) and on macOS.
+It needs a Python environment with the packages of [requirements.txt](./requirements.txt), and a few external tools.
 
-## 🐧 Linux / macOS: `./setup.sh`
-Creates a `.venv` at the repository root with the packages of [requirements.txt](./requirements.txt).
-It uses [uv](https://docs.astral.sh/uv/) when installed (Python 3.12 by default, `IRDRONE_PYTHON_VERSION` to change it),
-otherwise `python3 -m venv` + pip (needs `python3-venv` and `python3-tk` on Debian / Ubuntu).
-Run it again to update the environment, or `./setup.sh --recreate` to start from scratch.
-It also checks for `exiftool`, `rawtherapee-cli` and `docker`, which are installed separately
-(`sudo apt install libimage-exiftool-perl rawtherapee`).
+## 1. Get the code
+```bash
+git clone https://github.com/wisescootering/infrareddrone.git
+cd infrareddrone
+```
+
+## 2. Python environment
+The setup scripts create a virtual environment `.venv` at the repository root.
+They use [uv](https://docs.astral.sh/uv/) when it is installed (recommended: fast, and it downloads
+the right Python by itself), otherwise `python -m venv` + pip.
+
+| | Command |
+|---|---|
+| 🐧 Linux / 🍎 macOS | `./setup.sh` |
+| 🪟 Windows | double-click [`bat_helpers/install.bat`](./bat_helpers/install.bat) |
+
+* Python 3.12 by default, `IRDRONE_PYTHON_VERSION` to pick another one (3.9 or newer).
+* Run the script again to update the environment. `./setup.sh --recreate` (or deleting `.venv`) starts from scratch.
+* Without uv on Debian / Ubuntu, `python3-venv` and `python3-tk` are needed: `sudo apt install python3-venv python3-tk`.
+* At the end, the scripts check the packages and tell which external tools are missing.
+
+Doing the same by hand:
+```bash
+uv venv --python 3.12 .venv
+uv pip install -r requirements.txt
+```
+
+*Conda still works if you prefer it*: [environment.yml](./environment.yml) describes the `py39_clean`
+environment used on Windows (it also brings GDAL, used for the contour lines of the maps).
+The launchers find it automatically, see below.
+
+## 3. External tools
+| Tool | Needed for | Windows | Linux (Debian / Ubuntu) | macOS |
+|---|---|---|---|---|
+| [ExifTool](https://exiftool.org) | always | bundled in `thirdparty/` | `sudo apt install libimage-exiftool-perl` | `brew install exiftool` |
+| [RawTherapee](https://www.rawtherapee.com) | DJI DNG images | installer, default location | `sudo apt install rawtherapee` | [RawTherapee.app](https://www.rawtherapee.com/downloads) in `/Applications` |
+| [SJCam RAW converter](https://github.com/yanburman/sjcam_raw2dng) | SJCam .RAW images | bundled in `thirdparty/` | bundled (x86-64) | build it from source |
+| [Docker](https://www.docker.com/) | OpenDroneMap maps (step 5) | Docker Desktop | `docker.io` or Docker Engine | Docker Desktop |
+
+Each tool is looked up in its environment variable (`EXIFTOOLPATH`, `RAWTHERAPEEPATH`, `SJCONVERTERPATH`),
+then at its usual location, then on the `PATH`.
+
+## 4. Sample data
+Download our sample flight [FLY_TEST](https://drive.google.com/drive/folders/1khi0WdWyZ6H7Z7Lc5Q_i-Mm0Xq2sgpd1?usp=sharing).
 
 ## 🧙 Launch the IRDrone wizard (GUI)
 * Windows: double-click `irdrone_wizard.bat`
 * Linux / macOS: `./irdrone_wizard.sh`
 
 Both launchers use the first Python found among: the `IRDRONE_PYTHON` environment variable,
-a `.venv` folder at the repository root, the conda environment `py39_clean`
+the `.venv` folder at the repository root, the conda environment `py39_clean`
 (`~/miniforge3`, `~/miniconda3`, `~/anaconda3`; change the name with `IRDRONE_CONDA_ENV`),
 then the Python on the PATH. The wizard code lives in [irdrone_wizard](./irdrone_wizard).
 
@@ -50,38 +100,38 @@ the main window, with a ⚙ button to change it, and saved in the user settings
 (`%APPDATA%\IRDrone\settings.json`, `~/.config/irdrone/settings.json` on Linux).
 The environment variable `IRDRONE_WORKING_DIR`, when set, takes priority.
 
-
-------------
-## 🐋 Docker 
-
-------------
-* First of all
-  * `git clone https://github.com/wisescootering/infrareddrone.git`
-  * `cd infrareddrone`
-* Once you have [docker](https://www.docker.com/) running,
-* Build the docker image `docker build -t irdrone -f .\Dockerfile .`
-* Download our sample folder [FLY_TEST](https://drive.google.com/drive/folders/1khi0WdWyZ6H7Z7Lc5Q_i-Mm0Xq2sgpd1?usp=sharing)
-* Run the docker image. `docker run -v C:\Users\xxxx\Documents\FLY_test:/home/samples/FLY_test -it irdrone`
-  * `python3 synchronization/synchro_by_aruco.py --folder /home/samples/FLY_test/Synchro/ --vis "*.DNG" --nir "*.RAW"`
-  * `python3 run.py --config /home/samples/FLY_test/config.json --clean-proxy --odm-multispectral --selection best-mapping`
-
-
-Note:
- * *press CTRL+D to escape*
- * *There are no visual checks through graphs*
-
+## ⌨️ Command line
+With the environment activated (`source .venv/bin/activate`, or `.venv\Scripts\activate` on Windows):
+```bash
+python synchronization/synchro_by_aruco.py --folder FLY_test/Synchro/ --vis "*.DNG" --nir "*.RAW"
+python run.py --config FLY_test/config.json --clean-proxy --odm-multispectral --selection best-mapping
+python automatic_registration.py --images VISIBLE.DNG INFRARED.RAW --outdir aligned/  # a single pair
+```
+All the `run.py` options are described in *Details* below. `tests/cli_smoke.sh` checks these tools on the sample pair of `samples/`.
 
 
 ------------
-## 🔥 Classic software installation
+## 🐋 Docker
 
 ------------
-*For practical reasons*, only **windows is supported** as of now... For anything else please use the docker version!
-* install [Anaconda](https://www.anaconda.com/products/individual) with all default options. [Anaconda for windows, python 3.9](https://repo.anaconda.com/archive/Anaconda3-2021.11-Windows-x86_64.exe)
-* [install.bat](/bat_helpers/install.bat) will set up the right python environment for you. 
-* you have to install [raw therapee](https://www.rawtherapee.com) software at the default windows location.
-* Download our sample folder [FLY_TEST](https://drive.google.com/drive/folders/1khi0WdWyZ6H7Z7Lc5Q_i-Mm0Xq2sgpd1?usp=sharing)
-* To use ODM ([OpenDroneMap](https://OpenDroneMap.org/)), install docker and make sure you have it running correctly
+The image contains the command line tools (no GUI) with RawTherapee and ExifTool, on any OS running [Docker](https://www.docker.com/).
+```bash
+docker build -t irdrone .
+docker run --rm -it -v /path/to/FLY_test:/home/samples/FLY_test irdrone
+```
+Then, inside the container:
+```bash
+python synchronization/synchro_by_aruco.py --folder /home/samples/FLY_test/Synchro/ --vis "*.DNG" --nir "*.RAW"
+python run.py --config /home/samples/FLY_test/config.json --clean-proxy --odm-multispectral --selection best-mapping
+```
+
+Notes:
+ * *on Windows, the volume looks like `-v C:\Users\xxxx\Documents\FLY_test:/home/samples/FLY_test`*
+ * *press CTRL+D to leave the container*
+ * *there are no visual checks through graphs*
+ * *OpenDroneMap is not included: run it from the host on the exported images*
+
+
 ------------
 ## 🔨 Hardware
 ------------
