@@ -88,12 +88,9 @@ def get_EXIF_XMP(pth: Path, index, utilise_cache=False, verbose: bool = False):
 
     """
 
-    EXIFTOOLPATH = Path(__file__).parent.parent / "irdrone" / "exiftool" / "exiftool.exe"
-    # Vérifie si le fichier existe
-    if EXIFTOOLPATH.exists():
-        pass
-    else:
-        print(f"error  'exiftool.exe' was not found at {EXIFTOOLPATH}")
+    from config import EXIFTOOLPATH
+    if not Path(EXIFTOOLPATH).exists():
+        print(f"error  ExifTool was not found at {EXIFTOOLPATH} (set EXIFTOOLPATH)")
         return
 
     exif_file = pth.with_suffix(".exif")

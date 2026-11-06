@@ -27,15 +27,9 @@ from pathlib import Path
 import json
 
 
-if os.name == 'nt':
-    RAWTHERAPEEPATH = r"C:\Program Files\RawTherapee\5.8\rawtherapee-cli.exe"
-    assert osp.exists(RAWTHERAPEEPATH), "Please install raw therapee first http://www.rawtherapee.com/downloads/5.8/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
-    EXIFTOOLPATH = osp.join(osp.dirname(__file__), "..", "thirdparty", "exiftool", "exiftool.exe")
-    assert osp.exists(EXIFTOOLPATH), "Requires exif tool at {} from https://exiftool.org/".format(EXIFTOOLPATH)
-
-else:
-    RAWTHERAPEEPATH = "rawtherapee-cli"
-    EXIFTOOLPATH = "exiftool"
+# External tool paths: one lookup for the whole project, see config.py.
+RAWTHERAPEEPATH = cf.RAWTHERAPEEPATH
+EXIFTOOLPATH = cf.EXIFTOOLPATH
 
 shading_correction_DJI = None
 shading_correction_M20 = None
@@ -69,18 +63,18 @@ def cached_tif(path):
 
 def load_dng(path, template="DJI_neutral.pp3"):
     out_file = cached_tif(path)
-    cmd = [
-        RAWTHERAPEEPATH,
-        "-t", "-o", out_file,
-        "-p", osp.join(osp.dirname(__file__), "..", "thirdparty", "rawtherapee", template),
-        "-c", path
-    ]
     if osp.isfile(out_file):
         try:
             return load_tif(out_file), out_file
         except (OSError, cv2.error):
             logging.warning("Discarding unreadable RawTherapee proxy: %s", out_file)
             os.remove(out_file)
+    cmd = [
+        cf.require_tool("RAWTHERAPEEPATH"),
+        "-t", "-o", out_file,
+        "-p", osp.join(osp.dirname(__file__), "..", "thirdparty", "rawtherapee", template),
+        "-c", path
+    ]
 
     completed = subprocess.run(cmd, check=False)
     if completed.returncode != 0:
@@ -448,22 +442,13 @@ class Image:
                     self._lineardata = rawimg
 # -------------------------------------------------------------------------------------------------------- SJCAM M20 RAW
             elif str.lower(osp.basename(self.path)).endswith("raw"):
-                if os.name == "nt":
-                    sjcam_converter = osp.join(osp.dirname(osp.abspath(__file__)), "..", "thirdparty", "sjcam_raw2dng", "sjcam_raw2dng.exe")
-                    sjconverter_link = "https://github.com/yanburman/sjcam_raw2dng/releases/tag/v1.2.0"
-                    assert osp.isfile(sjcam_converter), "{} does not exist - please download from {}".format(
-                        sjcam_converter,
-                        sjconverter_link
-                    )
-                else:
-                    sjcam_converter = osp.join(osp.dirname(osp.abspath(__file__)), "..", "thirdparty", "sjcam_raw2dng_linux", "sjcam_raw2dng")
                 conv_dir = self.conv_dir
                 if not osp.isdir(conv_dir):
                     mkdir(conv_dir)
                 dng_file = osp.join(conv_dir, with_suffix_ci(osp.basename(self.path), ".raw", ".dng"))
                 if not osp.isfile(dng_file):
-                    # assert osp.isfile(sjcam_converter), f"No SJCam converter {sjcam_converter}"
                     assert osp.isfile(self.path), f"No input raw file {self.path}"
+                    sjcam_converter = cf.require_tool("SJCONVERTERPATH")
                     subprocess.call([sjcam_converter, "-o", conv_dir, osp.abspath(self.path)])
                 assert osp.isfile(dng_file), "RAW file not converted into DNG!"
                 self.convert_sjcam_dng(dng_file)

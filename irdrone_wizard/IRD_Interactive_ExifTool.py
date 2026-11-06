@@ -7,8 +7,8 @@ import json
 
 
 def get_exif_info(scr, dst, tmp):
-    EXIFTOOLPATH = osp.join("C:\\Documents-Alain\\Projet-IRdrone\\Code_Python\\irdrone\\irdrone\\exiftool\\exiftool.exe")
-    #EXIFTOOLPATH = Path(__file__).parent/"Code_Python"/ "irdrone"/ "irdrone" / "exiftool" / "exiftool.exe"
+    from config import require_tool
+    EXIFTOOLPATH = require_tool("EXIFTOOLPATH")
 
     print(EXIFTOOLPATH)
     # 1- Lecture des données Exif d'une image fileName.tif  (commande  '-r')

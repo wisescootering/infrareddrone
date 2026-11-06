@@ -121,15 +121,8 @@ import IRD_Interactive_utils as Uti
 from irdrone.file_utils import find_ci, glob_ci
 
 
-if os.name == 'nt':
-    RAWTHERAPEEPATH = r"C:\Program Files\RawTherapee\5.8\rawtherapee-cli.exe"
-    assert osp.exists(RAWTHERAPEEPATH), "Please install raw therapee first http://www.rawtherapee.com/downloads/5.8/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
-    EXIFTOOLPATH = osp.join(osp.dirname(__file__), "..", "thirdparty", "exiftool", "exiftool.exe")
-    assert osp.exists(EXIFTOOLPATH), "Requires exif tool at {} from https://exiftool.org/".format(EXIFTOOLPATH)
-
-else:
-    RAWTHERAPEEPATH = "rawtherapee-cli"
-    EXIFTOOLPATH = "exiftool"
+# External tool paths: one lookup for the whole project, see config.py.
+from config import RAWTHERAPEEPATH, EXIFTOOLPATH, require_tool
 
 # ============================================================
 #  CLASS
@@ -996,7 +989,7 @@ def dng2tiff(folder, img_name, suffix="dng", bit=16):
     )
 
     cmd = [
-        RAWTHERAPEEPATH,
+        require_tool("RAWTHERAPEEPATH"),
         "-o", str(tiff_file),
         "-Y",
         "-t",
@@ -1106,7 +1099,7 @@ def read_exif_and_write_json(
     """
     try:
         # 1) Run ExifTool
-        cmd = [EXIFTOOLPATH, "-json", str(image_path)]
+        cmd = [require_tool("EXIFTOOLPATH"), "-json", str(image_path)]
         result = subprocess.run(cmd, capture_output=True, text=True)
 
         if result.returncode != 0:
