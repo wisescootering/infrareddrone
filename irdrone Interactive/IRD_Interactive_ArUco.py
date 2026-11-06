@@ -1,0 +1,1757 @@
+# -*- coding: utf-8 -*-
+# pylint: disable=C0103, C0301, W0703
+# --------------------------------------------------------------------------------
+#   IR_drone interactive
+#
+#   2026-10-20 00:35:10   V003   *
+# ---------------------------------------------------------------------------------
+
+import os
+import os.path as osp
+from pathlib import Path
+import numpy as np
+import cv2
+import matplotlib.pyplot as plt
+import time
+import json
+from json import JSONDecodeError
+from typing import List, Tuple, Optional, Sequence, Dict, Any, Union, Callable, Iterable
+
+import multiprocessing
+import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import copy
+
+import IRD_Interactive_utils as Uti
+from IRD_Interactive_utils import to_json_safe
+from IRD_Interactive_utils import safe_path
+from IRD_Interactive_color_style import Style
+
+from config import RAWTHERAPEEPATH
+assert Path(RAWTHERAPEEPATH).exists(), "Please install raw therapee first http://www.rawtherapee.com/downloads/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
+
+# ------------------------------------
+# Available ArUco dictionaries
+# ------------------------------------
+ARUCO_DICT = {
+    "DICT_4X4_50": cv2.aruco.DICT_4X4_50,
+    "DICT_4X4_100": cv2.aruco.DICT_4X4_100,
+    "DICT_4X4_250": cv2.aruco.DICT_4X4_250,
+    "DICT_4X4_1000": cv2.aruco.DICT_4X4_1000,
+    "DICT_5X5_50": cv2.aruco.DICT_5X5_50,
+}
+
+def process_aruco_images(
+        folderMissionPath: Path,
+        name_folder: str,
+        spectral_band: str,
+        suffix_image: str,
+        save_check_detection_img: bool = False,
+        verbose: bool = True,
+        use_aruco_cache: bool = False,
+        img_check_suffix="jpg",
+        multi_thread=False,
+        max_workers: int = 4,
+        progress_callback: Optional[Callable[[int], None]] = None,
+        log_callback: Optional[Callable[[str], None]] = None,
+        check_image_callback: Optional[Callable[[str], None]] = None
+):
+    """
+    Multi-threaded processing of ArUco detections.
+    Full optimization: if EXIF cache exists, do NOT load image.
+
+
+    Process a sequence of VIS/NIR images to detect ArUco markers and compute
+    absolute/mobile angles for each frame in the sequence.
+
+    Parameters
+    ----------
+    folderMissionPath : Path
+        Path to the mission folder (e.g. C:/Air-Mission/FLY-xxxxxx).
+    name_folder : str
+        Name of the subfolder containing the images (e.g. "AerialPhotography").
+    spectral_band : str
+        Image type: "VIS" or "NIR".
+    suffix_image : str
+        Image extension: "dng", "jpg", ...
+    save_check_detection_img : bool, optional
+        Save each detection result image in folder for checking. Default is False.
+    verbose : bool, optional
+        Print debug information. Default is False.
+    use_aruco_cache : bool, optional
+        If True, force reprocessing and overwrite ArUco EXIF cache.
+    check_image_callback : callable, optional
+        Called with the path of each check image just after it has been saved
+        (may be called from several threads; it must be thread-safe, e.g. a Qt
+        signal ``emit``). Not called when the EXIF cache is used.
+
+    Returns
+    -------
+    results : list of dict
+        Each entry contains:
+            {
+                "image": filename,
+                "angle_abs": ...,
+                "angle_img": ...,
+                "delta": ...
+            }
+
+    """
+
+    def log_message(message: str) -> None:
+        """Print a message and optionally forward it to the GUI log."""
+        print(message)
+        if log_callback is not None:
+            log_callback(message)
+
+
+    # 1) Retrieve list of images
+    outputFolder, idMin, idMax, listImages = read_transfer_info(
+        folderMissionPath, spectral_band, suffix_image, key="sync"
+    )
+
+
+    folder_images = folderMissionPath / name_folder
+
+    dic_relative_time_line = load_relative_time_line(folderMissionPath, spectral_band, log_message=log_message)
+
+    results = []
+    x_vals = []
+    y_vals = []
+
+    max_workers = best_thread_count(io_bound=True)
+    if log_message is None:
+        print(Style.GREEN + f"ℹ Processing {len(listImages)} images using {max_workers} threads..." + Style.CYAN)
+    else:
+        log_message(f"ℹ Processing {len(listImages)} images using {max_workers} threads...")
+
+    # ------------------------------------------------------------
+    # Worker function (one image per thread)
+    # ------------------------------------------------------------
+    def process_one(i, img_name, folderMissionPath):
+        img_path = folder_images / img_name
+        ext = img_name.lower().split('.')[-1]
+
+        # ------------------------------------------------------------
+        # 1) FAST PATH : cache EXIF détecté → aucun chargement image
+        # ------------------------------------------------------------
+        cached = read_aruco_cache(img_path)
+        if cached and use_aruco_cache:
+            if log_message is None:
+                print(Style.YELLOW + f'[Warning]  ⚠  USE CACHE {use_aruco_cache}' + Style.RESET)
+            else:
+                log_message(f'⚠   USE CACHE {use_aruco_cache}')
+            return i, img_name, cached
+
+        # --------------------------------------------------------------------------------------------------
+        # 2) SLOW PATH : pas de cache pour les données aruco de détection d'angle → chargement image normal
+        # --------------------------------------------------------------------------------------------------
+        if ext == "dng" and spectral_band in ["VIS", "NIR"]:
+            img_cv, _ = load_dng_for_aruco(str(img_path), folderMissionPath.parent)
+        else:
+            img_cv = cv2.imread(str(img_path))
+
+        if img_cv is None:
+            return i, img_name, None
+
+        # --------------------------------------------------------
+        # 3) ArUco detection
+        # --------------------------------------------------------
+        result, _, marker_data_ID = detect_mobile_marker_absolute(
+            image_cv=img_cv,
+            img_path=img_path,
+            arucoDict=get_aruco_dict("DICT_4X4_50"),
+            fixed_ids=[5, 22, 16, 13],
+            mobile_id=0,
+            marker_data=None,
+            title=name_folder + " - " + img_name,
+            verbose=verbose,
+            use_aruco_cache=use_aruco_cache,
+            log_callback=log_callback,
+            log_message=log_message,
+        )
+        result["relative_timeline"] = extract_relative_time_line(dic_relative_time_line, Path(img_path).name, spectral_band, suffix_image)
+        # --------------------------------------------------------
+        # Save check detection images (thread-safe and no GUI)
+        # --------------------------------------------------------
+        if save_check_detection_img and result is not None:
+            check_detection_dir = safe_path(Path(folderMissionPath.parent) / "Synchro" / "Check_ARUCO")
+            check_detection_dir.mkdir(exist_ok=True)
+
+            if save_check_detection_img and result is not None and marker_data_ID is not None:
+
+                img_check = draw_aruco_overlay(
+                    img_cv,
+                    result,
+                    marker_data_ID,
+                    fixed_ids=[5, 22, 16, 13]
+                )
+
+                out_path = check_detection_dir / f"{img_path.stem}_aruco.{img_check_suffix}"
+                if img_check_suffix == "jpg":
+                    cv2.imwrite(str(out_path), img_check, [cv2.IMWRITE_JPEG_QUALITY, 90])
+                else:
+                    cv2.imwrite(str(out_path), img_check)
+
+            out_path = check_detection_dir / f"{img_path.stem}_aruco.{img_check_suffix}"
+            if img_check_suffix == "jpg":
+                cv2.imwrite(str(out_path), img_check, [cv2.IMWRITE_JPEG_QUALITY, 90])
+            else:
+                cv2.imwrite(str(out_path), img_check)
+
+            # Tell the GUI that a new check image is available (file fully written)
+            if check_image_callback is not None:
+                check_image_callback(str(out_path))
+
+        return i, img_name, result
+
+    # ------------------------------------------------------------
+    # MULTITHREAD EXECUTION
+    # ------------------------------------------------------------
+
+    if not multi_thread:
+        for i, img_name in enumerate(listImages, start=1):
+            i, img_name, result = process_one(i, img_name, folderMissionPath)
+            pct = int(100 * i / len(listImages))
+            if progress_callback is not None:
+                progress_callback(pct)
+            if result:
+                results.append({
+                    "image": img_name,
+                    "angle_abs": result["angle_abs"],
+                    "angle_img": result["angle_img"],
+                    "delta": result["delta_abs_img"],
+                    "relative_timeline": result["relative_timeline"],
+                })
+                x_vals.append(result["relative_timeline"])
+                y_vals.append(result["angle_img"])
+
+    else:
+        futures = []
+        total = len(listImages)
+        done = 0
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+
+
+            for i, img_name in enumerate(listImages, start=1):
+
+                futures.append(executor.submit(process_one, i, img_name, folderMissionPath))
+            for future in as_completed(futures):
+                i, img_name, result = future.result()
+                done += 1
+                pct = int(100 * done / total)
+                if progress_callback is not None:
+                    progress_callback(pct)
+                if result:
+                    results.append({
+                        "image": img_name,
+                        "angle_abs": result["angle_abs"],
+                        "angle_img": result["angle_img"],
+                        "delta": result["delta_abs_img"],
+                        "relative_timeline": result["relative_timeline"],
+                    })
+                    x_vals.append(result["relative_timeline"])
+                    y_vals.append(result["angle_img"])
+
+    # ------------------------------------------------------------
+    # Order results chronologically
+    # ------------------------------------------------------------
+
+    ordered = sorted(zip(x_vals, y_vals, results), key=lambda t: t[0])
+    x_vals = [t[0] for t in ordered]
+    y_vals = [t[1] for t in ordered]
+    results = [t[2] for t in ordered]
+
+    return results, x_vals, y_vals
+
+def detect_mobile_marker_absolute(image_cv=None,
+                                  img_path=None,
+                                  arucoDict=None,
+                                  fixed_ids=[5, 22, 16, 13],
+                                  mobile_id=0,
+                                  marker_data=None,
+                                  show=False,
+                                  title="",
+                                  verbose=True,
+                                  use_aruco_cache=False,
+                                  log_callback: Optional[Callable[[str], None]] = None,
+                                  log_message=None,
+                                  ):
+    """
+    Calcule l'angle et la position du marqueur mobile dans le repère défini par
+    4 marqueurs fixes.
+
+    Si certains marqueurs fixes sont manquants, le calcul absolu n'est pas effectué
+    et seule l'orientation image est retournée (mode dégradé).
+
+    result contient :
+      - missing_fixed : True si un ou plusieurs marqueurs fixes sont absents
+      - mobile_id
+      - center_abs : (u,v) coords normalisées dans le repère des fixes
+      - angle_abs  : angle du marker mobile dans le repère absolu (°)
+      - angle_img  : angle du marker mobile dans le repère image (°)
+      - delta_abs_img : différence angle_abs - angle_img (°)
+      - x_ref, y_ref : vecteurs unité du repère sol
+      - width_px, height_px : tailles du repère
+    """
+
+    r = read_aruco_cache(img_path)
+
+    if r and use_aruco_cache:
+        if log_message is None:
+            print(Style.GREEN + f'ℹ Traitement AVEC CACHE de {img_path}' + Style.RESET)
+        else:
+            log_message(f'ℹ  Traitement AVEC CACHE de {img_path}')
+        return r, None, None
+    else:
+        if log_message is None:
+            print(Style.GREEN + f'ℹ Détection des Aruco dans  {img_path}' + Style.RESET)
+        else:
+            log_message(f'ℹ Détection des Aruco dans  {img_path}')
+        pass
+
+    img_cv_out = image_cv.copy() if image_cv is not None else None
+
+    # --- détecter les marqueurs si cache non utilisé
+    if marker_data is None:
+        if image_cv is None or arucoDict is None:
+            raise ValueError(Style.YELLOW + "Soit marker_data doit être fourni, soit image_cv et arucoDict." + Style.RESET)
+        marker_data = detect_aruco_marker(image_cv.copy(), arucoDict, title=title, verbose=verbose, log_message=log_message)
+
+    if not marker_data:
+        if verbose:
+            if log_message is None:
+                print(Style.YELLOW + "⚠ Aucun marqueur détecté !" + Style.RESET)
+            else:
+                log_message("⚠ Aucun marqueur détecté !")
+        return None, img_cv_out, None
+
+
+    # organiser les données par ID
+    marker_data_ID = {int(entry[0]): {"angle_img": entry[1],
+                          "center": np.array(entry[2], dtype=float),
+                          "corners": np.array(entry[3], dtype=float)}
+          for entry in marker_data}
+
+    # vérifier présence des marqueurs fixes et mobile
+    missing_fixed = [fid for fid in fixed_ids if fid not in marker_data_ID]
+    mobile_missing = int(mobile_id not in marker_data_ID)
+
+    result = {
+        "missing_fixed": missing_fixed,
+        "mobile_id": int(mobile_id),
+        "center_abs": None,
+        "angle_abs": None,
+        "angle_img": marker_data_ID[mobile_id]["angle_img"] if not mobile_missing else None,
+        "delta_abs_img": None,
+        "x_ref": None,
+        "y_ref": None,
+        "width_px": None,
+        "height_px": None,
+    }
+
+    if missing_fixed or mobile_missing:
+        if missing_fixed:
+            if verbose:
+                if log_message is None:
+                    print(Style.YELLOW + f"⚠️Tous les marqueurs fixes ne sont pas détectés ! manquants = {missing_fixed}" + Style.CYAN)
+                else:
+                    log_message(f"⚠️Tous les marqueurs fixes de {img_path.stem} ne sont pas détectés ! manquants = {missing_fixed}")
+
+        if mobile_missing:
+            if verbose:
+                if log_message is None:
+                    print(Style.RED + f"❌ Le marqueur mobile ({mobile_id}) de {img_path.stem} n'est pas détecté !" + Style.RESET)
+                else:
+                    log_message(f"❌ Le marqueur mobile ({mobile_id}) de {img_path.stem} n'est pas détecté !")
+        write_aruco_cache(img_path, result, log_message=log_message)
+        return result, img_cv_out, marker_data_ID
+
+    # --- calcul des coordonnées et de l'angle absolu
+    geom = compute_mobile_marker_geometry(marker_data_ID, fixed_ids, mobile_id, log_message=log_message)
+    if geom is not None:
+        result.update(geom)
+    else:
+        if verbose:
+            if log_message is None:
+                print(Style.YELLOW + f"⚠  Impossible de calculer la géométrie absolue pour {img_path.stem}." + Style.RESET)
+            else:
+                log_message(f"⚠  Impossible de calculer la géométrie absolue pour {img_path.stem}.")
+
+    write_aruco_cache(img_path, result, log_message=log_message)
+    return result, img_cv_out, marker_data_ID
+
+
+def detect_aruco_marker(
+    image_cv: np.ndarray,
+    arucoDict: "cv2.aruco_Dictionary",
+    title: str = "",
+    verbose: bool = True,
+    log_message=None
+) -> List[Tuple[int, float, Tuple[int, int], np.ndarray]]:
+    """
+    Détecte les marqueurs ArUco dans une image_cv (au format d'un tableau numpy compatible cv2).
+
+    Retourne :
+        - marker_data : liste de tuples (markerID, angle_deg, (cX, cY), corners_array)
+    ⚠️ Aucun affichage, aucune GUI, aucun matplotlib.     Thread-safe.
+
+    """
+
+    if hasattr(cv2.aruco, "ArucoDetector"):
+        # OpenCV >= 4.7 (the legacy detectMarkers function is removed in 5.x)
+        detector = cv2.aruco.ArucoDetector(arucoDict, cv2.aruco.DetectorParameters())
+        corners_list, ids, _ = detector.detectMarkers(image_cv)
+    else:
+        arucoParams = cv2.aruco.DetectorParameters_create()
+        corners_list, ids, _ = cv2.aruco.detectMarkers(image_cv, arucoDict, parameters=arucoParams)
+
+    if corners_list is None or len(corners_list) == 0:
+        if verbose:
+            if log_message is None:
+                print(Style.YELLOW + "[WARNING] Aucun marqueur détecté" + Style.RESET)
+            else:
+                log_message("⚠  Aucun marqueur détecté")
+        return []
+
+    ids = ids.flatten()
+    marker_data = []
+
+    for markerCorners, markerID in zip(corners_list, ids):
+        corners_array = markerCorners.reshape((4, 2))
+
+        principal_axis_ = (
+            (corners_array[0] - corners_array[3]) +
+            (corners_array[1] - corners_array[2])
+        )
+        principal_axis = principal_axis_ / np.linalg.norm(principal_axis_)
+
+        angle = float(np.rad2deg(np.arctan2(principal_axis[1], principal_axis[0])))
+
+        cX = int(np.mean(corners_array[:, 0]))
+        cY = int(np.mean(corners_array[:, 1]))
+
+        if verbose:
+            if log_message is None:
+                print(Style.GREEN + f"ℹ  ID {markerID}, angle={angle:.1f}°, centre=({cX},{cY})" + Style.CYAN)
+            else:
+                log_message(f"ℹ  ID {markerID}  | angle={angle:.1f}°  | centre=({cX},{cY})")
+
+        marker_data.append((int(markerID), angle, (cX, cY), corners_array))
+
+    return marker_data
+
+def write_aruco_cache(img_path: str, aruco_data: dict, log_message=None) -> bool:
+    """
+    Safely write ArUco analysis data into a companion .exif JSON file.
+
+    This function attempts to load an existing .exif JSON file associated
+    with the given image path, updates the "aruco" key, and writes the updated
+    data back to disk. Any unexpected I/O or JSON errors are caught to avoid
+    interrupting higher-level logic.
+
+    Parameters
+    ----------
+    img_path : str
+        Path to the original image (e.g. DNG, JPG, etc.).
+        The .exif file uses the same name but the `.exif` extension.
+    aruco_data : dict
+        Dictionary containing the ArUco-related information to store.
+
+    Returns
+    -------
+    bool
+        True if writing succeeded, False if an error occurred.
+    """
+
+    exif_path = Path(img_path).with_suffix(".exif")
+
+    try:
+        # Load existing EXIF JSON data if the file exists
+        if exif_path.exists():
+            try:
+                with open(exif_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except (JSONDecodeError, OSError):
+                # File exists but is unreadable/corrupted
+                data = {}
+        else:
+            data = {}
+
+        data["aruco"] = aruco_data  # Update only the "aruco" key
+
+        rel_tl = data.get("RelativeTimeLine", None)
+
+        if rel_tl is not None:
+            data["aruco"]["relative_timeline"] = copy.deepcopy(rel_tl)
+
+        data_json_safe = {
+            k: Uti.to_json_safe(v)
+            for k, v in data.items()
+        }
+
+        # Save back to disk
+        with open(exif_path, "w", encoding="utf-8") as f:
+            json.dump(data_json_safe, f, indent=4, ensure_ascii=False)
+
+        return True  # Success
+
+
+    except Exception as e:
+
+        if log_message is None:
+            print(f"[ERROR] Failed to write EXIF cache for {img_path}: {e}")
+        else:
+            log_message(f"❌ Failed to write EXIF cache for {img_path}: {e}")
+
+        return False  # Failure
+
+def read_aruco_cache(img_path: str) -> Optional[Dict[str, Any]]:
+    """
+    Load the cached ArUco data and the relative timeline from a companion .exif JSON file.
+
+    Parameters
+    ----------
+    img_path : str
+        Path to the original image (e.g., DNG, JPG, etc.).
+        The .exif file uses the same name but with a `.exif` extension.
+
+    Returns
+    -------
+    dict or None
+        Dictionary containing:
+            - all key-value pairs from the "aruco" entry (if any)
+            - "relative_timeline" key from top-level JSON (if exists)
+        Returns None if file does not exist or is unreadable.
+    """
+    exif_path = Path(img_path).with_suffix(".exif")
+
+    if not exif_path.exists():
+        return None
+
+    try:
+        with open(exif_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (JSONDecodeError, OSError):
+        # File exists but is unreadable or corrupted
+        return None
+
+    # Start with ArUco dictionary
+    aruco = data.get("aruco", {})
+    if not isinstance(aruco, dict):
+        aruco = {}
+
+    # Add top-level "relative time line" as "relative_timeline"
+    rel_time = data.get("RelativeTimeLine", None)
+    if rel_time is not None:
+        aruco["relative_timeline"] = rel_time
+
+    if not aruco:
+        return None
+
+    return aruco
+
+def compute_reference_vectors(fixed_centers):
+    """
+    Calcule les vecteurs de référence du repère absolu à partir des 4 coins.
+    Renvoie x_ref, y_ref et leurs normes normX, normY.
+    """
+    c_tl, c_tr, c_br, c_bl = fixed_centers
+    Xref = ((c_tr - c_tl) + (c_br - c_bl)) / 2.0
+    Yref = ((c_bl - c_tl) + (c_br - c_tr)) / 2.0
+    normX, normY = np.linalg.norm(Xref), np.linalg.norm(Yref)
+    if normX == 0 or normY == 0:
+        return None, None, 0, 0
+    x_ref, y_ref = Xref / normX, Yref / normY
+    # orientation directe
+    if x_ref[0] * y_ref[1] - x_ref[1] * y_ref[0] < 0:
+        y_ref = -y_ref
+    return x_ref, y_ref, normX, normY
+
+def compute_mobile_axis(corners):
+    """
+    Calcule l'axe principal du marqueur mobile.
+    Renvoie un vecteur unitaire u, ou None si norme nulle.
+    """
+    principal_axis = (corners[0] - corners[3]) + (corners[1] - corners[2])
+    npa = np.linalg.norm(principal_axis)
+    if npa == 0:
+        return None
+    return principal_axis / npa
+
+def compute_angle_and_coords(u, x_ref, y_ref, mobile_center, origin, normX, normY, angle_img):
+    """
+    Calcule angle absolu, coordonnées normalisées et écart angulaire.
+    """
+    ux, uy = float(np.dot(u, x_ref)), float(np.dot(u, y_ref))
+    angle_abs = np.degrees(np.arctan2(uy, ux))
+    vec_center = mobile_center - origin
+    u_coord = float(np.dot(vec_center, x_ref) / normX)
+    v_coord = float(np.dot(vec_center, y_ref) / normY)
+    delta_angle = (angle_abs - angle_img + 180) % 360 - 180
+    return angle_abs, u_coord, v_coord, delta_angle
+
+def compute_mobile_marker_geometry(marker_data_ID, fixed_ids, mobile_id, log_message=None):
+    """
+    Calcul de toutes les grandeurs géométriques du marqueur mobile dans le repère absolu.
+    """
+    try:
+        fixed_centers = [marker_data_ID[fid]["center"] for fid in fixed_ids]
+        mobile_center = marker_data_ID[mobile_id]["center"]
+        corners_m = marker_data_ID[mobile_id]["corners"]
+
+        x_ref, y_ref, normX, normY = compute_reference_vectors(fixed_centers)
+        if x_ref is None:
+            return None
+
+        u = compute_mobile_axis(corners_m)
+        if u is None:
+            return None
+
+        angle_abs, u_coord, v_coord, delta_angle = compute_angle_and_coords(
+            u, x_ref, y_ref, mobile_center, fixed_centers[0], normX, normY, marker_data_ID[mobile_id]["angle_img"]
+        )
+
+        return {
+            "center_abs": (u_coord, v_coord),
+            "angle_abs": angle_abs,
+            "delta_abs_img": delta_angle,
+            "x_ref": x_ref,
+            "y_ref": y_ref,
+            "width_px": normX,
+            "height_px": normY,
+        }
+
+    except Exception as e:
+        print(f"Erreur dans compute_mobile_marker_geometry : {e}")
+        log_message(f" ❌ Erreur dans compute_mobile_marker_geometry : {e}")
+        return None
+
+# ----------------------
+# Utility Modules
+# ----------------------
+
+def compute_time_shift_L2(
+    time_line_VIS: Sequence[float],
+    angles_unwrapped_VIS: Sequence[float],
+    time_line_NIR: Sequence[float],
+    angles_unwrapped_NIR: Sequence[float],
+    use_median: bool = False
+) -> Tuple[float, float, Dict[str, Optional[float]]]:
+    """
+    Estimate the temporal offset Δt such that:
+        theta_VIS(t) ≈ theta_NIR(t - Δt)
+
+    under the assumption of uniform angular velocity.
+    The offset is computed analytically by L2 minimization.
+
+    Parameters
+    ----------
+    time_line_VIS : sequence of float
+        Time stamps of VIS images.
+    angles_unwrapped_VIS : sequence of float
+        Unwrapped angular measurements for VIS images.
+    time_line_NIR : sequence of float
+        Time stamps of NIR images.
+    angles_unwrapped_NIR : sequence of float
+        Unwrapped angular measurements for NIR images.
+    use_median : bool, optional
+        If True, use the median estimator for VIS intercept (robust to outliers).
+        If False, use the mean (default: False).
+
+    Returns
+    -------
+    time_shift : float
+        Estimated temporal offset Δt (seconds).
+    omega : float
+        Estimated angular velocity (rad/s or deg/s).
+    metrics : dict
+        Dictionary of quality indicators:
+            - n_vis
+            - n_nir
+            - r2_nir
+            - dt_iqr
+            - dt_std
+            - omega_vis
+            - delta_omega
+            - rel_delta_omega
+    """
+
+    # --- Convert to numpy arrays ---
+    t_vis = np.asarray(time_line_VIS, dtype=float)
+    th_vis = np.asarray(angles_unwrapped_VIS, dtype=float)
+    t_nir = np.asarray(time_line_NIR, dtype=float)
+    th_nir = np.asarray(angles_unwrapped_NIR, dtype=float)
+
+    if t_nir.size < 2:
+        raise ValueError("At least two NIR points are required")
+
+    if t_vis.size < 1:
+        raise ValueError("At least one VIS point is required")
+
+    # --- 1. Linear regression on NIR (reference) ---
+    omega, b_nir = np.polyfit(t_nir, th_nir, 1)
+
+    th_nir_fit = omega * t_nir + b_nir
+    ss_res = np.sum((th_nir - th_nir_fit) ** 2)
+    ss_tot = np.sum((th_nir - np.mean(th_nir)) ** 2)
+    r2_nir = 1.0 - ss_res / ss_tot if ss_tot > 0 else None
+
+    # --- 2. VIS intercepts projected onto NIR slope ---
+    b_vis_vals = th_vis - omega * t_vis
+
+    if use_median:
+        b_vis = np.median(b_vis_vals)
+    else:
+        b_vis = np.mean(b_vis_vals)
+
+    # --- Individual time shifts ---
+    dt_vals = (b_nir - b_vis_vals) / omega
+
+    dt_iqr = np.percentile(dt_vals, 75) - np.percentile(dt_vals, 25)
+    dt_std = np.std(dt_vals) if dt_vals.size > 1 else 0.0
+
+    # --- 3. Optimal global time shift ---
+    time_shift = (b_nir - b_vis) / omega
+
+    # --- 4. VIS slope consistency check (optional) ---
+    if t_vis.size >= 2:
+        omega_vis, _ = np.polyfit(t_vis, th_vis, 1)
+        delta_omega = omega_vis - omega
+        rel_delta_omega = abs(delta_omega / omega)
+    else:
+        omega_vis = None
+        delta_omega = None
+        rel_delta_omega = None
+
+    metrics = {
+        "n_vis": int(t_vis.size),
+        "n_nir": int(t_nir.size),
+        "r2_nir": r2_nir,
+        "dt_iqr": dt_iqr,
+        "dt_std": dt_std,
+        "omega_vis": omega_vis,
+        "delta_omega": delta_omega,
+        "rel_delta_omega": rel_delta_omega,
+    }
+
+    return time_shift, omega, metrics
+
+def load_relative_time_line(folderMissionPath, spectral_band, log_message=None):
+    """
+    Load the relative timeline JSON file into self.dic_relative_time_line.
+    """
+    try:
+        json_path = safe_path(Path(folderMissionPath) / spectral_band / "time_line.json")
+
+        if not json_path.exists():
+            print(f"⚠️ Timeline file not found: {json_path}")
+            dic_relative_time_line = {}
+            return
+
+
+        with open(json_path, "r", encoding="utf-8") as f:
+            dic_relative_time_line = json.load(f)
+        if log_message is None:
+            print(Style.GREEN + "Relative timeline loaded successfully." + Style.RESET)
+        else:
+            log_message("Relative timeline loaded successfully.")
+
+    except Exception as e:
+        if log_message is None:
+            print(Style.RED + f"❌ Error loading timeline file: {e}" + Style.RESET)
+        else:
+            log_message(f"❌ Error loading timeline file: {e}")
+        dic_relative_time_line = {}
+    return dic_relative_time_line
+
+def extract_relative_time_line(dic_relative_time_line, file_name: str, type_img: str, ext: str) -> float:
+    """
+    Return the relative time line for a given image file.
+    Handles VIS/dng, NIR/raw, and NIR/jpg (special case).
+
+    Parameters:
+        file_name : str
+            The name of the image file (with extension).
+        type_img : str
+            Either 'VIS' or 'NIR'.
+        ext : str
+            Extension of the file ('dng').
+
+    Returns:
+        float : relative time line
+    """
+    file_stem = Path(file_name).stem  # file name without extension
+
+    # Default value if not found
+    relative_timeline = -9999.0
+
+    if type_img not in dic_relative_time_line:
+        print(f"⚠️ extract_relative_time_line: type_img '{type_img}' not in dic_relative_time_line")
+        return relative_timeline
+
+    img_list = dic_relative_time_line[type_img]
+
+    if ext.lower() in ["dng"]:
+        # Look for exact match in the stem of img_path
+        for dic in img_list:
+            if Path(dic["img_path"]).stem == file_stem:
+                relative_timeline = dic.get("relative_timeline", -9999.0)
+                break
+    else:
+        print(Style.YELLOW + f"⚠️ extract_relative_time_line: file '{file_name}' with ext '{ext}' not handled" + Style.RESET)
+
+    return relative_timeline
+
+
+def unwrap_angles(angle_list_deg):
+    """
+    Unwrap a sequence of angles expressed in degrees.
+
+    Converts the input angles to radians, removes discontinuities
+    caused by transitions across the -180°/180° boundary, and
+    converts the resulting continuous sequence back to degrees.
+
+    Args:
+        angle_list_deg: Sequence of angles in degrees.
+
+    Returns:
+        NumPy array of unwrapped angles in degrees.
+    """
+    angles_rad = np.radians(angle_list_deg)
+    unwrapped_rad = np.unwrap(angles_rad)  # Make the sequence continuous.
+    return np.degrees(unwrapped_rad)       # Convert back to degrees.
+
+def print_marker_results(markers, image_type="VIS"):
+    """
+    Print the detection results for a collection of ArUco markers.
+
+    Each marker entry is expected to contain its ID, orientation
+    angle, center coordinates, and corner coordinates.
+
+    Args:
+        markers: Iterable of marker detection results. Each entry
+            contains (markerID, angle, center, corners).
+        image_type: Spectral band or image type associated with
+            the results, typically "VIS" or "NIR".
+
+    Returns:
+        None. Results are printed to the console using the Style
+        color constants.
+    """
+    for marker in markers:
+        markerID, angle, center, corners = marker
+        print(
+            Style.GREEN
+            + f"{image_type}: ID {markerID}, angle={angle:.1f}°, center={center}"
+            + Style.CYAN
+        )
+
+def get_aruco_dict(dict_name="DICT_4X4_50", verbose=False):
+    """
+    Retrieve a predefined ArUco dictionary with OpenCV compatibility.
+
+    Uses the preferred OpenCV API, with a fallback to the legacy API
+    when getPredefinedDictionary is unavailable.
+
+    Args:
+        dict_name: Name of the predefined ArUco dictionary.
+            The name must exist in the ARUCO_DICT mapping.
+        verbose: If True, print a confirmation message when the
+            dictionary is loaded successfully through the preferred API.
+
+    Returns:
+        The OpenCV ArUco dictionary object.
+
+    Raises:
+        KeyError: If dict_name is not present in ARUCO_DICT.
+        AttributeError: If neither supported dictionary API is
+            available in the installed OpenCV version.
+    """
+    try:
+        if verbose:
+            print(f"ArUco dictionary {dict_name} loaded successfully.")
+        return cv2.aruco.getPredefinedDictionary(ARUCO_DICT[dict_name])
+
+    except AttributeError:
+        return cv2.aruco.Dictionary_get(ARUCO_DICT[dict_name])
+
+def read_transfer_info(folderMissionPath: Path,
+                       spectral_band: str,
+                       suffix_image: str,
+                       key: str):
+    """
+    Read transfer information from a mission-specific JSON file.
+
+    The JSON filename is built from the spectral band and image suffix.
+    The requested key section, identified by key (typically "tkoff" or
+    "sync"), is extracted and its transfer parameters are returned.
+
+    Args:
+        folderMissionPath: Root directory of the current mission.
+        spectral_band: Spectral band directory, typically "VIS" or "NIR".
+        suffix_image: Image suffix used in the transfer information
+            filename.
+        key: Name of the JSON key section to retrieve, typically "tkoff"
+            or "sync".
+
+    Returns:
+        A tuple containing:
+            - outputFolder: Destination folder recorded in the JSON.
+            - idMin: Minimum image ID in the transfer range.
+            - idMax: Maximum image ID in the transfer range.
+            - listCopiedImages: List of copied image names, defaulting
+              to an empty list if the field is missing.
+
+    Raises:
+        FileNotFoundError: If the JSON file does not exist.
+        json.JSONDecodeError: If the file contains invalid JSON.
+        KeyError: If the requested key section is not present in the file.
+    """
+    # Build the JSON file path.
+    json_file = (
+        folderMissionPath
+        / spectral_band
+        / f"transfer_info_{spectral_band}_{suffix_image}.json"
+    )
+
+    with open(json_file, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    # Check that the requested key section exists.
+    if key not in data:
+        raise KeyError(
+            f"Key '{key}' does not exist in the JSON file."
+        )
+
+    block = data[key]
+
+    outputFolder = block.get("outputFolder")
+    idMin = block.get("idMin")
+    idMax = block.get("idMax")
+    listCopiedImages = block.get("listCopiedImages", [])
+
+    return outputFolder, idMin, idMax, listCopiedImages
+
+def cached_jpeg(path, folder_mission):
+    """
+    Build the path of the cached RawTherapee JPEG used for ArUco detection.
+
+    The output image is stored in the mission directory under
+    'Synchro/VIS' or 'Synchro/NIR', depending on the parent directory
+    of the input image. The output directory is created if necessary.
+
+    Args:
+        path: Path to the input image.
+        folder_mission: Root directory of the current mission.
+
+    Returns:
+        The output JPEG path as a string.
+    """
+    p = Path(path)
+    folder_mission = Path(folder_mission)
+
+    # Detect the spectral band (VIS / NIR).
+    spectral_band = p.parent.name
+
+    out_dir = folder_mission / "Synchro" / spectral_band
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    out_file = out_dir / f"{p.stem}_RawTherapee.jpg"
+
+    return str(out_file)
+
+def load_dng_for_aruco(path, folder_mission):
+    """
+    Load a DNG image for ArUco marker detection.
+
+    If the cached RawTherapee JPEG does not exist, RawTherapee is
+    invoked to convert the DNG image using the ArUco_Detection.pp3
+    processing profile. The resulting JPEG is then loaded as an
+    OpenCV color image.
+
+    Args:
+        path: Path to the input DNG image.
+        folder_mission: Root directory of the current mission.
+
+    Returns:
+        A tuple containing:
+            - img_cv: The image loaded as an OpenCV BGR array.
+            - out_file: Path to the cached JPEG image.
+
+    Notes:
+        The conversion is skipped if the output JPEG already exists.
+        The RawTherapee command uses JPEG quality 95.
+    """
+    out_file = cached_jpeg(path, folder_mission)
+    cmd = [
+        RAWTHERAPEEPATH,
+        "-t",
+        "-o", out_file,
+        "-j95",
+        "-p", osp.join(
+            osp.dirname(__file__),
+            "..", "thirdparty", "rawtherapee", "Aruco_Detection.pp3"
+        ),
+        "-c", path
+    ]
+
+    if not osp.isfile(out_file):
+        subprocess.call(cmd)
+
+    img_cv = cv2.imread(out_file, cv2.IMREAD_COLOR)
+    return img_cv, out_file
+
+def cached_tif(path):
+    """
+    Return the path of the cached RawTherapee TIFF image.
+
+    The output filename is derived from the input path by removing
+    the final four characters and appending '_RawTherapee.tif'.
+
+    Args:
+        path: Path to the input TIFF image.
+
+    Returns:
+        The cached TIFF path as a string.
+    """
+    return path[:-4] + "_RawTherapee.tif"
+
+def load_tif_radiometric(in_file):
+    """
+    Load a TIFF image while preserving its original bit depth.
+
+    The image is read with support for arbitrary bit depth and color
+    channels, and EXIF orientation is ignored. Its channel order is
+    converted from BGR to RGB, and pixel values are normalized by
+    the maximum value of a 16-bit unsigned integer.
+
+    Args:
+        in_file: Path to the input TIFF image.
+
+    Returns:
+        An RGB NumPy array with pixel values normalized by 65535.
+    """
+    flags = cv2.IMREAD_ANYDEPTH | cv2.IMREAD_ANYCOLOR
+    flags |= cv2.IMREAD_IGNORE_ORIENTATION
+    return cv2.cvtColor(
+        cv2.imread(in_file, flags=flags),
+        cv2.COLOR_BGR2RGB
+    ) / (2.0**16 - 1)
+
+def load_tif_aruco(in_file):
+    """
+    Load a TIFF image and convert it to 8-bit RGB for ArUco detection.
+
+    The image is read with support for arbitrary bit depth and color
+    channels, and EXIF orientation is ignored. Its channel order is
+    converted from BGR to RGB, then its intensity values are scaled
+    to 8-bit unsigned integers for OpenCV ArUco processing.
+
+    Args:
+        in_file: Path to the input TIFF image.
+
+    Returns:
+        An 8-bit RGB NumPy array suitable for ArUco detection.
+    """
+    flags = cv2.IMREAD_ANYDEPTH | cv2.IMREAD_ANYCOLOR
+    flags |= cv2.IMREAD_IGNORE_ORIENTATION
+
+    img16 = cv2.imread(in_file, flags=flags)
+    img16 = cv2.cvtColor(img16, cv2.COLOR_BGR2RGB)
+
+    # Convert from 16-bit to 8-bit for OpenCV ArUco detection.
+    img8 = cv2.convertScaleAbs(img16, alpha=255.0 / 65535.0)
+
+    return img8
+
+def best_thread_count(io_bound: bool = True) -> int:
+    """
+    Determine an optimal number of threads based on the workload type.
+
+    Parameters
+    ----------
+    io_bound : bool, optional
+        If True (default), the function returns a thread count suitable
+        for I/O-bound tasks (disk access, file loading, RawPy, network).
+        If False, it returns a thread count suitable for CPU-bound tasks.
+
+    Returns
+    -------
+    int
+        A reasonable number of worker threads.
+    """
+    cpu_count: int = multiprocessing.cpu_count()
+
+    if io_bound:
+        # For I/O-bound tasks: use half the logical CPUs, capped at 32.
+        return int(min(32, cpu_count / 2))
+
+    # For CPU-bound tasks: use all logical CPU cores.
+    return cpu_count
+
+def abstract_time_line_alignement(time_shift, omega, metrics):
+    """
+    Format and display the results of VIS/NIR timeline alignment.
+
+    The function reports the estimated time shift between the VIS and
+    NIR image timelines, the NIR angular velocity, and statistical
+    metrics describing the alignment quality. If the VIS angular
+    velocity is available, it also reports that velocity and the
+    relative angular velocity difference.
+
+    Args:
+        time_shift: Estimated time shift between the VIS and NIR
+            timelines, in seconds.
+        omega: Estimated NIR angular velocity, in degrees per second.
+            Dividing by 6 converts this value to revolutions per minute.
+        metrics: Dictionary containing alignment statistics, including
+            'n_vis', 'n_nir', 'r2_nir', 'dt_iqr', and 'dt_std'.
+            The optional keys 'omega_vis' and 'rel_delta_omega'
+            provide the VIS angular velocity and the relative
+            angular velocity difference.
+
+    Returns:
+        A string containing the formatted alignment results.
+        If the VIS angular velocity is unavailable, the returned
+        string contains only the general alignment results.
+
+    Notes:
+        The results are printed in green using the Style constants.
+        The VIS angular velocity is considered available when
+        metrics['omega_vis'] is not None.
+    """
+    msg_1 = f"Time alignment results:\n" \
+            f"  Estimated time shift      : {time_shift:.3f} s\n" \
+            f"  Angular velocity (NIR)    : {omega / 6:.4f} rpm\n" \
+            f"  Number of VIS points      : {metrics['n_vis']}\n" \
+            f"  Number of NIR points      : {metrics['n_nir']}\n" \
+            f"  NIR linear fit R²         : {metrics['r2_nir']:.6f}\n" \
+            f"  Δt interquartile range    : {metrics['dt_iqr']:.4f} s\n" \
+            f"  Δt standard deviation     : {metrics['dt_std']:.4f} s\n"
+
+    print(Style.GREEN + msg_1 + Style.RESET)
+
+    if metrics.get("omega_vis") is not None:
+        msg_2 = f"  Angular velocity (VIS)    : {metrics['omega_vis'] / 6:.4f} rpm\n" \
+                f"  Relative Δ_Omega          : {(100.0 * metrics['rel_delta_omega']):.2e} %"
+        print(Style.GREEN + msg_2 + Style.RESET)
+        return msg_1 + msg_2
+    else:
+        print("  VIS angular velocity      : not estimated (single VIS point)")
+        return msg_1
+
+def plot_angles_alignement_time_line(
+    time: Union[Sequence[float], Sequence[Sequence[float]]],
+    angles: Union[Sequence[float], Sequence[Sequence[float]]],
+    title_angles: List[str],
+    mode: str = "img",
+    color: Union[str, List[str], None] = None,
+    save_graph: bool = True,
+    folder_save: Path = None,
+    filename: str = "check_time_alignment.png",
+) -> None:
+    """
+    Plot one or multiple angle curves versus their own time axes
+    and save the figure to disk (GUI-safe, non-interactive).
+
+    Parameters
+    ----------
+    time : sequence or sequence of sequences
+        Time values (seconds).
+    angles : sequence or sequence of sequences
+        Angle values (degrees).
+    title_angles : list of str
+        Labels for each curve.
+    mode : str
+        "ground", "img" or "delta" to define the base label.
+    color : str or list of str or None
+        Color(s) for the curves.
+    save_graph : bool
+        If True, save the figure to disk.
+    folder_save : Path
+        Output directory for the figure.
+    filename : str
+        Name of the saved image file.
+    """
+
+    # --- Label selection ---
+    if mode == "ground":
+        label_base = "Ground reference angle"
+    elif mode == "img":
+        label_base = "Image reference angle"
+    elif mode == "delta":
+        label_base = "Delta angle (ground - image)"
+    else:
+        label_base = "Angle"
+
+    # --- Normalize input to list of lists ---
+    is_single_curve = isinstance(angles[0], (int, float, np.floating))
+
+    if is_single_curve:
+        angles_list = [angles]
+        time_list = [time]
+    else:
+        angles_list = list(angles)
+        time_list = list(time)
+
+    if len(title_angles) != len(angles_list):
+        raise ValueError("title_angles must match the number of curves.")
+
+    # --- Figure creation (GUI-safe) ---
+    fig, ax = plt.subplots(figsize=(8, 4))
+
+    # --- Colors handling ---
+    if color is None:
+        colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    elif isinstance(color, list):
+        colors = color
+    else:
+        colors = [color]
+
+    # --- Plot curves ---
+    for i, (t, y) in enumerate(zip(time_list, angles_list)):
+        if len(t) != len(y):
+            raise ValueError(f"Curve {i}: time and angles must have the same length.")
+
+        ax.plot(
+            t,
+            y,
+            marker="o",
+            color=colors[i % len(colors)],
+            label=f"{title_angles[i]} ({len(y)} img)"
+        )
+
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Angle (deg)")
+    ax.set_title(f"Evolution of {label_base}")
+    ax.legend()
+    ax.grid(True)
+
+    # --- Save and cleanup ---
+    if save_graph:
+        if folder_save is None:
+            raise ValueError("folder_save must be specified when save_graph=True")
+
+        folder_save.mkdir(parents=True, exist_ok=True)
+        out_path = folder_save / filename
+        fig.savefig(out_path, dpi=150, bbox_inches="tight")
+
+    plt.close(fig)
+
+def draw_aruco_overlay(
+    img_cv: Optional[np.ndarray],
+    result: Optional[Dict[str, Any]],
+    marker_data_ID: Optional[Dict[int, Dict[str, Any]]],
+    fixed_ids: Optional[Iterable[int]],
+) -> Optional[np.ndarray]:
+    """
+    Draw ArUco-related overlays directly on an OpenCV image.
+
+    This function is *PyQt-safe*: it does not modify the input image in place,
+    but works on a copy and returns the annotated image.
+
+    Overlays may include:
+    - Fixed markers centers
+    - Mobile marker center
+    - Image-based orientation
+    - Absolute (ground-referenced) orientation
+    - Absolute reference frame arrows
+    - Text legend (angles, deltas, status)
+
+    Parameters
+    ----------
+    img_cv : np.ndarray or None
+        Input image in OpenCV format (BGR, HxWx3).
+    result : dict or None
+        Dictionary containing ArUco computation results
+        (angles, references, flags, etc.).
+    marker_data_ID : dict or None
+        Marker data indexed by marker ID. Each entry may contain
+        'center', 'corners', etc.
+    fixed_ids : iterable of int or None
+        List of fixed marker IDs used as absolute references.
+
+    Returns
+    -------
+    np.ndarray or None
+        Annotated OpenCV image, or None if input image/result is invalid.
+    """
+    try:
+        if img_cv is None or result is None:
+            return img_cv
+
+        img_cv_out = img_cv.copy()
+
+        has_md = marker_data_ID is not None
+        mid = result.get("mobile_id")
+
+        has_mobile = has_md and mid in marker_data_ID
+        has_corners = has_mobile and "corners" in marker_data_ID[mid]
+
+        has_absolute_ref = (
+            has_md
+            and fixed_ids is not None
+            and not result.get("missing_fixed", True)
+            and result.get("x_ref") is not None
+            and result.get("y_ref") is not None
+        )
+
+        # --- fixed markers
+        if has_md and fixed_ids is not None and not result.get("missing_fixed", False):
+            draw_fixed_markers(img_cv_out, marker_data_ID, fixed_ids)
+
+        # --- mobile marker
+        if has_mobile:
+            center = marker_data_ID[mid]["center"]
+            draw_mobile_center(img_cv_out, center)
+
+        # --- image-based orientation
+        u_img = None
+        if has_mobile and has_corners:
+            u_img = draw_image_orientation(
+                img_cv_out,
+                center,
+                marker_data_ID[mid]["corners"],
+            )
+
+        # --- absolute orientation
+        if has_absolute_ref and u_img is not None:
+            draw_absolute_orientation(
+                img_cv_out,
+                center,
+                u_img,
+                result["x_ref"],
+                result["y_ref"],
+                marker_data_ID[mid]["corners"],
+            )
+
+        # --- draw absolute reference frame (if available)
+        if (
+            fixed_ids is not None
+            and result.get("x_ref") is not None
+            and result.get("y_ref") is not None
+            and has_md
+        ):
+            c_tl = marker_data_ID[fixed_ids[0]]["center"]
+            x_ref = result["x_ref"]
+            y_ref = result["y_ref"]
+            normX = result.get("width_px", 1.0)
+            normY = result.get("height_px", 1.0)
+
+            origin = tuple(c_tl.astype(int))
+            end_x = (c_tl + x_ref * normX * 1.2).astype(int)
+            end_y = (c_tl + y_ref * normY * 1.2).astype(int)
+
+            cv2.arrowedLine(img_cv_out, origin, tuple(end_x), (0, 0, 0), 3, tipLength=0.05)
+            cv2.arrowedLine(img_cv_out, origin, tuple(end_y), (0, 0, 0), 3, tipLength=0.05)
+
+        # --- legend (always)
+        lines = []
+
+        if has_mobile and result.get("angle_img") is not None:
+            lines.append(f"ID {mid}")
+            lines.append(f"angle img = {result['angle_img']:.1f} deg")
+
+        if has_absolute_ref and result.get("angle_abs") is not None:
+            delta = (result["angle_abs"] - result["angle_img"] + 180) % 360 - 180
+            lines.append(f"angle abs = {result['angle_abs']:.1f} deg")
+            lines.append(f"delta img/abs = {delta:.1f} deg")
+        else:
+            lines.append("absolute reference: unavailable")
+
+        scale = 2
+        draw_legend(
+            img_cv_out,
+            lines,
+            origin=(scale * 20, scale * 40),
+            font_scale=scale,
+            line_spacing=scale * 30,
+        )
+    except Exception as e:
+        print(f'error in draw_aruco_overlay   {e}')
+
+    return img_cv_out
+
+def draw_legend(
+    img_cv,
+    lines,
+    origin=(20, 40),
+    font_scale=1.,
+    line_spacing=28,
+    color=(255, 255, 255),
+    thickness=2,
+):
+    """
+    Draw a multi-line legend on an OpenCV image.
+
+    Parameters
+    ----------
+    lines : list of str
+        Lines to display.
+    origin : (int, int)
+        Top-left corner of the legend.
+    font_scale : float
+        Text scale (increase for better visibility).
+    line_spacing : int
+        Vertical spacing between lines (pixels).
+    """
+    x0, y0 = origin
+    for i, txt in enumerate(lines):
+        cv2.putText(
+            img_cv,
+            txt,
+            (x0, y0 + i * line_spacing),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            font_scale,
+            color,
+            thickness,
+            cv2.LINE_AA,
+        )
+
+def draw_fixed_markers(img_cv,
+                       marker_data_ID,
+                       fixed_ids,
+                       markerSize=15,
+                       marker_color=(0, 0, 255),
+                       marker_patern=-1):
+    """
+    Draw circles around the centers of detected fixed ArUco markers.
+
+    Args:
+        img_cv: Image on which the markers are drawn, in OpenCV format.
+        marker_data_ID: Dictionary containing marker data indexed by ID.
+            Each marker entry must include a "center" field.
+        fixed_ids: Iterable of marker IDs to highlight.
+        markerSize: Radius of the circles in pixels.
+        marker_color: Circle color in BGR format.
+        marker_patern: Circle thickness in pixels. A negative value
+            fills the circle.
+
+    Returns:
+        None. The input image is modified in place.
+    """
+    for fid in fixed_ids:
+        if fid in marker_data_ID:
+            ct = tuple(marker_data_ID[fid]["center"].astype(int))
+            cv2.circle(img_cv, ct, markerSize, marker_color, marker_patern)
+
+def draw_mobile_center(img_cv, center):
+    """
+    Draw a red cross at the center of a mobile marker.
+
+    Args:
+        img_cv: Image on which the marker center is drawn,
+            in OpenCV format.
+        center: Marker center coordinates as a NumPy array.
+
+    Returns:
+        None. The input image is modified in place.
+    """
+    cX, cY = tuple(center.astype(int))
+    cv2.drawMarker(
+        img_cv, (cX, cY),
+        (0, 0, 255),
+        markerType=cv2.MARKER_CROSS,
+        markerSize=20,
+        thickness=2,
+    )
+
+def draw_image_orientation(img_cv,
+                           center,
+                           corners,
+                           scale=3,
+                           color=(0, 255, 0),
+                           thickness=4):
+    """
+    Draw the marker's orientation vector in image coordinates.
+
+    The vector is estimated from the marker corners and normalized.
+    Its displayed length is proportional to the marker width.
+
+    Args:
+        img_cv: Image on which the orientation vector is drawn,
+            in OpenCV format.
+        center: Marker center coordinates as a NumPy array.
+        corners: Marker corner coordinates, ordered as expected
+            by the orientation calculation.
+        scale: Multiplier applied to the marker width to determine
+            the displayed vector length.
+        color: Vector color in BGR format.
+        thickness: Vector line thickness in pixels.
+
+    Returns:
+        A normalized NumPy vector representing the image orientation,
+        or None if the vector cannot be normalized because its norm
+        is zero. The input image is modified in place.
+    """
+    u = ((corners[0] - corners[3]) + (corners[1] - corners[2]))
+    n = np.linalg.norm(u)
+    if n == 0:
+        return
+
+    u /= n
+    marker_width = int(np.linalg.norm(corners[0] - corners[1]))
+    line_length = scale * marker_width
+
+    cX, cY = tuple(center.astype(int))
+    endX = int(cX + u[0] * line_length)
+    endY = int(cY + u[1] * line_length)
+
+    cv2.line(img_cv, (cX, cY), (endX, endY), color, thickness)
+    return u
+
+def draw_absolute_orientation(img_cv,
+                              center,
+                              u_img,
+                              x_ref,
+                              y_ref,
+                              corners,
+                              scale=4,
+                              color=(0, 165, 255)):
+    """
+    Draw the marker's orientation projected onto absolute reference axes.
+
+    The image orientation vector is projected onto the reference axes
+    x_ref and y_ref. The resulting vector is then drawn as a dashed
+    line whose length is proportional to the marker width.
+
+    Args:
+        img_cv: Image on which the orientation vector is drawn,
+            in OpenCV format.
+        center: Marker center coordinates as a NumPy array.
+        u_img: Normalized orientation vector in image coordinates.
+        x_ref: Reference unit vector for the absolute X axis.
+        y_ref: Reference unit vector for the absolute Y axis.
+        corners: Marker corner coordinates, ordered as expected
+            by the orientation calculation.
+        scale: Multiplier applied to the marker width to determine
+            the displayed vector length.
+        color: Vector color in BGR format.
+
+    Returns:
+        None. The input image is modified in place.
+    """
+    ux = np.dot(u_img, x_ref)
+    uy = np.dot(u_img, y_ref)
+    u_abs = ux * x_ref + uy * y_ref
+
+    marker_width = int(np.linalg.norm(corners[0] - corners[1]))
+    line_length = scale * marker_width
+
+    cX, cY = tuple(center.astype(int))
+    endX = int(cX + u_abs[0] * line_length)
+    endY = int(cY + u_abs[1] * line_length)
+
+    draw_dashed_line(
+        img_cv,
+        (cX, cY),
+        (endX, endY),
+        color,
+        thickness=4,
+        dash_length=15,
+    )
+
+def draw_dashed_line(
+    img_cv: np.ndarray,
+    pt1: Tuple[int, int],
+    pt2: Tuple[int, int],
+    color: Tuple[int, int, int],
+    thickness: int = 1,
+    dash_length: int = 10
+) -> None:
+    """
+    Draw a dashed line between two points on an OpenCV image.
+
+    Parameters
+    ----------
+    img_cv : np.ndarray
+        OpenCV image (BGR) on which the dashed line is drawn.
+        The image is modified in place.
+    pt1 : tuple[int, int]
+        Starting point (x, y) in pixel coordinates.
+    pt2 : tuple[int, int]
+        Ending point (x, y) in pixel coordinates.
+    color : tuple[int, int, int]
+        Line color in BGR format.
+    thickness : int, optional
+        Line thickness in pixels (default is 1).
+    dash_length : int, optional
+        Length of each dash segment in pixels (default is 10).
+
+    Notes
+    -----
+    - The dashed line is drawn in image (pixel) coordinates.
+    - The pattern consists of alternating dash and gap segments
+      of equal length (`dash_length`).
+    - If `pt1` and `pt2` coincide, nothing is drawn.
+
+    Examples
+    --------
+        > img_cv = np.zeros((400, 400, 3), dtype=np.uint8)
+        > draw_dashed_line(
+        ...     img_cv,
+        ...     (100, 100),
+        ...     (300, 250),
+        ...     color=(0, 255, 0),
+        ...     thickness=2,
+        ...     dash_length=15
+        ... )
+        > cv2.imshow("Dashed line", img_cv)
+        > cv2.waitKey(0)
+        > cv2.destroyAllWindows()
+    """
+    p1 = np.asarray(pt1, dtype=float)
+    p2 = np.asarray(pt2, dtype=float)
+
+    line_vec = p2 - p1
+    line_len = np.linalg.norm(line_vec)
+
+    # Degenerate case: identical points
+    if line_len == 0:
+        return
+
+    line_dir = line_vec / line_len
+    num_dashes = int(line_len // (2 * dash_length))
+
+    for i in range(num_dashes):
+        start = p1 + line_dir * (2 * i * dash_length)
+        end = p1 + line_dir * ((2 * i + 1) * dash_length)
+
+        cv2.line(
+            img_cv,
+            tuple(start.astype(int)),
+            tuple(end.astype(int)),
+            color,
+            thickness
+        )
+
+
+def get_color_BGR(name: str) -> tuple:
+    """
+    Return the BGR color corresponding to the specified color name.
+
+    OpenCV uses the BGR channel order (Blue, Green, Red), rather than
+    the RGB order commonly used in image editing applications.
+
+    Args:
+        name: Color name in English, case-insensitive.
+
+    Returns:
+        A tuple of three integer values representing the BGR color.
+        Returns black (0, 0, 0) if the color name is not recognized.
+    """
+    colors = {
+        "red":          (0, 0, 255),
+        "green":        (0, 255, 0),
+        "blue":         (255, 0, 0),
+        "cyan":         (255, 255, 0),
+        "magenta":      (255, 0, 255),
+        "orange":       (0, 165, 255),
+        "pink":         (203, 192, 255),
+        "white":        (255, 255, 255),
+        "gray":         (128, 128, 128),
+        "violet":       (211, 0, 148),
+        "yellow":       (0, 255, 255),
+        "turquoise":    (208, 224, 64),
+        "brown":        (42, 42, 165),
+        "olive":        (0, 128, 128),
+        "lavender":     (250, 230, 230),
+        "light_blue":   (255, 200, 100),
+        "light_green":  (144, 238, 144),
+        "dark_pink":    (147, 20, 80),
+        "beige":        (220, 245, 245),
+        "black":        (0, 0, 0)
+    }
+
+    return colors.get(name.lower(), (0, 0, 0))
+
+# --------------------------------------------------------------
+# Utilisation
+# --------------------------------------------------------------
+
+
+if __name__ == "__main__":
+
+    folderMissionPath = Path(r"C:\Air-Mission\FLY-20220125-1159-Blassac\AerialPhotography")
+    name_folder = "VIS"
+
+    verbose = False
+    t0 = time.perf_counter()
+    spectral_band = "VIS"  # "NIR"
+    suffix_image = "dng"  # "jpg"
+    VIS_results, VIS_x_vals, Vis_y_vals = process_aruco_images(
+        folderMissionPath=folderMissionPath,
+        name_folder=name_folder,
+        spectral_band=spectral_band,
+        suffix_image=suffix_image,
+        save_check_detection_img=True,  # save each detection in  jpg image
+        verbose=verbose,  # print detailed info
+        use_aruco_cache=False,  # overwrite .exif cache if False
+    )
+    t1 = time.perf_counter()
+    print(Style.CYAN + f"[TIMING] process_aruco_images : {t1 - t0:.3f} s" + Style.RESET)
+    # angles_deg = [r['angle_img'] for r in VIS_results if r['angle_img'] is not None]
+    angles_deg = [r['angle_abs'] for r in VIS_results if r['angle_abs'] is not None]
+    if len(angles_deg) >= 1:
+        angles_unwrapped_VIS = unwrap_angles(angles_deg)
+    time_line_VIS = [r['relative_timeline'] for r in VIS_results if r['relative_timeline'] is not None]
+
+
+    t0 = time.perf_counter()
+    spectral_band = "NIR"  # "NIR"
+    suffix_image = "dng"  # "jpg"
+    name_folder = "NIR"
+    NIR_results, NIR_x_vals, NIR_y_vals = process_aruco_images(
+        folderMissionPath=folderMissionPath,
+        name_folder=name_folder,
+        spectral_band=spectral_band,
+        suffix_image=suffix_image,
+        save_check_detection_img=True,  # save each detection in  jpg image
+        verbose=verbose,  # print detailed info
+        use_aruco_cache=False,  # overwrite .exif cache if False
+    )
+    t1 = time.perf_counter()
+    print(Style.CYAN + f"[TIMING] process_aruco_images : {t1 - t0:.3f} s" + Style.RESET)
+
+    angles_deg = [r['angle_abs'] for r in NIR_results if r['angle_abs'] is not None]
+    if len(angles_deg) >= 1:
+        angles_unwrapped_NIR = unwrap_angles(angles_deg)
+    else:
+        angles_unwrapped_NIR = angles_deg
+    time_line_NIR = [r['relative_timeline'] for r in NIR_results if r['relative_timeline'] is not None]
+
+
+    print(Style.GREEN + f'la détection des mires aruco pour les images VIS et NIR est terminée. \n'
+          f'.............................................................................\n' + Style.RESET)
+
+    # ------------------------------------------------------------
+    # Synchronisation des time line VIS et NIR
+    # ------------------------------------------------------------
+    time_shift, omega, metrics = compute_time_shift_L2(
+        time_line_VIS,
+        angles_unwrapped_VIS,
+        time_line_NIR,
+        angles_unwrapped_NIR,
+        use_median=False,
+    )
+    abstract_time_line_alignement(time_shift, omega, metrics)
+
+    # ------------------------------------------------------------
+    # Optional graph
+    # ------------------------------------------------------------
+    graph_angle = True
+    if graph_angle:
+        if len(angles_unwrapped_VIS) >= 1 and len(angles_unwrapped_NIR) >= 1:
+            time_NIR_shifted = [t + time_shift for t in time_line_NIR]
+            folderMission = Path(r"C:\Air-Mission\FLY-20220125-1159-Blassac")
+            folderSynchroPath = safe_path(Path(folderMission) / "Synchro")
+            plot_angles_alignement_time_line([time_line_VIS, time_NIR_shifted],
+                        [angles_unwrapped_VIS, angles_unwrapped_NIR],
+                        ["VIS", "NIR"],
+                        mode='ground',  # 'img',
+                        color=['g', 'r'],
+                        folder_save=folderSynchroPath,
+                        filename="check_time_alignment.png")
+    exit(2025)

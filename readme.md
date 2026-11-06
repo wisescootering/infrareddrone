@@ -188,7 +188,7 @@ Please refer to the following tutorial (in french) on how to create [vegetation 
 ## ⚙️ [`run.py`](./run.py) command line interface
 
 ---------------------------------------
-`run.py [--config CONFIG] [--clean-proxy] [--odm-multispectral] [--traces {vis,nir,vir,ndvi}] [--selection {all,best-synchro,best-mapping}]`
+`run.py [--config CONFIG] [--clean-proxy] [--odm-multispectral] [--traces {vis,nir,vir,ndvi}] [--selection {all,best-synchro,best-mapping}] [--workers WORKERS]`
 
 
 - `--config` *path to the flight configuration*
@@ -200,6 +200,7 @@ Please refer to the following tutorial (in french) on how to create [vegetation 
   - `all`: take all images, do not make a specific image selection
   - `best-synchro`: only pick pairs of images with gap < 1/4th of the TimeLapseDJI interval ~ 0.5 seconds
   - `best-mapping`: select best synchronized images + granting a decent overlap
+- `--workers` *number of alignment worker processes. `0` (default) picks it from the physical cores and the available RAM (about 6 GB per worker); `1` is the safe sequential mode*
 
 ---------------------------------------
 ## ⚙️ Configuration files

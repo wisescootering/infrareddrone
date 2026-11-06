@@ -20,6 +20,7 @@ from os import mkdir
 import utils.utils_IRdrone as IRd
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
 from irdrone.utils import Style, conversionGPSdms2dd, get_polar_shading_map, contrast_stretching
+from irdrone.file_utils import has_suffix, with_suffix_ci
 import config as cf
 import subprocess
 from pathlib import Path
@@ -48,25 +49,46 @@ SJCAM_M20_PROFILE_CONTROL_POINTS = {
 def load_tif(in_file):
     flags = cv2.IMREAD_ANYDEPTH | cv2.IMREAD_ANYCOLOR
     flags |= cv2.IMREAD_IGNORE_ORIENTATION
-    return cv2.cvtColor(cv2.imread(in_file, flags=flags), cv2.COLOR_BGR2RGB)/(2.**16-1)
+    # RawTherapee TIFFs carry DNG-specific tags unknown to libtiff, which makes
+    # OpenCV print harmless "TIFF_Warning ... Unknown field" lines: mute them here.
+    cv_logging = getattr(getattr(cv2, "utils", None), "logging", None)
+    previous_level = cv_logging.getLogLevel() if cv_logging else None
+    if cv_logging:
+        cv_logging.setLogLevel(cv_logging.LOG_LEVEL_ERROR)
+    try:
+        image = cv2.imread(in_file, flags=flags)
+    finally:
+        if cv_logging:
+            cv_logging.setLogLevel(previous_level)
+    if image is None:
+        raise OSError(f"Could not read TIFF image: {in_file}")
+    return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)/(2.**16-1)
 
 def cached_tif(path):
     return path[:-4]+"_RawTherapee.tif"
 
 def load_dng(path, template="DJI_neutral.pp3"):
     out_file = cached_tif(path)
-    # assert osp.isfile(RAWTHERAPEEPATH), "RAWTHERAPEE NOT FOUND"
     cmd = [
         RAWTHERAPEEPATH,
         "-t", "-o", out_file,
         "-p", osp.join(osp.dirname(__file__), "..", "thirdparty", "rawtherapee", template),
         "-c", path
     ]
+    if osp.isfile(out_file):
+        try:
+            return load_tif(out_file), out_file
+        except (OSError, cv2.error):
+            logging.warning("Discarding unreadable RawTherapee proxy: %s", out_file)
+            os.remove(out_file)
+
+    completed = subprocess.run(cmd, check=False)
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"RawTherapee failed to convert {path} (exit code {completed.returncode})."
+        )
     if not osp.isfile(out_file):
-        subprocess.call(cmd)
-    else:
-        logging.info("DNG already processed by RAW THERAPEE {}".format(path))
-    assert osp.isfile(out_file), f"DNG file not converted! {out_file}"
+        raise RuntimeError(f"RawTherapee did not create the expected TIFF: {out_file}")
     return load_tif(out_file), out_file
 
 
@@ -192,7 +214,7 @@ class Image:
             self.conv_dir = osp.join(osp.dirname(self.path), "_conversion_sjcam")
             # This piece of code is a dirty, the proxies are RGB temporary conversions of raw files
             # The list self.proxy is used to later clear (methode clean_proxy)
-            dng_file = osp.join(self.conv_dir, osp.basename(self.path).replace(".RAW", ".dng"))
+            dng_file = osp.join(self.conv_dir, with_suffix_ci(osp.basename(self.path), ".raw", ".dng"))
             proxypth = cached_tif(self.path)
             proxypth_from_dng = cached_tif(dng_file)
             self.proxy = [dng_file, proxypth, proxypth_from_dng]
@@ -245,7 +267,7 @@ class Image:
                 cv2.COLOR_RGB2BGR)
             )
         if self.path is not None:
-            logging.warning(f"copy metadata from {self.path} to {path}")
+            logging.info(f"copy metadata from {self.path} to {path}")
             copy_metadata(self.path, path)
         return
     def save_multispectral(self, path, bands=[1, 2, 3, 4]):
@@ -291,7 +313,10 @@ class Image:
                 except:
                     maker = str(exifTag['Make'])
                     model = str(exifTag['Model'])
-                serial_number = str(exifTag[prefix+'BodySerialNumber'])
+                serial_number_tag = exifTag.get(prefix + 'BodySerialNumber')
+                serial_number = (
+                    str(serial_number_tag) if serial_number_tag is not None else None
+                )
                 timelapse = 0
                 deltatime = 0
                 self.camera = {
@@ -305,7 +330,7 @@ class Image:
                 print(Style.YELLOW + "NO CAMERA IN %s"%self.path + Style.RESET)
                 self.camera = None
             try:
-                if self.path.endswith(".RAW"):
+                if has_suffix(self.path, "raw"):
 
                     year, month_date, hours , _ = osp.basename(self.path).split("_")
                     converted_date = datetime.datetime(year=int(year), month=int(month_date[:2]), day=int(month_date[2:]),
@@ -378,28 +403,49 @@ class Image:
         self.get_data()
         return self._lineardata
     lineardata = property(get_lineardata)
-
+    
+    def convert_sjcam_dng(self, dng_file):
+        rawimg, proxypth = load_dng(dng_file, template="SJCAM.pp3")
+        self.proxy = [dng_file, proxypth]
+        bp_sjcam = 0.255
+        rawimg = rawimg - bp_sjcam
+        if self.shading_correction:
+            global shading_correction_M20
+            if shading_correction_M20 is None:
+                shading_correction_M20 = get_polar_shading_map(
+                    img_shape=rawimg.shape,
+                    calib=SJCAM_M20_PROFILE_CONTROL_POINTS
+                )
+                # print("LOADING SHADING CALIB")
+            rawimg = (rawimg * shading_correction_M20)
+        # self._data = ((rawimg.clip(0., 1.)**(gamma)).clip(0., 1.)*255).astype(np.uint8)
+        self._data = (contrast_stretching(rawimg.clip(0., 1.))[0]*255).astype(np.uint8)
+        self._lineardata = rawimg.clip(0., 1.)
+    
     def get_data(self):
         gamma = 2.2 #1./2.2
         if self._data is None:
             assert osp.exists(self.path), "%s not an image"%self.path
 # ---------------------------------------------------------------------------------------------------- DJI Mavic Air RAW
             if str.lower(osp.basename(self.path)).endswith("dng"):
-                rawimg, proxypth = load_dng(self.path, template="DJI_neutral.pp3") # COLOR MATRIX IS APPLIED, LINEAR
-                self.proxy = [proxypth]
-                # lens shading correction for DJI
-                if self.shading_correction:
-                    global shading_correction_DJI
-                    if shading_correction_DJI is None:
-                        shading_correction_DJI = np.load(
-                            osp.abspath(osp.join(osp.dirname(__file__), "..", "calibration", "DJI_RAW",
-                                                 "shading_calibration.npy"))
-                        )
-                        shading_correction_DJI = cv2.resize(shading_correction_DJI, (rawimg.shape[1], rawimg.shape[0]))
-                    rawimg = (shading_correction_DJI*rawimg).clip(0., 1.)
-                # self._data = ((rawimg**(gamma)).clip(0., 1.)*255).astype(np.uint8)
-                self._data = (contrast_stretching(rawimg.clip(0., 1.))[0]*255).astype(np.uint8)
-                self._lineardata = rawimg
+                if "NIR" in osp.basename(self.path): # New case for pre-computed SJCam
+                    self.convert_sjcam_dng(self.path)
+                else:
+                    rawimg, proxypth = load_dng(self.path, template="DJI_neutral.pp3") # COLOR MATRIX IS APPLIED, LINEAR
+                    self.proxy = [proxypth]
+                    # lens shading correction for DJI
+                    if self.shading_correction:
+                        global shading_correction_DJI
+                        if shading_correction_DJI is None:
+                            shading_correction_DJI = np.load(
+                                osp.abspath(osp.join(osp.dirname(__file__), "..", "calibration", "DJI_RAW",
+                                                    "shading_calibration.npy"))
+                            )
+                            shading_correction_DJI = cv2.resize(shading_correction_DJI, (rawimg.shape[1], rawimg.shape[0]))
+                        rawimg = (shading_correction_DJI*rawimg).clip(0., 1.)
+                    # self._data = ((rawimg**(gamma)).clip(0., 1.)*255).astype(np.uint8)
+                    self._data = (contrast_stretching(rawimg.clip(0., 1.))[0]*255).astype(np.uint8)
+                    self._lineardata = rawimg
 # -------------------------------------------------------------------------------------------------------- SJCAM M20 RAW
             elif str.lower(osp.basename(self.path)).endswith("raw"):
                 if os.name == "nt":
@@ -414,28 +460,13 @@ class Image:
                 conv_dir = self.conv_dir
                 if not osp.isdir(conv_dir):
                     mkdir(conv_dir)
-                dng_file = osp.join(conv_dir, osp.basename(self.path).replace(".RAW", ".dng"))
+                dng_file = osp.join(conv_dir, with_suffix_ci(osp.basename(self.path), ".raw", ".dng"))
                 if not osp.isfile(dng_file):
                     # assert osp.isfile(sjcam_converter), f"No SJCam converter {sjcam_converter}"
                     assert osp.isfile(self.path), f"No input raw file {self.path}"
                     subprocess.call([sjcam_converter, "-o", conv_dir, osp.abspath(self.path)])
                 assert osp.isfile(dng_file), "RAW file not converted into DNG!"
-                rawimg, proxypth = load_dng(dng_file, template="SJCAM.pp3")
-                self.proxy = [dng_file, proxypth]
-                bp_sjcam = 0.255
-                rawimg = rawimg - bp_sjcam
-                if self.shading_correction:
-                    global shading_correction_M20
-                    if shading_correction_M20 is None:
-                        shading_correction_M20 = get_polar_shading_map(
-                            img_shape=rawimg.shape,
-                            calib=SJCAM_M20_PROFILE_CONTROL_POINTS
-                        )
-                        # print("LOADING SHADING CALIB")
-                    rawimg = (rawimg * shading_correction_M20)
-                # self._data = ((rawimg.clip(0., 1.)**(gamma)).clip(0., 1.)*255).astype(np.uint8)
-                self._data = (contrast_stretching(rawimg.clip(0., 1.))[0]*255).astype(np.uint8)
-                self._lineardata = rawimg.clip(0., 1.)
+                self.convert_sjcam_dng(dng_file)
             elif str.lower(osp.basename(self.path)).endswith("tif") or str.lower(osp.basename(self.path)).endswith("tiff"):
                 linear_data = load_tif(self.path)
                 self._lineardata = linear_data

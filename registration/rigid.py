@@ -5,6 +5,7 @@ import numpy as np
 from registration.newton import newton_iter, quadric_approximation
 from irdrone.register import geometric_rigid_transform_estimation
 from registration.warp_flow import warp_from_sparse_vector_field
+from registration.pyramid_wrapper import pyramid_gaussian
 # from irdrone.utils import c2g, g2c
 import matplotlib.pyplot as plt
 import logging
@@ -12,7 +13,7 @@ from registration.cost import compute_cost_surfaces_with_traces, AlignmentConfig
 from registration.constants import LAPLACIAN_ENERGIES, GRAY_SCALE, COLORED, SSD, NTG
 import irdrone.process as pr
 import cv2
-from skimage import transform
+
 from os import mkdir
 import time
 
@@ -82,7 +83,7 @@ def minimum_cost_max_hessian(cost, debug=False):
         plt.imshow(cost.sum(axis=-1))
         plt.plot(displacement[0]+cost.shape[1]//2, displacement[1]+cost.shape[0]//2, "r+")
         plt.title("Full cost {}".format(displacement))
-        plt.show()
+        plt.close()
     return displacement
 
 
@@ -190,7 +191,7 @@ def compute_pyramid(img, scales_list):
     """Returns pyramid dictionary"""
     img_pyr = {}
 
-    for (ids, resized) in enumerate(transform.pyramid_gaussian(img, downscale=2, multichannel=True)):
+    for (ids, resized) in enumerate(pyramid_gaussian(img, downscale=2)):
         if 2**ids in scales_list:
             img_pyr[2**ids] = resized.astype(np.float32)
             logging.info("Storing pyramid level {}".format(2**ids, resized.shape))
@@ -255,7 +256,7 @@ def pyramidal_search(
         sigma_gaussian=sigma_mov, mode=mode
     ).astype(np.float32)
     ts_msr_end = time.perf_counter()
-    logging.warning("{:.2f}s elapsed in MSR {} computation".format(ts_msr_end - ts_msr_start, mode))
+    logging.debug("{:.2f}s elapsed in MSR {} computation".format(ts_msr_end - ts_msr_start, mode))
     # ------------------------------------------------------------------------------------------------------------------
     iter = 0
     ts_ds_start = time.perf_counter()
@@ -267,7 +268,7 @@ def pyramidal_search(
         img_mov_pyr = compute_pyramid(img_mov, scales_list)
     ts_ds_end = time.perf_counter()
 
-    logging.warning("{:.2f}s elapsed in pyramid dowscale up to {}".format(ts_ds_end - ts_ds_start, iterative_scheme[0][0]))
+    logging.debug("{:.2f}s elapsed in pyramid dowscale up to {}".format(ts_ds_end - ts_ds_start, iterative_scheme[0][0]))
 
     # ---------------------------------------------------    PYRAMID   -------------------------------------------------
     # -------------------------------------------------------------------------------------------------- Multiscale loop
@@ -309,11 +310,11 @@ def pyramidal_search(
         ds_msr_ref = msr_ref_pyr[ds]
         ds_msr_mov_init = msr_mov_pyr[ds]
         ts_ds_end = time.perf_counter()
-        logging.warning("{:.2f}s elapsed in dowscale {}".format(ts_ds_end - ts_ds_start, ds))
+        logging.debug("{:.2f}s elapsed in dowscale {}".format(ts_ds_end - ts_ds_start, ds))
         ts_warp_start = time.perf_counter()
         ds_msr_mov = motion_model.warp(ds_msr_mov_init, downscale=ds)  # register thumbnail based on previous model
         ts_warp_end = time.perf_counter()
-        logging.warning("{:.2f}s elapsed in warping at scale {}".format(ts_warp_end - ts_warp_start, ds))
+        logging.debug("{:.2f}s elapsed in warping at scale {}".format(ts_warp_end - ts_warp_start, ds))
         debug_trace(ds_msr_mov, ds, iter, prefix="_msr_", suffix="__start", msr_mode=mode)
 
         # --------------------------------------------------------------------------------------------------------------
@@ -380,16 +381,16 @@ def pyramidal_search(
                 out_img = motion_model.warp(img_mov, downscale=1)
                 debug_trace(out_img, ds, iter, prefix="FULL_RES_ALIGN_", debug_flag=True)
             ts_iter_end = time.perf_counter()
-            logging.warning("{:.2f}s elapsed at scale {} - iter {}".format(ts_iter_end - ts_iter_start, ds, iter))
+            logging.debug("{:.2f}s elapsed at scale {} - iter {}".format(ts_iter_end - ts_iter_start, ds, iter))
         debug_trace(ds_msr_ref, ds, iter, prefix="_msr_", suffix="_ref", msr_mode=mode, debug_flag=True)
         if debug:
             ds_img_ref = img_ref_pyr[ds]
             debug_trace(ds_img_ref, ds, iter, prefix="_image_", suffix= "ref")
         ts_scale_end = time.perf_counter()
-        logging.warning("{:.2f}s elapsed at scale {}".format(ts_scale_end - ts_scale_start, ds))
+        logging.debug("{:.2f}s elapsed at scale {}".format(ts_scale_end - ts_scale_start, ds))
         iter +=1
     ts_end = time.perf_counter()
-    logging.warning("\tTOTAL {:.2f}s elapsed for iterative scheme {}".format(ts_end - ts_start, iterative_scheme))
+    logging.info("\tTOTAL {:.2f}s elapsed for iterative scheme {}".format(ts_end - ts_start, iterative_scheme))
     if debug:
         out_img = motion_model.warp(img_mov, downscale=1)
         pr.Image(out_img).save(osp.join(forced_debug_dir, "FULLRES_REGISTERED_REFINED.jpg"))
@@ -541,4 +542,3 @@ if __name__ == "__main__":
 
     # run_alignment_disparity()
     run_alignment_multispectral()
-

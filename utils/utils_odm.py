@@ -2,6 +2,7 @@
 # pylint: disable=C0103, C0301, W0703
 from pathlib import Path
 import shutil
+import os
 import os.path as osp
 import matplotlib
 import numpy as np
@@ -21,7 +22,14 @@ columnNbr = 5
 colorNames = list(matplotlib.colors.cnames.keys())
 
 
-def create_odm_folder(dirMission, multispectral_modality="MS", extra_suggested_options=True, forced_camera_calibration=True, extra_options=[]):
+def create_odm_folder(
+    dirMission,
+    multispectral_modality="MS",
+    extra_suggested_options=True,
+    forced_camera_calibration=True,
+    extra_options=[],
+    create_images_directory=True,
+):
     mapping_folder = "mapping_{}".format(multispectral_modality)
     path_database = Path(dirMission) / mapping_folder
     odm_camera_conf = Path(__file__).parent / ".." / "thirdparty" / "odm_data" / "irdrone_multispectral.json"
@@ -29,14 +37,14 @@ def create_odm_folder(dirMission, multispectral_modality="MS", extra_suggested_o
     camera_conf_dir.mkdir(exist_ok=True, parents=True)
     shutil.copyfile(odm_camera_conf, camera_conf_dir / "camera_IRdrone.json")
     image_database = path_database / "images"
-    image_database.mkdir(exist_ok=True, parents=True)
+    if create_images_directory:
+        image_database.mkdir(exist_ok=True, parents=True)
     cmd = "docker run -ti --rm -v {}:/datasets opendronemap/odm".format(dirMission)
     cmd += " --project-path /datasets {}".format(mapping_folder)
     cmd += " --cameras /datasets/{}/camera/camera_IRdrone.json".format(mapping_folder)
     cmd += " --orthophoto-resolution 1. --ignore-gsd --fast-orthophoto --orthophoto-png"
     #cmd += " --orthophoto-kmz"
     cmd += " --force-gps --use-exif"
-    cmd += " --build-overviews"
     cmd += " --skip-band-alignment"
     # see https://github.com/wisescootering/infrareddrone/issues/26
     if extra_suggested_options:
@@ -49,8 +57,14 @@ def create_odm_folder(dirMission, multispectral_modality="MS", extra_suggested_o
         cmd += " --use-fixed-camera-params"
     for extra_option in extra_options:
         cmd += " " + extra_option
-    with open(path_database / "odm_mapping.bat", "w") as fi:
-        fi.write(cmd)
+    if os.name == "nt":
+        with open(path_database / "odm_mapping.bat", "w") as fi:
+            fi.write(cmd)
+    else:
+        script = path_database / "odm_mapping.sh"
+        with open(script, "w") as fi:
+            fi.write("#!/bin/sh\n" + cmd + "\n")
+        os.chmod(script, 0o755)
     return image_database
 
 
@@ -165,6 +179,7 @@ def visu_mapping(mappingList, listPts, focal_DJI=cf.IRD_FOCAL_LENGTH_PIX, lCapt_
             marker='o', markerfacecolor='white', markeredgecolor='black', markeredgewidth=0.3,  markersize=2, zorder=order,
             label='Shooting point.')
     # best synchro images
+    couleursSynchro = cycleColor(len(listSynchro_X))
     for i in range(len(listSynchro_X)):
         ax.plot(listSynchro_X[i], listSynchro_Y[i], linestyle='None',
             marker='o', markerfacecolor='orangered', markeredgecolor='darkred', markeredgewidth=0.5,markersize=2, zorder=order)
@@ -173,24 +188,22 @@ def visu_mapping(mappingList, listPts, focal_DJI=cf.IRD_FOCAL_LENGTH_PIX, lCapt_
             zorder=order,
             label='Shooting ~synchro.')
     # images for mapping
+    couleursMapping = cycleColor(len(listBestMapping_X))
     for i in range(len(listBestMapping_X)):
         ax.plot(listBestMapping_X[i], listBestMapping_Y[i], linestyle='None',
-            marker='o', markerfacecolor=colorNames[20 + i], markeredgecolor='black', markeredgewidth=0.5,markersize=8, zorder=order)
+            marker='o', markerfacecolor=couleursMapping[i], markeredgecolor='black', markeredgewidth=0.5,markersize=8, zorder=order)
     if len(listBestMapping_X)>0:
         ax.plot(listBestMapping_X[0], listBestMapping_Y[0], linestyle='None',
             marker='o', markerfacecolor=colorNames[20], markeredgecolor='black', markeredgewidth=0.5, markersize=8, zorder=order, label='Best mapping ODM images')
 
-    # selected images for processing  
+    # selected images for processing
+    couleursProcess = cycleColor(len(listMapping_X))
     for i in range(len(listMapping_X)):
         ax.plot(listMapping_X[i], listMapping_Y[i], linestyle='None',
-            marker='o', markerfacecolor=colorNames[20 + i], markeredgecolor='black', markeredgewidth=0.5,markersize=6, zorder=order)
+            marker='o', markerfacecolor=couleursProcess[i], markeredgecolor='black', markeredgewidth=0.5,markersize=6, zorder=order)
     if len(listMapping_X)>0:
         ax.plot(listMapping_X[0], listMapping_Y[0], linestyle='None',
             marker='o', markerfacecolor=colorNames[20], markeredgecolor='black', markeredgewidth=0.5, markersize=6, zorder=order, label='Selected images ' + ("" if name is None else name))
-
-
-
-
 
     # -------------- Plot area scanned by images for mapping ----------------------------------------------------------
 
@@ -203,7 +216,7 @@ def visu_mapping(mappingList, listPts, focal_DJI=cf.IRD_FOCAL_LENGTH_PIX, lCapt_
         ptGeo = coordRef2coordGeo(A, coord_Img)
         poly = Polygon(ptGeo, facecolor='whitesmoke', lw=0, hatch='', fill=True, zorder=order-1-i)
         ax.add_patch(poly)
-        poly = Polygon(ptGeo, facecolor='None', edgecolor=colorNames[20 + i], lw=0.5, hatch='', fill=True, zorder=order)
+        poly = Polygon(ptGeo, facecolor='None', edgecolor=couleursProcess[i], lw=0.5, hatch='', fill=True, zorder=order)
         ax.add_patch(poly)
 
     # ------------ plot north arrow -----------------------------------------------------------------------------------
@@ -225,10 +238,24 @@ def visu_mapping(mappingList, listPts, focal_DJI=cf.IRD_FOCAL_LENGTH_PIX, lCapt_
                     format=None, transparent=False,
                     bbox_inches='tight', pad_inches=0.1, metadata=None)
         print(Style.CYAN + 'INFO : ------ Save Mapping scheme in %s' % filepath + Style.RESET)
+        # plt.close()
 
     print(Style.YELLOW + 'WARNING : Look at the mapping scheme  >>>>' + Style.RESET)
     plt.show()
     plt.close()
+    
+
+def cycleColor(number):
+    couleur = []
+    offsetColor = 20
+    k = 0
+    for i in range(number):
+        if offsetColor + k >= len(colorNames):
+            k = 0
+        else:
+            k+= 1
+        couleur.append(colorNames[offsetColor + k-1])
+    return couleur
 
 
 def northArrow(x0,y0,d):
@@ -270,7 +297,6 @@ def coordRef2coordGeo(A, coord_Img):
             listPtY.append(Coord_geo[1])
         verts = [(listPtX[k], listPtY[k]) for k in range(len(listPtX))]
         return verts
-
 
 
 

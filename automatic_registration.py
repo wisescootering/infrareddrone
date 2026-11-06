@@ -8,6 +8,7 @@ import registration.rigid as rigid
 from irdrone.semi_auto_registration import manual_warp, ManualAlignment, Transparency, Absgrad
 from skimage import transform
 import os
+import sys
 osp = os.path
 import time
 from datetime import datetime, timedelta
@@ -16,10 +17,17 @@ import interactive.imagepipe as ipipe
 import shutil
 import cv2
 import argparse
+import json
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from copy import deepcopy
 from config import CROP
-
+from alignment_workers import available_alignment_workers, clamp_workers  # noqa: F401 (re-exported)
+from registration.pyramid_wrapper import pyramid_reduce
+try:
+    conda_env_name = os.environ['CONDA_DEFAULT_ENV']
+except:
+    conda_env_name = None  # not running in conda (e.g. uv/venv): no activate line in the generated .bat
 exif_dict_minimal = np.load(osp.join(osp.dirname(__file__), "utils", "minimum_exif_dji.npy"), allow_pickle=True).item()
 TRACES = ["vis", "nir", "vir", "ndvi"]
 VIS, NIR, VIR, NDVI = TRACES
@@ -125,8 +133,9 @@ def user_assisted_manual_alignment(ref, mov, cals, yaw=0, pitch=0, roll=0):
     )
     rotate3d.set_movingcalib(cals["movingcalib"])
     rotate3d.set_refcalib(cals["refcalib"])
-    alpha = Transparency("Alpha", inputs=[0, 1], vrange=(-1., 1., -0.45))
-    absgrad_viz = Absgrad("Absgrad visualize", inputs=[0, 1], outputs=[0, 1], vrange=(0, 1, 1))
+    alpha = Transparency("Alpha", inputs=[0, 1], vrange=(-1., 1., -0.75))
+    alpha.rectangle_opacity = 0.65  # NIR rectangle slightly transparent over the VIS image
+    absgrad_viz = Absgrad("Absgrad visualize", inputs=[0, 1], outputs=[0, 1], vrange=(0, 1, 0.3))
     ipi = ipipe.ImagePipe(
         [ref, mov],
         rescale=None,
@@ -136,6 +145,9 @@ def user_assisted_manual_alignment(ref, mov, cals, yaw=0, pitch=0, roll=0):
             alpha
         ]
     )
+    # The five sliders only need the lowest ~20% of the window: leave the rest to the image
+    ipi.bottom_margin = 0.2
+    ipi.top_margin = 0.99
     ipi.gui()
     return rotate3d.alignment_parameters
 
@@ -159,8 +171,8 @@ def coarse_alignment(ref_full, mov_full, cals, yaw_main, pitch_main, roll_main, 
     msr_ref_full = rigid.multispectral_representation(ref_full, mode=msr_mode, sigma_gaussian=3.).astype(np.float32)
     # @TODO: re-use MSR of full res!
     msr_mov_full = rigid.multispectral_representation(mov_w_full, mode=msr_mode, sigma_gaussian=1.).astype(np.float32)
-    msr_ref = transform.pyramid_reduce(msr_ref_full, downscale=ds, multichannel=True).astype(np.float32)
-    msr_mov = transform.pyramid_reduce(msr_mov_full, downscale=ds, multichannel=True).astype(np.float32)
+    msr_ref = pyramid_reduce(msr_ref_full, downscale=ds)
+    msr_mov = pyramid_reduce(msr_mov_full, downscale=ds)
     pad_y = (msr_mov.shape[0]-msr_ref.shape[0])//2
     pad_x = (msr_mov.shape[1]-msr_ref.shape[1])//2
     align_config = rigid.AlignmentConfig(num_patches=1, search_size=pad_x, mode=msr_mode)
@@ -188,7 +200,7 @@ def coarse_alignment(ref_full, mov_full, cals, yaw_main, pitch_main, roll_main, 
     pitch_refine = np.rad2deg(np.arctan(translation[1]/focal))
     print("2D translation {}".format(translation, yaw_refine, pitch_refine))
     ts_end_coarse_search = time.perf_counter()
-    logging.warning("{:.2f}s elapsed in coarse search".format(ts_end_coarse_search - ts_start_coarse_search))
+    logging.info("{:.2f}s elapsed in coarse search".format(ts_end_coarse_search - ts_start_coarse_search))
     ts_start_warp = time.perf_counter()
     if debug_dir is not None and debug:
         mov_wr = manual_warp(
@@ -207,7 +219,7 @@ def coarse_alignment(ref_full, mov_full, cals, yaw_main, pitch_main, roll_main, 
         geometric_scale=None, refinement_homography=None,
     )
     ts_end_warp = time.perf_counter()
-    logging.warning("{:.2f}s elapsed in warping from coarse search".format(ts_end_warp - ts_start_warp))
+    logging.info("{:.2f}s elapsed in warping from coarse search".format(ts_end_warp - ts_start_warp))
     if debug_dir is not None:
         pr.Image(ref_full).save(osp.join(debug_dir, "FULLRES_REF.jpg"))
         pr.Image(mov_wr_fullres).save(osp.join(debug_dir, "FULLRES_REGISTERED_COARSE.jpg"))
@@ -241,7 +253,7 @@ def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extens
     ref_full = vis_undist.data
     mov_full = nir.data
     ts_end_load = time.perf_counter()
-    logging.warning("{:.2f}s elapsed in loading full resolution RAW".format(ts_end_load - ts_start))
+    logging.info("{:.2f}s elapsed in loading full resolution RAW".format(ts_end_load - ts_start))
     if motion_model_file is None or not osp.isfile(motion_model_file+".npy"):
         if manual:
             alignment_params = user_assisted_manual_alignment(ref_full, mov_full, cals, init_angles[0], init_angles[1], init_angles[2])
@@ -271,7 +283,7 @@ def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extens
         if motion_model_file is not None:
             np.save(motion_model_file, full_motion_model, allow_pickle=True)
     else:
-        logging.warning("Loading motion model!")
+        logging.info("Loading motion model!")
         full_motion_model = np.load(motion_model_file+".npy", allow_pickle=True).item()
 
     if debug_dir is not None:
@@ -301,8 +313,8 @@ def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extens
         refinement_homography=full_motion_model["homography"],
     )  # global warp!
     ts_end = time.perf_counter()
-    logging.warning("{:.2f}s elapsed in global and local unique warp".format(ts_end - ts_start_yowo))
-    logging.warning("{:.2f}s elapsed in total alignment".format(ts_end - ts_start))
+    logging.info("{:.2f}s elapsed in global and local unique warp".format(ts_end - ts_start_yowo))
+    logging.info("{:.2f}s elapsed in total alignment".format(ts_end - ts_start))
     full_motion_model["initialization_angles"] = init_angles
     full_motion_model["initialization"] = {"yaw": init_angles[0], "pitch": init_angles[1], "roll": init_angles[2]}
     return vis_undist_lin, mov_w_linear_local, mov_w_linear_global, full_motion_model
@@ -310,31 +322,188 @@ def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extens
 
 
 
-def write_manual_bat_redo(vis_pth, nir_pth_list, debug_bat_pth, out_dir=None, debug=False, async_suffix=None, multispectral_folder=None, angles=None):
-    if out_dir is None:
-        out_dir = osp.abspath(debug_bat_pth.replace(".bat", ""))
+def save_readable_motion_model(motion_model, path):
+    """Write the human-readable part of a motion model as JSON (angles in degrees)."""
+    def to_list(value):
+        return np.asarray(value, dtype=float).tolist()
+
+    readable = {
+        key: float(motion_model[key]) for key in ("yaw", "pitch", "roll") if key in motion_model
+    }
+    if "initialization" in motion_model:
+        readable["initialization"] = {
+            key: float(value) for key, value in motion_model["initialization"].items()
+        }
+        readable["correction_vs_initialization"] = {
+            key: readable[key] - readable["initialization"][key]
+            for key in ("yaw", "pitch", "roll")
+            if key in readable and key in readable["initialization"]
+        }
+    for key in ("homography", "previous_homography"):
+        if motion_model.get(key) is not None:
+            readable[key] = to_list(motion_model[key])
+    vector_field = motion_model.get("vector_field")
+    if vector_field is not None:
+        field = np.asarray(vector_field, dtype=float)
+        readable["vector_field_summary"] = {
+            "shape": list(field.shape),
+            "mean_abs": float(np.abs(field).mean()),
+            "max_abs": float(np.abs(field).max()),
+        }
+    with open(path, "w", encoding="utf-8") as file:
+        json.dump(readable, file, indent=2)
+
+
+def _manual_redo_result_names(vis_pth):
+    image_number = Path(vis_pth).stem.removeprefix("VIS_")
+    names = [
+        f"VIS_{image_number}.jpg",
+        f"VIS_{image_number}_motion_model.npy",
+        f"VIS_{image_number}_motion_model.json",
+    ]
+    for trace in (VIR, NIR, NDVI):
+        names.extend(
+            f"{trace.upper()}_{image_number}_{mode}.jpg"
+            for mode in ("local", "global")
+        )
+    names.extend(
+        f"IRD_{image_number}_{band}.tif"
+        for band in range(1, 5)
+    )
+    names.append(f"IRD_{image_number}_1.exif")
+    return names
+
+
+def _move_to_archive(source, archive_dir):
+    source = Path(source)
+    destination = archive_dir / source.name
+    index = 1
+    while destination.exists():
+        destination = archive_dir / f"{source.stem}_{index}{source.suffix}"
+        index += 1
+    shutil.move(str(source), str(destination))
+    return destination
+
+
+def prepare_manual_redo_archives(vis_pth, out_dir, multispectral_folder=None):
+    """Preserve existing REDO outputs and clear stale diagnostics before rerunning."""
+    vis_pth = Path(vis_pth)
+    out_dir = Path(out_dir)
+    debug_dir = out_dir / f"{vis_pth.stem}_align_traces_manual"
+    tech_dir = debug_dir / "Tech"
+    original_dir = debug_dir / "original"
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    tech_dir.mkdir(exist_ok=True)
+    original_dir.mkdir(exist_ok=True)
+
+    for existing in debug_dir.iterdir():
+        if existing not in (tech_dir, original_dir):
+            _move_to_archive(existing, tech_dir)
+
+    image_number = vis_pth.stem.removeprefix("VIS_")
+    original_names = _manual_redo_result_names(vis_pth)
+    original_names.remove(f"VIS_{image_number}_motion_model.npy")
+    archived_exif = None
+    for name in original_names:
+        if name.startswith("IRD_"):
+            if multispectral_folder is None:
+                continue
+            source_dir = Path(multispectral_folder)
+        else:
+            source_dir = out_dir
+        source = source_dir / name
+        if source.is_file():
+            archived = _move_to_archive(source, original_dir)
+            if name.endswith("_1.exif"):
+                archived_exif = archived
+
+    motion_model = out_dir / f"VIS_{image_number}_motion_model.npy"
+    if motion_model.is_file():
+        _move_to_archive(motion_model, original_dir)
+    return debug_dir, original_dir, archived_exif
+
+
+def finalize_manual_redo_archives(
+    vis_pth, out_dir, multispectral_folder, debug_dir, archived_exif
+):
+    """Copy the regenerated deliverables into the trace folder and file diagnostics."""
+    vis_pth = Path(vis_pth)
+    out_dir = Path(out_dir)
+    debug_dir = Path(debug_dir)
+    image_number = vis_pth.stem.removeprefix("VIS_")
+
+    if archived_exif is not None and multispectral_folder is not None:
+        sidecar = Path(multispectral_folder) / f"IRD_{image_number}_1.exif"
+        shutil.copy2(archived_exif, sidecar)
+
+    result_names = _manual_redo_result_names(vis_pth)
+    result_paths = [
+        (Path(multispectral_folder) if name.startswith("IRD_") else out_dir) / name
+        for name in result_names
+        if not name.startswith("IRD_") or multispectral_folder is not None
+    ]
+
+    archived_names = set(result_names)
+    tech_dir = debug_dir / "Tech"
+    try:
+        for result in result_paths:
+            if not result.is_file():
+                raise FileNotFoundError(f"Expected REDO output was not created: {result}")
+            shutil.copy2(result, debug_dir / result.name)
+    finally:
+        for item in debug_dir.iterdir():
+            if item.name in ("Tech", "original") or item.name in archived_names:
+                continue
+            _move_to_archive(item, tech_dir)
+
+
+# Recovery script written next to each aligned pair, read back by the GUI "Redo".
+# Windows: batch file (conda activate + python). Elsewhere: shell script calling
+# the current interpreter directly (works with conda, venv or uv alike).
+REDO_SCRIPT_SUFFIX = "_REDO.bat" if os.name == "nt" else "_REDO.sh"
+
+
+def write_manual_bat_redo(
+    vis_pth, nir_candidates, debug_bat_pth, out_dir, multispectral_folder=None, angles=None
+):
+    vis_pth = os.fspath(vis_pth)
+    out_dir = os.fspath(out_dir)
+    batch = not os.fspath(debug_bat_pth).lower().endswith(".sh")
+    comment = "REM " if batch else "# "
+    python = "python" if batch else "\"" + sys.executable + "\""
     with open(debug_bat_pth, "w") as fi:
-        fi.write("call activate {}\n".format(os.environ['CONDA_DEFAULT_ENV']))
-        for id_sync, nir_pth in enumerate(nir_pth_list):
-            out_dir_current = out_dir
-            if async_suffix is not None:
-                out_dir_current = out_dir_current + "_async_{}".format(async_suffix[id_sync])
-            cmd = "REM " if id_sync>0 else ""
-            cmd+= "python {} --images {} {} --manual --outdir {} {}".format(
+        if not batch:
+            fi.write("#!/bin/sh\n")
+        fi.write(comment + "Full recovery run: detailed diagnostics and all image traces.\n")
+        fi.write(comment + "Keep one command active; uncomment an alternative NIR rank if needed.\n")
+        if batch and conda_env_name is not None:
+            fi.write("call activate {}\n".format(conda_env_name))
+        for id_candidate, (nir_pth, nir_rank) in enumerate(nir_candidates):
+            nir_pth = os.fspath(nir_pth)
+            cmd = comment if id_candidate > 0 else ""
+            cmd += comment + "NIR rank {}: {}\n".format(nir_rank, nir_pth)
+            cmd += comment if id_candidate > 0 else ""
+            cmd += "{} {} --images {} {} --manual --outdir {} --debug".format(
+                python,
                 "\""+osp.abspath(__file__)+"\"",
                 "\""+vis_pth+"\"", "\""+nir_pth+"\"",
-                "\""+out_dir_current+"\"",
-                "--debug" if debug else ""
+                "\""+out_dir+"\"",
             )
             if multispectral_folder is not None:
-                cmd+= "--multispectral-folder "+ "\""+osp.abspath(multispectral_folder)+"\""
+                cmd+= " --multispectral-folder "+ "\""+osp.abspath(multispectral_folder)+"\""
             if angles is not None:
                 cmd += f" --angles {angles[0]:.3f} {angles[1]:.3f} {angles[2]:.3f}"
+            cmd += " --traces {}".format(" ".join(TRACES))
+            cmd += " --alignment-modes local global"
+            cmd += " --redo"
             cmd+="\n"
             fi.write(cmd)
-        fi.write("call deactivate\n")
+        if batch:
+            fi.write("call deactivate\n")
+    if not batch:
+        os.chmod(debug_bat_pth, 0o755)
 
-def process_raw_pairs(
+def _process_raw_pairs_serial(
         sync_pairs,
         cals=dict(refcalib=ut.cameracalibration(camera="DJI_RAW"), movingcalib=ut.cameracalibration(camera="M20_RAW")),
         extension=1.4,
@@ -343,8 +512,15 @@ def process_raw_pairs(
         clean_proxy=False,
         multispectral_folder=None,
         traces=[VIS, NIR, VIR, NDVI],
-        angles=None
+        angles=None,
+        skip=False,
+        alignment_modes=("local", "global"),
+        redo_nir_candidates=None,
+        progress_callback=None,
     ):
+    """
+    listPts [optional]: contains all metadata & theoretical angles
+    """
     # if debug_folder is None:
     #     debug_folder = osp.dirname(sync_pairs[0][0])
     if out_dir is None:
@@ -353,6 +529,7 @@ def process_raw_pairs(
         os.mkdir(out_dir)
     motion_model_list = []
     for index_pair, (vis_pth, nir_pth) in enumerate(sync_pairs):
+        vis_pth, nir_pth = str(vis_pth), str(nir_pth)
         if angles is None:
             yaw_init, pitch_init, roll_init = 0., 0., 0.
         else:
@@ -365,12 +542,27 @@ def process_raw_pairs(
             logging.info(f"INIT ANGLES FROM EXIF: yaw {yaw_init}, pitch {pitch_init}, roll {roll_init}")
         angles = [yaw_init, pitch_init, roll_init]
         # RELOAD PREVIOUSLY COMPUTED MOTION FILE
-        motion_model_file = osp.join(out_dir, osp.basename(vis_pth[:-4])+"_motion_model")
+        motion_model_file = osp.join(out_dir, osp.basename(str(vis_pth)[:-4]) + "_motion_model")
         if not osp.exists(motion_model_file + ".npy"):
             motion_model_file = None
         else:
-            logging.warning(f"Using cached motion file {motion_model_file}")
-        logging.warning("processing {} {}".format(osp.basename(vis_pth), osp.basename(nir_pth)))
+            logging.info(f"Using cached motion file {motion_model_file}")
+            if skip:
+                if listPts is not None:
+                    motion_model = np.load(motion_model_file+".npy", allow_pickle=True).item()
+                    listPts[index_pair].yawCoarseAlign = motion_model["yaw"]
+                    listPts[index_pair].pitchCoarseAlign = motion_model["pitch"]
+                    listPts[index_pair].rollCoarseAlign = motion_model["roll"]
+                    listPts[index_pair].motion_model = motion_model
+                logging.info(f"SKIP IMAGE PROCESSING - loaded motion from {motion_model_file}")
+                if progress_callback is not None:
+                    progress_callback(
+                        index_pair + 1,
+                        len(sync_pairs),
+                        osp.basename(vis_pth),
+                    )
+                continue
+        logging.info("processing {} {}".format(osp.basename(vis_pth), osp.basename(nir_pth)))
         
         # DEBUG FOLDER
         if debug_folder is not None:
@@ -378,19 +570,26 @@ def process_raw_pairs(
         else:
             debug_dir = None
 
-        # REDO.bat
-        if os.name == "nt":
-            offset_async = [offset for offset in [0, -1, +1, -2, +2]
-                        if (index_pair+offset >=0 and index_pair+offset<len(sync_pairs))]
-            nir_pth_async = [sync_pairs[index_pair+offset][1] for offset in offset_async]
-            write_manual_bat_redo(vis_pth, nir_pth_async,
-                              osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO_ASYNC.bat"),
-                              async_suffix=offset_async,
-                              debug=False,
-                              multispectral_folder=multispectral_folder,
-                              angles=angles)
-            write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_REDO.bat"), debug=False, multispectral_folder=multispectral_folder, angles=angles)
-            write_manual_bat_redo(vis_pth, [nir_pth], osp.join(out_dir, osp.basename(vis_pth[:-4])+"_DEBUG.bat"), debug=True, multispectral_folder=multispectral_folder, angles=angles)
+        # Generate one complete recovery script with rank-1 active by default.
+        nir_candidates = (
+            redo_nir_candidates[index_pair]
+            if redo_nir_candidates is not None
+            else [(nir_pth, 1)]
+        )
+        if not nir_candidates or os.fspath(nir_candidates[0][0]) != nir_pth:
+            nir_candidates = [(nir_pth, 1)] + [
+                candidate
+                for candidate in nir_candidates
+                if os.fspath(candidate[0]) != nir_pth
+            ]
+        write_manual_bat_redo(
+            vis_pth,
+            nir_candidates,
+            osp.join(out_dir, osp.basename(vis_pth[:-4])+REDO_SCRIPT_SUFFIX),
+            out_dir,
+            multispectral_folder=multispectral_folder,
+            angles=angles,
+        )
 
 
         gps_vis = pr.Image(vis_pth).gps
@@ -436,45 +635,245 @@ def process_raw_pairs(
             if motion_model_file is None:
                 motion_model_file = osp.join(out_dir, osp.basename(vis_pth[:-4])+"_motion_model")
             np.save(motion_model_file, motion_model, allow_pickle=True)
+            save_readable_motion_model(motion_model, str(motion_model_file) + ".json")
+        if listPts is not None:
+            listPts[index_pair].yawCoarseAlign = motion_model["yaw"]
+            listPts[index_pair].pitchCoarseAlign = motion_model["pitch"]
+            listPts[index_pair].rollCoarseAlign = motion_model["roll"]
+            listPts[index_pair].motion_model = motion_model
+        vis_number = Path(vis_pth).stem.removeprefix("VIS_")
         if multispectral_folder is not None:
+            #----------------------------------------------------------------------------------------------- MULTISPECTRAL EXPORT
             img = pr.Image(vis_pth)
             ms_img = np.zeros((ref_full.shape[0], ref_full.shape[1], 4))
             ms_img[:, :, :3] = ref_full
             ms_img[:, :, 3] = np.average(aligned_full, axis=-1)
             img._data = ms_img
-            # out_name = f"{(index_pair+1):04d}"
-            out_name = osp.basename(vis_pth[:-4])
+            out_name = f"IRD_{vis_number}"
             img.save_multispectral(Path(multispectral_folder)/out_name)
+            #--------------------------------------------------------------------------------------------------------------------
         if VIS in traces:
             vis_img = pr.Image((ut.contrast_stretching(ref_full)[0]*255).astype(np.uint8))
             vis_img.path = vis_pth
             vis_img.save(
-                osp.join(out_dir, osp.basename(vis_pth[:-4])+"_VIS.jpg"), gps=gps_vis, exif=exif_dict_minimal)
+                osp.join(out_dir, f"VIS_{vis_number}.jpg"), gps=gps_vis, exif=exif_dict_minimal)
         
-        for ali, almode in [(aligned_full, "_local_"), (align_full_global, "_global_")]:
+        aligned_images = {
+            "local": aligned_full,
+            "global": align_full_global,
+        }
+        for mode in alignment_modes:
+            ali = aligned_images[mode]
             if NDVI in traces:
-                ndvi(ref_full, ali, out_path=osp.join(out_dir, "_NDVI_" + almode + osp.basename(vis_pth[:-4])+".jpg"),
+                ndvi(ref_full, ali, out_path=osp.join(out_dir, f"NDVI_{vis_number}_{mode}.jpg"),
                     gps=gps_vis, exif=exif_dict_minimal, image_in=vis_pth)
             if VIR in traces:
-                vir(ref_full, ali, out_path=osp.join(out_dir, "_VIR_" + almode + osp.basename(vis_pth[:-4])+".jpg"),
-                    gps=gps_vis, exif=exif_dict_minimal, image_in=vis_pth)
+                vir(
+                    ref_full,
+                    ali,
+                    out_path=osp.join(out_dir, f"VIR_{vis_number}_{mode}.jpg"),
+                    gps=gps_vis,
+                    exif=exif_dict_minimal,
+                    image_in=vis_pth,
+                )
             if NIR in traces:
                 nir_out = pr.Image((ut.contrast_stretching(ali)[0]*255).astype(np.uint8))
                 nir_out.path = vis_pth
                 nir_out.save(
-                    osp.join(out_dir, osp.basename(vis_pth[:-4])+"_NIR{}.jpg".format(almode)),
+                    osp.join(out_dir, f"NIR_{vis_number}_{mode}.jpg"),
                     exif=exif_dict_minimal,
                     gps=gps_vis
                 )
-        if debug:  # SCIENTIFIC LINEAR OUTPUTS
-            pr.Image(aligned_full).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR.tif"), gps=gps_vis, exif=exif_dict_minimal)
-            pr.Image(align_full_global).save(osp.join(out_dir, "_RAW_" + osp.basename(vis_pth[:-4])+"_NIR_global.tif"), gps=gps_vis, exif=exif_dict_minimal)
-            pr.Image(ref_full).save(osp.join(out_dir, "_RAW_"+ osp.basename(vis_pth[:-4])+"_VIS.tif"), gps=gps_vis, exif=exif_dict_minimal)
-            
         motion_model_list.append(motion_model)
         if clean_proxy:
             pr.Image(vis_pth).clean_proxy()
             pr.Image(nir_pth).clean_proxy()
+        if progress_callback is not None:
+            progress_callback(
+                index_pair + 1,
+                len(sync_pairs),
+                osp.basename(vis_pth),
+            )
+    return motion_model_list
+
+
+def _initialize_alignment_worker(log_level: int = logging.WARNING) -> None:
+    cv2.setNumThreads(1)
+    # Spawned workers (Windows) do not inherit the parent logging configuration.
+    logging.basicConfig(level=log_level)
+    logging.getLogger().setLevel(log_level)
+
+
+def _alignment_task_waves(tasks, worker_count):
+    """Keep tasks sharing a NIR source out of the same parallel batch."""
+    pending = list(tasks)
+    while pending:
+        wave = []
+        used_nir_paths = set()
+        remaining = []
+        for task in pending:
+            nir_path = os.path.normcase(os.path.abspath(task["pair"][1]))
+            if len(wave) < worker_count and nir_path not in used_nir_paths:
+                wave.append(task)
+                used_nir_paths.add(nir_path)
+            else:
+                remaining.append(task)
+        yield wave
+        pending = remaining
+
+
+def _process_single_pair_task(task):
+    point = task["point"]
+    point_list = [point] if point is not None else None
+    motion_models = _process_raw_pairs_serial(
+        [task["pair"]],
+        cals=task["cals"],
+        extension=task["extension"],
+        debug_folder=task["debug_folder"],
+        out_dir=task["out_dir"],
+        manual=task["manual"],
+        debug=task["debug"],
+        crop=task["crop"],
+        listPts=point_list,
+        option_alti=task["option_alti"],
+        clean_proxy=task["clean_proxy"],
+        multispectral_folder=task["multispectral_folder"],
+        traces=task["traces"],
+        angles=task["angles"],
+        skip=task["skip"],
+        alignment_modes=task["alignment_modes"],
+        redo_nir_candidates=[task["redo_nir_candidates"]],
+    )
+    updated_point = point_list[0] if point_list is not None else None
+    return task["index"], task["pair"][0], motion_models, updated_point
+
+
+def process_raw_pairs(
+    sync_pairs,
+    cals=dict(refcalib=ut.cameracalibration(camera="DJI_RAW"), movingcalib=ut.cameracalibration(camera="M20_RAW")),
+    extension=1.4,
+    debug_folder=None,
+    out_dir=None,
+    manual=False,
+    debug=False,
+    crop=None,
+    listPts=None,
+    option_alti="takeoff",
+    clean_proxy=False,
+    multispectral_folder=None,
+    traces=(VIS, NIR, VIR, NDVI),
+    angles=None,
+    skip=False,
+    alignment_modes=("local", "global"),
+    redo_nir_candidates=None,
+    progress_callback=None,
+    max_workers=1,
+):
+    """Orchestrate independent shoot-point alignment in worker processes."""
+    if not sync_pairs:
+        return []
+    if isinstance(max_workers, bool) or not isinstance(max_workers, int) or max_workers < 1:
+        raise ValueError("max_workers must be a positive integer.")
+    worker_count = min(clamp_workers(max_workers), len(sync_pairs))
+    if worker_count == 1:
+        print(f"Aligning {len(sync_pairs)} shoot points sequentially (1 worker).")
+        return _process_raw_pairs_serial(
+            sync_pairs,
+            cals=cals,
+            extension=extension,
+            debug_folder=debug_folder,
+            out_dir=out_dir,
+            manual=manual,
+            debug=debug,
+            crop=crop,
+            listPts=listPts,
+            option_alti=option_alti,
+            clean_proxy=clean_proxy,
+            multispectral_folder=multispectral_folder,
+            traces=traces,
+            angles=angles,
+            skip=skip,
+            alignment_modes=alignment_modes,
+            redo_nir_candidates=redo_nir_candidates,
+            progress_callback=progress_callback,
+        )
+
+    if out_dir is None:
+        out_dir = osp.join(osp.dirname(str(sync_pairs[0][0])), "_RESULTS")
+    os.makedirs(out_dir, exist_ok=True)
+    if debug_folder is not None:
+        os.makedirs(debug_folder, exist_ok=True)
+    if multispectral_folder is not None:
+        os.makedirs(multispectral_folder, exist_ok=True)
+
+    print(
+        f"Aligning {len(sync_pairs)} shoot points with "
+        f"{worker_count} worker processes."
+    )
+    tasks = []
+    for index, pair in enumerate(sync_pairs):
+        nir_candidates = (
+            redo_nir_candidates[index]
+            if redo_nir_candidates is not None
+            else [(pair[1], 1)]
+        )
+        tasks.append(
+            {
+                "index": index,
+                "pair": (str(pair[0]), str(pair[1])),
+                "point": listPts[index] if listPts is not None else None,
+                "cals": cals,
+                "extension": extension,
+                "debug_folder": debug_folder,
+                "out_dir": out_dir,
+                "manual": manual,
+                "debug": debug,
+                "crop": crop,
+                "option_alti": option_alti,
+                "clean_proxy": clean_proxy,
+                "multispectral_folder": multispectral_folder,
+                "traces": tuple(traces),
+                "angles": angles,
+                "skip": skip,
+                "alignment_modes": tuple(alignment_modes),
+                "redo_nir_candidates": nir_candidates,
+            }
+        )
+
+    results = [None] * len(tasks)
+    with ProcessPoolExecutor(
+        max_workers=worker_count,
+        initializer=_initialize_alignment_worker,
+        initargs=(logging.getLogger().getEffectiveLevel(),),
+    ) as executor:
+        completed = 0
+        for wave in _alignment_task_waves(tasks, worker_count):
+            futures = {
+                executor.submit(_process_single_pair_task, task): task
+                for task in wave
+            }
+            for future in as_completed(futures):
+                task = futures[future]
+                try:
+                    result = future.result()
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Alignment failed for {osp.basename(task['pair'][0])}."
+                    ) from exc
+                results[result[0]] = result
+                completed += 1
+                if progress_callback is not None:
+                    progress_callback(
+                        completed,
+                        len(tasks),
+                        osp.basename(result[1]),
+                    )
+
+    motion_model_list = []
+    for index, (_, _, motion_models, point) in enumerate(results):
+        if listPts is not None and point is not None:
+            listPts[index] = point
+        motion_model_list.extend(motion_models)
     return motion_model_list
 
 
@@ -484,8 +883,27 @@ if __name__ == "__main__":
     parser.add_argument('--manual', action="store_true", help='manual alignement')
     parser.add_argument('--outdir', help='output directory')
     parser.add_argument('--debug', action="store_true", help='full debug traces')
+    parser.add_argument(
+        '--redo',
+        action="store_true",
+        help='archive existing outputs and save regenerated results with manual traces',
+    )
     parser.add_argument('--delay', help='synchronization (in seconds)', default=0.)
     parser.add_argument('--multispectral-folder', help='multispectral TIF folder for ODM', default=None)
+    parser.add_argument(
+        '--traces',
+        nargs='+',
+        choices=TRACES,
+        default=TRACES,
+        help='Image traces to generate.',
+    )
+    parser.add_argument(
+        '--alignment-modes',
+        nargs='+',
+        choices=('local', 'global'),
+        default=('local', 'global'),
+        help='Alignment modes for generated NIR, VIR, and NDVI images.',
+    )
     parser.add_argument("--angles", nargs='+', type=float, help="yaw,pitch,roll")
     args = parser.parse_args()
     extension = 1.6
@@ -506,6 +924,12 @@ if __name__ == "__main__":
         out_dir = args.outdir
     else:
         out_dir = osp.dirname(im_pairs[0][0])
+    if args.redo:
+        debug_dir, _, archived_exif = prepare_manual_redo_archives(
+            im_pairs[0][0],
+            out_dir,
+            multispectral_folder=args.multispectral_folder,
+        )
     process_raw_pairs(
         im_pairs,
         debug_folder=out_dir,
@@ -515,6 +939,15 @@ if __name__ == "__main__":
         extension=extension,
         crop=CROP,
         multispectral_folder=args.multispectral_folder,
-        angles=args.angles
+        angles=args.angles,
+        traces=args.traces,
+        alignment_modes=tuple(args.alignment_modes),
     )
-
+    if args.redo:
+        finalize_manual_redo_archives(
+            im_pairs[0][0],
+            out_dir,
+            args.multispectral_folder,
+            debug_dir,
+            archived_exif,
+        )

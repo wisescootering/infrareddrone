@@ -9,6 +9,7 @@ from skimage import filters
 from skimage import exposure
 import irdrone.utils as ut
 import irdrone.process as pr
+from irdrone.file_utils import glob_path_ci, with_suffix_ci
 from registration.warp_flow import warp
 import interactive.imagepipe as ipipe
 from irdrone.register import register_by_blocks, estimateFeaturePoints
@@ -380,7 +381,13 @@ class Transparency(ipipe.ProcessBlock):
             alpha_crop = 1-np.abs(alpha)
             limits_y = [int(shp[0]*alpha_crop), int(shp[0]*(1-alpha_crop))]
             limits_x = [int(shp[1]*alpha_crop), int(shp[1]*(1-alpha_crop))]
-            cmp[limits_y[0]:limits_y[1], limits_x[0]: limits_x[1]] = im1[limits_y[0]:limits_y[1], limits_x[0]: limits_x[1]]
+            region = (slice(limits_y[0], limits_y[1]), slice(limits_x[0], limits_x[1]))
+            # rectangle_opacity < 1 lets the underlying image show through (default 1: opaque)
+            opacity = getattr(self, "rectangle_opacity", 1.0)
+            if opacity >= 1.0:
+                cmp[region] = im1[region]
+            else:
+                cmp[region] = opacity * im1[region] + (1. - opacity) * im2[region]
             return cmp
         elif alpha<=0.:
             return ((1-np.abs(alpha))*im1 + 2.*np.abs(alpha)*np.abs(im1-im2)).clip(0, 255)
@@ -523,7 +530,7 @@ def post_warp(ref, mov, params, img_name="img", linear=False):
         )
         if img_name is not None:
             pr.Image(mov_warped_fullres_refined, "IR registered refined").save("{}_IR_registered_semi_auto_REFINED.{}".format(img_name, extension))
-            logging.warning("SAVE WITH REFINING WITH {}".format(params["homography"]))
+            logging.info("SAVE WITH REFINING WITH {}".format(params["homography"]))
             if not isinstance(ref, pr.Image):
                 ref = pr.Image(ref)
             ref.save("{}_REF.{}".format(img_name, extension))
@@ -637,7 +644,7 @@ def demo_raw(folder=osp.join(osp.dirname(__file__), "..", r"Hyperlapse 06_09_202
         import os
         os.mkdir(out_dir)
     import glob
-    for vis_pth in sorted(glob.glob(osp.join(folder, "*.DNG"))):
+    for vis_pth in glob_path_ci(osp.join(folder, "*.dng")):
         print(osp.basename((vis_pth)))
         params = None
         phase_correl_default_flag = 1.
@@ -651,9 +658,9 @@ def demo_raw(folder=osp.join(osp.dirname(__file__), "..", r"Hyperlapse 06_09_202
         if "20210906124530" in bname: params = {ROTATE: [2.24, 7.04, 1.52, phase_correl_default_flag]}
         params["Absgrad visualize"] = [1.]
         params["Alpha"] = [-0.47]
-        nir_pth = vis_pth.replace("DNG", "RAW")
+        nir_pth = with_suffix_ci(vis_pth, ".dng", ".RAW")
         # @TODO: FIX WHEN DJI GEOMETRIC CALIBRATION IS FIXED
-        vis_pth_undist = vis_pth.replace(".DNG", "_PL4_DIST.tif")
+        vis_pth_undist = with_suffix_ci(vis_pth, ".dng", "_PL4_DIST.tif")
         if osp.exists(vis_pth_undist):
             vis_pth = vis_pth_undist
         align_raw(vis_pth, nir_pth, cals, out_dir=out_dir, params=params)

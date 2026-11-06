@@ -1,3 +1,5 @@
+from pathlib import Path
+import os
 __version__ = 1.30
 
 #  Expert User Settings ! -------------------------------------------------------------------------------------
@@ -27,8 +29,63 @@ CNIRCVIS_0 = 0.046  # Distance between the lenses of two cameras (DJI Mavic Air 
 
 
 # User Settings --------------------------------------------------------------------------------------
-NIR_FILTER_MAKER = 'Kolarivision'  #
-NIR_FILTER_MODEL = 720             # cut wavelength ( in nanometers nm) of the NIR camera filter
+NIR_FILTER_MAKER = 'OpticsConcept'  #
+NIR_FILTER_MODEL = 830              # cut wavelength ( in nanometers nm) of the NIR camera filter
 COPYRIGHT = "Copyright"
 ARTIST = "Artist"
 
+# Default folders
+# Override with environment variable IRDRONE_WORKING_DIR.
+# Default: C://Air-Mission on Windows, ~/Air-Mission elsewhere (created if missing).
+if "IRDRONE_WORKING_DIR" in os.environ:
+    OUTPUT_FOLDER_NAME = Path(os.environ["IRDRONE_WORKING_DIR"])
+else:
+    OUTPUT_FOLDER_NAME = Path(r"C://Air-Mission") if os.name == 'nt' else Path.home() / "Air-Mission"
+    OUTPUT_FOLDER_NAME.mkdir(parents=True, exist_ok=True)
+
+
+# ------------------------------------------------------
+# ExifTool path detection (Windows / Linux / macOS)
+# ------------------------------------------------------
+if os.name == 'nt':
+    EXIFTOOLPATH = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "thirdparty", "exiftool", "exiftool.exe"
+    )
+else:
+    EXIFTOOLPATH = os.environ.get("EXIFTOOLPATH", "/usr/bin/exiftool")
+    assert Path(EXIFTOOLPATH).exists(), "Use environment variable EXIFTOOLPATH to set the exiftool path."
+assert Path(EXIFTOOLPATH).exists()
+if os.name == 'nt' and not os.path.exists(EXIFTOOLPATH):
+    print(f"[WARNING] ExifTool not found at {EXIFTOOLPATH}")
+
+
+# ------------------------------------------------------
+# SJCam RAW→DNG converter path
+# ------------------------------------------------------
+if os.name == 'nt':
+    SJCONVERTERPATH = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "thirdparty", "sjcam_raw2dng", "sjcam_raw2dng.exe"
+    )
+else:
+    # Override with environment variable SJCONVERTERPATH.
+    # Default: converter bundled in thirdparty/sjcam_raw2dng_linux.
+    SJCONVERTERPATH = os.environ.get("SJCONVERTERPATH", os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "thirdparty", "sjcam_raw2dng_linux", "sjcam_raw2dng"
+    ))
+if os.name == 'nt' and not os.path.exists(SJCONVERTERPATH):
+    print(f"[WARNING] SJCam RAW converter not found at {SJCONVERTERPATH}")
+
+# ------------------------------------------------------
+#     RAWTHERAPEEPATH    convert dng  to tif 16:8 bits  jpg  png ...
+# ------------------------------------------------------
+
+if os.name == 'nt':
+    RAWTHERAPEEPATH = r"C:\Program Files\RawTherapee\5.8\rawtherapee-cli.exe"
+    assert os.path.exists(RAWTHERAPEEPATH), \
+        "Please install raw therapee first http://www.rawtherapee.com/downloads/5.8/ \nshall be installed:{}".format(RAWTHERAPEEPATH)
+else:
+    RAWTHERAPEEPATH = "rawtherapee-cli" # For docker
+    RAWTHERAPEEPATH = os.environ.get("RAWTHERAPEEPATH", "/usr/bin/rawtherapee-cli")

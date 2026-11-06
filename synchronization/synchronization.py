@@ -1,5 +1,6 @@
 import irdrone.process as pr
 import irdrone.utils as ut
+from irdrone.file_utils import with_suffix_ci
 import numpy as np
 import os
 osp = os.path
@@ -9,7 +10,7 @@ from datetime import datetime, timedelta
 
 def date_from_path_sjcam(img_pth):
     year, month_date, hours , _ = osp.basename(img_pth).split("_")
-    converted_date =  datetime(year=int(year), month=int(month_date[:2]), day=int(month_date[2:]),
+    converted_date = datetime(year=int(year), month=int(month_date[:2]), day=int(month_date[2:]),
                                hour=int(hours[:2]), minute=int(hours[2:4]),  second=int(hours[4:]))
     return  converted_date
 
@@ -51,7 +52,7 @@ def synchronize_data(
         img_list_sjcam_sync.append(img_list_sjcam[int(best_match)])
         sync_pairs.append(
             (
-            img_list_dji[ind] if replace_dji is None else img_list_dji[ind].replace(replace_dji[0], replace_dji[1]),
+            img_list_dji[ind] if replace_dji is None else with_suffix_ci(img_list_dji[ind], replace_dji[0], replace_dji[1]),
             img_list_sjcam[int(best_match)]
             )
         )
@@ -59,4 +60,4 @@ def synchronize_data(
 
 
 if __name__ == '__main__':
-    sync_pairs = synchronize_data(folder = r"D:\FLY-20210906-Blassac-05ms\AerialPhotography", replace_dji=(".DNG", "_PL4_DIST.tif"))
+    sync_pairs = synchronize_data(folder=r"D:\FLY-20210906-Blassac-05ms\AerialPhotography", replace_dji=(".DNG", "_PL4_DIST.tif"))

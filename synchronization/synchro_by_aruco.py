@@ -8,7 +8,10 @@ import cv2
 import numpy as np
 import irdrone.utils as ut
 import irdrone.process as pr
-from aruco_helper import aruco_detection
+try:
+    from aruco_helper import aruco_detection
+except:
+    from synchronization.aruco_helper import aruco_detection
 import os
 from datetime import timedelta
 from interactive import imagepipe
@@ -23,9 +26,9 @@ import logging
 osp = os.path
 
 
-def continuify_angles_vectorized(angle_list_, forced_offset=0.):
+def continuity_angles_vectorized(angle_list_, forced_offset=0.):
     """Aggregate an array of absolute angles between [-180 , 180]
-    into a continuous serie
+    into a continuous series
     """
     if forced_offset is None:
         forced_offset = 0
@@ -126,7 +129,7 @@ def synchronization_aruco_rotation(
             # if forced_offset is None:
             #     forced_offset = -cam_dat[0, 1]
             # https://github.com/wisescootering/infrareddrone/issues/19
-            continuous_angles = continuify_angles_vectorized(cam_dat[:, 1], forced_offset=forced_offset) + _roll_offset
+            continuous_angles = continuity_angles_vectorized(cam_dat[:, 1], forced_offset=forced_offset) + _roll_offset
             sig_list.append(imagepipe.Signal(cam_dat[:, 0] + _delta, continuous_angles, label="{}".format(cam),
                                              color=["k--.", "c-o"][indx]))
         delta_init = amplitude_Slider_DeltaTime(sync_dict)
@@ -191,14 +194,14 @@ def buildCostDico(sync_dict, optionSolver, init_Delta=None, roll_offset=0):
     # forced_offset = -dataVIS[0, 1]
     # https://github.com/wisescootering/infrareddrone/issues/19
     forced_offset = 0.
-    f_A = continuify_angles_vectorized(dataVIS[:, 1], forced_offset=forced_offset)
-    f_B = continuify_angles_vectorized(dataNIR[:, 1], forced_offset=forced_offset)
+    f_A = continuity_angles_vectorized(dataVIS[:, 1], forced_offset=forced_offset)
+    f_B = continuity_angles_vectorized(dataNIR[:, 1], forced_offset=forced_offset)
     cost_dict = {'t_A': t_A, 'f_A': f_A+roll_offset, 't_B': t_B, 'f_B': f_B, 'solverOption': optionSolver, 'timeShift': estimDelta}
 
     return cost_dict
 
 
-def continuify_angles(angle):
+def continuity_angles(angle):
     # quadrants:  1 = [0,90°], 2 = [90°, 180°], 3 = [180°,270°], 4 = [270°,360°]
     angle = np.array(angle)
     w = [angle[0]] * len(angle)
@@ -209,9 +212,9 @@ def continuify_angles(angle):
         else:
             w[i] = 360 + angle[i]
     for i in range(1, len(w)):
-        if w[i - 1] > 270 and w[i] < 90:  # changement de quadrant 4 > 1 (sens anti horaire)
+        if w[i - 1] > 270 and w[i] < 90:  # quadrant change 4 > 1 (anticlockwise)
             z[i] = z[i - 1] + 360 + w[i] - w[i - 1]
-        elif w[i - 1] < 90 and w[i] > 270:  # changement de quadrant 1 > 4 (sens horaire)
+        elif w[i - 1] < 90 and w[i] > 270:  # quadrant change 1 > 4 (clockwise)
             z[i] = z[i - 1] - (360 - (w[i] - w[i - 1]))
         else:
             z[i] = z[i - 1] + w[i] - w[i - 1]
@@ -245,7 +248,7 @@ def cost_function(shift_x, cost_dic):
 
 
 def fitPlot(data, res, camera_definition, extra_title=""):
-    # construction des interpolateurs
+    # construction of interpolators
     x_fit = [data['t_B'][i] - res.x for i in range(1, len(data['t_B']))]
     f_A = interpol_func(data['t_A'], data['f_A'], option=data['solverOption'])
     f_B = interpol_func(data['t_B'], data['f_B'], option=data['solverOption'])
@@ -269,6 +272,84 @@ def fitPlot(data, res, camera_definition, extra_title=""):
     plt.grid()
     plt.title(' Time shift  = %.2f  s | %s' % (res.x + data['timeShift'], extra_title))
     plt.show()
+
+
+def main_synchro(camera_definition, manual, initDelta, folder, clean_proxy=False):
+    # ________________________________________________________________________________________________________________
+    #
+    # ________________________________________________________________________________________________________________
+
+    optionSolver = 'linear'  # 'linear', 'quadratic', 'cubic'  ...
+    TryAgain = True
+    iterations = 0
+
+    sync_dict = prepare_synchronization_data(
+        folder,
+        camera_definition=camera_definition,
+        clean_proxy=clean_proxy
+    )
+    gps_start = pr.Image(sync_dict[config.VIS_CAMERA][len(sync_dict[config.VIS_CAMERA]) // 2]["path"]).gps
+    if gps_start is None:
+        gps_str = ""
+    else:
+        gps_str = "{} {:.5f} {} {:.5f}".format(gps_start["latitude"][0], gps_start["latitude"][-1], gps_start["longitude"][0], gps_start["longitude"][-1])
+    while TryAgain and iterations < 5:
+        iterations += 1
+        try:
+            cost_dict = synchronization_aruco_rotation(
+                sync_dict,
+                camera_definition=camera_definition,
+                optionSolver=optionSolver,
+                delta=initDelta,
+                manual=manual
+            )
+
+            # shift_0 = float(cost_dict['t_B'][np.argmax(cost_dict['f_A'])] - cost_dict['t_A'][np.argmax(cost_dict['f_B'])])
+            shift_0 = 0
+            #    ------- optimization with a gradient-free method
+            res = minimize(cost_function, shift_0, (cost_dict), method='Nelder-Mead', options={'xatol': 10 ** -8, 'disp': False})
+
+            if cost_function(float(res.x), cost_dict) > 1.:
+                print(Style.RED + 'Please be more precise when synchronizing manually ...' + Style.RESET)
+                manual = True
+                ReDo = True
+            else:
+                print('optimum initial      Time shift  = %.5f s.  cost = %.5f °\n'
+                      'optimum final        Time shift  = %.5f s.  cost = %.5f °'
+                      % (shift_0 + cost_dict['timeShift'], cost_function(float(shift_0), cost_dict),
+                         res.x + cost_dict['timeShift'], cost_function(float(res.x), cost_dict)))
+
+                print(100 * '_' + '\nIn configuration excel, please report the following results:\n\tSync Delta Time:\t{:.2f}\n\tSync Start Date:\t{}\n\tCoord GPS take off:\t{}'.format(
+                    (float(res.x) + cost_dict['timeShift']),
+                    sync_dict[config.VIS_CAMERA][0]["date"].strftime("%d/%m/%Y %H:%M:%S"),
+                    gps_str
+                )
+                      )
+
+                sync_results_file = osp.join(folder, "synchro.npy")
+                np.save(
+                    sync_results_file,
+                    {
+                        "synchro_deltatime": float(res.x) + cost_dict['timeShift'],
+                        "synchro_date": sync_dict[config.VIS_CAMERA][0]["date"].strftime("%d/%m/%Y %H:%M:%S"),
+                        "coord_GPS_take_off": gps_str
+                    }
+                )
+                print(100 * '_' + '\nIn configuration json, you can link the pickle file\n\t' + "\"synchro\":\"{}\",".format(sync_results_file))
+                ReDo = False
+            # -------   Viewing automatic optimization results
+            fitPlot(cost_dict, res, camera_definition, extra_title="Sync Start Date: {}\nGPS: {}".format(
+                sync_dict[config.VIS_CAMERA][0]["date"].strftime("%d/%m/%Y %H:%M:%S"), gps_str)
+                    )
+            TryAgain = ReDo
+        except Exception as exc:
+            print(exc)
+            traceback.print_exc()
+            print(Style.RED + 'Please be more precise !' + Style.RESET)
+            TryAgain = True
+
+    time_shift = float(res.x) + cost_dict['timeShift']
+    return time_shift
 
 
 if __name__ == "__main__":
@@ -309,80 +390,8 @@ if __name__ == "__main__":
         manual = args.manual
         initDelta = args.delay
         folder = args.folder
+    main_synchro(camera_definition, manual, initDelta, folder, clean_proxy=args.clean_proxy)
 
-# ________________________________________________________________________________________________________________
-#
-# ________________________________________________________________________________________________________________
-
-    optionSolver = 'linear'  # 'linear', 'quadratic', 'cubic'  ...
-    TryAgain = True
-    iterations = 0
-
-    sync_dict = prepare_synchronization_data(
-        folder,
-        camera_definition=camera_definition,
-        clean_proxy=args.clean_proxy
-    )
-    gps_start = pr.Image(sync_dict[config.VIS_CAMERA][len(sync_dict[config.VIS_CAMERA])//2]["path"]).gps
-    if gps_start is None:
-        gps_str = ""
-    else:
-        gps_str = "{} {:.5f} {} {:.5f}".format(gps_start["latitude"][0], gps_start["latitude"][-1], gps_start["longitude"][0], gps_start["longitude"][-1])
-    while TryAgain and iterations < 5:
-        iterations += 1
-        try:
-            cost_dict = synchronization_aruco_rotation(
-                sync_dict,
-                camera_definition=camera_definition,
-                optionSolver=optionSolver,
-                delta=initDelta,
-                manual=manual
-            )
-
-
-            #shift_0 = float(cost_dict['t_B'][np.argmax(cost_dict['f_A'])] - cost_dict['t_A'][np.argmax(cost_dict['f_B'])])
-            shift_0 = 0
-        #    ------- optimisation avec une méthode sans gradient
-            res = minimize(cost_function, shift_0, (cost_dict), method='Nelder-Mead', options={'xatol': 10 ** -8, 'disp': False})
-
-            if cost_function(float(res.x), cost_dict) > 1.:
-                print(Style.RED + 'Please be more precise when synchronizing manually ...' + Style.RESET)
-                manual = True
-                ReDo = True
-            else:
-                print('optimum initial      Time shift  = %.5f s.  cost = %.5f °\n'
-                      'optimum final        Time shift  = %.5f s.  cost = %.5f °'
-                      % (shift_0 + cost_dict['timeShift'], cost_function(float(shift_0), cost_dict),
-                         res.x + cost_dict['timeShift'], cost_function(float(res.x), cost_dict)))
-                
-                print(100*'_'+'\nIn configuration excel, please report the following results:\n\tSync Delta Time:\t{:.2f}\n\tSync Start Date:\t{}\n\tCoord GPS take off:\t{}'.format(
-                    (float(res.x) + cost_dict['timeShift']),
-                    sync_dict[config.VIS_CAMERA][0]["date"].strftime("%d/%m/%Y %H:%M:%S"),
-                    gps_str
-                    )
-                )
-                
-                sync_results_file = osp.join(folder, "synchro.npy")
-                np.save(
-                    sync_results_file,
-                    {
-                        "synchro_deltatime": float(res.x) + cost_dict['timeShift'],
-                        "synchro_date": sync_dict[config.VIS_CAMERA][0]["date"].strftime("%d/%m/%Y %H:%M:%S"),
-                        "coord_GPS_take_off": gps_str
-                    }
-                )
-                print(100*'_'+'\nIn configuration json, you can link the pickle file\n\t'+ "\"synchro\":\"{}\",".format(sync_results_file))
-                ReDo = False
-            # -------   Visualisation des résultats de l'optimisation automatique
-            fitPlot(cost_dict, res, camera_definition, extra_title="Sync Start Date: {}\nGPS: {}".format(
-                sync_dict[config.VIS_CAMERA][0]["date"].strftime("%d/%m/%Y %H:%M:%S"), gps_str)
-            )
-            TryAgain = ReDo
-        except Exception as exc:
-            print(exc)
-            traceback.print_exc()
-            print(Style.RED + 'Please be more precise !'+Style.RESET)
-            TryAgain = True
             
 
 

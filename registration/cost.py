@@ -1,4 +1,4 @@
-from skimage import filters, transform
+from skimage import filters
 import numpy as np
 import os.path as osp
 import sys
@@ -9,7 +9,7 @@ from numba import jit
 import logging
 import irdrone.process as pr
 from registration.constants import LAPLACIAN_ENERGIES, GRAY_SCALE, COLORED, SSD, NTG
-
+from registration.pyramid_wrapper import pyramid_reduce
 
 class AlignmentConfig:
     def __init__(self, mode=LAPLACIAN_ENERGIES, dist_mode=NTG, downscale=1, sigma_ref=None, sigma_mov=None, num_patches = 5, search_size=6):
@@ -314,8 +314,8 @@ def run_multispectral_cost(ref_orig, mov_orig, debug_dir=None, debug=True, suffi
         debug_fig = None if debug_dir is None else osp.join(debug_dir, "{}_{}".format(prefix, suffix))
         representation_visualization_pairs(ref, mov, ref_orig=ref_orig, mov_orig=mov_orig, debug_fig=debug_fig, title="{} {}".format(prefix, suffix))
     if align_config.downscale >1:
-        ref_pyr = transform.pyramid_reduce(ref, downscale=align_config.downscale, multichannel=True)
-        mov_pyr = transform.pyramid_reduce(mov, downscale=align_config.downscale, multichannel=True)
+        ref_pyr = pyramid_reduce(ref, downscale=align_config.downscale)
+        mov_pyr = pyramid_reduce(mov, downscale=align_config.downscale)
         logging.info("Downscale from {} to {}".format(ref.shape, ref_pyr.shape))
     else:
         ref_pyr, mov_pyr = ref, mov

@@ -24,13 +24,28 @@ ARUCO_DICT = {
     "DICT_APRILTAG_36h10": cv2.aruco.DICT_APRILTAG_36h10,
     "DICT_APRILTAG_36h11": cv2.aruco.DICT_APRILTAG_36h11
 }
-ARUCO_SELECT = cv2.aruco.Dictionary_get(ARUCO_DICT["DICT_4X4_50"])
+# depreciated    ARUCO_SELECT = cv2.aruco.Dictionary_get(ARUCO_DICT["DICT_4X4_50"])
+def get_aruco_dict(dict_name="DICT_4X4_50", verbose=False):
+    """Retourne le dictionnaire ArUco compatible avec toutes les versions OpenCV."""
+    try:
+        if verbose:
+            print(f"Dictionnaire ArUco {dict_name} chargé ✅")
+        return cv2.aruco.getPredefinedDictionary(ARUCO_DICT[dict_name])
+
+    except AttributeError:
+        return cv2.aruco.Dictionary_get(ARUCO_DICT[dict_name])
+ARUCO_SELECT = get_aruco_dict("DICT_4X4_50")
 
 
 def aruco_detection(image, arucoDict=ARUCO_SELECT, show=False, debug_fig=None, title=""):
-    arucoParams = cv2.aruco.DetectorParameters_create()
-    (corners, ids, rejected) = cv2.aruco.detectMarkers(image, arucoDict,
-                                                       parameters=arucoParams)
+    if hasattr(cv2.aruco, "ArucoDetector"):
+        # OpenCV >= 4.7 (the legacy detectMarkers function is removed in 5.x)
+        detector = cv2.aruco.ArucoDetector(arucoDict, cv2.aruco.DetectorParameters())
+        (corners, ids, rejected) = detector.detectMarkers(image)
+    else:
+        arucoParams = cv2.aruco.DetectorParameters_create()
+        (corners, ids, rejected) = cv2.aruco.detectMarkers(image, arucoDict,
+                                                           parameters=arucoParams)
     if len(corners) > 0:
         # flatten the ArUco IDs list
         ids = ids.flatten()
@@ -87,8 +102,11 @@ def aruco_detection(image, arucoDict=ARUCO_SELECT, show=False, debug_fig=None, t
 
 def aruco_chart_generator(arucoDict=ARUCO_SELECT, out=None):  # "ARCUO.png"
     tag_size = 1000
-    tag = np.zeros((tag_size, tag_size, 1), dtype="uint8")
-    cv2.aruco.drawMarker(arucoDict, 0, tag_size, tag, 1)
+    if hasattr(cv2.aruco, "generateImageMarker"):
+        tag = cv2.aruco.generateImageMarker(arucoDict, 0, tag_size, borderBits=1)[..., None]
+    else:
+        tag = np.zeros((tag_size, tag_size, 1), dtype="uint8")
+        cv2.aruco.drawMarker(arucoDict, 0, tag_size, tag, 1)
     if out is not None:
         cv2.imwrite(out, tag)
     return tag
