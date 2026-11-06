@@ -1,0 +1,144 @@
+"""Image helpers of irdrone.process / irdrone.utils and the interactive image pipe.
+
+Headless versions of the checks of the former test.py (which opened windows):
+the figures are drawn with the Agg backend and the pipes run without their GUI.
+"""
+import copy
+import sys
+from pathlib import Path
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
+import pytest  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import interactive.imagepipe as imagepipe  # noqa: E402
+import irdrone.process as process  # noqa: E402
+import irdrone.utils as utils  # noqa: E402
+
+SAMPLES = ["*Full*", "*IR760*"]
+
+
+@pytest.fixture(autouse=True)
+def close_figures():
+    yield
+    plt.close("all")
+
+
+# ------------------------------------------------------------------ sample files
+def test_imagepath_lists_existing_samples():
+    paths = utils.imagepath(imgname="*")
+    assert len(paths) > 5
+    assert all(Path(p).is_file() for p in paths)
+
+
+def test_loadimage_single_and_list():
+    image = process.loadimage(utils.imagepath())
+    assert image[0].shape == (3024, 4032, 3)
+    assert image[0].dtype == np.uint8
+    images = process.loadimage(utils.imagepath(imgname=SAMPLES))
+    assert len(images) == 2
+
+
+def test_testimage_is_a_color_wheel():
+    wheel = utils.testimage(xsize=120, ysize=50, sat=1.)
+    assert wheel.shape == (50, 120, 3) and wheel.dtype == np.uint8
+    assert wheel[0].max() == 0          # first row: zero luminance, black
+    assert wheel[-1].max() >= 254       # last row: full luminance (255 truncated)
+    gray = utils.testimage(xsize=20, ysize=20, sat=0.)
+    assert np.all(gray[..., 0] == gray[..., 1]) and np.all(gray[..., 1] == gray[..., 2])
+
+
+# ------------------------------------------------------------------ color matrix
+@pytest.fixture
+def wheel():
+    return utils.testimage(xsize=200, ysize=200, sat=0.7)
+
+
+def test_colormatrix_identity_keeps_the_image(wheel):
+    np.testing.assert_array_equal(process.applycolormatrix(wheel), wheel)
+
+
+def test_colormatrix_gain_scales_and_clips(wheel):
+    darker = process.applycolormatrix(wheel, cm=0.5)
+    np.testing.assert_allclose(darker, (wheel * 0.5).astype(np.uint8), atol=1)
+    brighter = process.applycolormatrix(wheel, cm=1.5)
+    assert brighter.dtype == np.uint8
+    np.testing.assert_allclose(brighter, np.clip(wheel * 1.5, 0, 255).astype(np.uint8), atol=1)
+
+
+def test_colormatrix_white_balance_is_per_channel(wheel):
+    balanced = process.applycolormatrix(wheel, cm=[0.8, 1., 0.9])
+    for channel, gain in enumerate([0.8, 1., 0.9]):
+        np.testing.assert_allclose(balanced[..., channel], (wheel[..., channel] * gain).astype(np.uint8), atol=1)
+
+
+def test_colormatrix_permutation_swaps_red_and_blue(wheel):
+    swap = np.array([[0., 0., 1.], [0., 1., 0.], [1., 0., 0.]])
+    np.testing.assert_array_equal(process.applycolormatrix(wheel, cm=swap), wheel[..., ::-1])
+
+
+# ------------------------------------------------------------------ show
+def test_show_single_row_and_grid():
+    process.show((utils.testimage(100, 100), "color wheel"), block=False)
+    process.show(
+        [(utils.testimage(int(s ** 2 * 200), int(s * 200), sat=s), "wheel %.1f" % s) for s in [0.1, 0.5, 1.]],
+        compare=False, suptitle="row", block=False,
+    )
+    grid = [[(utils.testimage(100, 100, sat=s), "sat %.1f" % s) for s in [0., 0.4]],
+            [(utils.testimage(150, 100, sat=s), "sat %.1f" % s) for s in [0.5, 1.]]]
+    process.show(grid, block=False)
+    process.show([[image for image, _ in row] for row in grid], compare=True, block=False)
+    assert plt.get_fignums()
+
+
+def test_show_image_objects_and_save(tmp_path):
+    paths = utils.imagepath(imgname=SAMPLES)
+    process.show([[process.Image(p, name=Path(p).name[:12]) for p in paths]], block=False,
+                 save=str(tmp_path / "grid.png"))
+    assert (tmp_path / "grid.png").stat().st_size > 0
+
+
+# ------------------------------------------------------------------ image pipe
+def test_imagepipe_runs_without_gui_and_saves(tmp_path):
+    sliders = [imagepipe.WB, imagepipe.GAMMA, imagepipe.BRIGHTNESS, imagepipe.TRANSLATION]
+    # Float input, as the real callers do (WB multiplies in place).
+    image = utils.testimage(xsize=400, ysize=400).astype(np.float64)
+    pipe = imagepipe.ImagePipe([image], sliders=sliders, rescale=2.)
+    pipe.set()  # every slider to its default value
+    neutral = pipe.getbuffer()
+    assert neutral.shape == (400, 400, 3)
+    pipe.set(WB=[0.121569, 0.219608], GAMMA=[0.105882], BRIGHTNESS=[-0.137255],
+             TRANSLATION=[-372., -377.])
+    tuned = pipe.getbuffer()
+    assert tuned.shape == neutral.shape and not np.array_equal(tuned, neutral)
+    pipe.save(str(tmp_path / "pipe.jpg"))
+    assert (tmp_path / "pipe.jpg").stat().st_size > 0
+
+
+def test_imagepipe_on_signals():
+    class Amplify(imagepipe.ProcessBlock):
+        def apply(self, sig, ampli, **kwargs):
+            out = copy.deepcopy(sig)
+            out.y = sig.y * ampli
+            return out
+
+    class Addition(imagepipe.ProcessBlock):
+        def apply(self, sig1, sig2, **kwargs):
+            out = copy.deepcopy(sig1)
+            out.y = sig1.y + sig2.y
+            return out
+
+    signal_mode = [imagepipe.ProcessBlock.SIGNAL, imagepipe.ProcessBlock.SIGNAL]
+    amplify = Amplify("Amplification", vrange=[(0.5, 3., 1.)], mode=signal_mode)
+    add = Addition("Addition", slidersName=[], inputs=[0, 2], outputs=[0], mode=signal_mode)
+    x = 2. * np.arange(100) / 100.
+    signals = [imagepipe.Signal(x, x, "-b", "base"), imagepipe.Signal(x, np.sin(x), "-r", "sinus")]
+    pipe = imagepipe.ImagePipe(signals, sliders=[amplify, add])
+
+    pipe.set(Amplification=[2.])
+    result = pipe.getbuffer()
+    np.testing.assert_allclose(result.y, 2. * x + np.sin(x))

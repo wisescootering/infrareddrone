@@ -683,7 +683,6 @@ class Window_create_file_structure(QDialog):
                 file_path = Path(file_path)
                 folder = file_path.parent
                 self.path_folder_NIR = folder
-                sample_image_NIR = file_path
                 return folder
 
             print(Style.YELLOW + "⚠  NIR selection cancelled by user." + Style.RESET)
@@ -1159,11 +1158,6 @@ class Window_create_file_structure(QDialog):
 
             with open(mission_parameters_path, "w", encoding="utf-8") as f:
                 json.dump(self.mission_parameters, f, ensure_ascii=False, indent=4)
-
-            # Build the message for the user
-            txt_date = f"{self.py_date_time.year}{self.py_date_time.month}{self.py_date_time.day}"
-            txt_time = f"{self.py_date_time.hour}{self.py_date_time.minute}"
-            txt_comment = str(self.mission_parameters['Location'])
 
         except Exception as e:
             print("Error in create_mission_folder (saving JSON):", e)

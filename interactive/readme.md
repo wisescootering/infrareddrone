@@ -73,6 +73,9 @@ ip = ImagePipe(imgl, sliders=[WB, TRANSLATION2, ALPHA, GAMMA]).gui()
 ## 🧪 Testing
 
 -------------------------
-```pytest test.py```
-
-coverage is very weak. code quality has a lot of discrepancies. sorry about that, if you're interested in contributing, making a linux version or whatever you'd like, feel free to reach out in the issues section.
+The tests of the whole project, image pipe included, are in [tests/](../tests) and run headless:
+```bash
+uv pip install -r requirements-dev.txt
+python -m pytest
+```
+Contributions are welcome: feel free to reach out in the issues section.

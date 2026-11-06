@@ -91,7 +91,7 @@ def ndvi(vis_img, nir_img, out_path=None, exif=None, gps=None, image_in=None):
         # ipi.gui()
         # try:
             # todo: fix missing exif datas in ndvi file.  La ligne en dessous ne marche pas !!!
-        out_img = ipi.save(out_path)
+        ipi.save(out_path)
         if image_in is not None:
             pr.copy_metadata(image_in, out_path)
 
@@ -590,7 +590,6 @@ def _process_raw_pairs_serial(
 
 
         gps_vis = pr.Image(vis_pth).gps
-        date_vis = pr.Image(vis_pth).date   # todo fix error  date Exif (Date/Time Original and Create Date
         try:
             #option_alti = 'sealevel'  #   geo, ground, sealevel, takeoff
 

@@ -2,7 +2,7 @@
 rem Launch the IRDrone wizard (irdrone_wizard\IRD_Interactive_Main.py) on Windows.
 rem Linux / macOS: use irdrone_wizard.sh instead.
 rem Python is chosen by bat_helpers\find_python.bat (IRDRONE_PYTHON, .venv,
-rem conda environment IRDRONE_CONDA_ENV = py39_clean by default, then the PATH).
+rem conda environment irdrone or py39_clean, or IRDRONE_CONDA_ENV, then the PATH).
 setlocal
 
 set "ROOT=%~dp0"
