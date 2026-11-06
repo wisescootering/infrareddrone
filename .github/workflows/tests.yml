@@ -1,21 +1,28 @@
 name: Tests
 
-# Runs the unit tests on Linux and Windows, with Python 3.9 (the version of the
-# Windows conda environment, environment.yml) and 3.12 (the default of setup.sh),
+# Runs the unit tests on Linux and Windows, with Python 3.9 (the oldest version
+# still in use) and 3.12 (the default of setup.sh and of the Docker image),
 # so that code working only on one machine or one Python version is caught.
+# uv provides both Python versions (setup-python no longer ships 3.9).
 on:
   push:
     branches: [master]
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   tests:
     strategy:
       fail-fast: false
       matrix:
-        # ubuntu-24.04, not ubuntu-latest: setup-python has no Python 3.9 for Ubuntu 26.04.
-        os: [ubuntu-24.04, windows-latest]
+        os: [ubuntu-latest, windows-latest]
         python-version: ["3.9", "3.12"]
     runs-on: ${{ matrix.os }}
     env:
@@ -24,13 +31,13 @@ jobs:
       IRDRONE_WORKING_DIR: ${{ github.workspace }}/Air-Mission
       PYTHONUTF8: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v10
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: requirements.txt
+          activate-environment: true
+          cache-dependency-glob: requirements.txt
 
       # Libraries Qt needs to start, even offscreen, plus ExifTool.
       - name: Install system packages (Linux)
@@ -42,9 +49,7 @@ jobs:
             libimage-exiftool-perl
 
       - name: Install Python packages
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+        run: uv pip install -r requirements.txt
 
       - name: Run tests
         run: python -m unittest discover -s tests -v
