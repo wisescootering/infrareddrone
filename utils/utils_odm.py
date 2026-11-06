@@ -45,7 +45,6 @@ def create_odm_folder(
     cmd += " --orthophoto-resolution 1. --ignore-gsd --fast-orthophoto --orthophoto-png"
     #cmd += " --orthophoto-kmz"
     cmd += " --force-gps --use-exif"
-    cmd += " --build-overviews"
     cmd += " --skip-band-alignment"
     # see https://github.com/wisescootering/infrareddrone/issues/26
     if extra_suggested_options:

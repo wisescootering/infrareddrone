@@ -17,6 +17,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import numpy as np
 import rasterio
+import rasterio.shutil
 from rasterio.enums import Resampling
 
 
@@ -404,7 +405,6 @@ def build_odm_command(
         "--fast-orthophoto",
         "--use-exif",
         "--force-gps",
-        "--build-overviews",
         "--skip-band-alignment",
         "--use-fixed-camera-params",
         "--max-concurrency",
@@ -454,6 +454,43 @@ def _validate_odm_outputs(orthophoto_path: Path) -> Dict[str, Any]:
             }
     except rasterio.errors.RasterioError as error:
         raise ODMMappingError(f"Could not read ODM orthophoto {orthophoto_path}: {error}") from error
+
+
+OVERVIEW_FACTORS = (2, 4, 8, 16)
+
+
+def build_orthophoto_overviews(orthophoto_path: Path) -> None:
+    """Give the orthophoto valid DEFLATE overviews for QGIS and other viewers.
+
+    ODM's ``--build-overviews`` compresses them with JPEG, which cannot store the
+    16-bit multispectral bands: every overview tile fails to write and stays
+    empty, so zoomed-out views are black. Existing overviews are dropped by
+    rewriting the raster (same pixels and compression) before building new ones.
+    """
+    with rasterio.open(orthophoto_path) as dataset:
+        has_overviews = bool(dataset.overviews(1))
+        profile = dataset.profile
+    if has_overviews:
+        temporary_path = orthophoto_path.with_name(orthophoto_path.stem + ".rewrite.tif")
+        try:
+            rasterio.shutil.copy(
+                orthophoto_path,
+                temporary_path,
+                driver="GTiff",
+                TILED="YES",
+                BLOCKXSIZE=profile.get("blockxsize", 512),
+                BLOCKYSIZE=profile.get("blockysize", 512),
+                COMPRESS="DEFLATE",
+                PREDICTOR=2,
+                BIGTIFF="IF_SAFER",
+            )
+            os.replace(temporary_path, orthophoto_path)
+        finally:
+            temporary_path.unlink(missing_ok=True)
+    with rasterio.Env(COMPRESS_OVERVIEW="DEFLATE", PREDICTOR_OVERVIEW=2):
+        with rasterio.open(orthophoto_path, "r+") as dataset:
+            dataset.build_overviews(list(OVERVIEW_FACTORS), Resampling.average)
+            dataset.update_tags(ns="rio_overview", resampling="average")
 
 
 def read_orthophoto_preview(
@@ -1214,6 +1251,11 @@ def run_odm(
         except (OSError, ValueError) as error:
             worker_log(f"Could not add shoot point labels and style to shots.geojson: {error}")
         output["path"] = copied_results["orthophoto"]
+        stage("Building orthophoto overviews")
+        try:
+            build_orthophoto_overviews(Path(copied_results["orthophoto"]))
+        except (OSError, rasterio.errors.RasterioError) as error:
+            worker_log(f"Could not build the orthophoto overviews: {error}")
         stage("Cleaning ODM working directories")
         removed_directories = _cleanup_odm_working_directories(mapping_folder)
         finished_at = datetime.now(timezone.utc).isoformat()

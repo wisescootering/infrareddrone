@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import numpy as np
 import rasterio
+from rasterio.enums import Resampling
 from affine import Affine
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "irdrone Interactive"))
@@ -30,6 +31,7 @@ from IRD_Interactive_ODM import (
     prepare_odm_input,
     read_orthophoto_preview,
     _validate_odm_outputs,
+    build_orthophoto_overviews,
 )
 
 
@@ -675,6 +677,64 @@ class BestMappingTests(unittest.TestCase):
             self.assertEqual(preview.shape, (40, 80, 3))
             self.assertEqual(preview.dtype, np.uint8)
             self.assertGreater(int(preview.max()), 0)
+
+    def _write_orthophoto_with_empty_overviews(self, orthophoto):
+        """Mimic ODM: valid full-resolution pixels but all-zero overviews."""
+        with rasterio.open(
+            orthophoto,
+            "w",
+            driver="GTiff",
+            width=256,
+            height=128,
+            count=5,
+            dtype="uint16",
+            crs="EPSG:32631",
+            transform=Affine(0.033, 0, 100, 0, -0.033, 200),
+            tiled=True,
+            blockxsize=64,
+            blockysize=64,
+            compress="deflate",
+        ) as dataset:
+            dataset.build_overviews([2, 4], Resampling.average)
+        with rasterio.open(orthophoto, "r+") as dataset:
+            gradient = np.tile(np.arange(256, dtype=np.uint16) * 200, (128, 1))
+            for band in range(1, 5):
+                dataset.write(gradient, band)
+            dataset.write(np.full((128, 256), 255, dtype=np.uint16), 5)
+            dataset.descriptions = ("Red", "Green", "Blue", "NIR", None)
+        with rasterio.open(orthophoto, overview_level=0) as overview:
+            self.assertEqual(int(overview.read(1).max()), 0)
+
+    def test_preview_ignores_empty_overviews(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            orthophoto = Path(temporary) / "orthophoto.tif"
+            self._write_orthophoto_with_empty_overviews(orthophoto)
+
+            preview = read_orthophoto_preview(orthophoto, max_dimension=64)
+
+            self.assertGreater(int(preview.max()), 0)
+
+    def test_build_orthophoto_overviews_replaces_empty_overviews(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            orthophoto = Path(temporary) / "orthophoto.tif"
+            self._write_orthophoto_with_empty_overviews(orthophoto)
+            with rasterio.open(orthophoto) as dataset:
+                full_resolution = dataset.read()
+
+            build_orthophoto_overviews(orthophoto)
+
+            with rasterio.open(orthophoto) as dataset:
+                np.testing.assert_array_equal(dataset.read(), full_resolution)
+                self.assertEqual(dataset.descriptions[:4], ("Red", "Green", "Blue", "NIR"))
+                self.assertEqual(dataset.overviews(1), [2, 4, 8, 16])
+            with rasterio.open(orthophoto, overview_level=0) as overview:
+                self.assertGreater(int(overview.read(1).max()), 0)
+            self.assertEqual(sorted(path.name for path in Path(temporary).iterdir()), ["orthophoto.tif"])
+
+    def test_odm_command_does_not_ask_odm_for_overviews(self):
+        command = build_odm_command(Path("/mission/mapping_MULTI"), 3.3, docker_context=None)
+
+        self.assertNotIn("--build-overviews", command)
 
     def test_missing_exif_sidecar_blocks_odm_input_preparation(self):
         with tempfile.TemporaryDirectory() as temporary:
