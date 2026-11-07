@@ -545,7 +545,7 @@ La durée des transferts dépend beaucoup des performances des supports (carte S
 \section{Principe}
 L'étape 2 découpe le vol en phases : \emph{synchronisation} (vol stationnaire au-dessus de la mire ArUco tournante) et \emph{survey} (vol au-dessus de la zone étudiée). Ces phases sont maintenant \textbf{détectées automatiquement} ; l'utilisateur vérifie et ajuste si besoin (figure~\ref{fig:step2_flight_timeline}).
 
-\figureIRD[fig:step2_flight_timeline]{step2_flight_timeline.png}{La fenêtre \og Flight timeline \fg. En haut les quatre points clés avec les vraies images visible et infrarouge, au centre l'aperçu de l'image sous la souris, en bas la ligne de temps : profil d'altitude, phases (violet : synchronisation, vert : survey), détections de la mire et bandes d'images visible et infrarouge.}{0.95}
+\figureIRD[fig:step2_flight_timeline]{step2_flight_timeline.png}{La fenêtre \og Flight timeline \fg. Au centre l'aperçu des images visible et infrarouge sous la souris, à droite les quatre points clés avec leurs vraies images, en bas la ligne de temps : profil d'altitude, phases (violet : synchronisation, vert : survey), détections de la mire et bandes d'images visible et infrarouge.}{0.95}
 
 \subsection*{Ce que fait le logiciel}
 \begin{enumerate}
@@ -558,9 +558,9 @@ L'étape 2 découpe le vol en phases : \emph{synchronisation} (vol stationnaire 
 
 \subsection*{Vérifier et ajuster}
 \begin{itemize}
-	\item Survoler la ligne de temps affiche en grand l'image visible et l'image infrarouge prises au même instant, avec l'altitude et l'état de la mire (\og target turning \fg, \og target still \fg, \og no target \fg).
+	\item Survoler la ligne de temps affiche en grand l'image visible et l'image infrarouge prises au même instant, avec l'altitude et l'état de la mire (\og target turning \fg, \og target still \fg, \og no target \fg). Laisser la souris sur cet aperçu l'affiche sur toute la fenêtre pour bien voir les détails.
 	\item Les points de la ligne \og target \fg~indiquent les images analysées : violet, la mire tourne ; gris, la mire est vue mais immobile ; cercle vide, mire non vue.
-	\item Faire glisser un bord de phase pour le déplacer (il se cale sur une image), ou cliquer sur une carte puis utiliser \bouton{◀} \bouton{▶} ou les flèches du clavier.
+	\item Faire glisser un bord de phase pour le déplacer (il se cale sur une image), ou cliquer sur un point clé (colonne de droite) puis utiliser \bouton{◀} \bouton{▶} ou les flèches du clavier.
 	\item Molette : zoom ; glisser le fond : déplacement ; double-clic : tout le vol.
 	\item \bouton{Back to detection} revient à la proposition automatique.
 \end{itemize}

@@ -25,7 +25,7 @@ from typing import Dict, Optional
 import numpy as np
 from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import (QBrush, QColor, QFont, QImage, QKeySequence, QLinearGradient, QPainter,
-                         QPainterPath, QPen, QPixmap, QShortcut)
+                         QPainterPath, QPen, QPixmap, QShortcut, QTextDocumentFragment)
 from PyQt6.QtWidgets import (QApplication, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QMessageBox,
                              QProgressBar, QPushButton, QScrollArea, QSizePolicy, QToolButton, QVBoxLayout,
                              QWidget)
@@ -215,7 +215,7 @@ class TimelineView(QWidget):
     picked = pyqtSignal(str, str)        # window key, edge (clicked on a handle)
 
     GUTTER = 78
-    CHART_H = 150        # altitude chart height when there is room
+    CHART_H = 110        # altitude chart height when there is room
     CHART_MIN = 64       # ... and on a small screen
     DOTS_H = 12
     LANE_H = 62
@@ -225,7 +225,7 @@ class TimelineView(QWidget):
     def __init__(self, model: TimelineModel, parent=None, compact=False):
         super().__init__(parent)
         if compact:   # small screen: shorter filmstrips and chart
-            self.LANE_H, self.CHART_MIN = 46, 48
+            self.LANE_H, self.CHART_MIN, self.CHART_H = 46, 48, 72
         self.m = model
         self.t0, self.t1 = model.span()
         self.hover_t: Optional[float] = None
@@ -625,24 +625,27 @@ class TimelineView(QWidget):
 class ImageTile(QLabel):
     """An image cropped to a fixed size, or, with `min_size`, scaled to fit
     the space the layout gives it (between min_size and w x h)."""
+    hovered = pyqtSignal(bool)
 
     def __init__(self, w, h, parent=None, min_size=None):
         super().__init__(parent)
         self._pix: Optional[QPixmap] = None
         # scalable: a small preferred size, so that on a short screen the layout
         # shrinks the preview before the time line (it shrinks the tallest first)
-        self._hint = QSize(w, h) if min_size is None else QSize(w, min_size[1])
+        self._hint = QSize(w, h) if min_size is None else QSize(*min_size)
         if min_size is None:
             self.setFixedSize(w, h)
         else:
             self.setMinimumSize(*min_size)
             self.setMaximumSize(w, h)
-            # vertically "Preferred": the time line (Expanding) is served first,
-            # the preview takes the height that is left
-            self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            # small preferred size: the time line (its maximum height) is served
+            # first, the preview takes the height that is left
+            self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.scalable = min_size is not None
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setStyleSheet("background: #E9EDF2; border-radius: 4px; color: #6B7785;")
+        # a scaled image is letterboxed: no grey box around it
+        self.setStyleSheet("color: #6B7785;" if self.scalable else
+                           "background: #E9EDF2; border-radius: 4px; color: #6B7785;")
 
     def sizeHint(self):
         return self._hint
@@ -676,34 +679,79 @@ class ImageTile(QLabel):
         if self.scalable:
             self._render()
 
+    def enterEvent(self, e):
+        super().enterEvent(e)
+        self.hovered.emit(True)
+
+    def leaveEvent(self, e):
+        super().leaveEvent(e)
+        self.hovered.emit(False)
+
+
+class PreviewOverlay(QWidget):
+    """Both previews as big as the window allows, shown while the mouse is over
+    the preview pair. Transparent to the mouse: the tile under it keeps the hover."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.items = []          # (pixmap, caption html-free text, color)
+        self.hide()
+
+    def show_pair(self, items):
+        self.items = items
+        self.setGeometry(self.parent().rect())
+        self.raise_()
+        self.show()
+        self.update()
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        p.fillRect(self.rect(), QColor(15, 22, 32, 225))
+        n = max(1, len(self.items))
+        pad, gap, cap_h = 16, 12, 26
+        cell_w = (self.width() - 2 * pad - gap * (n - 1)) / n
+        cell_h = self.height() - 2 * pad - cap_h
+        f = QFont(self.font())
+        f.setPointSizeF(f.pointSizeF() * 1.1)
+        p.setFont(f)
+        for k, (pix, caption, color) in enumerate(self.items):
+            x = pad + k * (cell_w + gap)
+            cap_y = pad + cell_h + 4
+            if pix is not None and not pix.isNull():
+                sc = pix.size().scaled(int(cell_w), int(cell_h), Qt.AspectRatioMode.KeepAspectRatio)
+                target = QRectF(x + (cell_w - sc.width()) / 2, pad + (cell_h - sc.height()) / 2,
+                                sc.width(), sc.height())
+                p.drawPixmap(target, pix, QRectF(pix.rect()))
+                p.setPen(QPen(color, 3))
+                p.drawRect(target)
+                cap_y = target.bottom() + 6     # caption right under its image
+            p.setPen(QColor("white"))
+            p.drawText(QRectF(x, cap_y, cell_w, cap_h - 4), Qt.AlignmentFlag.AlignCenter, caption)
+
 
 class KeypointCard(QFrame):
     nudged = pyqtSignal(str, str, int)    # window key, edge, delta
     clicked = pyqtSignal(str)             # phase/edge id "sync:first"
 
-    def __init__(self, title, phase, edge, tile=(150, 112), parent=None):
+    def __init__(self, title, phase, edge, tile=(96, 72), parent=None):
         super().__init__(parent)
         self.phase, self.edge = phase, edge
         self.color = PHASE_COLORS[phase]
         self.setObjectName("card")
         self.set_selected(False)
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(10, 8, 10, 8)
+        lay.setContentsMargins(8, 6, 8, 6)
         lay.setSpacing(4)
         head = QLabel(title)
-        head.setStyleSheet(f"color: {self.color.name()}; font-weight: bold; font-size: 11pt;")
+        head.setStyleSheet(f"color: {self.color.name()}; font-weight: bold;")
         lay.addWidget(head)
-        imgs = QHBoxLayout()
-        imgs.setSpacing(6)
-        self.vis_tile = ImageTile(*tile)
-        self.nir_tile = ImageTile(*tile)
-        imgs.addWidget(self.vis_tile)
-        imgs.addWidget(self.nir_tile)
-        lay.addLayout(imgs)
         self.rows = {}
         for band, color in (("VIS", BLUE), ("NIR", NIR_ACCENT)):
             row = QHBoxLayout()
-            row.setSpacing(4)
+            row.setSpacing(6)
+            tile_ = ImageTile(*tile)
             lab = QLabel()
             lab.setStyleSheet(f"color: {color.name()};")
             lab.setTextFormat(Qt.TextFormat.RichText)
@@ -717,11 +765,16 @@ class KeypointCard(QFrame):
                 b.setToolTip("Previous / next image")
                 b.clicked.connect(lambda _=False, band=band, d=d:
                                   self.nudged.emit(f"{band} {self.phase}", self.edge, d))
+            row.addWidget(tile_)
             row.addWidget(lab, 1)
             row.addWidget(prev)
             row.addWidget(nxt)
             lay.addLayout(row)
             self.rows[band] = (lab, prev, nxt)
+            if band == "VIS":
+                self.vis_tile = tile_
+            else:
+                self.nir_tile = tile_
 
     def set_selected(self, on):
         border = self.color.name() if on else "#DDE3EA"
@@ -741,7 +794,7 @@ class KeypointCard(QFrame):
             nxt.setEnabled(w is not None and not derived)
             if w is None:
                 tile.show_pixmap(None, "—")
-                lab.setText(f"<b>{'Visible' if band == 'VIS' else 'Infrared'}</b> · not set")
+                lab.setText(f"<b>{'Visible' if band == 'VIS' else 'Infrared'}</b><br>not set")
                 continue
             idx = w.first if self.edge == "first" else w.last
             f = m.band(band).frames[idx]
@@ -749,7 +802,7 @@ class KeypointCard(QFrame):
             t = m.times_on_vis_axis(band)[idx]
             extra = f" · {f.alt:.1f} m" if f.alt is not None else ""
             note = " · <i>follows visible</i>" if derived else ""
-            lab.setText(f"<b>{Path(f.name).stem}</b> · {fmt_time(t)}{extra}{note}")
+            lab.setText(f"<b>{Path(f.name).stem}</b><br>{fmt_time(t)}{extra}{note}")
             lab.setToolTip(lab.text())
 
 
@@ -800,13 +853,13 @@ class FlightTimelineDialog(QDialog):
         g = screen.availableGeometry()
         # leave room for the title bar (not part of the geometry) and the taskbar margin
         w, h = min(1500, int(g.width() * 0.95)), min(1000, g.height() - 48)
-        # 4 cards of 2 images side by side: the images take what is left of the width
-        tile_w = max(84, min(150, (w - 36 - 30 - 4 * 30 - 20) // 8))
-        # short screen (laptop with display scaling): everything a bit smaller
+        # short screen (laptop with display scaling): shorter time line
         self.compact = h < 800
-        if self.compact:
-            tile_w = min(tile_w, 80)
-        self._tile = (tile_w, tile_w * 3 // 4)
+        # the 4 keypoint cards share the sidebar height: 2 image rows each
+        # (card = 44 px of title and margins + 2 rows)
+        body_h = h - 150
+        tile_h = max(36, min(72, ((body_h - 3 * 6) // 4 - 44) // 2))
+        self._tile = (tile_h * 4 // 3, tile_h)
         self._build()
         self.setGeometry(g.x() + (g.width() - w) // 2, g.y() + (g.height() - h) // 2, w, h)
         self._preview_timer = QTimer(self)
@@ -837,84 +890,93 @@ class FlightTimelineDialog(QDialog):
         root = QVBoxLayout(content)
         root.setContentsMargins(18, 10 if self.compact else 14, 18, 4)
         root.setSpacing(6 if self.compact else 8)
-        # Header
+        # Header: one line
         head = QHBoxLayout()
-        titles = QVBoxLayout()
+        head.setSpacing(10)
         title = QLabel("Flight timeline")
-        title.setStyleSheet(f"font-size: {13 if self.compact else 17}pt; font-weight: bold; color: #17365D;")
+        title.setStyleSheet(f"font-size: {12 if self.compact else 14}pt; font-weight: bold; color: #17365D;")
         self.subtitle = QLabel("Reading the images of the mission…")
         self.subtitle.setStyleSheet("color: #6B7785;")
-        titles.addWidget(title)
-        titles.addWidget(self.subtitle)
-        head.addLayout(titles, 1)
-        chips = QHBoxLayout()
-        chips.setSpacing(6)
+        self.subtitle.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        head.addWidget(title)
+        head.addWidget(self.subtitle, 1)
         self.chip_target = self._chip(SYNC)
         self.chip_shift = self._chip(NIR_ACCENT)
         self.chip_survey = self._chip(SURVEY)
         for c in (self.chip_target, self.chip_shift, self.chip_survey):
-            chips.addWidget(c)
-        head.addLayout(chips)
+            head.addWidget(c)
         root.addLayout(head)
         self.progress = QProgressBar()
         self.progress.setTextVisible(False)
-        self.progress.setFixedHeight(6)
-        self.progress.setStyleSheet("QProgressBar { background: #E4E8EE; border: none; border-radius: 3px; }"
-                                    "QProgressBar::chunk { background: #17365D; border-radius: 3px; }")
+        self.progress.setFixedHeight(4)
+        self.progress.setStyleSheet("QProgressBar { background: #E4E8EE; border: none; border-radius: 2px; }"
+                                    "QProgressBar::chunk { background: #17365D; border-radius: 2px; }")
         root.addWidget(self.progress)
         self.messages = QLabel()
         self.messages.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        self.messages.setStyleSheet("background: #FFF4E0; color: #7A4B00; border-radius: 6px; padding: 6px 10px;")
+        self.messages.setStyleSheet("background: #FFF4E0; color: #7A4B00; border-radius: 6px; padding: 3px 10px;")
         self.messages.hide()
         root.addWidget(self.messages)
 
-        # Keypoint cards
-        cards = QHBoxLayout()
-        cards.setSpacing(10)
-        for title_, phase, edge in KEYPOINTS:
-            c = KeypointCard(title_, phase, edge, tile=self._tile)
-            c.nudged.connect(self._on_nudge)
-            c.clicked.connect(self._on_card_clicked)
-            c.setEnabled(False)
-            cards.addWidget(c)
-            self.cards.append(c)
-        root.addLayout(cards)
-
-        # Preview + time line
-        mid = QHBoxLayout()
-        mid.setSpacing(10)
+        # Body: preview pair over the time line, keypoints in a sidebar
+        body = QHBoxLayout()
+        body.setSpacing(10)
+        left = QVBoxLayout()
+        left.setSpacing(8)
         self.preview_box = QFrame()
         self.preview_box.setObjectName("pv")
         self.preview_box.setStyleSheet("#pv { background: white; border: 1px solid #DDE3EA; border-radius: 8px; }")
         pv = QGridLayout(self.preview_box)
-        pv.setContentsMargins(10, 8, 10, 8)
-        pv_min = (80, 60) if self.compact else (120, 90)
-        self.pv_vis = ImageTile(400, 300, min_size=pv_min)
-        self.pv_nir = ImageTile(400, 300, min_size=pv_min)
+        pv.setContentsMargins(8, 6, 8, 4)
+        pv.setVerticalSpacing(2)
+        # as large as the room allows: the time line takes its height first
+        self.pv_vis = ImageTile(1600, 1200, min_size=(120, 90))
+        self.pv_nir = ImageTile(1600, 1200, min_size=(120, 90))
         self.pv_vis_cap = QLabel("Visible")
         self.pv_nir_cap = QLabel("Infrared")
         for lab in (self.pv_vis_cap, self.pv_nir_cap):
             lab.setTextFormat(Qt.TextFormat.RichText)
             lab.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+            lab.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        for tile in (self.pv_vis, self.pv_nir):
+            tile.setToolTip("")
+            tile.hovered.connect(self._on_preview_hovered)
         pv.addWidget(self.pv_vis, 0, 0)
         pv.addWidget(self.pv_nir, 0, 1)
         pv.addWidget(self.pv_vis_cap, 1, 0)
         pv.addWidget(self.pv_nir_cap, 1, 1)
-        mid.addStretch(1)
-        mid.addWidget(self.preview_box)
-        mid.addStretch(1)
-        root.addLayout(mid)
-
+        pv.setRowStretch(0, 1)
+        left.addWidget(self.preview_box, 1)
         self.view_holder = QVBoxLayout()
-        root.addLayout(self.view_holder)
-        hint = QLabel("Hover to preview · drag a band edge to adjust · ◀ ▶ or the arrow keys to nudge "
-                      "the selected keypoint · wheel to zoom · drag to pan · double-click to see the whole flight")
-        hint.setStyleSheet("color: #8A94A0; font-size: 9pt;")
-        hint.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        hint.setToolTip(hint.text())
-        self._hint_text = hint.text()
-        if not self.compact:
-            root.addWidget(hint)
+        left.addLayout(self.view_holder)
+        body.addLayout(left, 1)
+
+        side = QVBoxLayout()
+        side.setSpacing(6)
+        for title_, phase, edge in KEYPOINTS:
+            c = KeypointCard(title_, phase, edge, tile=self._tile)
+            c.nudged.connect(self._on_nudge)
+            c.clicked.connect(self._on_card_clicked)
+            c.setEnabled(False)
+            side.addWidget(c)
+            self.cards.append(c)
+        side.addStretch(1)
+        side_w = QWidget()
+        side_w.setLayout(side)
+        side_w.setFixedWidth(self._tile[0] + 240)
+        side.setContentsMargins(0, 0, 0, 0)
+        body.addWidget(side_w)
+        root.addLayout(body, 1)
+        self._hint_text = ("Hover to preview (hover the images to see them big) · drag a band edge to adjust · "
+                           "◀ ▶ or the arrow keys to nudge the selected keypoint · wheel to zoom · "
+                           "drag to pan · double-click to see the whole flight")
+        self.overlay = PreviewOverlay(self)
+        # the big view opens after a short rest on the preview (no flash when
+        # the mouse only crosses it)
+        self._overlay_timer = QTimer(self)
+        self._overlay_timer.setSingleShot(True)
+        self._overlay_timer.setInterval(250)
+        self._overlay_timer.timeout.connect(self._open_overlay)
 
         # Footer (always visible)
         foot = QHBoxLayout()
@@ -923,6 +985,7 @@ class FlightTimelineDialog(QDialog):
         self.btn_help.setStyleSheet(SECONDARY_STYLE)
         self.btn_help.setFixedWidth(36)
         self.btn_help.clicked.connect(self._on_help)
+        self.btn_help.setToolTip(self._hint_text.replace(" · ", "\n"))
         self.btn_classic = QPushButton("Classic selection…")
         self.btn_classic.setStyleSheet(SECONDARY_STYLE)
         self.btn_classic.setToolTip("Pick the 5 reference images of each camera by hand (previous Step 2).")
@@ -970,7 +1033,7 @@ class FlightTimelineDialog(QDialog):
         lab = QLabel()
         bg = QColor(color)
         lab.setStyleSheet(f"background: rgba({bg.red()},{bg.green()},{bg.blue()},28);"
-                          f"color: {bg.name()}; border-radius: 10px; padding: 4px 10px; font-weight: bold;")
+                          f"color: {bg.name()}; border-radius: 9px; padding: 2px 9px; font-weight: bold;")
         lab.hide()
         return lab
 
@@ -998,7 +1061,7 @@ class FlightTimelineDialog(QDialog):
         self.model = TimelineModel(self.mission, vis, nir, proposal)
         self._restore_saved()
         self.view = TimelineView(self.model, compact=self.compact)
-        self.view.setToolTip(self._hint_text if self.compact else "")
+        self.view.setToolTip(self._hint_text.replace(" · ", "\n"))
         self.view.hovered.connect(self._on_hover)
         self.view.left.connect(self._show_selected_preview)
         self.view.edited.connect(self._on_edited)
@@ -1011,7 +1074,7 @@ class FlightTimelineDialog(QDialog):
         self._fill_chips()
         if proposal.messages:
             lines = ["⚠  " + m for m in proposal.messages]
-            if self.compact and len(lines) > 1:   # one line, the rest on hover
+            if len(lines) > 1:   # one line, the rest on hover
                 self.messages.setToolTip("\n".join(lines))
                 lines = [lines[0] + f"   (+{len(lines) - 1} more, hover to read)"]
             else:
@@ -1123,6 +1186,26 @@ class FlightTimelineDialog(QDialog):
             return
         phase, edge = self.selected
         self._show_keypoint_preview(f"VIS {phase}", edge)
+
+    def _on_preview_hovered(self, inside):
+        if inside:
+            self._overlay_timer.start()
+        else:
+            self._overlay_timer.stop()
+            self.overlay.hide()
+
+    def _open_overlay(self):
+        items = []
+        for tile, cap, color in ((self.pv_vis, self.pv_vis_cap, BLUE), (self.pv_nir, self.pv_nir_cap, NIR_ACCENT)):
+            text = QTextDocumentFragment.fromHtml(cap.text()).toPlainText()
+            items.append((tile._pix, text, color))
+        if any(pix is not None for pix, _, _ in items):
+            self.overlay.show_pair(items)
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        if self.overlay.isVisible():
+            self.overlay.setGeometry(self.rect())
 
     def _show_keypoint_preview(self, key, edge, live=False):
         m = self.model
