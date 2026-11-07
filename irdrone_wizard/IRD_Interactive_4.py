@@ -14,7 +14,7 @@ import shutil
 import sys
 import time
 
-from PyQt6.QtCore import QProcess, QProcessEnvironment, QSettings, Qt
+from PyQt6.QtCore import QObject, QProcess, QProcessEnvironment, QSettings, Qt, pyqtSignal
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QDialog,
@@ -348,6 +348,108 @@ def _vis_image_number(filename: str) -> int:
     return int(match.group(1))
 
 
+def redo_environment() -> QProcessEnvironment:
+    """Environment of the processing subprocesses (project modules and SJ converter)."""
+    environment = QProcessEnvironment.systemEnvironment()
+    python_path = os.environ.get("PYTHONPATH", "")
+    project_python_path = str(PROJECT_ROOT)
+    if python_path:
+        project_python_path = os.pathsep.join((project_python_path, python_path))
+    environment.insert("PYTHONPATH", project_python_path)
+    environment.insert("SJCONVERTERPATH", str(SJCONVERTERPATH))
+    return environment
+
+
+def redo_queue(output_folder: Path, points, log=print) -> list:
+    """``(number, stem, arguments)`` of the points ``(number, stem)`` that have a
+    readable REDO script; the others are reported through ``log``."""
+    queue = []
+    for number, stem in points:
+        try:
+            arguments = read_redo_command(Path(output_folder) / f"{stem}{REDO_BATCH_SUFFIX}")
+        except (OSError, ValueError) as error:
+            log(f"{stem}: redo skipped ({error})")
+            continue
+        queue.append((number, stem, arguments))
+    return queue
+
+
+class RedoRunner(QObject):
+    """Manual realignment of shoot points, one subprocess at a time.
+
+    Each point runs automatic_registration.py with the arguments of its REDO
+    script: a slider window opens, the user aligns VIS and NIR by hand and
+    closes it, the alignment is recomputed. ``point_done`` gives the new
+    aligned image (empty if none) or an error; the next point starts once the
+    slots connected to ``point_done`` have returned (they may ask the user)."""
+
+    point_started = pyqtSignal(int, str)          # number, stem
+    output = pyqtSignal(str)                      # console output / log lines
+    point_done = pyqtSignal(int, str, str, str)   # number, stem, aligned image, error
+    all_done = pyqtSignal()
+
+    def __init__(self, output_folder: Path, parent=None):
+        super().__init__(parent)
+        self.output_folder = Path(output_folder)
+        self.process = QProcess(self)
+        self.process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        self.process.readyReadStandardOutput.connect(self._read_output)
+        self.process.finished.connect(self._on_finished)
+        self.process.errorOccurred.connect(self._on_error)
+        self._queue = []
+        self.current = None
+        self._started_at = 0.0
+
+    def busy(self) -> bool:
+        return self.current is not None or self.process.state() != QProcess.ProcessState.NotRunning
+
+    def start(self, queue) -> None:
+        self._queue = list(queue)
+        self._start_next()
+
+    def _start_next(self) -> None:
+        if not self._queue:
+            self.current = None
+            self.all_done.emit()
+            return
+        number, stem, arguments = self._queue.pop(0)
+        self.current = (number, stem)
+        self._started_at = time.time()
+        full_arguments = [str(PROJECT_ROOT / "automatic_registration.py"), *arguments]
+        self.process.setProcessEnvironment(redo_environment())
+        self.process.setWorkingDirectory(str(PROJECT_ROOT))
+        self.output.emit(f"\nRedo {stem}: {sys.executable} {' '.join(full_arguments)}")
+        self.point_started.emit(number, stem)
+        self.process.start(sys.executable, full_arguments)
+
+    def _read_output(self) -> None:
+        output = bytes(self.process.readAllStandardOutput()).decode("utf-8", errors="replace")
+        if output.strip():
+            self.output.emit(output.rstrip())
+
+    def _on_error(self, error) -> None:
+        # A process that never started emits no "finished" signal.
+        if error != QProcess.ProcessError.FailedToStart:
+            return
+        number, stem = self.current
+        self.point_done.emit(number, stem, "", f"Unable to start the redo: {self.process.errorString()}")
+        self._start_next()
+
+    def _on_finished(self, exit_code: int, exit_status) -> None:
+        self._read_output()
+        number, stem = self.current
+        if exit_code != 0 or exit_status != QProcess.ExitStatus.NormalExit:
+            self.point_done.emit(number, stem, "", f"Redo of {stem} failed (exit code {exit_code}).")
+        else:
+            image = redo_check_image(self.output_folder, stem, self._started_at)
+            if image is None:
+                self.point_done.emit(number, stem, "",
+                                     f"Redo of {stem}: no aligned image ({ALIGNED_JPEG_LABEL}) was generated.")
+            else:
+                self.point_done.emit(number, stem, str(image), "")
+        self._start_next()
+
+
 class RedoSelectionDialog(QDialog):
     """Let the user tick the failed shoot points to realign manually."""
 
@@ -524,14 +626,11 @@ class DialogImageProcessing(QDialog):
         self.process.errorOccurred.connect(self._on_process_error)
 
         # Manual redo of failed shoot points (one subprocess at a time).
-        self.redo_process = QProcess(self)
-        self.redo_process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
-        self.redo_process.readyReadStandardOutput.connect(self._read_redo_output)
-        self.redo_process.finished.connect(self._on_redo_finished)
-        self.redo_process.errorOccurred.connect(self._on_redo_error)
-        self._redo_queue = []
-        self._redo_current = None
-        self._redo_started_at = 0.0
+        self.redo_runner = RedoRunner(self.mission_folder / "ImgIRdrone", self)
+        self.redo_runner.output.connect(self._append_log)
+        self.redo_runner.point_started.connect(self._on_redo_started)
+        self.redo_runner.point_done.connect(self._on_redo_point_done)
+        self.redo_runner.all_done.connect(self._finish_redo)
         self._redo_validated = []
         self._redo_rejected = []
         self._redo_errors = []
@@ -781,14 +880,11 @@ class DialogImageProcessing(QDialog):
     @staticmethod
     def _project_environment() -> QProcessEnvironment:
         """Environment of the processing subprocesses (project modules and SJ converter)."""
-        environment = QProcessEnvironment.systemEnvironment()
-        python_path = os.environ.get("PYTHONPATH", "")
-        project_python_path = str(PROJECT_ROOT)
-        if python_path:
-            project_python_path = os.pathsep.join((project_python_path, python_path))
-        environment.insert("PYTHONPATH", project_python_path)
-        environment.insert("SJCONVERTERPATH", str(SJCONVERTERPATH))
-        return environment
+        return redo_environment()
+
+    def _append_log(self, text: str) -> None:
+        self.log_text.append(text)
+        self.log_text.ensureCursorVisible()
 
     def _set_redo_busy(self, busy: bool) -> None:
         for button in (self.run_button, self.flag_button, self.redo_button, self.close_button):
@@ -841,16 +937,8 @@ class DialogImageProcessing(QDialog):
         if not selected:
             return
 
-        queue = []
-        for number, stem in failed:
-            if number not in selected:
-                continue
-            try:
-                arguments = read_redo_command(output_folder / f"{stem}{REDO_BATCH_SUFFIX}")
-            except (OSError, ValueError) as error:
-                self.log_text.append(f"{stem}: redo skipped ({error})")
-                continue
-            queue.append((number, stem, arguments))
+        queue = redo_queue(output_folder, [(n, s) for n, s in failed if n in selected],
+                           log=self.log_text.append)
         if not queue:
             QMessageBox.warning(self, "Nothing to redo", "No selected point can be realigned.")
             return
@@ -862,67 +950,27 @@ class DialogImageProcessing(QDialog):
             "until VIS and NIR overlap, then close that window: the alignment is "
             "recomputed and the new VIR image is shown for validation.",
         )
-        self._redo_queue = queue
         self._redo_validated = []
         self._redo_rejected = []
         self._redo_errors = []
         self._set_redo_busy(True)
-        self._start_next_redo()
+        self.redo_runner.start(queue)
 
-    def _start_next_redo(self) -> None:
-        if not self._redo_queue:
-            self._finish_redo()
-            return
-        number, stem, arguments = self._redo_queue.pop(0)
-        self._redo_current = (number, stem)
-        self._redo_started_at = time.time()
-        full_arguments = [str(PROJECT_ROOT / "automatic_registration.py"), *arguments]
-        self.redo_process.setProcessEnvironment(self._project_environment())
-        self.redo_process.setWorkingDirectory(str(PROJECT_ROOT))
-        self.log_text.append(f"\nRedo {stem}: {sys.executable} {' '.join(full_arguments)}")
+    def _on_redo_started(self, number: int, stem: str) -> None:
         self.status_label.setText(
             f"Redo {stem}: adjust the sliders, then close the window to continue."
         )
         self.progress_bar.setRange(0, 0)
-        self.redo_process.start(sys.executable, full_arguments)
 
-    def _read_redo_output(self) -> None:
-        output = bytes(self.redo_process.readAllStandardOutput()).decode("utf-8", errors="replace")
-        if output.strip():
-            self.log_text.append(output.rstrip())
-            self.log_text.ensureCursorVisible()
-
-    def _on_redo_error(self, error) -> None:
-        # A process that never started emits no "finished" signal.
-        if error != QProcess.ProcessError.FailedToStart:
-            return
-        stem = self._redo_current[1]
-        self.log_text.append(f"Unable to start the redo of {stem}: {self.redo_process.errorString()}")
-        self._redo_errors.append(stem)
-        self._start_next_redo()
-
-    def _on_redo_finished(self, exit_code: int, exit_status) -> None:
-        self._read_redo_output()
-        number, stem = self._redo_current
+    def _on_redo_point_done(self, number: int, stem: str, image: str, error: str) -> None:
         self.progress_bar.setRange(0, 1)
         self.progress_bar.setValue(0)
-        if exit_code != 0 or exit_status != QProcess.ExitStatus.NormalExit:
-            self.log_text.append(f"Redo of {stem} failed (exit code {exit_code}).")
+        if error:
+            self.log_text.append(error)
             self._redo_errors.append(stem)
-            self._start_next_redo()
             return
-
         output_folder = self.mission_folder / "ImgIRdrone"
-        vir_path = redo_check_image(output_folder, stem, self._redo_started_at)
-        if vir_path is None:
-            self.log_text.append(
-                f"Redo of {stem}: no aligned image ({ALIGNED_JPEG_LABEL}) was generated."
-            )
-            self._redo_errors.append(stem)
-            self._start_next_redo()
-            return
-
-        check = AlignmentCheckDialog(vir_path, f"{stem} – new alignment", self)
+        check = AlignmentCheckDialog(Path(image), f"{stem} – new alignment", self)
         if check.exec() == QDialog.DialogCode.Accepted:
             try:
                 mark_points_aligned(output_folder, {number})
@@ -935,10 +983,8 @@ class DialogImageProcessing(QDialog):
         else:
             self._redo_rejected.append(stem)
             self.log_text.append(f"{stem}: alignment rejected, shoot point still failed.")
-        self._start_next_redo()
 
     def _finish_redo(self) -> None:
-        self._redo_current = None
         self._set_redo_busy(False)
         message = (
             f"Redo finished: {len(self._redo_validated)} validated, "
@@ -1144,7 +1190,7 @@ class DialogImageProcessing(QDialog):
     def closeEvent(self, event) -> None:
         if (
             self.process.state() != QProcess.ProcessState.NotRunning
-            or self.redo_process.state() != QProcess.ProcessState.NotRunning
+            or self.redo_runner.busy()
         ):
             QMessageBox.information(
                 self,
