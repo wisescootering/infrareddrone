@@ -636,7 +636,8 @@ class DialogGeoRef(QDialog):
         confirm = QMessageBox.question(
             self,
             "Start ODM mapping",
-            "This will hard-link the selected image quartets from "
+            "This will hard-link (or copy, if the drive does not support hard "
+            "links) the selected image quartets from "
             "ImgIRdrone/imgMultispectral into the prepared ODM dataset, then run "
             "ODM directly in mapping_MULTI using Docker.\n\n"
             "The orthophoto, report, shots GeoJSON, and 2.5D mesh will also be copied "

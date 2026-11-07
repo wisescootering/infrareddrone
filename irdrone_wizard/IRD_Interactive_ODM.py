@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import filecmp
 import json
 import math
 import os
@@ -19,6 +20,8 @@ import numpy as np
 import rasterio
 import rasterio.shutil
 from rasterio.enums import Resampling
+
+from IRD_Interactive_diskspace import is_disk_full, raise_if_disk_full
 
 
 MANIFEST_NAME = "img_best_mappping.json"
@@ -765,8 +768,41 @@ def build_best_mapping(
     return manifest
 
 
-def prepare_odm_input(mission_folder: Path, manifest: Dict[str, Any]) -> Path:
-    """Hard-link the selected TIFFs and sidecars into ODM's images folder."""
+def _link_or_copy(source: Path, target: Path, copy_mode: bool) -> bool:
+    """Hard-link ``source`` to ``target``, or copy it when hard links are not
+    supported (exFAT / FAT32 external drives, some network shares).
+
+    Returns True once copying, so the next files are copied directly.
+    """
+    if not copy_mode:
+        try:
+            os.link(source, target)
+            return False
+        except OSError as error:
+            if is_disk_full(error):
+                raise
+            # Any other refusal (unsupported, cross-device, permission):
+            # a copy works on every storage, at the cost of disk space.
+    shutil.copy2(source, target)
+    return True
+
+
+def _same_file_content(existing: Path, source: Path) -> bool:
+    """A hard link to ``source``, or an identical copy of it."""
+    if os.path.samefile(existing, source):
+        return True
+    return filecmp.cmp(existing, source, shallow=True)
+
+
+def prepare_odm_input(
+    mission_folder: Path,
+    manifest: Dict[str, Any],
+    log: Callable[[str], None] = print,
+) -> Path:
+    """Hard-link the selected TIFFs and sidecars into ODM's images folder.
+
+    Falls back to copies when the storage does not support hard links.
+    """
     mission_folder = Path(mission_folder).expanduser().resolve()
     mapping_folder = mission_folder / "mapping_MULTI"
     images_folder = mapping_folder / "images"
@@ -845,34 +881,42 @@ def prepare_odm_input(mission_folder: Path, manifest: Dict[str, Any]) -> Path:
                     f"selection: {images_folder}. Remove its contents manually before "
                     "preparing the input."
                 )
-            not_linked = [
+            outdated = [
                 source.name
                 for name, source in expected_by_name.items()
-                if not os.path.samefile(actual_by_name[name], source)
+                if not _same_file_content(actual_by_name[name], source)
             ]
-            if not_linked:
+            if outdated:
                 raise ODMMappingError(
-                    "The existing ODM input contains files that are copies rather than hard "
-                    f"links to the selected sources: {', '.join(not_linked)}. Remove its "
-                    "contents manually before preparing the input again."
+                    "The existing ODM input contains files that differ from the selected "
+                    f"sources: {', '.join(outdated)}. Remove its contents manually before "
+                    "preparing the input again."
                 )
             return images_folder
 
     if images_folder_created:
         images_folder.mkdir(parents=True)
-    created_links: List[Path] = []
+    created_files: List[Path] = []
+    copy_mode = False
+    target: Optional[Path] = None
     try:
         for filename, source in expected_images:
             target = images_folder / filename
-            os.link(source, target)
-            created_links.append(target)
+            if _link_or_copy(source, target, copy_mode) and not copy_mode:
+                copy_mode = True
+                log(
+                    "This storage does not support hard links: the selected images "
+                    "are copied into the ODM input folder (uses more disk space)."
+                )
+            created_files.append(target)
     except OSError as error:
-        for created_link in created_links:
-            created_link.unlink(missing_ok=True)
+        for created_file in created_files + ([target] if target else []):
+            created_file.unlink(missing_ok=True)
         if images_folder_created and not any(images_folder.iterdir()):
             images_folder.rmdir()
+        raise_if_disk_full(error, images_folder)
         raise ODMMappingError(
-            f"Could not prepare the ODM input folder with hard links: {error}"
+            f"Could not prepare the ODM input folder: {error}"
         ) from error
 
     return images_folder
@@ -1172,7 +1216,7 @@ def run_odm(
     ]
 
     stage("Preparing selected TIFF quartets")
-    images_folder = prepare_odm_input(mission_folder, manifest)
+    images_folder = prepare_odm_input(mission_folder, manifest, log=worker_log)
     command = build_odm_command(
         mapping_folder, resolution_cm, docker_executable, docker_context
     )
