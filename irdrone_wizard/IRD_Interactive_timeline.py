@@ -236,7 +236,10 @@ class TimelineView(QWidget):
         self.setMinimumHeight(self.total_height(self.CHART_MIN))
         self.setMaximumHeight(self.total_height(self.CHART_H))
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.alt_max = max([f.alt for f in model.vis.frames if f.alt is not None] or [1.0])
+        alts = [f.alt for f in model.vis.frames if f.alt is not None] or [1.0]
+        # the chart spans 0 m (take-off) and every altitude: below 0 when the
+        # drone took off from a summit and flew down
+        self.alt_max, self.alt_min = max(max(alts), 0.0), min(min(alts), 0.0)
 
     # ---- geometry
     def sizeHint(self):
@@ -337,7 +340,7 @@ class TimelineView(QWidget):
         p.setFont(f)
         al = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         p.drawText(QRectF(0, r["chart"].top(), self.GUTTER - 10, 16), al, f"{self.alt_max:.0f} m")
-        p.drawText(QRectF(0, r["chart"].bottom() - 16, self.GUTTER - 10, 16), al, "0 m")
+        p.drawText(QRectF(0, r["chart"].bottom() - 16, self.GUTTER - 10, 16), al, f"{self.alt_min:.0f} m")
         p.drawText(QRectF(0, r["chart"].center().y() - 8, self.GUTTER - 10, 16), al, "Altitude")
         fb = QFont(f)
         fb.setBold(True)
@@ -362,11 +365,11 @@ class TimelineView(QWidget):
             p.setPen(MUTED)
             p.drawText(rect, Qt.AlignmentFlag.AlignCenter, "No altitude in the visible images")
             return
-        scale = (rect.height() - 6) / max(self.alt_max, 1e-6)
+        scale = (rect.height() - 6) / max(self.alt_max - self.alt_min, 1e-6)
         path = QPainterPath()
-        path.moveTo(pts[0][0], rect.bottom() - pts[0][1] * scale)
+        path.moveTo(pts[0][0], rect.bottom() - (pts[0][1] - self.alt_min) * scale)
         for x, a in pts[1:]:
-            path.lineTo(x, rect.bottom() - a * scale)
+            path.lineTo(x, rect.bottom() - (a - self.alt_min) * scale)
         fill = QPainterPath(path)
         fill.lineTo(pts[-1][0], rect.bottom())
         fill.lineTo(pts[0][0], rect.bottom())

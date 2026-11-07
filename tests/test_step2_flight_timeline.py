@@ -47,6 +47,13 @@ class HoverAndSurveyTests(unittest.TestCase):
         w = FT.survey_window(alts)
         self.assertEqual((w.first, w.last), (5, 25))
 
+    def test_take_off_from_a_summit_and_fly_down(self):
+        # altitudes relative to take-off are negative: hover, descent, survey 80 m below
+        alts = [0.5] * 30 + list(np.linspace(-4, -78, 10)) + [-80.0] * 40 + [-40.0, 0.4]
+        self.assertEqual(FT.low_hover_window(alts), FT.Window(0, 29))
+        w = FT.survey_window(alts)
+        self.assertEqual((w.first, w.last), (39, 79))
+
     def test_no_survey_when_never_left_the_ground(self):
         self.assertIsNone(FT.survey_window([0.5] * 50))
 

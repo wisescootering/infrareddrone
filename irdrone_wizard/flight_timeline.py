@@ -315,7 +315,8 @@ def wrap180(a):
 def low_hover_window(alts: Sequence[Optional[float]], margin: float = HOVER_MARGIN) -> Optional[Window]:
     """Frames at the start of the flight close to the starting altitude (hover over the target).
 
-    Ends at the first frame of a sustained climb (two frames above the margin)."""
+    Ends at the first frame of a sustained climb or descent (two frames more than
+    the margin away: a take-off from a summit flies down)."""
     a = [x for x in alts]
     known = [x for x in a[:10] if x is not None]
     if not known:
@@ -325,9 +326,9 @@ def low_hover_window(alts: Sequence[Optional[float]], margin: float = HOVER_MARG
     i = 0
     while i < len(a):
         x = a[i]
-        if x is not None and x > base + margin:
+        if x is not None and abs(x - base) > margin:
             nxt = a[i + 1] if i + 1 < len(a) else x
-            if nxt is None or nxt > base + margin:
+            if nxt is None or abs(nxt - base) > margin:
                 break
         last = i
         i += 1
@@ -335,12 +336,14 @@ def low_hover_window(alts: Sequence[Optional[float]], margin: float = HOVER_MARG
 
 
 def survey_window(alts: Sequence[Optional[float]], min_frames: int = 5) -> Optional[Window]:
-    """Longest run of frames on the high altitude plateau (the survey).
+    """Longest run of frames on the survey plateau, the farthest from take-off.
 
-    The plateau altitude is the 90th percentile of the altitudes; a frame is on
-    it when within max(3 m, 6 %) of it. Single-frame drops are bridged."""
-    a = np.array([np.nan if x is None else x for x in alts], dtype=float)
-    if np.all(np.isnan(a)) or len(a) == 0:
+    The altitudes are relative to take-off: their absolute value is the height
+    difference with it, so a flight down from a summit (negative altitudes) is
+    handled like a climb. The plateau is the 90th percentile of that difference;
+    a frame is on it when within max(3 m, 6 %) of it. Single-frame drops are bridged."""
+    a = np.abs(np.array([np.nan if x is None else x for x in alts], dtype=float))
+    if len(a) == 0 or np.all(np.isnan(a)):
         return None
     top = float(np.nanpercentile(a, 90))
     if top < HOVER_MARGIN * 2:
