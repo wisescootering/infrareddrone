@@ -71,6 +71,7 @@ _app.processEvents()
 # -------------- IRDrone Library ------------------------------------
 from IRD_Interactive_1 import Window_Load_TakeOff_Image, Window_create_file_structure
 from IRD_Interactive_2 import LoadVisNirImagesDialog
+from IRD_Interactive_timeline import FlightTimelineDialog
 from IRD_Interactive_3 import DialogSynchroAruco
 from IRD_Interactive_4 import DialogImageProcessing
 from IRD_Interactive_5 import DialogGeoRef
@@ -159,7 +160,7 @@ class Main_Window(QMainWindow):
         self.btn_create_mission.setMinimumHeight(56)
         self.btn_create_mission.clicked.connect(self.open_window_define_mission)
         #  btn load_images
-        self.btn_load_images = QPushButton("Step 2\nSelect reference images", self)
+        self.btn_load_images = QPushButton("Step 2\nFlight timeline", self)
         self.btn_load_images.setAutoDefault(True)
         self.btn_load_images.setEnabled(True)   # (True) pour test  et (False) en prod !
         self.btn_load_images.setStyleSheet(colored_button_style("purple"))
@@ -199,7 +200,7 @@ class Main_Window(QMainWindow):
         # Step buttons: (button, text, color) to grey them out once the step is done
         self.step_buttons = {
             1: (self.btn_create_mission, "Step 1\nDefine the mission", "darkGreen"),
-            2: (self.btn_load_images, "Step 2\nSelect reference images", "purple"),
+            2: (self.btn_load_images, "Step 2\nFlight timeline", "purple"),
             3: (self.btn_pre_process_images, "Step 3\nImage pre-processing", "#505050"),
             4: (self.btn_process_images, "Step 4\nImage processing", "darkRed"),
             5: (self.btn_post_process_images, "Step 5\nImage post-processing", "#C87800"),
@@ -262,7 +263,7 @@ class Main_Window(QMainWindow):
 
         for widget, label, tip in (
             (self.btn_create_mission, "ch:step1", "Define the mission and transfer the images."),
-            (self.btn_load_images, "ch:step2", "Select the reference images."),
+            (self.btn_load_images, "ch:step2", "Check the automatically detected flight phases (synchronisation, survey)."),
             (self.btn_pre_process_images, "ch:step3", "Synchronize the VIS and NIR cameras."),
             (self.btn_process_images, "ch:step4", "Align the VIS and NIR images."),
             (self.btn_post_process_images, "ch:step5", "Georeference, map and build the DTM."),
@@ -362,6 +363,32 @@ class Main_Window(QMainWindow):
 
     def open_window_load_set_images(self):
         """
+        Step 2: flight timeline. The synchronisation and survey phases are
+        detected automatically and confirmed by the user; "Confirm and
+        synchronize" chains into Step 3. The classic selection (5 images per
+        camera) stays available from the timeline window.
+        """
+        if not self.ensure_mission_parameters():
+            return
+        folderMissionPath = Path(Progress.mission_folder(self.mission_parameters, self.folderMissionPath))
+        try:
+            dialog = FlightTimelineDialog(folderMissionPath, parent=self)
+        except Exception as e:
+            print(Style.RED + f"Flight timeline unavailable ({e}): classic selection." + Style.RESET)
+            self.open_window_classic_selection()
+            return
+        accepted = dialog.exec() == QDialog.DialogCode.Accepted
+        if dialog.action == "classic":
+            self.open_window_classic_selection()
+            return
+        if not accepted:
+            return
+        Progress.mark_step_done(folderMissionPath, 2)
+        if dialog.action == "synchronize":
+            self.on_pre_process_images(auto_run=True)
+
+    def open_window_classic_selection(self):
+        """
         load set of VIS and NIR images of he mission.
         """
         # ------------------ setting window size to load image sets -------------------------------------
@@ -427,9 +454,10 @@ class Main_Window(QMainWindow):
     #     camera attitudes( yaw, pitch roll).
     # ===================================================================================
 
-    def on_pre_process_images(self):
+    def on_pre_process_images(self, auto_run=False):
         """
-        Phase 3 – VIS / NIR synchronization
+        Phase 3 – VIS / NIR synchronization.
+        auto_run: start the detection and the time alignment right away (from Step 2).
         """
         if not self.ensure_mission_parameters():
             return
@@ -438,6 +466,7 @@ class Main_Window(QMainWindow):
             self.dialog_synchro_aruco = DialogSynchroAruco(
                 self.mission_parameters,
                 parent=self,
+                auto_run=bool(auto_run),
             )
             self.dialog_synchro_aruco.data_signal_to_main.connect(
                 self.handle_data_from_dialog_synchro_aruco

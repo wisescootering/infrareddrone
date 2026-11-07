@@ -87,6 +87,7 @@ from IRD_Interactive_workers import ArucoWorker
 from IRD_Interactive_workers import TimeShiftWorker
 from IRD_Interactive_workers import ImagePairingWorker
 from IRD_Interactive_styles import BUTTON_STYLE
+import flight_timeline as FT
 
 
 class DialogSynchroAruco(QDialog):
@@ -101,8 +102,12 @@ class DialogSynchroAruco(QDialog):
 
     data_signal_to_main = pyqtSignal(bool)
 
-    def __init__(self, mission_parameters: dict, parent=None, multi_thread=True, use_aruco_cache=False):
+    def __init__(self, mission_parameters: dict, parent=None, multi_thread=True, use_aruco_cache=False,
+                 auto_run=False):
         super().__init__(parent)
+        # Opened from the Step 2 flight timeline: detection and time alignment
+        # run by themselves; the user checks the alignment plot, then pairs.
+        self.auto_run = auto_run
 
         self.multi_thread = multi_thread
         self.use_aruco_cache = use_aruco_cache
@@ -167,6 +172,9 @@ class DialogSynchroAruco(QDialog):
 
 
         self._log("Dialog initialized.")
+        if self.auto_run:
+            self._log("Started from the flight timeline: ArUco detection and time alignment run automatically.")
+            QTimer.singleShot(400, self.on_run_aruco)
 
     # ------------------------------------------------------------------
     # Graphical User Interface
@@ -421,6 +429,8 @@ class DialogSynchroAruco(QDialog):
 
         # Enable time alignment now that both detection stages are complete
         self.btn_compute_time_shift.setEnabled(True)
+        if self.auto_run:
+            QTimer.singleShot(0, self.on_compute_time_shift)
 
     def _on_aruco_stage(self, stage: str) -> None:
         """
@@ -669,6 +679,11 @@ class DialogSynchroAruco(QDialog):
         self.progress_bar.setValue(100)
         self.progress_label.setText(final_message)
         self.btn_image_pairing.setEnabled(True)
+        if self.auto_run:
+            # Last check left to the user: the alignment plot, then "Pair"
+            self.btn_image_pairing.setDefault(True)
+            self.btn_image_pairing.setFocus()
+            self.progress_label.setText(final_message + "  Check the alignment plot, then pair the images.")
 
     def _save_and_show_alignment_plots(
             self,
@@ -808,6 +823,13 @@ class DialogSynchroAruco(QDialog):
         )
         self.image_pairing_done = True
         mark_step_done(self.folderMissionPath, 3)
+        # The precise offset places the NIR survey window from the VIS one
+        try:
+            nir_info = FT.update_nir_survey_from_vis(Path(self.folderMissionPath), self.time_shift)
+            if nir_info is not None:
+                self._log("Infrared survey window updated from the visible one.")
+        except Exception as e:
+            self._log(f"Infrared survey window not updated: {e}")
         self.timeshift_plot_label.setText("Image pairing completed.")
         self.progress_label.setText("Image pairing completed.")
         self.progress_bar.setValue(100)
