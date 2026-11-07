@@ -92,6 +92,10 @@ from IRD_Interactive_ODM import (
 )
 
 
+# Shown in the preview area when no result is displayed yet.
+PREVIEW_IDLE_TEXT = "The results (orthophoto, georeferenced images, maps) will be displayed here."
+
+
 class ODMRunSignals(QObject):
     """Signals emitted while ODM runs outside the GUI thread."""
 
@@ -419,7 +423,7 @@ class DialogGeoRef(QDialog):
         main_layout.addWidget(self.progress_bar)
 
         # Image preview zone
-        self.image_preview_label = QLabel("No image selected")
+        self.image_preview_label = QLabel(PREVIEW_IDLE_TEXT)
         self.image_preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_preview_label.setMinimumHeight(250)
         self.image_preview_label.setStyleSheet(
@@ -566,6 +570,10 @@ class DialogGeoRef(QDialog):
             )
             self.georef_results = []
             self.progress_label.setText("Geo Ref – running...")
+            self._set_preview_text(
+                "Waiting for Geo Ref...\n"
+                "Each georeferenced image will be displayed here."
+            )
             self.progress_label.repaint()
             GeoRef.georef_main(
                 image_callback=self.image_signal.emit,
@@ -599,6 +607,7 @@ class DialogGeoRef(QDialog):
             message = f"Georeferencing completed: {count} image(s) georeferenced."
         else:
             message = "Georeferencing finished: no image was georeferenced."
+            self._set_preview_text(PREVIEW_IDLE_TEXT)
         self.progress_label.setText(message)
         self._log(message)
         self.progress_bar.setValue(0)
@@ -636,7 +645,8 @@ class DialogGeoRef(QDialog):
         confirm = QMessageBox.question(
             self,
             "Start ODM mapping",
-            "This will hard-link the selected image quartets from "
+            "This will hard-link (or copy, if the drive does not support hard "
+            "links) the selected image quartets from "
             "ImgIRdrone/imgMultispectral into the prepared ODM dataset, then run "
             "ODM directly in mapping_MULTI using Docker.\n\n"
             "The orthophoto, report, shots GeoJSON, and 2.5D mesh will also be copied "
@@ -687,6 +697,10 @@ class DialogGeoRef(QDialog):
         self.btn_close.setEnabled(False)
         self.progress_bar.setRange(0, 0)
         self.progress_label.setText("ODM – starting")
+        self._set_preview_text(
+            "Waiting for ODM...\n"
+            "The orthophoto will be displayed here when the mapping is finished."
+        )
         self._log("Starting the complete ODM workflow.")
         QThreadPool.globalInstance().start(worker)
 
@@ -708,6 +722,13 @@ class DialogGeoRef(QDialog):
             self._start_ODM_worker(Path(self.folderMissionPath))
         else:
             self.progress_label.setText("ODM cancelled: Docker is unavailable.")
+            self._set_preview_text(PREVIEW_IDLE_TEXT)
+
+    def _set_preview_text(self, text: str) -> None:
+        """Replace the preview image by a message (what is running, what will come)."""
+        self.image_preview_label.setPixmap(QPixmap())
+        self.image_preview_label.setText(text)
+        self.image_preview_label.repaint()
 
     def _on_ODM_stage(self, stage: str) -> None:
         self.progress_label.setText(f"ODM – {stage}")
@@ -877,6 +898,7 @@ class DialogGeoRef(QDialog):
             f"The ODM workflow failed:\n\n{error_message}",
         )
         self.progress_label.setText("ODM failed.")
+        self._set_preview_text("ODM failed: see the log above.")
 
     def closeEvent(self, event) -> None:
         """Refuse to close the window while ODM or the DTM is running."""

@@ -40,6 +40,7 @@ from IRD_interactive_geo import geo2UTM
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
 from irdrone.file_utils import glob_ci
 import config as cf
+from exiftool_reader import read_exiftool_json
 from IRD_Interactive_diskspace import DiskFullError, raise_if_disk_full, write_json_atomic
 
 
@@ -1493,17 +1494,8 @@ def read_exif_and_write_json(dng_path: Path, exiftool_path: str) -> dict:
 
     try:
         # 1) Run ExifTool
-        cmd = [exiftool_path, "-json", str(dng_path)]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr)
-
-        metadata_list = json.loads(result.stdout)
-        if not metadata_list:
-            raise RuntimeError("ExifTool returned empty output")
-
-        full_metadata = metadata_list[0]
+        # FileName / Directory come from dng_path (accents in the folder name).
+        full_metadata = read_exiftool_json(exiftool_path, dng_path)
 
         # 2) Keep only essential keys
         essential_keys = [
@@ -1982,6 +1974,11 @@ def list_tempo_time_line(
 
         full_dict = read_exif_json(exif_path)
         reduced_dict = extract_reduced_exif(full_dict)
+        # Paths from the disk, not the EXIF tags (older .exif files may hold
+        # "D?mo" for a "Démo" folder, written by ExifTool on Windows).
+        reduced_dict["FileName"] = img.name
+        reduced_dict["Directory"] = str(img.parent)
+        reduced_dict["ExifPath"] = str(exif_path)
         results.append(reduced_dict)
 
     return results

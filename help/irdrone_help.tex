@@ -990,7 +990,7 @@ Après le choix des critères, un message de confirmation résume la sélection 
 	\item le logiciel vérifie que Docker Desktop est disponible. Sinon un message invite à le démarrer puis à choisir \texttt{Retry} ;
 	\item la liste des images retenues est enregistrée dans \texttt{mapping\_MULTI\textbackslash img\_best\_mappping.json} ;
 	\item la résolution de l'orthophoto est estimée automatiquement : c'est la taille au sol d'un pixel (GSD, en cm) obtenue à partir de l'altitude de vol au-dessus du sol et de la focale de la caméra, médiane sur les images retenues, arrondie au dixième de cm supérieur ;
-	\item les images TIFF retenues sont rendues accessibles à ODM dans \texttt{mapping\_MULTI\textbackslash images} par des \emph{liens physiques} (hard links) : aucune image n'est copiée et l'espace disque n'est donc pas doublé ;
+	\item les images TIFF retenues sont rendues accessibles à ODM dans \texttt{mapping\_MULTI\textbackslash images} par des \emph{liens physiques} (hard links) : aucune image n'est copiée et l'espace disque n'est donc pas doublé. Si le disque ne gère pas les liens physiques (disque externe en exFAT ou FAT32, certains partages réseau), les images sont copiées, ce qui utilise davantage d'espace disque ; le journal l'indique ;
 	\item ODM est lancé. Le journal de la fenêtre affiche les messages principaux ; la totalité de la sortie est enregistrée dans un fichier \texttt{mapping\_MULTI\textbackslash odm\_run\_<date>.log} ;
 	\item à la fin, l'orthophoto est contrôlée (4 bandes, géoréférencée), les résultats utiles sont archivés dans \texttt{mapping\_result} et les dossiers de travail d'ODM, très volumineux, sont supprimés.
 \end{enumerate}

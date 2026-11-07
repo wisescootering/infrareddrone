@@ -98,6 +98,8 @@ from irdrone.file_utils import find_ci, glob_ci
 
 # External tool paths: one lookup for the whole project, see config.py.
 from config import require_tool
+from exiftool_reader import read_exiftool_json
+import image_io
 
 # ============================================================
 #  CLASS
@@ -359,7 +361,7 @@ def georeference_tiff_MNT(tif_path,
         img_raw = img_override
     else:
         logger.debug(f"Loading image {tif_path} in raw_DJI mode")
-        img_raw = cv2.imread(str(tif_path), cv2.IMREAD_UNCHANGED)
+        img_raw = image_io.imread(str(tif_path), cv2.IMREAD_UNCHANGED)
         if img_raw is None:
             raise FileNotFoundError(tif_path)
 
@@ -1073,17 +1075,8 @@ def read_exif_and_write_json(
     """
     try:
         # 1) Run ExifTool
-        cmd = [require_tool("EXIFTOOLPATH"), "-json", str(image_path)]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr)
-
-        metadata_list = json.loads(result.stdout)
-        if not metadata_list:
-            raise RuntimeError("ExifTool returned empty output")
-
-        full_metadata = metadata_list[0]
+        # FileName / Directory come from image_path (accents in the folder name).
+        full_metadata = read_exiftool_json(require_tool("EXIFTOOLPATH"), image_path)
 
         # 2) Keep only essential keys
         essential_keys = [
@@ -3241,7 +3234,7 @@ def tag_image(img_raw,
     cv2.circle(img, (Nx_raw // 2, Ny_raw // 2), 8, (CMAX, CMAX, 0), -1)
 
     # - 4) Save TIFF with tags
-    cv2.imwrite(str(tif_path_taged), img)
+    image_io.imwrite(str(tif_path_taged), img)
 
     if verbose:
         # print(f"Image avec Tags sauvegardée :  {tif_path_taged}")
@@ -3599,7 +3592,7 @@ def process_image(folder_input, img_name, args, zhang_dic,  tol_MC=0.01, img_ove
             else:
                 raise ValueError(f"The suffix {args.suffix} is not supported.")
 
-            img = cv2.imread(str(tif_path), cv2.IMREAD_UNCHANGED)
+            img = image_io.imread(str(tif_path), cv2.IMREAD_UNCHANGED)
             if img is None:
                 raise FileNotFoundError(tif_path)
 
@@ -3689,10 +3682,10 @@ def process_multispectral(folder_input, base, band_paths, args, zhang_dic, tol_M
         raise ValueError(f"{base}: invalid spectral bands: {band_paths.keys()}")
 
     # --- Read the four separate spectral bands ---
-    img_r = cv2.imread(str(band_paths[1]), cv2.IMREAD_UNCHANGED)
-    img_g = cv2.imread(str(band_paths[2]), cv2.IMREAD_UNCHANGED)
-    img_b = cv2.imread(str(band_paths[3]), cv2.IMREAD_UNCHANGED)
-    img_nir = cv2.imread(str(band_paths[4]), cv2.IMREAD_UNCHANGED)
+    img_r = image_io.imread(str(band_paths[1]), cv2.IMREAD_UNCHANGED)
+    img_g = image_io.imread(str(band_paths[2]), cv2.IMREAD_UNCHANGED)
+    img_b = image_io.imread(str(band_paths[3]), cv2.IMREAD_UNCHANGED)
+    img_nir = image_io.imread(str(band_paths[4]), cv2.IMREAD_UNCHANGED)
 
     # --- Validate band dimensions ---
     if not (img_r.shape == img_g.shape == img_b.shape == img_nir.shape):

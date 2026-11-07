@@ -5,12 +5,13 @@ from pathlib import Path
 import numpy as np
 import re
 import json
-import subprocess
 import time
 from utils.utils_IRdrone_Class import ShootPoint
 import automatic_registration
 from utils.utils_odm import create_odm_folder
 from config import CROP, EXIFTOOLPATH, CNIRCVIS_0
+from exiftool_reader import read_exiftool_json
+from alignment_workers import worker_count_report
 
 
 GEOREF_METADATA_KEYS = (
@@ -179,24 +180,7 @@ def compute_theoretical_ir2vi_angles(
 
 def write_multispectral_exif(image_path: Path, vis_data: dict) -> Path:
     """Write the Phase 5 companion metadata beside a multispectral band TIFF."""
-    result = subprocess.run(
-        [str(EXIFTOOLPATH), "-json", str(image_path)],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"ExifTool could not read metadata from {image_path}: "
-            f"{result.stderr.strip()}"
-        )
-
-    metadata_list = json.loads(result.stdout)
-    if not metadata_list or not isinstance(metadata_list[0], dict):
-        raise ValueError(f"ExifTool returned no image metadata for {image_path}")
-
-    metadata = metadata_list[0]
-    metadata["FileName"] = image_path.name
-    metadata["Directory"] = str(image_path.parent)
+    metadata = read_exiftool_json(EXIFTOOLPATH, image_path)
     for key in GEOREF_METADATA_KEYS:
         if key in vis_data:
             metadata[key] = vis_data[key]
@@ -715,6 +699,8 @@ if __name__ == "__main__":
     worker_count_setting = (
         args.workers or automatic_registration.available_alignment_workers()
     )
+    for line in worker_count_report(worker_count_setting):
+        print(line, flush=True)
 
     progress_started_at = time.monotonic()
 

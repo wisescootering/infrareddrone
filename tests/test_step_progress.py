@@ -172,6 +172,12 @@ class _MissionHelpers(unittest.TestCase):
 class OpenMissionButtonTest(_MissionHelpers):
     """'Open mission...' at the bottom: switch to an existing mission directly."""
 
+    def test_button_says_open_then_load_another(self):
+        window = self.main.Main_Window()
+        self.assertEqual(window.btn_open_mission.text(), "Open mission...")
+        self.open(window, self.make_mission("FLY-A"))
+        self.assertEqual(window.btn_open_mission.text(), "Load another mission...")
+
     def test_open_shows_the_mission_and_its_done_steps(self):
         window = self.main.Main_Window()
         mission = self.make_mission("FLY-20220125-1159-Blassac", done=(1, 2, 3))

@@ -28,3 +28,36 @@ def available_alignment_workers(
     available_gb = psutil.virtual_memory().available / 2**30
     memory_limit = int(available_gb // memory_per_worker_gb)
     return clamp_workers(min(cores, memory_limit))
+
+
+def worker_count_report(
+    worker_count: int,
+    memory_per_worker_gb: float = ALIGNMENT_WORKER_MEMORY_GB,
+) -> list:
+    """Lines for the Step 4 log: workers used, what the computer allows, advice.
+
+    Each worker needs about ``memory_per_worker_gb``: more workers than the
+    available RAM allows make the computer swap, and a run can get slower.
+    """
+    cores = psutil.cpu_count(logical=False) or 1
+    available_gb = psutil.virtual_memory().available / 2**30
+    fitting = max(1, int(available_gb // memory_per_worker_gb))
+    best = clamp_workers(min(cores, fitting))
+    lines = [
+        f"Alignment workers: {worker_count} "
+        f"({cores} physical cores, {available_gb:.1f} GB RAM available, "
+        f"about {memory_per_worker_gb:g} GB per worker: {best} recommended)."
+    ]
+    if worker_count > fitting:
+        lines.append(
+            f"WARNING: {worker_count} workers need about "
+            f"{worker_count * memory_per_worker_gb:g} GB of RAM: the computer may "
+            "swap and the run be slower. Lower the number of workers in the "
+            "Step 4 settings (gear button) or close other programs."
+        )
+    elif worker_count < best:
+        lines.append(
+            f"Up to {best} workers would fit on this computer: "
+            "the number of workers can be raised in the Step 4 settings (gear button)."
+        )
+    return lines

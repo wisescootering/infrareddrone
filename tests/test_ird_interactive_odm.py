@@ -1,5 +1,7 @@
+import errno
 import json
 import os
+import shutil
 import sys
 import tempfile
 import types
@@ -14,6 +16,7 @@ from rasterio.enums import Resampling
 from affine import Affine
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "irdrone_wizard"))
+from IRD_Interactive_diskspace import DiskFullError  # noqa: E402
 from IRD_Interactive_ODM import (
     _restore_output_ownership,
     resolve_docker_context,
@@ -456,28 +459,78 @@ class BestMappingTests(unittest.TestCase):
             )
             self.assertEqual(len(list(images_folder.iterdir())), 15)
 
-    def test_rejects_copied_tiffs_instead_of_hard_links(self):
+    def _copy_selected_files(self, manifest, images_folder):
+        for quartet in manifest["image_quartets"]:
+            for source in quartet["files"].values():
+                source_path = Path(source)
+                for path in (source_path, source_path.with_suffix(".exif")):
+                    if path.is_file():
+                        shutil.copy2(path, images_folder / path.name)
+
+    def test_reuses_existing_identical_copies(self):
         with tempfile.TemporaryDirectory() as temporary:
             mission = Path(temporary)
             self._create_mission(mission)
             manifest = build_best_mapping(mission)
             images_folder = mission / "mapping_MULTI" / "images"
             images_folder.mkdir(parents=True)
+            self._copy_selected_files(manifest, images_folder)
 
-            for quartet in manifest["image_quartets"]:
-                for source in quartet["files"].values():
-                    source_path = Path(source)
-                    (images_folder / source_path.name).write_bytes(
-                        source_path.read_bytes()
-                    )
-                    sidecar = source_path.with_suffix(".exif")
-                    if sidecar.is_file():
-                        (images_folder / sidecar.name).write_bytes(
-                            sidecar.read_bytes()
-                        )
+            self.assertEqual(prepare_odm_input(mission, manifest), images_folder)
 
-            with self.assertRaisesRegex(ODMMappingError, "copies rather than hard links"):
+    def test_rejects_existing_files_that_differ_from_the_sources(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            mission = Path(temporary)
+            self._create_mission(mission)
+            manifest = build_best_mapping(mission)
+            images_folder = mission / "mapping_MULTI" / "images"
+            images_folder.mkdir(parents=True)
+            self._copy_selected_files(manifest, images_folder)
+            stale = next(images_folder.glob("*.tif"))
+            stale.write_bytes(b"older run")
+
+            with self.assertRaisesRegex(ODMMappingError, "differ from the selected"):
                 prepare_odm_input(mission, manifest)
+
+    def test_copies_when_the_storage_refuses_hard_links(self):
+        # exFAT / FAT32 external drives: os.link raises "operation not permitted".
+        with tempfile.TemporaryDirectory() as temporary:
+            mission = Path(temporary)
+            self._create_mission(mission)
+            manifest = build_best_mapping(mission)
+            messages = []
+            refused = OSError(errno.EPERM, "Operation not permitted")
+            with patch("IRD_Interactive_ODM.os.link", side_effect=refused) as link:
+                images_folder = prepare_odm_input(mission, manifest, log=messages.append)
+
+            link.assert_called_once()  # not retried for every file
+            files = list(images_folder.iterdir())
+            self.assertEqual(len(files), 15)
+            for path in files:
+                self.assertEqual(path.stat().st_nlink, 1)
+            self.assertEqual(len(messages), 1)
+            self.assertIn("copied", messages[0])
+
+    def test_disk_full_while_copying_leaves_no_partial_input(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            mission = Path(temporary)
+            self._create_mission(mission)
+            manifest = build_best_mapping(mission)
+            calls = []
+
+            def copy_then_disk_full(source, target):
+                calls.append(target)
+                if len(calls) == 3:
+                    Path(target).write_bytes(b"half")
+                    raise OSError(errno.ENOSPC, "No space left on device")
+                return shutil.copyfile(source, target)
+
+            with patch("IRD_Interactive_ODM.os.link", side_effect=OSError(errno.EPERM, "no")), \
+                    patch("IRD_Interactive_ODM.shutil.copy2", side_effect=copy_then_disk_full):
+                with self.assertRaises(DiskFullError):
+                    prepare_odm_input(mission, manifest)
+
+            self.assertFalse((mission / "mapping_MULTI" / "images").exists())
 
     def test_refuses_to_overwrite_existing_odm_outputs(self):
         with tempfile.TemporaryDirectory() as temporary:

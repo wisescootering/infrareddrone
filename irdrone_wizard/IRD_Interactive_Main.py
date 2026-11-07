@@ -31,11 +31,15 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QDialog,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QLoggingCategory
 from PyQt6.QtGui import QPixmap, QColor, QIcon, QPainter, QFont
 from PyQt6.QtWidgets import QSplashScreen
 
 print("IRDrone is starting, waiting ...", flush=True)
+
+# Bottom button: no mission loaded yet / a mission is loaded.
+OPEN_MISSION_TEXT = "Open mission..."
+LOAD_ANOTHER_MISSION_TEXT = "Load another mission..."
 
 
 def _make_splash() -> QSplashScreen:
@@ -51,6 +55,12 @@ def _make_splash() -> QSplashScreen:
     painter.end()
     return QSplashScreen(pix, Qt.WindowType.WindowStaysOnTopHint)
 
+
+# Windows: Qt 6 prints "DirectWrite: CreateFontFaceFromHDC() failed ... 8514oem"
+# when it meets the old bitmap fonts of the system while looking for a font.
+# Harmless (the text is drawn with another font): hide these font warnings.
+# QT_LOGGING_RULES=qt.qpa.fonts.warning=true shows them again.
+QLoggingCategory.setFilterRules("qt.qpa.fonts.warning=false")
 
 # The QApplication must exist before the splash screen can be displayed
 _app = QApplication.instance() or QApplication(sys.argv)
@@ -240,7 +250,8 @@ class Main_Window(QMainWindow):
         # Current mission (defined in Step 1, or chosen when opening another step)
         self.mission_label = MissionLabel(self)
         bottom_layout.addWidget(self.mission_label)
-        self.btn_open_mission = QPushButton("Open mission...", self)
+        # "Open mission..." until a mission is loaded, then "Load another mission...".
+        self.btn_open_mission = QPushButton(OPEN_MISSION_TEXT, self)
         self.btn_open_mission.setStyleSheet(BUTTON_STYLE)
         self.btn_open_mission.setToolTip("Open an existing mission folder (FLY-YYYYMMDD-hhmm-location)")
         self.btn_open_mission.clicked.connect(self.on_open_mission)
@@ -268,6 +279,8 @@ class Main_Window(QMainWindow):
     def _show_current_mission(self):
         """Refresh the mission shown at the bottom of the window and the step buttons."""
         self.mission_label.set_mission(self.mission_parameters, self.folderMissionPath)
+        loaded = Progress.mission_folder(self.mission_parameters, self.folderMissionPath) is not None
+        self.btn_open_mission.setText(LOAD_ANOTHER_MISSION_TEXT if loaded else OPEN_MISSION_TEXT)
         self._show_done_steps()
 
     def _show_done_steps(self):
@@ -608,7 +621,7 @@ class Main_Window(QMainWindow):
         return None
 
     def on_open_mission(self):
-        """'Open mission...' button: switch to another existing mission."""
+        """'Open mission...' / 'Load another mission...' button: switch to an existing mission."""
         busy = self._open_step_window()
         if busy:
             QMessageBox.warning(self, "IRDrone", f"Close the {busy} window before opening another mission.")

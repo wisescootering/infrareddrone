@@ -19,6 +19,7 @@ sys.path.append(osp.join(osp.dirname(__file__), ".."))
 from irdrone.utils import Style, conversionGPSdms2dd, get_polar_shading_map, contrast_stretching
 from irdrone.file_utils import has_suffix, with_suffix_ci
 import config as cf
+import image_io
 import subprocess
 import json
 
@@ -46,7 +47,7 @@ def load_tif(in_file):
     if cv_logging:
         cv_logging.setLogLevel(cv_logging.LOG_LEVEL_ERROR)
     try:
-        image = cv2.imread(in_file, flags=flags)
+        image = image_io.imread(in_file, flags=flags)
     finally:
         if cv_logging:
             cv_logging.setLogLevel(previous_level)
@@ -254,10 +255,10 @@ class Image:
             #     exif_bytes = piexif.dump(exif_dict)
             #     PIL.Image.fromarray(self._data).save(path, "jpeg", exif=exif_bytes)
             # else:
-            #     cv2.imwrite(path, cv2.cvtColor(self._data, cv2.COLOR_RGB2BGR))
-            cv2.imwrite(path, cv2.cvtColor(self._data, cv2.COLOR_RGB2BGR))
+            #     image_io.imwrite(path, cv2.cvtColor(self._data, cv2.COLOR_RGB2BGR))
+            image_io.imwrite(path, cv2.cvtColor(self._data, cv2.COLOR_RGB2BGR))
         elif path.lower().endswith("tif"):
-            cv2.imwrite(path, cv2.cvtColor(
+            image_io.imwrite(path, cv2.cvtColor(
                 ((2**16-1)*(self._data.clip(0, 1))).astype(np.uint16),
                 cv2.COLOR_RGB2BGR)
             )
@@ -276,7 +277,7 @@ class Image:
         for ch in range(self._data.shape[2]):
             file_name =  str(path.stem) + f"_{ch+1}"
             pth_channel = (path.parent/ file_name).with_suffix(".tif")
-            cv2.imwrite(str(pth_channel), ((2**16-1)*(self._data[:, :, ch].clip(0, 1))).astype(np.uint16))
+            image_io.imwrite(str(pth_channel), ((2**16-1)*(self._data[:, :, ch].clip(0, 1))).astype(np.uint16))
             copy_metadata(self.path, pth_channel)
             xmp_band_metadata(pth_channel, band_index=bands[ch])
 
@@ -458,7 +459,7 @@ class Image:
                 self._data = (contrast_stretching(linear_data.clip(0., 1.))[0]*255).astype(np.uint8)
                 # self._data = ((linear_data**(gamma)).clip(0., 1.)*255).astype(np.uint8)
             else:
-                self._data = cv2.cvtColor(cv2.imread(self.path), cv2.COLOR_BGR2RGB)/(2**8-1)  #LOAD AS A RGB CLASSIC ARRAY
+                self._data = cv2.cvtColor(image_io.imread(self.path), cv2.COLOR_BGR2RGB)/(2**8-1)  #LOAD AS A RGB CLASSIC ARRAY
                 self._lineardata = self._data  # simply fake linear data...
         else:
             pass
@@ -551,9 +552,9 @@ def loadimage(imgpth, numpyMode=True):
     """
     if not isinstance(imgpth, list): imgpth = [imgpth,]
     if numpyMode:
-        return [cv2.cvtColor(cv2.imread(img), cv2.COLOR_BGR2RGB) for img in imgpth]
+        return [cv2.cvtColor(image_io.imread(img), cv2.COLOR_BGR2RGB) for img in imgpth]
     else:
-        return [cv2.imread(img) for img in imgpth]
+        return [image_io.imread(img) for img in imgpth]
 
 
 def show(img, title=None, compare=True, block=True, suptitle=None, figsize=None, save=None):

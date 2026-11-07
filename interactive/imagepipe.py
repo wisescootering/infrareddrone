@@ -2,6 +2,7 @@
 Multi image processing pipe including tuning GUI
 """
 import cv2
+import image_io
 import numpy as np
 import os.path as osp
 import copy
@@ -298,7 +299,7 @@ class ImagePipe:
                 plt.imsave(name, result_full, vmin=self.minColorBar, vmax=self.maxColorBar, cmap=self.colorBar)
             else:
                 try:
-                    cv2.imwrite(name, result_full if self.backendcv else cv2.cvtColor(result_full, cv2.COLOR_RGB2BGR))
+                    image_io.imwrite(name, result_full if self.backendcv else cv2.cvtColor(result_full, cv2.COLOR_RGB2BGR))
                 except:
                     plt.imsave(name, result_full, vmin=self.minColorBar, vmax=self.maxColorBar, cmap=self.colorBar)
         else:
@@ -306,7 +307,7 @@ class ImagePipe:
             while (idx < 100):
                 out_jpg = "_saved_image_%04d.jpg" % idx
                 if not osp.isfile(out_jpg):
-                    cv2.imwrite(out_jpg, result_full if self.backendcv else cv2.cvtColor(result_full, cv2.COLOR_RGB2BGR))
+                    image_io.imwrite(out_jpg, result_full if self.backendcv else cv2.cvtColor(result_full, cv2.COLOR_RGB2BGR))
                     print("saved image %s" % out_jpg)
                     break
                 else:

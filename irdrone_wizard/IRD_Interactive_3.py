@@ -185,29 +185,27 @@ class DialogSynchroAruco(QDialog):
         self.log_text.setMaximumHeight(120)
         main_layout.addWidget(self.log_text)
 
-        # Buttons: ArUco detection / Time alignment / Image pairing
+        # Buttons: ArUco detection / Time alignment / Image pairing.
+        # No fixed pixel widths: each button takes the width of its text, so
+        # they never overlap with a larger font (Windows display scaling).
         btn_layout = QHBoxLayout()
 
         # Button 1: ArUco detection
         self.btn_run_aruco = QPushButton("Run ArUco detection (VIS + NIR)")
-        self.btn_run_aruco.setFixedWidth(280)
         btn_layout.addWidget(self.btn_run_aruco)
 
         # Button 2: Time alignment
         self.btn_compute_time_shift = QPushButton("Compute time alignment")
-        self.btn_compute_time_shift.setFixedWidth(230)
         self.btn_compute_time_shift.setEnabled(False)
         btn_layout.addWidget(self.btn_compute_time_shift)
 
         # Button 2b: manual adjustment of the time alignment
         self.btn_adjust_time_shift = QPushButton("Adjust alignment...")
-        self.btn_adjust_time_shift.setFixedWidth(180)
         self.btn_adjust_time_shift.setEnabled(False)
         btn_layout.addWidget(self.btn_adjust_time_shift)
 
         # Button 3: Image pairing
         self.btn_image_pairing = QPushButton("Pair VIS / NIR images")
-        self.btn_image_pairing.setFixedWidth(210)
         self.btn_image_pairing.setEnabled(False)
         btn_layout.addWidget(self.btn_image_pairing)
 
