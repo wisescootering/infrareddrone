@@ -839,7 +839,7 @@ class DialogImageProcessing(QDialog):
             (self.flag_button, "btn:step4_flag_misaligned", "Select in the explorer the misaligned VIR images and flag them as failed."),
             (self.redo_button, "btn:step4_redo", "Manually realign the shoot points flagged as failed, then validate the result."),
             (self.close_button, "btn:step4_close", "Close this window."),
-            (self.review_button, "btn:step4_flag_misaligned", self.review_button.toolTip()),
+            (self.review_button, "btn:step4_review", self.review_button.toolTip()),
             (self.settings_button, "btn:step4_options", "Processing settings (worker processes / safe mode, log detail)."),
         ):
             Help.attach_help(widget, label, tip, parent=self)

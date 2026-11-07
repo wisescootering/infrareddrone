@@ -834,7 +834,7 @@ class ReviewDialog(QDialog):
 
         try:
             import IRD_Interactive_help as Help
-            for widget, label in ((self.btn_redo, "btn:step4_redo"), (self.btn_flag, "btn:step4_flag_misaligned")):
+            for widget, label in ((self.btn_redo, "btn:step4_redo"), (self.btn_flag, "btn:step4_review")):
                 Help.attach_help(widget, label, widget.toolTip(), parent=self)
         except Exception as e:  # help is a convenience
             print(f"Help not attached: {e}")
