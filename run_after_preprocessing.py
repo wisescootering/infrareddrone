@@ -11,6 +11,7 @@ import automatic_registration
 from utils.utils_odm import create_odm_folder
 from config import CROP, EXIFTOOLPATH, CNIRCVIS_0
 from exiftool_reader import read_exiftool_json
+from alignment_workers import worker_count_report
 
 
 GEOREF_METADATA_KEYS = (
@@ -698,6 +699,8 @@ if __name__ == "__main__":
     worker_count_setting = (
         args.workers or automatic_registration.available_alignment_workers()
     )
+    for line in worker_count_report(worker_count_setting):
+        print(line, flush=True)
 
     progress_started_at = time.monotonic()
 

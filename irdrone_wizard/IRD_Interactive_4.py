@@ -134,7 +134,9 @@ class Step4SettingsDialog(QDialog):
             "Each worker aligns one shoot point and needs about "
             f"{ALIGNMENT_WORKER_MEMORY_GB:g} GB of memory. Auto uses the physical "
             "cores, limited by the RAM available when the run starts. "
-            "Use 1 (safe mode) if the computer freezes or the run is killed."
+            "Use 1 (safe mode) if the computer freezes or the run is killed. "
+            "The choice is remembered for the next sessions; each run writes in "
+            "the log the number of workers this computer can take."
         )
         explanation.setWordWrap(True)
         layout.addWidget(explanation)

@@ -47,6 +47,25 @@ class Step4MultiprocessingTests(unittest.TestCase):
         with cpu_patch, memory_patch:
             self.assertEqual(automatic_registration.available_alignment_workers(), 1)
 
+    def _report(self, workers, cores, available_gb):
+        memory = SimpleNamespace(available=available_gb * 2**30)
+        with patch.object(alignment_workers.psutil, "cpu_count", return_value=cores), \
+                patch.object(alignment_workers.psutil, "virtual_memory", return_value=memory):
+            return alignment_workers.worker_count_report(workers)
+
+    def test_worker_report_warns_when_the_ram_is_too_small(self):
+        lines = self._report(workers=4, cores=8, available_gb=13)
+        self.assertIn("Alignment workers: 4", lines[0])
+        self.assertIn("2 recommended", lines[0])
+        self.assertIn("WARNING", lines[1])
+
+    def test_worker_report_tells_when_more_workers_would_fit(self):
+        lines = self._report(workers=3, cores=8, available_gb=40)
+        self.assertIn("Up to 6 workers", lines[1])
+
+    def test_worker_report_is_one_line_at_the_recommended_count(self):
+        self.assertEqual(len(self._report(workers=4, cores=4, available_gb=40)), 1)
+
     def test_single_worker_uses_sequential_pipeline(self):
         with patch.object(
             automatic_registration, "_process_raw_pairs_serial", return_value=["motion"]
