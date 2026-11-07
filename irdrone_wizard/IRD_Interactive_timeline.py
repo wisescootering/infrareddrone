@@ -875,6 +875,14 @@ class FlightTimelineDialog(QDialog):
         foot.addWidget(self.btn_confirm)
         root.addLayout(foot)
 
+        try:
+            import IRD_Interactive_help as Help
+            for widget, label in ((self.btn_confirm, "btn:step2_confirm"), (self.btn_save, "btn:step2_confirm"),
+                                  (self.btn_classic, "btn:step2_classic")):
+                Help.attach_help(widget, label, widget.toolTip(), parent=self)
+        except Exception as e:  # help is a convenience
+            print(f"Help not attached: {e}")
+
         for seq, d in (("Left", -1), ("Right", +1)):
             QShortcut(QKeySequence(seq), self, activated=lambda d=d: self._nudge_selected(d))
 
