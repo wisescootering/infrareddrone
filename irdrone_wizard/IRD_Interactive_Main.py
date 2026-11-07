@@ -31,7 +31,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QDialog,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QLoggingCategory
 from PyQt6.QtGui import QPixmap, QColor, QIcon, QPainter, QFont
 from PyQt6.QtWidgets import QSplashScreen
 
@@ -51,6 +51,12 @@ def _make_splash() -> QSplashScreen:
     painter.end()
     return QSplashScreen(pix, Qt.WindowType.WindowStaysOnTopHint)
 
+
+# Windows: Qt 6 prints "DirectWrite: CreateFontFaceFromHDC() failed ... 8514oem"
+# when it meets the old bitmap fonts of the system while looking for a font.
+# Harmless (the text is drawn with another font): hide these font warnings.
+# QT_LOGGING_RULES=qt.qpa.fonts.warning=true shows them again.
+QLoggingCategory.setFilterRules("qt.qpa.fonts.warning=false")
 
 # The QApplication must exist before the splash screen can be displayed
 _app = QApplication.instance() or QApplication(sys.argv)
