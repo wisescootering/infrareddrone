@@ -630,10 +630,10 @@ class ReviewStrip(QWidget):
     def mouseMoveEvent(self, e):
         pos = e.position()
         if self._drag is not None:
-            x0, a, b = self._drag
+            x0, a, b = self._drag[:3]
             di = (pos.x() - x0) / self.plot_w() * (b - a)
             if abs(pos.x() - x0) > 3:
-                self._drag = (x0, a, b, True) if len(self._drag) == 3 else self._drag
+                self._drag = (x0, a, b, True)
                 self.i0, self.i1 = a - di, b - di
                 self._clamp()
                 self.setCursor(Qt.CursorShape.ClosedHandCursor)
@@ -692,6 +692,7 @@ class ReviewDialog(QDialog):
         self.mission = Path(mission)
         self.review = R.load_review(self.mission)   # FileNotFoundError: Step 4 not run
         self.thumbs: Dict[int, QPixmap] = {}
+        self._scans: List[ScanThread] = []
         self._cache: "OrderedDict[int, dict]" = OrderedDict()
         self._loading = set()
         self.index = 0
@@ -839,6 +840,9 @@ class ReviewDialog(QDialog):
         except Exception as e:  # help is a convenience
             print(f"Help not attached: {e}")
 
+        # the keys go to the window (Space must not also press the focused button)
+        for b in self.findChildren(QPushButton):
+            b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         for seq, slot in (("Left", lambda: self.step(-1)), ("Right", lambda: self.step(+1)),
                           ("N", self.next_to_review), ("F", self.toggle_flag), ("Space", self.looks_good),
                           ("1", lambda: self.set_mode("swipe")), ("2", lambda: self.set_mode("blink")),
@@ -911,7 +915,10 @@ class ReviewDialog(QDialog):
 
     # ---- background scan
     def _start_scan(self, numbers=None):
+        """Scan in the background (a new scan after a redo may run beside the first one)."""
         self.scan = ScanThread(self.review, numbers)
+        self._scans.append(self.scan)
+        self.scan.finished.connect(lambda s=self.scan: self._scans.remove(s) if s in self._scans else None)
         self.scan.thumb.connect(self._on_thumb)
         self.scan.measured.connect(self._on_measured)
         self.scan.progress.connect(self._on_scan_progress)
@@ -939,6 +946,8 @@ class ReviewDialog(QDialog):
         self.subtitle.setText(f"Measuring the residual misalignment… {k}/{n}")
 
     def _on_scan_finished(self):
+        if any(s.isRunning() for s in self._scans if s is not self.sender()):
+            return
         self.progress.hide()
         if not self._user_moved and self.review.points:
             self.select(self._first_to_review(), by_user=False)
@@ -1248,9 +1257,10 @@ class ReviewDialog(QDialog):
         if self.redo_runner_busy():
             QMessageBox.information(self, "Review", "Finish the realignment in progress before closing.")
             return
-        if self.scan.isRunning():
-            self.scan.stop()
-            self.scan.wait(3000)
+        for scan in list(self._scans):
+            scan.stop()
+        for scan in list(self._scans):
+            scan.wait(5000)
         try:
             R.save_state(self.review)
         except OSError:

@@ -204,3 +204,28 @@ class ReviewDialogTests(MissionTests):
         self.assertTrue(point.checked)
         d.scan.wait(10000)
         d.done(0)
+
+
+class ReviewInteractionTests(ReviewDialogTests):
+    def test_dragging_the_time_line_pans_without_selecting(self):
+        from PyQt6.QtCore import QPoint, Qt
+        from PyQt6.QtTest import QTest
+        d = self.dialog()
+        d.resize(1200, 800)
+        strip = d.strip
+        strip.resize(1100, strip.height())
+        strip.i0, strip.i1 = -0.5, 1.5            # zoomed in on 2 points
+        y = strip.height() // 2
+        QTest.mousePress(strip, Qt.MouseButton.LeftButton, pos=QPoint(600, y))
+        for x in (560, 500, 400):
+            QTest.mouseMove(strip, QPoint(x, y))
+        QTest.mouseRelease(strip, Qt.MouseButton.LeftButton, pos=QPoint(400, y))
+        self.assertGreater(strip.i0, -0.5)
+        d.done(0)
+
+    def test_a_rescan_beside_a_running_scan(self):
+        d = self.dialog()
+        d._start_scan({140})
+        d._start_scan({137})
+        d.done(0)                                     # stops and waits for both
+        self.assertFalse(any(s.isRunning() for s in d._scans))

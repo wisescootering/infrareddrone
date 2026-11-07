@@ -32,6 +32,7 @@ import mission_setup as MS  # noqa: E402
 import IRD_Interactive_look as Look  # noqa: E402
 
 SETTINGS = ("IRdrone", "IRD_Interactive")
+_RUNNING = set()     # location threads still running when their window is closed
 FORM_KEY = "new_mission/"
 PAGES = ["Images", "Mission", "Copy"]
 COPY_STAGES = ["Copy visible", "Read visible EXIF", "Convert infrared", "Read infrared EXIF", "Ground altitude"]
@@ -820,8 +821,12 @@ class NewMissionDialog(QDialog):
         if self.copy is not None and self.copy.running():
             QMessageBox.information(self, "New mission", "Wait for the copy to finish before closing.")
             return
-        if self.locate_thread is not None and self.locate_thread.isRunning():
-            self.locate_thread.wait(8000)
+        thread = self.locate_thread
+        if thread is not None and thread.isRunning():
+            # no wait (network): the thread is kept alive until it ends
+            thread.located.disconnect()
+            _RUNNING.add(thread)
+            thread.finished.connect(lambda: _RUNNING.discard(thread))
         super().done(r)
 
 
