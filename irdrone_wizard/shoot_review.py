@@ -350,14 +350,45 @@ def nir_from_vir(vir_bgr):
 
 def measure_point(point: ReviewPoint) -> None:
     """Measure the residual misalignment of a point (sets shift / shift_worst)."""
+    import cv2
     from image_io import imread
     if point.vis_image is None or point.vir_image is None:
         return
-    vis = imread(point.vis_image)
-    vir = imread(point.vir_image)
+    # Full decoding: the JPEG reduced decoding (IMREAD_REDUCED_*) shifts the
+    # colour planes slightly and would read ~3 px on well aligned images.
+    vis = imread(point.vis_image, cv2.IMREAD_COLOR)
+    vir = imread(point.vir_image, cv2.IMREAD_COLOR)
     if vis is None or vir is None:
         return
     point.shift, point.shift_worst = residual_shift(vis, nir_from_vir(vir))
+
+
+def thumbnail(path: Path, width: int = 200):
+    """Small BGR copy of a JPEG (decoded at 1/8 size: a few milliseconds)."""
+    import cv2
+    from image_io import imread
+    img = imread(path, cv2.IMREAD_REDUCED_COLOR_8)
+    if img is None:
+        return None
+    if img.shape[1] > width:
+        img = cv2.resize(img, (width, round(img.shape[0] * width / img.shape[1])), interpolation=cv2.INTER_AREA)
+    return img
+
+
+def anaglyph(vis_bgr, vir_bgr):
+    """Visible in cyan, infrared in red: grey where both overlap, coloured
+    fringes where they do not."""
+    import cv2
+    vis = cv2.cvtColor(vis_bgr, cv2.COLOR_BGR2GRAY)
+    nir = nir_from_vir(vir_bgr)
+    if nir.shape != vis.shape:
+        nir = cv2.resize(nir, (vis.shape[1], vis.shape[0]), interpolation=cv2.INTER_AREA)
+
+    def stretch(c):
+        lo, hi = np.percentile(c[::4, ::4], (1, 99))
+        return np.clip((c.astype(np.float32) - lo) * (255.0 / max(hi - lo, 1.0)), 0, 255).astype(np.uint8)
+    v, n = stretch(vis), stretch(nir)
+    return np.dstack([v, v, n])   # B, G = visible ; R = infrared
 
 
 def measure_all(review: Review, progress: Optional[Callable[[int, int], None]] = None,

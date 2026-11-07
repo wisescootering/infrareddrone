@@ -147,3 +147,60 @@ class MissionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReviewDialogTests(MissionTests):
+    """The window, offscreen (no slider window is started: the runner is mocked)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import os
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PyQt6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def dialog(self):
+        import IRD_Interactive_review as RV
+        d = RV.ReviewDialog(self.mission)
+        d.scan.wait(10000)
+        self.app.processEvents()
+        return d
+
+    def test_opens_on_the_point_to_review_and_measures_in_background(self):
+        d = self.dialog()
+        self.assertEqual(d.current().number, 140)          # probably misaligned first
+        self.assertEqual(d.current().status, R.STATUS_SUSPICIOUS)
+        self.assertTrue((self.mission / "ImgIRdrone" / "review.json").is_file())
+        d.done(0)
+
+    def test_flag_key_writes_the_inventory(self):
+        d = self.dialog()
+        d.toggle_flag()
+        inv = json.loads((self.mission / "ImgIRdrone" / "shoot_points.json").read_text())
+        self.assertTrue(inv["shoot_points"][1]["failed"])
+        self.assertIn("Realign 1 flagged", d.btn_redo.text())
+        d.done(0)
+
+    def test_looks_good_marks_checked_and_moves_on(self):
+        d = self.dialog()
+        d.select(0)
+        d.looks_good()
+        self.assertTrue(R.load_review(self.mission).by_number(137).checked)
+        self.assertEqual(d.current().number, 140)
+        d.done(0)
+
+    def test_redo_result_is_accepted_in_the_window(self):
+        from unittest import mock
+        d = self.dialog()
+        d.toggle_flag()                                   # 140 flagged
+        with mock.patch.object(d.redo_runner, "resume") as resume:
+            vir = self.mission / "ImgIRdrone" / "VIR_0140_local.jpg"
+            d._on_redo_done(140, "VIS_0140", str(vir), "")
+            self.assertTrue(d.banner.isVisibleTo(d))
+            d._verdict(True)
+            resume.assert_called_once()
+        point = R.load_review(self.mission).by_number(140)
+        self.assertFalse(point.failed)
+        self.assertTrue(point.checked)
+        d.scan.wait(10000)
+        d.done(0)

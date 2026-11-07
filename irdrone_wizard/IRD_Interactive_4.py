@@ -381,16 +381,19 @@ class RedoRunner(QObject):
     script: a slider window opens, the user aligns VIS and NIR by hand and
     closes it, the alignment is recomputed. ``point_done`` gives the new
     aligned image (empty if none) or an error; the next point starts once the
-    slots connected to ``point_done`` have returned (they may ask the user)."""
+    slots connected to ``point_done`` have returned (they may ask the user),
+    or, with ``pause_between``, when ``resume()`` is called."""
 
     point_started = pyqtSignal(int, str)          # number, stem
     output = pyqtSignal(str)                      # console output / log lines
     point_done = pyqtSignal(int, str, str, str)   # number, stem, aligned image, error
     all_done = pyqtSignal()
 
-    def __init__(self, output_folder: Path, parent=None):
+    def __init__(self, output_folder: Path, parent=None, pause_between: bool = False):
         super().__init__(parent)
         self.output_folder = Path(output_folder)
+        self.pause_between = pause_between
+        self._paused = False
         self.process = QProcess(self)
         self.process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         self.process.readyReadStandardOutput.connect(self._read_output)
@@ -401,11 +404,23 @@ class RedoRunner(QObject):
         self._started_at = 0.0
 
     def busy(self) -> bool:
-        return self.current is not None or self.process.state() != QProcess.ProcessState.NotRunning
+        return (self.current is not None or self._paused
+                or self.process.state() != QProcess.ProcessState.NotRunning)
 
     def start(self, queue) -> None:
         self._queue = list(queue)
         self._start_next()
+
+    def resume(self) -> None:
+        """Start the next point (``pause_between``: after the user's verdict)."""
+        if self._paused:
+            self._paused = False
+            self._start_next()
+
+    def _point_finished(self) -> None:
+        """pause_between: wait for resume() before the next point."""
+        self.current = None
+        self._paused = True
 
     def _start_next(self) -> None:
         if not self._queue:
@@ -432,22 +447,30 @@ class RedoRunner(QObject):
         if error != QProcess.ProcessError.FailedToStart:
             return
         number, stem = self.current
-        self.point_done.emit(number, stem, "", f"Unable to start the redo: {self.process.errorString()}")
-        self._start_next()
+        error = f"Unable to start the redo: {self.process.errorString()}"
+        if self.pause_between:
+            self._point_finished()
+            self.point_done.emit(number, stem, "", error)
+        else:
+            self.point_done.emit(number, stem, "", error)
+            self._start_next()
 
     def _on_finished(self, exit_code: int, exit_status) -> None:
         self._read_output()
         number, stem = self.current
         if exit_code != 0 or exit_status != QProcess.ExitStatus.NormalExit:
-            self.point_done.emit(number, stem, "", f"Redo of {stem} failed (exit code {exit_code}).")
+            image, error = "", f"Redo of {stem} failed (exit code {exit_code})."
         else:
-            image = redo_check_image(self.output_folder, stem, self._started_at)
-            if image is None:
-                self.point_done.emit(number, stem, "",
-                                     f"Redo of {stem}: no aligned image ({ALIGNED_JPEG_LABEL}) was generated.")
-            else:
-                self.point_done.emit(number, stem, str(image), "")
-        self._start_next()
+            found = redo_check_image(self.output_folder, stem, self._started_at)
+            image = str(found) if found is not None else ""
+            error = "" if found is not None else \
+                f"Redo of {stem}: no aligned image ({ALIGNED_JPEG_LABEL}) was generated."
+        if self.pause_between:
+            self._point_finished()          # paused before the slots run: they may resume()
+            self.point_done.emit(number, stem, image, error)
+        else:
+            self.point_done.emit(number, stem, image, error)
+            self._start_next()
 
 
 class RedoSelectionDialog(QDialog):
