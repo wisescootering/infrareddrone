@@ -471,6 +471,10 @@ class Main_Window(QMainWindow):
             self.dialog_synchro_aruco.data_signal_to_main.connect(
                 self.handle_data_from_dialog_synchro_aruco
             )
+            # Pairing done: Step 4 runs on its own, then the review opens
+            self.dialog_synchro_aruco.continue_requested.connect(
+                lambda: self.on_process_images(auto_run=True)
+            )
             self.dialog_synchro_aruco.show()
 
         except Exception as e:
@@ -490,13 +494,14 @@ class Main_Window(QMainWindow):
     # ===================================================================================
 
 
-    def on_process_images(self):
+    def on_process_images(self, auto_run=False):
+        """Step 4. auto_run (chained from Step 3): the alignment starts at once."""
         if not self.ensure_mission_parameters():
             return
 
         try:
             self.dialog_image_processing = DialogImageProcessing(
-                self.mission_parameters, self
+                self.mission_parameters, self, auto_run=bool(auto_run)
             )
             self.dialog_image_processing.show()
         except (FileNotFoundError, ValueError, json.JSONDecodeError) as e:

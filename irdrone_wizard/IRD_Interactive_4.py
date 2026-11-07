@@ -14,7 +14,7 @@ import shutil
 import sys
 import time
 
-from PyQt6.QtCore import QObject, QProcess, QProcessEnvironment, QSettings, Qt, pyqtSignal
+from PyQt6.QtCore import QObject, QProcess, QProcessEnvironment, QSettings, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QDialog,
@@ -36,7 +36,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from IRD_Interactive_styles import BUTTON_STYLE
+from IRD_Interactive_styles import BUTTON_STYLE, colored_button_style
 import IRD_Interactive_help as Help
 from IRD_Interactive_progress import mark_step_done
 from config import SJCONVERTERPATH
@@ -588,10 +588,15 @@ class AlignmentCheckDialog(QDialog):
 
 
 class DialogImageProcessing(QDialog):
-    """Run the post-preprocessing image pipeline for a mission."""
+    """Run the post-preprocessing image pipeline for a mission.
 
-    def __init__(self, mission_parameters: dict, parent=None):
+    auto_run (chained from Step 3): the alignment starts at once with the
+    survey range of Step 2, and the review of the aligned images opens when
+    it is done."""
+
+    def __init__(self, mission_parameters: dict, parent=None, auto_run: bool = False):
         super().__init__(parent)
+        self.auto_run = auto_run
 
         mission_folder = (
             mission_parameters.get("folderMissionPath")
@@ -659,8 +664,12 @@ class DialogImageProcessing(QDialog):
         self._redo_errors = []
 
         self.setWindowTitle("Step 4 – Image processing")
-        self.resize(700, 500)
+        self.resize(760, 520)
         self._init_gui()
+        if self.auto_run:
+            self.log_text.append("Started after the synchronisation: the alignment runs at once "
+                                 "with the survey range of the flight timeline.")
+            QTimer.singleShot(300, self._start_processing)
 
     def _get_fly_image_range(self, shoot_points: list[dict]) -> tuple[int, int]:
         transfer_info_file = (
@@ -799,6 +808,13 @@ class DialogImageProcessing(QDialog):
         self.close_button = QPushButton("Close")
         self.close_button.clicked.connect(self.close)
         button_layout.addWidget(self.close_button)
+        self.review_button = QPushButton("Review images  \u25B6")
+        self.review_button.setToolTip(
+            "Check the aligned images on a time line, flag the misaligned ones and realign them by hand."
+        )
+        self.review_button.clicked.connect(self._open_review)
+        self.review_button.setEnabled(self._has_alignment_output())
+        button_layout.addWidget(self.review_button)
         self.settings_button = QPushButton("\u2699")
         self.settings_button.setFixedWidth(30)
         # The gear glyph renders small: enlarge it, keep the button height.
@@ -823,6 +839,7 @@ class DialogImageProcessing(QDialog):
             (self.flag_button, "btn:step4_flag_misaligned", "Select in the explorer the misaligned VIR images and flag them as failed."),
             (self.redo_button, "btn:step4_redo", "Manually realign the shoot points flagged as failed, then validate the result."),
             (self.close_button, "btn:step4_close", "Close this window."),
+            (self.review_button, "btn:step4_flag_misaligned", self.review_button.toolTip()),
             (self.settings_button, "btn:step4_options", "Processing settings (worker processes / safe mode, log detail)."),
         ):
             Help.attach_help(widget, label, tip, parent=self)
@@ -830,8 +847,25 @@ class DialogImageProcessing(QDialog):
         # Apply the common style to the three main buttons
         self.run_button.setStyleSheet(BUTTON_STYLE)
         self.close_button.setStyleSheet(BUTTON_STYLE)
+        self.review_button.setStyleSheet(colored_button_style("#2E7D32"))
+        self.flag_button.setToolTip(self.flag_button.toolTip() + " (classic: the review does it on a time line)")
 
         layout.addLayout(button_layout)
+
+    def _has_alignment_output(self) -> bool:
+        return (self.mission_folder / "ImgIRdrone" / "shoot_points.json").is_file()
+
+    def _open_review(self) -> None:
+        """Review window (modal): flags and redo are done there."""
+        if self.process.state() != QProcess.ProcessState.NotRunning or self.redo_runner.busy():
+            return
+        try:
+            from IRD_Interactive_review import ReviewDialog
+            dialog = ReviewDialog(self.mission_folder, parent=self)
+        except (FileNotFoundError, ValueError) as error:
+            QMessageBox.warning(self, "Review unavailable", str(error))
+            return
+        dialog.exec()
 
     def _open_settings(self) -> None:
         dialog = Step4SettingsDialog(
@@ -910,7 +944,8 @@ class DialogImageProcessing(QDialog):
         self.log_text.ensureCursorVisible()
 
     def _set_redo_busy(self, busy: bool) -> None:
-        for button in (self.run_button, self.flag_button, self.redo_button, self.close_button):
+        for button in (self.run_button, self.flag_button, self.redo_button, self.close_button,
+                       self.review_button):
             button.setEnabled(not busy)
 
     def _redo_misaligned_points(self) -> None:
@@ -1079,6 +1114,7 @@ class DialogImageProcessing(QDialog):
         self.run_button.setEnabled(False)
         self.flag_button.setEnabled(False)
         self.redo_button.setEnabled(False)
+        self.review_button.setEnabled(False)
         self.close_button.setEnabled(False)
         self.settings_button.setEnabled(False)
         self.start_image_number.setEnabled(False)
@@ -1149,6 +1185,7 @@ class DialogImageProcessing(QDialog):
         self.run_button.setEnabled(True)
         self.flag_button.setEnabled(True)
         self.redo_button.setEnabled(True)
+        self.review_button.setEnabled(self._has_alignment_output())
         self.close_button.setEnabled(True)
         self.settings_button.setEnabled(True)
         self.start_image_number.setEnabled(True)
@@ -1171,6 +1208,12 @@ class DialogImageProcessing(QDialog):
                 self.status_label.setText("Processing completed successfully.")
             self.log_text.append("\nProcessing completed successfully.")
             mark_step_done(self.mission_folder, 4)
+            self.review_button.setEnabled(True)
+            self.review_button.setDefault(True)
+            self.review_button.setFocus()
+            if self.auto_run:
+                self.auto_run = False
+                QTimer.singleShot(400, self._open_review)
         else:
             self.status_label.setText(f"Processing failed (exit code {exit_code}).")
             self.log_text.append(f"\nProcessing failed (exit code {exit_code}).")
@@ -1186,6 +1229,7 @@ class DialogImageProcessing(QDialog):
         self.run_button.setEnabled(True)
         self.flag_button.setEnabled(True)
         self.redo_button.setEnabled(True)
+        self.review_button.setEnabled(self._has_alignment_output())
         self.close_button.setEnabled(True)
         self.settings_button.setEnabled(True)
         self.start_image_number.setEnabled(True)
