@@ -220,9 +220,14 @@ class Step2UsesCurrentMissionTest(_MissionHelpers):
     """Step 2 asks for the mission folder only when no mission is loaded."""
 
     def click_step2(self, window, chooser):
+        # Step 2 opens the flight timeline first; here the user picks
+        # "Classic selection..." in it, which opens the classic dialog
         with mock.patch.object(self.main.Uti, "choose_mission_folder_phase_2", chooser), \
                 mock.patch.object(self.main.QMessageBox, "information"), \
+                mock.patch.object(self.main, "FlightTimelineDialog") as timeline, \
                 mock.patch.object(self.main, "LoadVisNirImagesDialog") as dialog:
+            timeline.return_value.exec.return_value = 0
+            timeline.return_value.action = "classic"
             dialog.return_value.exec.return_value = 0
             window.btn_load_images.click()
         return dialog
