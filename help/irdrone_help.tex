@@ -388,10 +388,28 @@ Vous devez avoir sur un support numérique (carte SD, disque dur) les images des
 Pour une nouvelle mission il faut suivre dans l'ordre les étapes 1 à 5. 
 Cependant les étapes 2 à 5 peuvent être lancées individuellement, à condition que le dossier de la mission comporte au minimum les éléments produits par les étapes qui la précèdent. C'est particulièrement utile pour les étapes 4 et 5.
 
+\paragraph{Page d'accueil.} Sans mission chargée, la fenêtre principale propose \bouton{New mission} (étape~1), \bouton{Open a mission} et la liste des missions récentes du dossier de travail, avec leur avancement (un point vert par étape faite). Une fois la mission chargée, elle affiche ce qui est fait, l'étape suivante (bouton \bouton{Continue with Step N}), quelques chiffres (images, paires, images alignées, points signalés) et l'accès à la revue des images alignées (figure~\ref{fig:home_mission}).
+
+\figureIRD[fig:home_mission]{home_mission.png}{La mission chargée : avancement des étapes, étape suivante, chiffres de la mission et revue des images alignées.}{0.9}
+
+\paragraph{Enchaînement automatique.} Les étapes s'enchaînent d'elles-mêmes : à la fin de l'étape~1, \bouton{Flight timeline} ouvre l'étape~2 ; \bouton{Confirm and synchronize} de l'étape~2 lance l'étape~3 (détection des mires, décalage, appariement, sans clic), qui lance l'étape~4 au bout de 5~secondes ; à la fin de l'étape~4 la revue des images alignées s'ouvre. Il ne reste qu'à vérifier les phases du vol, puis le résultat.
+
 %==========================================================
 \chapter{Step 1 -- D\'efinir la mission}\label{ch:step1}
-\section{Principe}
-Le Step~1 cr\'ee le dossier de la mission et y range les images du vol. Il se d\'eroule en deux fen\^etres successives :
+\section{La fenêtre \og New mission \fg}\label{sec:step1_new_mission}
+Le Step~1 cr\'ee le dossier de la mission et y range les images du vol. Il se fait dans une seule fenêtre, en trois pages :
+\begin{enumerate}
+  \item \textbf{Images} (figure~\ref{fig:step1_new_mission_images}) : les cartes SD insérées sont parcourues (tout volume qui contient un dossier \texttt{DCIM}) ; on y trouve les images visibles (DNG du drone) et infrarouges (RAW de la SJCam). Le bouton \bouton{Change…} permet de choisir un autre dossier (une copie des cartes sur le disque, par exemple). L'image de décollage est la première image visible ; le lien \og change… \fg~en choisit une autre. Un bandeau signale l'écart entre les horloges des deux caméras : il est normal, l'étape~3 le mesure précisément.
+  \item \textbf{Mission} (figure~\ref{fig:step1_new_mission_details}) : la date, l'heure et la position viennent de l'image de décollage ; l'altitude du sol et l'adresse sont demandées à l'IGN et à OpenStreetMap pendant que l'on remplit la description et le pilote. Le nom du dossier de la mission (\texttt{FLY-YYYYMMDD-hhmm-location}) se met à jour avec le champ \og Location \fg. Le pilote, son identifiant, les caméras et le filtre sont mémorisés pour la mission suivante (\og Cameras and filter \fg).
+  \item \textbf{Copy} : le dossier est créé, les images visibles copiées, les images infrarouges converties de RAW en DNG, les EXIF lus et l'altitude du sol calculée. Les cartes SD sont seulement lues. À la fin, \bouton{Flight timeline} ouvre l'étape~2.
+\end{enumerate}
+Le fichier \texttt{mission\_parameters.json} contient les mêmes informations qu'avec le formulaire classique.
+
+\figureIRD[fig:step1_new_mission_images]{step1_new_mission_images.png}{Page \og Images \fg : images visibles et infrarouges trouvées sur les cartes SD, image de décollage.}{0.8}
+\figureIRD[fig:step1_new_mission_details]{step1_new_mission_details.png}{Page \og Mission \fg : lieu trouvé à partir de l'image de décollage, nom du dossier, description, pilote, caméras.}{0.8}
+
+\section{Formulaire classique}\label{sec:step1_classic}
+Le bouton \bouton{Classic form…} de la page \og Images \fg~ouvre l'ancien Step~1, décrit ci-dessous. Il se d\'eroule en deux fen\^etres successives :
 \begin{enumerate}
   \item \textbf{\og Choose the image taken by the drone during takeoff \fg} : on choisit la premi\`ere image prise par le drone
         au d\'ecollage. Elle fournit la date, l'heure, la position GPS et l'appareil photo utilis\'e.
@@ -568,7 +586,7 @@ Si la mire n'est pas trouvée (mire trop petite, image trop sombre), un bandeau 
 
 \section{Boutons \bouton{Confirm and synchronize} et \bouton{Save only}}\label{btn:step2_confirm}
 Les deux boutons enregistrent les phases dans les fichiers \texttt{transfer\_info\_VIS\_dng.json} et \texttt{transfer\_info\_NIR\_dng.json} (lus par les étapes 3, 4 et le mapping) et dans \texttt{FlightAnalytics/flight\_timeline.json}. Rouvrir l'étape 2 retrouve les phases confirmées.
-\bouton{Confirm and synchronize} ouvre ensuite l'étape 3, qui lance d'elle-même la détection des mires et le calcul du décalage : il reste à vérifier le graphique d'alignement puis à cliquer \bouton{Pair VIS / NIR images}.
+\bouton{Confirm and synchronize} ouvre ensuite l'étape 3, qui enchaîne d'elle-même la détection des mires, le calcul du décalage et l'appariement, puis l'étape~4 (§\ref{sec:step3_chained}).
 
 \section{Sélection classique}\label{btn:step2_classic}
 Le bouton \bouton{Classic selection…} ouvre l'ancienne sélection manuelle des cinq images de référence de chaque caméra, décrite ci-dessous.
@@ -625,6 +643,12 @@ Le Step~3 se déroule en trois phases successives, chacune lancée par un bouton
   \item \emph{Calcul du décalage temporel} (bouton \bouton{Compute time alignment}) : on cherche le décalage $\Delta t$ qui fait coïncider les deux séries d'angles (§\ref{btn:step3_time_shift}) ;
   \item \emph{Appariement} (bouton \bouton{Pair VIS / NIR images}) : on associe à chaque image VIS les images NIR les plus proches dans le temps (§\ref{btn:step3_pairing}).
 \end{enumerate}
+
+\subsection{Enchaînement automatique}\label{sec:step3_chained}
+Ouverte depuis l'étape~2 (ou par \bouton{Continue with Step 3} de la page d'accueil), l'étape~3 enchaîne les trois phases sans clic ; une ligne d'avancement montre la phase en cours et son résultat (nombre de mires vues, décalage, nombre de paires, figure~\ref{fig:step3_chained}). Une fois les images appariées, l'étape~4 démarre au bout de 5~secondes : \bouton{Stay here} l'en empêche (pour regarder le graphique d'alignement), \bouton{Image processing} la lance tout de suite.
+Si le décalage ne peut pas être mesuré, la saisie manuelle est proposée et l'enchaînement s'arrête. \bouton{Manual mode…} arrête l'enchaînement et fait réapparaître les trois boutons décrits ci-dessous, par exemple pour corriger le décalage avec \bouton{Adjust alignment...} avant l'appariement.
+
+\figureIRD[fig:step3_chained]{step3_chained.png}{Étape 3 enchaînée : les trois phases sont faites, l'étape 4 démarre dans 5 secondes.}{0.7}
 
 \subsection{Principe du calcul}
 L'angle de la mire mobile est mesuré sur chaque image, puis déplié (voir §\ref{btn:step3_time_shift}). Comme la vitesse de rotation $\omega$ est constante, l'angle est une fonction affine du temps. La time line NIR, qui compte au moins deux points, fournit la droite de référence $\theta = \omega t + b_{NIR}$. Chaque point VIS fournit une estimation de l'ordonnée à l'origine $b_{VIS} = \theta_{VIS} - \omega t_{VIS}$ ; on en prend la médiane. Le décalage s'écrit
@@ -797,6 +821,18 @@ Lance la procédure d'alignement sur les shoot points vérifiant simultanément 
 	\item $|dt|\leq \texttt{Maximum VIS/NIR time difference}$.
 \end{itemize} 
 Attention l'alignement des images est une procédure qui prend beaucoup de temps. Cela dépend bien entendu de la machine. Les  calculs sont parallélisés sur plusieurs processeurs si la machine est \og multi c\oe urs \fg. La barre de progression indique l'avancement des calculs ainsi qu'une estimation du temps de traitement restant. À titre d'exemple sur un HP ZBook 3 avec un quadri processeur Intel Xeon l'alignement des images VIS et NIR d'un shoot point prend environ $60\,s$. Donc il faut deux heures pour traiter 120 images. Lancer ces calculs à l'heure du déjeuner ou la nuit est une bonne idée.   
+
+\section{Revue des images alignées}\label{btn:step4_review}
+Le bouton \bouton{Review images} (ouvert automatiquement à la fin d'un traitement enchaîné, ou depuis la page d'accueil) présente tous les points du survey sur une ligne de temps (figure~\ref{fig:step4_review}).
+\begin{itemize}
+  \item \textbf{Mesure automatique.} Pour chaque point, le décalage résiduel entre les contours de l'image visible et ceux de l'infrarouge aligné est mesuré (en pixels de l'image complète, médiane sur 16 zones). Un point bien aligné mesure environ 1~px. Vert : moins de 3~px ; orange clair : entre 3 et 6~px, à regarder ; orange : plus de 6~px, probablement mal aligné. La fenêtre s'ouvre sur le point le plus douteux ; \bouton{Next to review} (touche N) passe au suivant.
+  \item \textbf{Comparer.} \bouton{Swipe} : un rideau sépare le visible (à gauche) de l'infrarouge aligné en fausses couleurs (à droite) ; routes, haies et toits doivent se prolonger à travers le rideau. \bouton{Blink} : visible et infrarouge alternent, une image mal alignée \og saute \fg. \bouton{Overlay} : visible en cyan, infrarouge en rouge (la végétation est naturellement rouge) ; un mauvais alignement double chaque contour. \bouton{Side by side} : les deux images côte à côte. Molette : zoom (un décalage de quelques pixels ne se voit qu'en zoomant) ; glisser : déplacement ; double-clic : zoom $\times 4$ ou image entière.
+  \item \textbf{Décider.} \bouton{Looks good} (barre d'espace) marque le point comme vérifié et passe au suivant à revoir. \bouton{Flag misaligned} (touche F) le signale comme mal aligné : il est écrit tout de suite dans \texttt{ImgIRdrone/shoot\_points.json} et l'étape~5 l'ignore. \bouton{Flag the probably misaligned} signale d'un coup tous les points orange non vérifiés.
+  \item \textbf{Réaligner.} \bouton{Realign N flagged by hand} ouvre, point par point, la fenêtre d'alignement semi-automatique (§\ref{btn:step4_redo}). Une fois cette fenêtre fermée, la nouvelle image s'affiche dans la revue : \bouton{Yes, aligned} retire le signalement, \bouton{Still misaligned} le garde ; le point suivant s'ouvre ensuite.
+\end{itemize}
+Les mesures et les points vérifiés sont gardés dans \texttt{ImgIRdrone/review.json} : rouvrir la revue ne refait pas les mesures, sauf pour les images refaites. Les boutons \bouton{Flag misaligned points} et \bouton{Redo misaligned points} ci-dessous restent disponibles.
+
+\figureIRD[fig:step4_review]{step4_review.png}{Revue des images alignées : rideau entre visible et infrarouge aligné, fiche du point (décalage mesuré, image infrarouge associée), et en bas la ligne de temps des points (décalage résiduel, vignettes, état).}{0.95}
 
 \section{Bouton \bouton{Flag misaligned points}}\label{btn:step4_flag_misaligned}
 Lorsque \texttt{Run alignment} est terminé, l'utilisateur peut avec cette commande regarder l'allure des vignettes des images \texttt{VIR\_XXXX\_local.jpg} (passer en affichage \og très grands icônes \fg). Il est assez simple de repérer certains échecs d'alignement (voir plus bas). Vous pouvez aussi utiliser en parallèle une visionneuse qui offre une bien meilleure visibilité et permet d'agrandir certaines zones de l'image. A l'issue de cette commande le statut d'alignement des images est mis à jour automatiquement dans le fichier \texttt{ImgIRdrone\textbackslash shoot\_points.json}
