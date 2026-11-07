@@ -107,7 +107,7 @@ def plot_channels(cartesian_image):
             axs[1, ch].plot(im[angle, :, ch], "--", alpha=0.5, label="{}°".format(angle))
             diaglist.append(im[angle, :, ch])
         avg_radial_profile = np.average(np.array(diaglist), axis=0)
-        axs[1, ch].plot(avg_radial_profile, "k-", label="AVERAGE".format(angle))
+        axs[1, ch].plot(avg_radial_profile, "k-", label="AVERAGE".format())
         # axs[1, ch].set_legend(True)
         axs[1, ch].legend()
     plt.show()
@@ -279,7 +279,6 @@ def contrast_stretching(img, percentiles=None):
     return img_rescale, [p2, p98]
 
 def test_calibration_M20():
-    camera_name = "M20_RAW"
     img_shape = (3448, 4600, 3)
     vig_map = get_polar_shading_map(img_shape=img_shape, calib=SJCAM_M20_PROFILE_CONTROL_POINTS)
     img_path = osp.join(osp.dirname(__file__), "..", "Hyperlapse 06_09_2021_sync", "20210906122928.RAW")

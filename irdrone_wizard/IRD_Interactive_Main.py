@@ -28,13 +28,11 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QLabel,
     QFrame,
-    QProgressBar,
     QMessageBox,
-    QFileDialog,
     QDialog,
 )
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QPixmap, QColor, QIcon, QImage, QPainter, QFont
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap, QColor, QIcon, QPainter, QFont
 from PyQt6.QtWidgets import QSplashScreen
 
 print("IRDrone is starting, waiting ...", flush=True)
@@ -60,8 +58,6 @@ _splash = _make_splash()
 _splash.show()
 _app.processEvents()
 
-import rawpy
-import imageio
 # -------------- IRDrone Library ------------------------------------
 from IRD_Interactive_1 import Window_Load_TakeOff_Image, Window_create_file_structure
 from IRD_Interactive_2 import LoadVisNirImagesDialog
@@ -70,7 +66,6 @@ from IRD_Interactive_4 import DialogImageProcessing
 from IRD_Interactive_5 import DialogGeoRef
 from IRD_Interactive_6 import DialogArchive
 from IRD_Interactive_styles import colored_button_style, BUTTON_STYLE
-from IRD_Interactive_GeoRef import georef_main
 import IRD_Interactive_utils as Uti
 from IRD_Interactive_utils import Prefrence_Screen
 from IRD_Interactive_color_style import Style

@@ -4,7 +4,6 @@ import os.path as osp
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
 import utils.utils_IRdrone as IRd
 import config
-import cv2
 import numpy as np
 import irdrone.utils as ut
 import irdrone.process as pr
@@ -66,14 +65,6 @@ def prepare_synchronization_data(
             for index, img_pth in enumerate(candidates):
                 date = pr.Image(img_pth).date
                 img_name = ("_%04d_" % (index)) + osp.basename(img_pth)[:-4]
-                out_file = osp.join(out_dir, img_name + ".jpg")
-                # if not osp.isfile(out_file):
-                #     img = pr.Image(img_pth)
-                #     img.save(out_file)
-                #     img_thmb = cv2.resize(img.data, (640, 480))
-                #     pr.Image(img_thmb).save(osp.join(out_dir, "_thumb_" + img_name + ".jpg"))
-                # else:
-                #     img = pr.Image(out_file)
                 detection_file = osp.join(out_dir, "_detection" + img_name + ".npy")
                 if osp.isfile(detection_file):
                     results = np.load(detection_file, allow_pickle=True).item()
@@ -250,7 +241,6 @@ def cost_function(shift_x, cost_dic):
 def fitPlot(data, res, camera_definition, extra_title=""):
     # construction of interpolators
     x_fit = [data['t_B'][i] - res.x for i in range(1, len(data['t_B']))]
-    f_A = interpol_func(data['t_A'], data['f_A'], option=data['solverOption'])
     f_B = interpol_func(data['t_B'], data['f_B'], option=data['solverOption'])
     camera_A = camera_definition[0][1]
     camera_B = camera_definition[1][1]

@@ -69,50 +69,25 @@ import cv2
 import re
 from collections import defaultdict
 import matplotlib.pyplot as plt
-from scipy.signal import savgol_filter
 from scipy.interpolate import RectBivariateSpline
-from scipy.interpolate import LinearNDInterpolator
 from scipy.interpolate import RBFInterpolator
-from scipy.interpolate import griddata
 from scipy.ndimage import map_coordinates
 from affine import Affine
 
-from typing import Any, Dict, Optional, Tuple, List, Union, Sequence, Iterable
+from typing import Union
 import json
 import subprocess
 import rasterio
 # print(f"✔ Version rasterio : {rasterio.__version__}")
-from rasterio.transform import Affine, from_origin
-from rasterio.warp import reproject, Resampling, calculate_default_transform
-from rasterio.enums import ColorInterp
 from rasterio.crs import CRS
-from datetime import datetime
 import time
 
 # ----------------------------------------------------
 #     bib PyQt 6
 # ----------------------------------------------------
-from PyQt6.QtGui import QPixmap
-from PyQt6.QtCore import (
-    Qt,
-    QThreadPool,
-    QObject,
-    pyqtSignal,
-    QThreadPool,
-    QTimer,
-)
 from PyQt6.QtWidgets import (
-    QMessageBox,
     QApplication,
-    QWidget,
     QFileDialog,
-    QDialog,
-    QVBoxLayout,
-    QHBoxLayout,
-    QPushButton,
-    QTextEdit,
-    QProgressBar,
-    QLabel,
 )
 
 
@@ -122,7 +97,7 @@ from irdrone.file_utils import find_ci, glob_ci
 
 
 # External tool paths: one lookup for the whole project, see config.py.
-from config import RAWTHERAPEEPATH, EXIFTOOLPATH, require_tool
+from config import require_tool
 
 # ============================================================
 #  CLASS
@@ -409,7 +384,6 @@ def georeference_tiff_MNT(tif_path,
         dist = np.array(zhang_dic["dist"][0] if isinstance(zhang_dic["dist"][0], list)
                         else zhang_dic["dist"],
                         dtype=np.float64)
-        K = np.array(zhang_dic["mtx"], dtype=np.float64)
 
     else:
         # --- 1.02-2 Default parameters for single-band or four-band multispectral images
@@ -440,7 +414,7 @@ def georeference_tiff_MNT(tif_path,
         else:
 
             focal_pix = 2918
-            logger.warn(f' IRDrone default   FOV.')
+            logger.warn(' IRDrone default   FOV.')
         fx, fy, cx, cy = focal_pix, focal_pix, Nx / 2, Ny / 2
         txt = "Image with corrected optical distortion."
         dist = None
@@ -1282,7 +1256,7 @@ def ask_takeoff_altitude_gui(prompt: str, default=None) -> float:
     Robust to comma/point decimal separators.
     """
     import tkinter as tk
-    from tkinter import simpledialog, messagebox
+    from tkinter import messagebox
 
     root = tk.Tk()
     root.withdraw()
@@ -1829,10 +1803,6 @@ def compute_MNT_mesh(
     # The grid is centered on the nadir. The nadir altitude is Z = 0 m.
     # These grid points serve as reference points for constructing
     # the DTM interpolator.
-    # Expanded sensor boundaries
-    cx_a, cy_a = cx * ampli, cy * ampli  # Left and top boundaries
-    Nx_a, Ny_a = Nx * ampli, Ny * ampli  # Right and bottom boundaries
-
     # Make the boundaries symmetric
     Nn_x = int(max(cx * ampli, (Nx - cx) * ampli - 1))  # Left and right boundaries
     Nn_y = int(max(cy * ampli, (Ny - cy) * ampli - 1))  # Top and bottom boundaries
@@ -2219,7 +2189,7 @@ def generate_qml_style_qgis(qml_path, style="IGN", label_on_line=True):
         <settings>
           <text-style 
                 fieldName="elev"
-                fontSize="{font_Size_minor}"
+                fontSize="{font_Size_major}"
                 fontFamily="{font_Family_major}"
                 textColor="{font_color_major}">
             <text-buffer bufferSize="{buffer_major}" 
@@ -2477,7 +2447,7 @@ def project_camera_to_MNT(
 
         if verbose:
             print(f"[DEBUG] iter intersection = {count_iter}   |  altitude Z_t = {Z_t} m'\n"
-                  f"[DEBUG] pixel ({u_pix},{v_pix}) -> sol ({P[0]:.2f},{P[1]:.2f},{P[2]:.2f})")
+                  f"[DEBUG] pixel ({u},{v}) -> sol ({P[0]:.2f},{P[1]:.2f},{P[2]:.2f})")
 
     return np.array(X_s), np.array(Y_s), np.array(Z_s)
 
@@ -2878,7 +2848,7 @@ def plot_terrain_3d(Xg_abs, Yg_abs, Zg_abs, X0, Y0, Z0, xi_Yaw, N_mesh_x, N_mesh
     z_ref = np.min(Zg) - 30
     if axes_terrain:
         # Horizontal ground reference axes
-        x0, y0, z0 = 0, 0, z_ref
+        x0, y0 = 0, 0
         Lg = 20  # Arrow length in meters
 
         arrow3d(ax, (x0, y0, z_ref), (Lg, 0, 0), 'blue')
@@ -2984,7 +2954,7 @@ def force_square_xy(ax):
     ax.set_ylim3d(yc - L / 2, yc + L / 2)
 
     # Optional: also adjust Z to create a true cubic box
-    zc = 0.6 * (zmax + zmin)
+    # zc = 0.6 * (zmax + zmin)
     # ax.set_zlim3d(zc - L / 2, zc + L / 2)
 
 def graph_mesh_2D(Xg_abs, Yg_abs, X_Bound_abs, Y_Bound_abs, UTM_x, UTM_y, xi_Yaw,
@@ -3017,7 +2987,7 @@ def graph_mesh_2D(Xg_abs, Yg_abs, X_Bound_abs, Y_Bound_abs, UTM_x, UTM_y, xi_Yaw
     geo_path = folder_input / "geo_ref" / f"{img_name}_Grid.png"
 
     fig = plt.figure(figsize=(12, 8))
-    ax = fig.add_subplot(111)
+    fig.add_subplot(111)
 
     Xg = Xg_abs - UTM_x
     Yg = Yg_abs - UTM_y
@@ -3135,7 +3105,7 @@ def graph_ortho(ortho_display, xo, yo, ortho_path, graphic_ortho=False, view_gra
     """
     if graphic_ortho:
         fig = plt.figure(figsize=(12, 8))
-        ax = fig.add_subplot(111)
+        fig.add_subplot(111)
         plt.imshow(ortho_display, origin="lower")  # , extent=extent)
         # plt.scatter(xo, yo, c="red", marker="+", s=100)
         plt.gca().invert_yaxis()
@@ -3200,7 +3170,6 @@ def tag_image(img_raw,
 
     # - 1) Image without markers
     Ny_raw, Nx_raw = img_raw.shape[:2]
-    bands = 1 if img_raw.ndim == 2 else img_raw.shape[2]
 
     # - 2) Dynamic color-range adjustment based on bit depth
     if img_raw.dtype == np.uint16:
@@ -3253,7 +3222,6 @@ def tag_image(img_raw,
     if draw_square_tag:
         S = 200
         Dx = Nx_raw // 4
-        Dy = Ny_raw // 4
 
         # --------- 3.2.1) Quadrant I: Black
         draw_square(img, cx + Dx, cy - Dx, S, (20, 20, 20))
@@ -3685,7 +3653,7 @@ def process_image(folder_input, img_name, args, zhang_dic,  tol_MC=0.01, img_ove
                 result_callback(str(new_geo_path))
 
         else:
-            logger.warn(f" Processing completed without generating the georeferenced file")
+            logger.warn(" Processing completed without generating the georeferenced file")
         return georef_success
 
     except Exception as e:
@@ -3958,7 +3926,7 @@ def georef_main(image_callback=None, mission_parameters=None, result_callback=No
     # ==================================================
     else:
 
-        logger.info(f"Interactive mode: selecting images ...\n", _bold=True)
+        logger.info("Interactive mode: selecting images ...\n", _bold=True)
 
         folder_mission = Path(
             mission_parameters["File path mission"]
@@ -4194,7 +4162,7 @@ if __name__ == "__main__":
     # ==================================================
     else:
 
-        logger.info(f"Mode interactif : sélection des images ...\n", _bold=True)
+        logger.info("Mode interactif : sélection des images ...\n", _bold=True)
 
         folder_input, list_img_name, list_img, list_path = choose_images_dev()
 

@@ -6,7 +6,6 @@
 #   2026-10-20 00:35:10   V003   *
 # ---------------------------------------------------------------------------------
 
-import os
 import os.path as osp
 from pathlib import Path
 import numpy as np
@@ -23,7 +22,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import copy
 
 import IRD_Interactive_utils as Uti
-from IRD_Interactive_utils import to_json_safe
 from IRD_Interactive_utils import safe_path
 from IRD_Interactive_color_style import Style
 
@@ -1747,8 +1745,8 @@ if __name__ == "__main__":
     time_line_NIR = [r['relative_timeline'] for r in NIR_results if r['relative_timeline'] is not None]
 
 
-    print(Style.GREEN + f'la détection des mires aruco pour les images VIS et NIR est terminée. \n'
-          f'.............................................................................\n' + Style.RESET)
+    print(Style.GREEN + 'la détection des mires aruco pour les images VIS et NIR est terminée. \n'
+          '.............................................................................\n' + Style.RESET)
 
     # ------------------------------------------------------------
     # Synchronisation des time line VIS et NIR

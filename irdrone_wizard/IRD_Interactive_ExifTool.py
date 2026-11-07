@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=C0103, C0301, W0703
-import os.path as osp
 import subprocess
 from pathlib import Path
-import json
 
 
 def get_exif_info(scr, dst, tmp):
@@ -17,7 +15,6 @@ def get_exif_info(scr, dst, tmp):
     # 3- Ecriture (commande  "-overwrite_original", "-fast") dans le même fichier fileName.tif
     pth_scr = Path(scr)
     pth_dst = Path(dst)
-    pth_tmp = Path(tmp)
 
     cameraMaker = 'irdrone_4'
     cameraModel = 'multispectral_4'
@@ -30,7 +27,7 @@ def get_exif_info(scr, dst, tmp):
            f'-UniqueCameraModel={uniquecameramodel}',
            f'-SerialNumber ={serialnumber}',
            pth_dst, "-overwrite_original", "-fast"]
-    p = subprocess.run(cmd)
+    subprocess.run(cmd)
 
     """
 

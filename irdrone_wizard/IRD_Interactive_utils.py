@@ -10,26 +10,21 @@ import os
 import os.path as osp
 import sys
 import json
-from json import JSONDecodeError
 import shutil
 from datetime import datetime, date
 import time
-from typing import Any, Dict, Optional, Tuple, List, Union, Sequence, Iterable
+from typing import Dict, Optional, Tuple, List, Union, Sequence, Iterable
 from pathlib import Path
 from fractions import Fraction
 import re
 import numpy as np
-from fractions import Fraction
 import tempfile
 import subprocess
-from concurrent.futures import ProcessPoolExecutor, as_completed
-import multiprocessing
 from collections import Counter
 
 
 import cv2
 import matplotlib.pyplot as plt
-import copy
 
 from IRD_Interactive_color_style import Style
 
@@ -37,13 +32,10 @@ from IRD_Interactive_color_style import Style
 # -------------------- Exif Library -------------------------------
 import piexif
 import exifread
-from PIL import Image
-import rawpy
 # -----------------------PyQt6 Library ----------------------------
 from PyQt6.QtWidgets import QMessageBox, QApplication, QFileDialog, QWidget
 # -----------------------------------------------------------------
 from IRD_interactive_geo import geo2UTM
-from IRD_Interactive_color_style import Style
 
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
 from irdrone.file_utils import glob_ci
@@ -1914,78 +1906,6 @@ def _convert_single_raw_to_dng(raw_file: str,
 
     return str(dng_output_path)
 
-def convert_raw_to_dng_parallel(
-        input_folder: str,
-        output_folder: str,
-        exe_path: str,
-        nb_threads: str = "0",
-        verbose: bool = False,
-        max_workers: int = None,
-        exiftool_path=None
-) -> List[str]:
-    """
-    Convert all SJCam M20 .RAW files in an input folder to .DNG in parallel,
-    using multiple processes to speed up conversion. Each RAW file is processed
-    independently using the sjcam_raw2dng executable. Output files are renamed
-    in the 'NIR_XXXX.dng' format and EXIF dates are corrected from RAW filename.
-
-    Parameters
-    ----------
-    input_folder : str
-        Path to the folder containing the .RAW files.
-    output_folder : str
-        Path to the folder where the converted DNG files will be stored.
-    exe_path : str
-        Full path to sjcam_raw2dng.exe.
-    nb_threads : str, optional
-        Number of threads passed to each converter instance ("0" = auto).
-    verbose : bool, optional
-        If True, prints detailed conversion information.
-    max_workers : int, optional
-        Maximum number of parallel processes to run.
-        If None, automatically set to the number of physical CPU cores.
-
-    Returns
-    -------
-    List[str]
-        List of paths to the generated DNG files in output_folder.
-    """
-    exe = Path(exe_path)
-    if not exe.exists():
-        link = "https://github.com/yanburman/sjcam_raw2dng/releases"
-        raise FileNotFoundError(
-            f"Converter not found: {exe_path}. You can download it from: {link}"
-        )
-
-    input_folder_path = Path(input_folder)
-    if not input_folder_path.exists():
-        raise FileNotFoundError(f"Input folder not found: {input_folder}")
-
-    raw_files = [str(p) for p in glob_ci(input_folder_path, "*.raw")]
-    dng_files: List[str] = []
-
-    # Auto-adjust max_workers if not provided
-    if max_workers is None:
-        cpu_physical = psutil.cpu_count(logical=False) or 1
-        max_workers = max(1, cpu_physical)
-
-    if verbose:
-        print(f"Using max_workers={max_workers} (detected {os.cpu_count()} CPU threads)")
-
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        future_to_raw = {
-            executor.submit(_convert_single_raw_to_dng, raw, exe, output_folder, nb_threads, verbose, exiftool_path): raw
-            for raw in raw_files
-        }
-
-        for future in as_completed(future_to_raw):
-            try:
-                dng_path = future.result()
-                dng_files.append(dng_path)
-            except subprocess.CalledProcessError as e:
-                print(f"⚠ Conversion failed for {future_to_raw[future]}: {e}")
-
-    return sorted(dng_files)
 
 def read_exif_json(path_exif: Path) -> dict:
     """Load JSON content from a .exif file."""
@@ -2054,7 +1974,6 @@ def list_tempo_time_line(
 
 
     for img in img_files:
-        number = pattern.match(img.name).group(1)
         exif_path = img.with_suffix(".exif")
 
         if not exif_path.exists():
@@ -2125,7 +2044,7 @@ def time_line_analyser_images(list_dic_exif,
         deltas = np.array([])
 
     if len(deltas) == 0:
-        print(Style.YELLOW + f"⚠️ Not enough images to compute intervals." + Style.RESET)
+        print(Style.YELLOW + "⚠️ Not enough images to compute intervals." + Style.RESET)
         return {"dates": dates, "numeros": numeros, "deltas": deltas}
 
     print(Style.GREEN + f"🔍 {len(dates)} {img_suffix.upper()} files found" + Style.RESET)
@@ -2148,7 +2067,7 @@ def time_line_analyser_images(list_dic_exif,
         periode_filtre = np.mean(filtered_deltas)
     else:
         periode_filtre = periode_mediane
-        print(Style.YELLOW + f"⚠️ No intervals within defined tolerance for filtering." + Style.RESET)
+        print(Style.YELLOW + "⚠️ No intervals within defined tolerance for filtering." + Style.RESET)
 
     # --- Best time-lapse estimate ---
     estims = np.array([periode_mediane, periode_mode, periode_filtre])

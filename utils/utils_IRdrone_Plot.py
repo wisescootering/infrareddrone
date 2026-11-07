@@ -4,7 +4,6 @@ import matplotlib.transforms as mtrans
 import scipy.fft
 from irdrone.utils import Style
 import os.path as osp
-import os
 
 
 def flightProfil_plot(d_list, elev_Drone, elev_Ground, dirSaveFig=None, mute=True):
@@ -109,10 +108,6 @@ def YawPitchTeoriticalAndCoarse_plot(motion_list,
     plt.plot(motion_list[:, 0], pitch_Theorique[:, 1] + offsetPitch, color='yellowgreen', linestyle='-', linewidth=0.8,
              zorder=0, label="Pitch  Theoretical.           average = {:.2f}°"
              .format(np.average(pitch_Theorique[:, 1] + offsetPitch, axis=0)))
-    if False:
-        plt.plot(motion_list[:, 0], motion_list_drone[:, 3] - motion_list_cameraDJI[:, 3], "g-",
-                 label="Roll  Theoretical (Yaw Drone - Yaw Gimball)    average = {:.2f}°"
-                 .format(np.abs(np.average(motion_list_drone[:, 3] - motion_list_cameraDJI[:, 3], axis=0))))
     plt.grid()
     plt.xlim(0, np.max(motion_list[:, 0]))
     # ---------------------------------------- Legendes ---------------------------------------------------------------

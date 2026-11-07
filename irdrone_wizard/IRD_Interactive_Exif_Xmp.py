@@ -4,12 +4,9 @@
 #   Exif Xmp data
 #   29/10/2023   V002   *
 # ---------------------------------------------------------------------------------
-import os.path as osp
 import subprocess
 from pathlib import Path
 import json
-from datetime import datetime, date
-import time
 # -------------- IRDrone Library ------------------------------------
 import IRD_Interactive_utils as Uti
 

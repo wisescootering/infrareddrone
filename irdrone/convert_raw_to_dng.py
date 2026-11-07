@@ -10,8 +10,6 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import os
 import os.path as osp
 import psutil
-import piexif
-from piexif import ImageIFD, ExifIFD
 from datetime import datetime
 import time
 import sys

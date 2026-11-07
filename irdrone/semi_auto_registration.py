@@ -643,7 +643,6 @@ def demo_raw(folder=osp.join(osp.dirname(__file__), "..", r"Hyperlapse 06_09_202
     if not osp.isdir(out_dir):
         import os
         os.mkdir(out_dir)
-    import glob
     for vis_pth in glob_path_ci(osp.join(folder, "*.dng")):
         print(osp.basename((vis_pth)))
         params = None

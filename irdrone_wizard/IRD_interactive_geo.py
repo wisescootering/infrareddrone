@@ -14,8 +14,6 @@ Created on 2023-12-02 00:35:10
 
 import numpy as np
 import math
-import re
-import json
 import os
 import time
 from typing import Optional, Any, List, Tuple, Dict
@@ -133,7 +131,7 @@ def extract_alti_IGN(coordinates: list[tuple[float, float]], interpolation: int 
         return dico_coordinates_IGN['elevations']
     else:
         # Gérez le cas où 'elevations' n'est pas une liste ou est vide
-        print(Style.YELLOW + f'⚠️  \'elevations\' n\'est pas une liste ou est vide' + Style.RESET)
+        print(Style.YELLOW + '⚠️  \'elevations\' n\'est pas une liste ou est vide' + Style.RESET)
         return {'elevations': {'lon': coordinates[0][1], 'lat': coordinates[0][0], 'z': 0., 'acc': 0.}}
 
 
@@ -168,7 +166,7 @@ def get_altitudes(coordinates, verbose=False, bypass=False):
 
     if bypass:
         dico_coordinates_GPS = force_sea_Level(coordinates)
-        print( Style.YELLOW + f"⚠    Ground level set to zero (bypass)" +  Style.RESET)
+        print( Style.YELLOW + "⚠    Ground level set to zero (bypass)" +  Style.RESET)
         return dico_coordinates_GPS
 
     if verbose:
@@ -178,7 +176,7 @@ def get_altitudes(coordinates, verbose=False, bypass=False):
     # Check if IGN completely failed
     if all(p["z"] == -99999.00 for p in dico_coordinates_GPS):
         if verbose:
-            print( Style.YELLOW + f"⚠️ IGN unavailable. Switching completely to OpenTopoData..." +  Style.RESET)
+            print( Style.YELLOW + "⚠️ IGN unavailable. Switching completely to OpenTopoData..." +  Style.RESET)
         dico_coordinates_GPS = get_altitudes_OpenTopo(coordinates)
         return dico_coordinates_GPS
 
@@ -286,7 +284,7 @@ def get_altitudes_IGN(points, pause=0.3, batch_size=100, max_tries: int = 3, res
                 time.sleep(2)
 
         if not success:
-            print( Style.YELLOW + f"⚠ IGN unavailable for this batch, altitudes set to -99999.00" +  Style.RESET)
+            print( Style.YELLOW + "⚠ IGN unavailable for this batch, altitudes set to -99999.00" +  Style.RESET)
             results.extend([
                 {"lat": lat, "lon": lon, "z": -99999.00, "acc": "IGN_error"}
                 for lat, lon in batch
@@ -362,7 +360,7 @@ def get_altitudes_OpenTopo(points, pause=0.3, batch_size=100, max_tries: int = 3
                         success = True
                         break
                     else:
-                        print( Style.YELLOW + f"⚠️ OpenTopo response missing 'results'" +  Style.RESET)
+                        print( Style.YELLOW + "⚠️ OpenTopo response missing 'results'" +  Style.RESET)
                 else:
                     print( Style.RED + f"❌ HTTP Error OpenTopo {response.status_code}" +  Style.RESET)
             except requests.RequestException as e:
@@ -370,7 +368,7 @@ def get_altitudes_OpenTopo(points, pause=0.3, batch_size=100, max_tries: int = 3
                 time.sleep(2)
 
         if not success:
-            print( Style.YELLOW + f"⚠  OpenTopo unavailable, altitudes set to 0 m" +  Style.RESET)
+            print( Style.YELLOW + "⚠  OpenTopo unavailable, altitudes set to 0 m" +  Style.RESET)
             results.extend([
                 {"lat": lat, "lon": lon, "z": 0, "acc": "unavailable"}
                 for lat, lon in batch
@@ -494,7 +492,7 @@ def extract_geoTag(dic_geo: dict[str, Any],
     # Vérification des coordonnées
     if 'lat' not in dic_geo or 'lon' not in dic_geo:
         if verbose:
-            print( Style.YELLOW + f"⚠️ Pas de coordonnées GPS valides dans dic_geo." +  Style.RESET)
+            print( Style.YELLOW + "⚠️ Pas de coordonnées GPS valides dans dic_geo." +  Style.RESET)
         return dic_geo
 
     lat, lon = dic_geo['lat'], dic_geo['lon']
@@ -502,7 +500,7 @@ def extract_geoTag(dic_geo: dict[str, Any],
     # Mode bypass : retourne des valeurs factices/simulées sans appeler l'API
     if bypass:
         if verbose:
-            print( Style.YELLOW + f"⚠   ️ bypass activé : pas d'appel réseau pour la géolocalisation." +  Style.RESET)
+            print( Style.YELLOW + "⚠   ️ bypass activé : pas d'appel réseau pour la géolocalisation." +  Style.RESET)
         if bypass_data:
             # On remplit uniquement les clés attendues depuis bypass_data
             for k in fields:
@@ -838,7 +836,7 @@ def writeGPX(listPts, dirNameVol, dateEtude, mute=True):
         Construction d'un fichier gpx contenant le tracé du plan de vol
         Il y a au début une tres grosse étiquette !!
     """
-    print( Style.GREEN + f'Write Garmin .gpx file' +  Style.RESET)
+    print( Style.GREEN + 'Write Garmin .gpx file' +  Style.RESET)
     #  mise en forme de la date pour le format gpx Garmin
     if dateEtude.month < 10:
         monthGpx = str('0' + str(dateEtude.month))
@@ -947,83 +945,3 @@ def formatCoordGPSforGpx(listPts):
     minLon = min(coordGPSgpxLon)
 
     return pointTrk, maxLat, minLat, maxLon, minLon
-
-
-def extract_geotag_AVR(dic_geo: dict[str, any]):
-    # direct query of OSM without using the geopy library
-    try:
-        try:
-            geolocator = Nominatim(user_agent="IRdrone")
-
-            session = Session()
-            session.verify = True
-            geolocator.adapter.session = session
-            latitude_AVR, longitude_AVR = dic_geo.get('lat'), dic_geo.get('lon')
-
-            api_OSM = f"https://nominatim.openstreetmap.org/reverse?format=geocodejson&lat={latitude_AVR}&lon={longitude_AVR}"
-            location_AVR = json.loads(requests.get(api_OSM).text)
-            road = find_value_in_dic(location_AVR, 'road')
-            label_road = find_value_in_dic(location_AVR, 'label').split(",")[0]
-            lieu_dit = find_value_in_dic(location_AVR, 'district')
-            if label_road != lieu_dit:
-                road = label_road
-            else:
-                road = None
-            dic_geo['road'] = road
-            dic_geo['lieu_dit'] = lieu_dit
-            dic_geo['ville'] = find_value_in_dic(location_AVR, 'level8')
-            dic_geo['code_postal'] = find_value_in_dic(location_AVR, 'postcode')
-            dic_geo['dept'] = find_value_in_dic(location_AVR, 'level6')
-            dic_geo['region'] = find_value_in_dic(location_AVR, 'level4')
-            dic_geo['pays'] = find_value_in_dic(location_AVR, 'level3')
-
-
-        except AttributeError as e:
-            print( Style.YELLOW + f"⚠     Pas de coordonnées GPS pour ce point." +  Style.RESET)
-            dic_geo['road'], dic_geo['lieu_dit'], dic_geo['ville'], dic_geo['code_postal'], dic_geo['dept'], dic_geo['region'], dic_geo['pays'] = None, None, None, None, None, None, None
-
-    except Exception as e:
-        print("error", e,)
-
-    def find_value_in_dic(dictionary: dict[str, any], key_searched: str) -> Optional[any]:
-        """
-        This function recursively searches for a key in a nested dictionary structure and
-        returns the associated value if the key is found.
-
-        Parameters:
-        - dictionary (dict[any, any]): The dictionary in which to search for the key.
-        - key_searched (str): The key to search for in the dictionary.
-
-        Returns:
-        - Optional[any]: The value associated with the key_searched if it is found;
-                         otherwise, None.
-
-        Usage:
-        - The function iteratively searches through the keys of the input dictionary.
-        - If the current key matches the key_searched, the corresponding value is returned.
-        - If the associated value is a dictionary, the function calls itself recursively
-          to search within this nested dictionary, and returns the result if a match is found.
-        - If the associated value is a list, the function iterates through each item in the
-          list. If an item is a dictionary, the function calls itself recursively to search
-          within this nested dictionary, and returns the result if a match is found.
-        - If the key is not found, the function returns None.
-        """
-        for key, value in dictionary.items():
-            # Check if the current key matches the key_searched
-            if key == key_searched:
-                return value
-            # Check if the value is a dictionary
-            elif isinstance(value, dict):
-                results = find_value_in_dic(value, key_searched)
-                if results is not None:
-                    return results
-            # Check if the value is a list
-            elif isinstance(value, list):
-                for item in value:
-                    # Check if the item within the list is a dictionary
-                    if isinstance(item, dict):
-                        results = find_value_in_dic(item, key_searched)
-                        if results is not None:
-                            return results
-
-

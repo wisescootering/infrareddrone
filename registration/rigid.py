@@ -194,7 +194,7 @@ def compute_pyramid(img, scales_list):
     for (ids, resized) in enumerate(pyramid_gaussian(img, downscale=2)):
         if 2**ids in scales_list:
             img_pyr[2**ids] = resized.astype(np.float32)
-            logging.info("Storing pyramid level {}".format(2**ids, resized.shape))
+            logging.info("Storing pyramid level {}".format(2**ids, ))
         if 2**ids >= max(scales_list):
             break
     return img_pyr

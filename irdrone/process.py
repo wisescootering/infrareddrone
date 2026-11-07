@@ -2,7 +2,6 @@
 """
 image processing utilities
 """
-import shutil
 import cv2
 import sys
 import matplotlib.pyplot as plt
@@ -11,19 +10,16 @@ import os
 import os.path as osp
 import PIL.Image
 import PIL.ExifTags
-import piexif
 import exifread
 import datetime
 from pathlib import Path
 import logging
 from os import mkdir
-import utils.utils_IRdrone as IRd
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
 from irdrone.utils import Style, conversionGPSdms2dd, get_polar_shading_map, contrast_stretching
 from irdrone.file_utils import has_suffix, with_suffix_ci
 import config as cf
 import subprocess
-from pathlib import Path
 import json
 
 
@@ -161,7 +157,7 @@ def copy_metadata(pth_src, pth_dst):
            f'-Artist={cf.ARTIST}',
            pth_dst, "-overwrite_original",  "-fast"]
 
-    p = subprocess.run(cmd)
+    subprocess.run(cmd)
 
     return
 
@@ -190,7 +186,7 @@ def xmp_band_metadata(pth_src, band_index=1):
         "-overwrite_original",
         pth_src
     ]
-    p = subprocess.run(cmd)
+    subprocess.run(cmd)
 
 class Image:
     """
@@ -422,7 +418,6 @@ class Image:
         self._lineardata = rawimg.clip(0., 1.)
     
     def get_data(self):
-        gamma = 2.2 #1./2.2
         if self._data is None:
             assert osp.exists(self.path), "%s not an image"%self.path
 # ---------------------------------------------------------------------------------------------------- DJI Mavic Air RAW
@@ -481,12 +476,6 @@ class Image:
         if item == 1:
             return  self.name
 
-    def __repr__(self):
-        if self._data is None:
-            return "Image %s not loaded"%self.path
-        else:
-            return "%s - Image %s loaded"%(self._data.shape, self.path)
-
     def clear(self):
         self._data = None
 
@@ -519,7 +508,7 @@ class Image:
         :param channels: Naming of channels for custom naming vizualization
         :return:
         """
-        fig = plt.figure(figsize=(18, 9))
+        plt.figure(figsize=(18, 9))
         listColor = ['red', 'green', 'blue']
         histl = [cv2.calcHist([self.data], [ch], None, [256], [0, 256]) for ch, _cname in enumerate(channels)]
         for ch, cname in enumerate(channels):

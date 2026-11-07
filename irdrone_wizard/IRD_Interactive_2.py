@@ -13,23 +13,17 @@ warnings.filterwarnings(
 )
 
 import os
-import sys
-import shutil
 import rawpy
 from functools import partial
-from typing import Any, Dict, Optional, Tuple, List, Union
+from typing import Dict, Optional, Tuple, List, Union
 from pathlib import Path
-from datetime import datetime, timedelta
-from collections import Counter
 import numpy as np
-import exifread
-import re
 import json
 from PIL import Image
 import io
 
 # -------------- PyQt6 Library ------------------------------------
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QProgressBar, QFileDialog,  QMessageBox, QApplication
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QProgressBar, QFileDialog,  QMessageBox
 from PyQt6.QtGui import QPixmap, QColor, QImage, QCloseEvent, QIcon
 from PyQt6.QtCore import Qt
 # -------------- IRDrone Library -------------------------------------
@@ -145,7 +139,7 @@ class LoadVisNirImagesDialog(QDialog):
                     self._set_image_flags_from_info(self.info_dng)
                     self.info_vis_dng_available = True
                 else:
-                    if self.verbose: print(Style.YELLOW + f'⚠  transfer_info_VIS_dng.json n\'a pas été détecté ...' + Style.RESET)
+                    if self.verbose: print(Style.YELLOW + '⚠  transfer_info_VIS_dng.json n\'a pas été détecté ...' + Style.RESET)
             elif self.spectral_band.lower() in ("nir", "ir", "near infrared"):
                 self.img_suffix = "dng"
                 self.spectral_band = "NIR"
@@ -156,10 +150,10 @@ class LoadVisNirImagesDialog(QDialog):
                     self._set_image_flags_from_info(self.info_dng)
                     self.info_nir_dng_available = True
                 else:
-                    if self.verbose: print(Style.YELLOW + f'⚠  transfer_info_NIR_dng.json n\'a pas été détecté ...' + Style.RESET)
+                    if self.verbose: print(Style.YELLOW + '⚠  transfer_info_NIR_dng.json n\'a pas été détecté ...' + Style.RESET)
             else:
                 self.img_suffix = "jpg"
-                print(Style.YELLOW + f'⚠  suffix jpg non pris en charge ...' + Style.RESET)
+                print(Style.YELLOW + '⚠  suffix jpg non pris en charge ...' + Style.RESET)
         except Exception as e:
             print(f'error  in __init__   spectral_band and image suffix:  {e}')
 
@@ -481,7 +475,6 @@ class LoadVisNirImagesDialog(QDialog):
             idTakeoff = int(os.path.splitext(os.path.basename(self.listImgRefPath[0]))[0].split("_")[-1])
 
             outputFlyFolder = os.path.join(outputFolder, "AerialPhotography", self.currentSpectralBand)
-            outputTakeoffFolder = os.path.join(outputFolder, "AerialPhotography", self.currentSpectralBand)
             outputFlightAnalyticsFolder = os.path.join(outputFolder, "FlightAnalytics")
             if not os.path.isdir(outputFlyFolder):
                 # print("The destination folder ", outputFlyFolder, " of the images does not exist!")
@@ -1022,7 +1015,7 @@ class LoadVisNirImagesDialog(QDialog):
                             pil_img = Image.fromarray(thumb.data).convert("RGB")
 
                         else:
-                            raise ValueError(Style.YELLOW + f"⚠   Format de vignette non supporté" + Style.RESET)
+                            raise ValueError(Style.YELLOW + "⚠   Format de vignette non supporté" + Style.RESET)
 
                     except rawpy.LibRawNoThumbnailError:
                         print("Aucune vignette, dématriçage complet")
@@ -1093,7 +1086,6 @@ class LoadVisNirImagesDialog(QDialog):
         None
         """
         try:
-            flags = self.flags
             self.user_dir = Uti.safe_path(self.folderMissionPath / "AerialPhotography" / self.spectral_band)
             self.new_user_dir = self.user_dir
             if not os.path.exists(self.user_dir):

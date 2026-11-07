@@ -7,14 +7,15 @@ rem
 rem Python is searched in this order:
 rem   1. IRDRONE_PYTHON          full path to a python.exe (set it to force one)
 rem   2. .venv\Scripts\python.exe at the repository root
-rem   3. the conda environment IRDRONE_CONDA_ENV (default py39_clean, the name in
-rem      environment.yml) in %USERPROFILE%\miniforge3, miniconda3 or anaconda3,
-rem      activated first
+rem   3. the conda environment IRDRONE_CONDA_ENV (default: irdrone, the name in
+rem      environment.yml, then py39_clean, the former one) in
+rem      %USERPROFILE%\miniforge3, miniconda3 or anaconda3, activated first
 rem   4. python found on the PATH
 rem Exit code 1 (after printing why) when none is found.
 
 set "IRDRONE_ROOT=%~dp0.."
-if not defined IRDRONE_CONDA_ENV set "IRDRONE_CONDA_ENV=py39_clean"
+set "IRDRONE_CONDA_ENVS=%IRDRONE_CONDA_ENV%"
+if not defined IRDRONE_CONDA_ENV set "IRDRONE_CONDA_ENVS=irdrone py39_clean"
 set "PYTHON="
 
 rem goto rather than ( ... ) blocks: a ")" in a path, as in "Program Files (x86)",
@@ -22,17 +23,20 @@ rem would end the block early.
 if defined IRDRONE_PYTHON goto use_irdrone_python
 if exist "%IRDRONE_ROOT%\.venv\Scripts\python.exe" goto use_venv
 
-for %%D in (miniforge3 miniconda3 anaconda3) do (
-    if exist "%USERPROFILE%\%%D\envs\%IRDRONE_CONDA_ENV%\python.exe" (
-        set "IRDRONE_CONDA_ROOT=%USERPROFILE%\%%D"
-        goto use_conda
+for %%E in (%IRDRONE_CONDA_ENVS%) do (
+    for %%D in (miniforge3 miniconda3 anaconda3) do (
+        if exist "%USERPROFILE%\%%D\envs\%%E\python.exe" (
+            set "IRDRONE_CONDA_ROOT=%USERPROFILE%\%%D"
+            set "IRDRONE_CONDA_ENV=%%E"
+            goto use_conda
+        )
     )
 )
 
 where python >nul 2>nul
 if not errorlevel 1 (
     set "PYTHON=python"
-    echo WARNING: no .venv or conda environment "%IRDRONE_CONDA_ENV%" found, using python from the PATH.
+    echo WARNING: no .venv or conda environment "%IRDRONE_CONDA_ENVS%" found, using python from the PATH.
     exit /b 0
 )
 

@@ -6,12 +6,9 @@ import logging
 import os.path as osp
 import registration.rigid as rigid
 from irdrone.semi_auto_registration import manual_warp, ManualAlignment, Transparency, Absgrad
-from skimage import transform
 import os
 import sys
-osp = os.path
 import time
-from datetime import datetime, timedelta
 from matplotlib.colors import LinearSegmentedColormap
 import interactive.imagepipe as ipipe
 import shutil
@@ -94,7 +91,7 @@ def ndvi(vis_img, nir_img, out_path=None, exif=None, gps=None, image_in=None):
         # ipi.gui()
         # try:
             # todo: fix missing exif datas in ndvi file.  La ligne en dessous ne marche pas !!!
-        out_img = ipi.save(out_path)
+        ipi.save(out_path)
         if image_in is not None:
             pr.copy_metadata(image_in, out_path)
 
@@ -198,7 +195,7 @@ def coarse_alignment(ref_full, mov_full, cals, yaw_main, pitch_main, roll_main, 
         translation = -ds*trans
     yaw_refine = np.rad2deg(np.arctan(translation[0]/focal))
     pitch_refine = np.rad2deg(np.arctan(translation[1]/focal))
-    print("2D translation {}".format(translation, yaw_refine, pitch_refine))
+    print("2D translation {}".format(translation, ))
     ts_end_coarse_search = time.perf_counter()
     logging.info("{:.2f}s elapsed in coarse search".format(ts_end_coarse_search - ts_start_coarse_search))
     ts_start_warp = time.perf_counter()
@@ -593,7 +590,6 @@ def _process_raw_pairs_serial(
 
 
         gps_vis = pr.Image(vis_pth).gps
-        date_vis = pr.Image(vis_pth).date   # todo fix error  date Exif (Date/Time Original and Create Date
         try:
             #option_alti = 'sealevel'  #   geo, ground, sealevel, takeoff
 
