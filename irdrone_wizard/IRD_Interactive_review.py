@@ -302,7 +302,8 @@ class CompareView(QWidget):
             self._text(p, "Not available", area)
             return
         p.save()
-        p.setClipRect(area)
+        # intersect: keeps the curtain clip of the swipe mode
+        p.setClipRect(area, Qt.ClipOperation.IntersectClip)
         p.drawPixmap(self._image_rect(area), pix, QRectF(pix.rect()))
         p.restore()
 
