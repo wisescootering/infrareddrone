@@ -37,6 +37,10 @@ from PyQt6.QtWidgets import QSplashScreen
 
 print("IRDrone is starting, waiting ...", flush=True)
 
+# Bottom button: no mission loaded yet / a mission is loaded.
+OPEN_MISSION_TEXT = "Open mission..."
+LOAD_ANOTHER_MISSION_TEXT = "Load another mission..."
+
 
 def _make_splash() -> QSplashScreen:
     """Small start-up window shown while the heavy modules are imported."""
@@ -246,9 +250,10 @@ class Main_Window(QMainWindow):
         # Current mission (defined in Step 1, or chosen when opening another step)
         self.mission_label = MissionLabel(self)
         bottom_layout.addWidget(self.mission_label)
-        self.btn_open_mission = QPushButton("Change mission...", self)
+        # "Open mission..." until a mission is loaded, then "Load another mission...".
+        self.btn_open_mission = QPushButton(OPEN_MISSION_TEXT, self)
         self.btn_open_mission.setStyleSheet(BUTTON_STYLE)
-        self.btn_open_mission.setToolTip("Switch to another existing mission folder (FLY-YYYYMMDD-hhmm-location)")
+        self.btn_open_mission.setToolTip("Open an existing mission folder (FLY-YYYYMMDD-hhmm-location)")
         self.btn_open_mission.clicked.connect(self.on_open_mission)
         bottom_layout.addWidget(self.btn_open_mission)
         bottom_layout.addStretch()
@@ -274,6 +279,8 @@ class Main_Window(QMainWindow):
     def _show_current_mission(self):
         """Refresh the mission shown at the bottom of the window and the step buttons."""
         self.mission_label.set_mission(self.mission_parameters, self.folderMissionPath)
+        loaded = Progress.mission_folder(self.mission_parameters, self.folderMissionPath) is not None
+        self.btn_open_mission.setText(LOAD_ANOTHER_MISSION_TEXT if loaded else OPEN_MISSION_TEXT)
         self._show_done_steps()
 
     def _show_done_steps(self):
@@ -364,7 +371,7 @@ class Main_Window(QMainWindow):
         height = 500  # height of the window
 
         # ----------------------- Choice of mission file -------------------------------------------------
-        # The current mission (Step 1, "Change mission..." or another step) is used
+        # The current mission (Step 1, "Open mission..." or another step) is used
         # directly: the folder is only asked when no mission is loaded yet.
         try:
             if not self.ensure_mission_parameters():
@@ -614,7 +621,7 @@ class Main_Window(QMainWindow):
         return None
 
     def on_open_mission(self):
-        """'Change mission...' button: switch to another existing mission."""
+        """'Open mission...' / 'Load another mission...' button: switch to an existing mission."""
         busy = self._open_step_window()
         if busy:
             QMessageBox.warning(self, "IRDrone", f"Close the {busy} window before opening another mission.")
