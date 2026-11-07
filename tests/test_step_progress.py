@@ -170,7 +170,7 @@ class _MissionHelpers(unittest.TestCase):
 
 
 class OpenMissionButtonTest(_MissionHelpers):
-    """'Open mission...' at the bottom: switch to an existing mission directly."""
+    """'Change mission...' at the bottom: switch to an existing mission directly."""
 
     def test_open_shows_the_mission_and_its_done_steps(self):
         window = self.main.Main_Window()

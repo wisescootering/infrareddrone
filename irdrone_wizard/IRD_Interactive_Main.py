@@ -240,9 +240,9 @@ class Main_Window(QMainWindow):
         # Current mission (defined in Step 1, or chosen when opening another step)
         self.mission_label = MissionLabel(self)
         bottom_layout.addWidget(self.mission_label)
-        self.btn_open_mission = QPushButton("Open mission...", self)
+        self.btn_open_mission = QPushButton("Change mission...", self)
         self.btn_open_mission.setStyleSheet(BUTTON_STYLE)
-        self.btn_open_mission.setToolTip("Open an existing mission folder (FLY-YYYYMMDD-hhmm-location)")
+        self.btn_open_mission.setToolTip("Switch to another existing mission folder (FLY-YYYYMMDD-hhmm-location)")
         self.btn_open_mission.clicked.connect(self.on_open_mission)
         bottom_layout.addWidget(self.btn_open_mission)
         bottom_layout.addStretch()
@@ -358,7 +358,7 @@ class Main_Window(QMainWindow):
         height = 500  # height of the window
 
         # ----------------------- Choice of mission file -------------------------------------------------
-        # The current mission (Step 1, "Open mission..." or another step) is used
+        # The current mission (Step 1, "Change mission..." or another step) is used
         # directly: the folder is only asked when no mission is loaded yet.
         try:
             if not self.ensure_mission_parameters():
@@ -608,7 +608,7 @@ class Main_Window(QMainWindow):
         return None
 
     def on_open_mission(self):
-        """'Open mission...' button: switch to another existing mission."""
+        """'Change mission...' button: switch to another existing mission."""
         busy = self._open_step_window()
         if busy:
             QMessageBox.warning(self, "IRDrone", f"Close the {busy} window before opening another mission.")
