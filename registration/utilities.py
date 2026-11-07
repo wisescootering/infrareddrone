@@ -191,7 +191,7 @@ def search_minimum(single_cost, debug=False, mode=QUADRATIC_FORM):
         coord_x = np.arange(-single_cost.shape[1]//2+1, single_cost.shape[1]//2+1, 1.)
         coord_x, coord_y = np.meshgrid(coord_x, coord_y)
         coord_z = single_cost[:, :, 0].T
-        surf = ax.plot_surface(
+        ax.plot_surface(
             coord_x, coord_y, coord_z, cmap=cm.coolwarm,
             linewidth=0, antialiased=False
         )

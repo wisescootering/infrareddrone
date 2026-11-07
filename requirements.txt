@@ -1,6 +1,6 @@
 # Python packages for IRDrone (pip / uv), on every OS.
 # Installed by setup.sh (Linux / macOS), bat_helpers\install.bat (Windows) and the Dockerfile.
-# environment.yml is an alternative conda environment for Windows (it also brings GDAL).
+# environment.yml is an optional conda environment built on this file (it adds GDAL).
 #
 # Optional, not listed here:
 #   - GDAL (osgeo): contour lines in Step 5. The pip package needs the system

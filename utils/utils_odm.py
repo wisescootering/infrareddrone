@@ -179,7 +179,6 @@ def visu_mapping(mappingList, listPts, focal_DJI=cf.IRD_FOCAL_LENGTH_PIX, lCapt_
             marker='o', markerfacecolor='white', markeredgecolor='black', markeredgewidth=0.3,  markersize=2, zorder=order,
             label='Shooting point.')
     # best synchro images
-    couleursSynchro = cycleColor(len(listSynchro_X))
     for i in range(len(listSynchro_X)):
         ax.plot(listSynchro_X[i], listSynchro_Y[i], linestyle='None',
             marker='o', markerfacecolor='orangered', markeredgecolor='darkred', markeredgewidth=0.5,markersize=2, zorder=order)

@@ -203,7 +203,6 @@ class ImagePairingWorker(QRunnable):
         t_VIS = np.array(self.time_line_VIS)
         t_NIR = np.array(self.time_line_NIR) + self.time_shift
         n_VIS = len(t_VIS)
-        n_NIR = len(t_NIR)
 
         # Compute every absolute VIS-to-NIR time difference.
         # Shape: (number of VIS images, number of NIR images).
@@ -212,7 +211,6 @@ class ImagePairingWorker(QRunnable):
         # Sort NIR candidates independently for each VIS image.
         # The first two indices correspond to the smallest absolute differences.
         nearest_idx = np.argsort(dt_matrix, axis=1)[:, :2]
-        nearest_dt = np.take_along_axis(dt_matrix, nearest_idx, axis=1)
 
         pairs = []
         for i in range(n_VIS):
@@ -1177,9 +1175,6 @@ class CreateExif(QtCore.QObject):
             Uti.save_time_line_json(self.folder_to_scan, dic_timeline)
 
             for idx, pt in enumerate(dic_timeline[self.spectral_band]):
-                my_path = Path(list_dic_exif[idx]["Directory"]) / f'{Path(list_dic_exif[idx]["FileName"]).stem}.exif'
-                my_timeline = pt["relative_timeline"]
-            for idx, pt in enumerate(dic_timeline[self.spectral_band]):
                 my_path = (
                         Path(list_dic_exif[idx]["Directory"])
                         / f'{Path(list_dic_exif[idx]["FileName"]).stem}.exif'
@@ -1565,16 +1560,6 @@ class Alti_GPS(QtCore.QObject):
                     continue
 
                 # --- Extract the GPS-related metadata fields ---
-                keys = [
-                    "DateTimeOriginal",
-                    "DroneLatitude",
-                    "DroneLongitude",
-                    "DroneAltitudeTakeOff",
-                    "UTM_x",
-                    "UTM_y",
-                    "UTM_zone"
-                ]
-
                 gps_list.append({
                     "file": exif_path,
                     "lat": exif_dict.get("DroneLatitude"),

@@ -18,3 +18,4 @@ help/images_light/
 .vscode/
 # Generated GitHub Pages site (website/prepare.py + mkdocs)
 website/build/
+.pytest_cache/

@@ -475,7 +475,6 @@ class LoadVisNirImagesDialog(QDialog):
             idTakeoff = int(os.path.splitext(os.path.basename(self.listImgRefPath[0]))[0].split("_")[-1])
 
             outputFlyFolder = os.path.join(outputFolder, "AerialPhotography", self.currentSpectralBand)
-            outputTakeoffFolder = os.path.join(outputFolder, "AerialPhotography", self.currentSpectralBand)
             outputFlightAnalyticsFolder = os.path.join(outputFolder, "FlightAnalytics")
             if not os.path.isdir(outputFlyFolder):
                 # print("The destination folder ", outputFlyFolder, " of the images does not exist!")
@@ -1087,7 +1086,6 @@ class LoadVisNirImagesDialog(QDialog):
         None
         """
         try:
-            flags = self.flags
             self.user_dir = Uti.safe_path(self.folderMissionPath / "AerialPhotography" / self.spectral_band)
             self.new_user_dir = self.user_dir
             if not os.path.exists(self.user_dir):

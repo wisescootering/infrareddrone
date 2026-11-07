@@ -1974,7 +1974,6 @@ def list_tempo_time_line(
 
 
     for img in img_files:
-        number = pattern.match(img.name).group(1)
         exif_path = img.with_suffix(".exif")
 
         if not exif_path.exists():

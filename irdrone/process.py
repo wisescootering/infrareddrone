@@ -157,7 +157,7 @@ def copy_metadata(pth_src, pth_dst):
            f'-Artist={cf.ARTIST}',
            pth_dst, "-overwrite_original",  "-fast"]
 
-    p = subprocess.run(cmd)
+    subprocess.run(cmd)
 
     return
 
@@ -186,7 +186,7 @@ def xmp_band_metadata(pth_src, band_index=1):
         "-overwrite_original",
         pth_src
     ]
-    p = subprocess.run(cmd)
+    subprocess.run(cmd)
 
 class Image:
     """
@@ -418,7 +418,6 @@ class Image:
         self._lineardata = rawimg.clip(0., 1.)
     
     def get_data(self):
-        gamma = 2.2 #1./2.2
         if self._data is None:
             assert osp.exists(self.path), "%s not an image"%self.path
 # ---------------------------------------------------------------------------------------------------- DJI Mavic Air RAW
@@ -509,7 +508,7 @@ class Image:
         :param channels: Naming of channels for custom naming vizualization
         :return:
         """
-        fig = plt.figure(figsize=(18, 9))
+        plt.figure(figsize=(18, 9))
         listColor = ['red', 'green', 'blue']
         histl = [cv2.calcHist([self.data], [ch], None, [256], [0, 256]) for ch, _cname in enumerate(channels)]
         for ch, cname in enumerate(channels):

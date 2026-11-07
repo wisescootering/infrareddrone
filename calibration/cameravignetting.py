@@ -279,7 +279,6 @@ def contrast_stretching(img, percentiles=None):
     return img_rescale, [p2, p98]
 
 def test_calibration_M20():
-    camera_name = "M20_RAW"
     img_shape = (3448, 4600, 3)
     vig_map = get_polar_shading_map(img_shape=img_shape, calib=SJCAM_M20_PROFILE_CONTROL_POINTS)
     img_path = osp.join(osp.dirname(__file__), "..", "Hyperlapse 06_09_2021_sync", "20210906122928.RAW")

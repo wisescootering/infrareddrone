@@ -12,8 +12,6 @@ def courbes_fA_fB():
     rng = np.random.default_rng(6789)
     alea = rng.integers(low=-30, high=30, size=len(y_A))
     y_A = [y_A[i] + 0.18 * alea[i]  for i in range(len(y_A))]
-    start_Point_A = 6
-    start_Point_B = 120
     x_B = [100,103,106,109,111,114,117,120,123,126,129,131,134,137,140,143,146,149,152,155,158,161,164,167,170,173,176,
            179,182,185,188,191,194,197,200]
     x_B = [x_B[i] + shift for i in range(len(x_B))]

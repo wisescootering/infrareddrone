@@ -1,0 +1,74 @@
+name: Conda environment
+
+# Checks that the optional conda environment (environment.yml) still builds on
+# Windows, where it is used, and that the tests pass in it (with GDAL).
+# Also checks which conda environment the Windows launcher picks.
+# Only when the environment, the package list or the launcher changes.
+on:
+  push:
+    branches: [master]
+    paths:
+      - "environment.yml"
+      - "bat_helpers/find_python.bat"
+      - "requirements.txt"
+      - ".github/workflows/conda.yml"
+  pull_request:
+    paths:
+      - "environment.yml"
+      - "bat_helpers/find_python.bat"
+      - "requirements.txt"
+      - ".github/workflows/conda.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: conda-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conda:
+    runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+      IRDRONE_WORKING_DIR: ${{ github.workspace }}/Air-Mission
+      PYTHONUTF8: "1"
+    defaults:
+      run:
+        shell: bash -el {0}  # activates the environment
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: mamba-org/setup-micromamba@v3
+        with:
+          environment-file: environment.yml
+          init-shell: bash
+
+      - name: Check GDAL and run the tests
+        run: |
+          python -c "from osgeo import gdal; print('GDAL', gdal.__version__)"
+          python -c "from PyQt6 import QtCore, QtWidgets; print('PyQt6', QtCore.PYQT_VERSION_STR)"
+          python -m pip show PyQt6 | grep -E "^(Version|Location|Installer)" || true
+          python -m pip install pytest
+          python -m pytest -q
+
+      # No real conda needed: fake environments in a fake user folder, and a
+      # conda.bat stub for the activation. Checks the order of the names.
+      - name: Windows launcher picks the conda environment (find_python.bat)
+        shell: cmd
+        run: |
+          set "FAKE=%RUNNER_TEMP%\fakehome"
+          for %%D in (miniforge3\envs\irdrone miniforge3\condabin miniconda3\envs\py39_clean miniconda3\condabin) do mkdir "%FAKE%\%%D"
+          type nul > "%FAKE%\miniforge3\envs\irdrone\python.exe"
+          type nul > "%FAKE%\miniconda3\envs\py39_clean\python.exe"
+          > "%FAKE%\miniforge3\condabin\conda.bat" echo @exit /b 0
+          > "%FAKE%\miniconda3\condabin\conda.bat" echo @exit /b 0
+          set "USERPROFILE=%FAKE%"
+          call bat_helpers\find_python.bat || exit /b 1
+          echo default: %IRDRONE_CONDA_ENV% in %IRDRONE_CONDA_ROOT%
+          if not "%IRDRONE_CONDA_ENV%"=="irdrone" exit /b 1
+          set "IRDRONE_CONDA_ENV=py39_clean"
+          call bat_helpers\find_python.bat || exit /b 1
+          echo forced: %IRDRONE_CONDA_ENV% in %IRDRONE_CONDA_ROOT%
+          if not "%IRDRONE_CONDA_ROOT%"=="%FAKE%\miniconda3" exit /b 1

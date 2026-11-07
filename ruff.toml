@@ -4,7 +4,6 @@
 # imports / variables. No style rules: the code base does not follow one.
 target-version = "py39"
 extend-exclude = [
-    "notebooks",      # Jupytext notebooks: IPython magics are not Python
     "website/build",
 ]
 
@@ -13,6 +12,4 @@ select = ["F"]
 ignore = [
     "F403",  # from module import *: used on purpose in a few scripts
     "F405",  # names coming from those star imports
-    "F841",  # unused local variables: ~40 leftovers, each needs a manual look
-             # (the right-hand side may matter), not worth an automatic fix
 ]
