@@ -34,8 +34,8 @@ class CheckImageWriteTests(unittest.TestCase):
                 mock.patch.object(Aru, "load_relative_time_line", return_value={}), \
                 mock.patch.object(Aru, "extract_relative_time_line", return_value=0.0), \
                 mock.patch.object(Aru, "read_aruco_cache", return_value=None), \
-                mock.patch.object(Aru.cv2, "imread", return_value=img), \
-                mock.patch.object(Aru.cv2, "imwrite", side_effect=lambda p, *a: written.append(Path(p).name)), \
+                mock.patch.object(Aru.image_io, "imread", return_value=img), \
+                mock.patch.object(Aru.image_io, "imwrite", side_effect=lambda p, *a: written.append(Path(p).name)), \
                 mock.patch.object(Aru, "draw_aruco_overlay", return_value=img), \
                 mock.patch.object(Aru, "detect_mobile_marker_absolute",
                                   side_effect=lambda **kw: (dict(_RESULT), None, marker_data_ID)):

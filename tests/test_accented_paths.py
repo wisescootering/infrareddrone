@@ -59,6 +59,17 @@ class AccentedFolderTest(unittest.TestCase):
             data = json.loads((self.folder / f"VIS_{index:04d}.exif").read_text(encoding="utf-8"))
             self.assertIn("RelativeTimeLine", data)
 
+    def test_images_are_read_and_written_in_an_accented_folder(self):
+        import numpy as np
+        import cv2
+        import image_io
+        image = (np.arange(12 * 8 * 3) % 65535).astype(np.uint16).reshape(12, 8, 3)
+        for name in ("NIR_0001_é.tif", "VIS_0001_é.png"):
+            path = self.folder / name
+            self.assertTrue(image_io.imwrite(path, image))
+            np.testing.assert_array_equal(image_io.imread(path, cv2.IMREAD_UNCHANGED), image)
+        self.assertIsNone(image_io.imread(self.folder / "missing.jpg"))
+
 
 if __name__ == "__main__":
     unittest.main()

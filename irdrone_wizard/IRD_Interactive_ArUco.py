@@ -26,6 +26,7 @@ from IRD_Interactive_utils import safe_path
 from IRD_Interactive_color_style import Style
 
 from config import require_tool
+import image_io
 
 # ------------------------------------
 # Available ArUco dictionaries
@@ -146,7 +147,7 @@ def process_aruco_images(
         if ext == "dng" and spectral_band in ["VIS", "NIR"]:
             img_cv, _ = load_dng_for_aruco(str(img_path), folderMissionPath.parent)
         else:
-            img_cv = cv2.imread(str(img_path))
+            img_cv = image_io.imread(str(img_path))
 
         if img_cv is None:
             return i, img_name, None
@@ -184,9 +185,9 @@ def process_aruco_images(
 
             out_path = check_detection_dir / f"{img_path.stem}_aruco.{img_check_suffix}"
             if img_check_suffix == "jpg":
-                cv2.imwrite(str(out_path), img_check, [cv2.IMWRITE_JPEG_QUALITY, 90])
+                image_io.imwrite(str(out_path), img_check, [cv2.IMWRITE_JPEG_QUALITY, 90])
             else:
-                cv2.imwrite(str(out_path), img_check)
+                image_io.imwrite(str(out_path), img_check)
 
             # Tell the GUI that a new check image is available (file fully written)
             if check_image_callback is not None:
@@ -1022,7 +1023,7 @@ def load_dng_for_aruco(path, folder_mission):
         ]
         subprocess.call(cmd)
 
-    img_cv = cv2.imread(out_file, cv2.IMREAD_COLOR)
+    img_cv = image_io.imread(out_file, cv2.IMREAD_COLOR)
     return img_cv, out_file
 
 def cached_tif(path):
@@ -1058,7 +1059,7 @@ def load_tif_radiometric(in_file):
     flags = cv2.IMREAD_ANYDEPTH | cv2.IMREAD_ANYCOLOR
     flags |= cv2.IMREAD_IGNORE_ORIENTATION
     return cv2.cvtColor(
-        cv2.imread(in_file, flags=flags),
+        image_io.imread(in_file, flags=flags),
         cv2.COLOR_BGR2RGB
     ) / (2.0**16 - 1)
 
@@ -1080,7 +1081,7 @@ def load_tif_aruco(in_file):
     flags = cv2.IMREAD_ANYDEPTH | cv2.IMREAD_ANYCOLOR
     flags |= cv2.IMREAD_IGNORE_ORIENTATION
 
-    img16 = cv2.imread(in_file, flags=flags)
+    img16 = image_io.imread(in_file, flags=flags)
     img16 = cv2.cvtColor(img16, cv2.COLOR_BGR2RGB)
 
     # Convert from 16-bit to 8-bit for OpenCV ArUco detection.
