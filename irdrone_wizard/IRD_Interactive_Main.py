@@ -26,8 +26,6 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QWidget,
     QPushButton,
-    QLabel,
-    QFrame,
     QMessageBox,
     QDialog,
 )
@@ -72,6 +70,9 @@ _app.processEvents()
 from IRD_Interactive_1 import Window_Load_TakeOff_Image, Window_create_file_structure
 from IRD_Interactive_2 import LoadVisNirImagesDialog
 from IRD_Interactive_timeline import FlightTimelineDialog
+from IRD_Interactive_new_mission import NewMissionDialog
+from IRD_Interactive_review import ReviewDialog
+from IRD_Interactive_home import HomePage, recent_missions
 from IRD_Interactive_3 import DialogSynchroAruco
 from IRD_Interactive_4 import DialogImageProcessing
 from IRD_Interactive_5 import DialogGeoRef
@@ -119,8 +120,6 @@ class Main_Window(QMainWindow):
         self.nb_btn = 6
         self.btn_width = int(self.pref_screen.windowDisplaySize[0] / self.nb_btn) - 10
         self.command_layout = None
-        self.image_label = QLabel(self)
-        self.empty_pixmap = QPixmap(100, 100)
         self.dialog_load_takeoff_image = None
         self.dialog_create_file_structure = None
         self.dialog_extract_exif = None
@@ -219,28 +218,18 @@ class Main_Window(QMainWindow):
 
         self.main_layout.addLayout(self.command_layout)
 
-        # Image display area
-        self.image_label = QLabel(self)
-        self.image_label.setFrameStyle(QFrame.Shape.Box | QFrame.Shadow.Sunken)  # Add a frame
-        self.image_label.setFrameStyle(QFrame.Shape.Box)
-        self.image_label.setMinimumSize(*self.image_display_size)
-        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        # IRDrone default image
+        # Home page: New / Open mission and recent missions, then the current
+        # mission (what is done, what comes next)
         image_path = os.path.join(self.pref_screen.default_app_dir, "Icon", "image_IRdrone_appli.jpg")
-        if os.path.exists(image_path):
-            # Load image and Adjust the size if necessary
-            default_pixmap = QPixmap(image_path)
-            default_pixmap = default_pixmap.scaled(*self.image_display_size, Qt.AspectRatioMode.KeepAspectRatio)
-            self.image_label.setPixmap(default_pixmap)  # Display the image in  QLabel
-        else:
-            # Create an empty pixmap of the desired size
-            self.empty_pixmap = QPixmap(width, height)
-            self.image_label.setText("Image area")
-            self.empty_pixmap.fill(QColor(Qt.GlobalColor.gray))  # transparent,gray, darkYellow etc)
-            self.image_label.setPixmap(self.empty_pixmap)  # Set the empty pixmap
-
-        self.main_layout.addWidget(self.image_label)
+        self.home = HomePage(hero_image=Path(image_path))
+        self.home.setMinimumSize(*self.image_display_size)
+        self.home.new_mission.connect(self.open_window_define_mission)
+        self.home.open_mission.connect(self.on_open_mission)
+        self.home.open_recent.connect(self.on_open_recent)
+        self.home.run_step.connect(self.run_step)
+        self.home.review.connect(self.on_review)
+        self.home.set_recent(recent_missions(Path(self.pref_screen.default_user_dir)))
+        self.main_layout.addWidget(self.home, 1)
 
         # Bottom bar: working folder + gear (left), help button (right)
         bottom_layout = QHBoxLayout()
@@ -275,14 +264,20 @@ class Main_Window(QMainWindow):
         """New working folder chosen with the gear button."""
         self.pref_screen.default_user_dir = folder
         self.def_user_dir = folder
+        self.home.set_recent(recent_missions(Path(folder)))
         print(f"Working folder: {folder}")
 
     def _show_current_mission(self):
         """Refresh the mission shown at the bottom of the window and the step buttons."""
         self.mission_label.set_mission(self.mission_parameters, self.folderMissionPath)
-        loaded = Progress.mission_folder(self.mission_parameters, self.folderMissionPath) is not None
+        folder = Progress.mission_folder(self.mission_parameters, self.folderMissionPath)
+        loaded = folder is not None
         self.btn_open_mission.setText(LOAD_ANOTHER_MISSION_TEXT if loaded else OPEN_MISSION_TEXT)
         self._show_done_steps()
+        try:
+            self.home.show_mission(folder)
+        except Exception as e:  # the home page must never block the steps
+            print(f"Home page not updated: {e}")
 
     def _show_done_steps(self):
         """Grey out the steps done for the current mission, with a check mark.
@@ -306,8 +301,32 @@ class Main_Window(QMainWindow):
 
 
     def open_window_define_mission(self):
+        """Step 1 - new mission: images found on the SD cards, details, copy.
+        "Flight timeline" at the end goes on with Step 2."""
+        busy = self._open_step_window()
+        if busy:
+            QMessageBox.warning(self, "IRDrone", f"Close the {busy} window before creating a mission.")
+            return
+        dialog = NewMissionDialog(Path(self.pref_screen.default_user_dir), parent=self)
+        dialog.mission_created.connect(self.handle_new_mission)
+        dialog.exec()
+        if dialog.action == "classic":
+            self.open_window_define_mission_classic()
+        elif dialog.action == "timeline":
+            self.open_window_load_set_images()
+
+    def handle_new_mission(self, mission_parameters: dict):
+        """A mission was created by the new mission window: it becomes the current one."""
+        folder = Path(mission_parameters["File path mission"])
+        self.mission_parameters = dict(mission_parameters)
+        self.mission_parameters["folderMissionPath"] = folder
+        self.folderMissionPath = folder
+        self._show_current_mission()
+        self.home.set_recent(recent_missions(Path(self.pref_screen.default_user_dir)))
+
+    def open_window_define_mission_classic(self):
         """
-        Open dialog_load_takeoff_image when the corresponding button is clicked.
+        Classic Step 1: open dialog_load_takeoff_image (take-off image, then the form).
         """
         try:
             self.dialog_load_takeoff_image = Window_Load_TakeOff_Image(self)
@@ -639,6 +658,42 @@ class Main_Window(QMainWindow):
                 f"Unable to load mission parameters:\n{e}"
             )
             return False
+
+    def run_step(self, step: int):
+        """'Continue' of the home page: the step, chained to the next ones when possible."""
+        if step == 1:
+            self.open_window_define_mission()
+        elif step == 2:
+            self.open_window_load_set_images()
+        elif step == 3:
+            self.on_pre_process_images(auto_run=True)
+        elif step == 4:
+            self.on_process_images()
+        elif step == 5:
+            self.on_post_process_images()
+        elif step == 6:
+            self.on_archive_mission()
+
+    def on_review(self):
+        """Review of the aligned images (end of Step 4)."""
+        if not self.ensure_mission_parameters():
+            return
+        folder = Progress.mission_folder(self.mission_parameters, self.folderMissionPath)
+        try:
+            dialog = ReviewDialog(Path(folder), parent=self)
+        except (FileNotFoundError, ValueError) as e:
+            QMessageBox.warning(self, "Review unavailable", str(e))
+            return
+        dialog.exec()
+        self._show_current_mission()
+
+    def on_open_recent(self, folder):
+        busy = self._open_step_window()
+        if busy:
+            QMessageBox.warning(self, "IRDrone", f"Close the {busy} window before opening another mission.")
+            return
+        if self.load_mission(Path(folder)):
+            print(f"Mission opened: {self.folderMissionPath}")
 
     def _open_step_window(self):
         """Name of a Step 3-6 window still open (it works on the current mission), else None."""
