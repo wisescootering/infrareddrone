@@ -88,6 +88,7 @@ from IRD_Interactive_workers import TimeShiftWorker
 from IRD_Interactive_workers import ImagePairingWorker
 from IRD_Interactive_styles import BUTTON_STYLE
 import flight_timeline as FT
+import IRD_Interactive_look as Look
 
 
 class DialogSynchroAruco(QDialog):
@@ -101,6 +102,10 @@ class DialogSynchroAruco(QDialog):
     """
 
     data_signal_to_main = pyqtSignal(bool)
+    # Chained run (from Step 2): the pairing is done, go on with Step 4
+    continue_requested = pyqtSignal()
+
+    CONTINUE_DELAY_S = 5
 
     def __init__(self, mission_parameters: dict, parent=None, multi_thread=True, use_aruco_cache=False,
                  auto_run=False):
@@ -171,9 +176,15 @@ class DialogSynchroAruco(QDialog):
         self.angles_NIR = []
 
 
+        self._continue_timer = QTimer(self)
+        self._continue_timer.setInterval(1000)
+        self._continue_timer.timeout.connect(self._continue_tick)
+        self._continue_left = 0
+
         self._log("Dialog initialized.")
+        self._set_manual_mode(not self.auto_run)
         if self.auto_run:
-            self._log("Started from the flight timeline: ArUco detection and time alignment run automatically.")
+            self._log("Started from the flight timeline: detection, time alignment and pairing run automatically.")
             QTimer.singleShot(400, self.on_run_aruco)
 
     # ------------------------------------------------------------------
@@ -185,6 +196,34 @@ class DialogSynchroAruco(QDialog):
         # Title at the top
         title = QLabel("<b>Timeline Synchronization</b>")
         main_layout.addWidget(title)
+
+        # Chained run: the three stages and what comes next, no button to click
+        self.stages = Look.StageTracker(["Target detection", "Clock alignment", "Image pairing",
+                                         "Image processing"])
+        main_layout.addWidget(self.stages.widget())
+        auto_bar = QHBoxLayout()
+        self.auto_label = QLabel("")
+        self.auto_label.setStyleSheet("color: #6B7785;")
+        self.btn_manual = QPushButton("Manual mode…")
+        self.btn_manual.setStyleSheet(Look.SECONDARY_STYLE)
+        self.btn_manual.setToolTip("Stop the automatic chaining and run each stage yourself "
+                                   "(check or adjust the time alignment before pairing).")
+        self.btn_manual.clicked.connect(lambda: self._set_manual_mode(True))
+        self.btn_stay = QPushButton("Stay here")
+        self.btn_stay.setStyleSheet(Look.SECONDARY_STYLE)
+        self.btn_stay.setToolTip("Do not start the image processing now.")
+        self.btn_stay.clicked.connect(self._stay_here)
+        self.btn_continue = QPushButton("Image processing  ▶")
+        self.btn_continue.setStyleSheet(Look.PRIMARY_STYLE)
+        self.btn_continue.setToolTip("Close this window and run Step 4 (alignment of the image pairs).")
+        self.btn_continue.clicked.connect(self._continue_now)
+        for b in (self.btn_stay, self.btn_continue):
+            b.hide()
+        auto_bar.addWidget(self.auto_label, 1)
+        auto_bar.addWidget(self.btn_manual)
+        auto_bar.addWidget(self.btn_stay)
+        auto_bar.addWidget(self.btn_continue)
+        main_layout.addLayout(auto_bar)
 
         # Log display area
         self.log_text = QTextEdit()
@@ -219,6 +258,8 @@ class DialogSynchroAruco(QDialog):
 
         # Keep the buttons aligned to the left
         btn_layout.addStretch()
+        self._substep_buttons = (self.btn_run_aruco, self.btn_compute_time_shift,
+                                 self.btn_adjust_time_shift, self.btn_image_pairing)
 
         # Apply the common style to the three main buttons
         self.btn_run_aruco.setStyleSheet(BUTTON_STYLE)
@@ -383,6 +424,9 @@ class DialogSynchroAruco(QDialog):
 
             # Reset the progress bar before starting processing
             self.progress_bar.setValue(0)
+            self.stages.set(0, Look.STAGE_RUNNING, "visible, then infrared")
+            for k in (1, 2):
+                self.stages.set(k, Look.STAGE_PENDING, "")
 
             # Start VIS processing; NIR follows automatically
             self.aruco_orchestrator.start_VIS()
@@ -429,6 +473,8 @@ class DialogSynchroAruco(QDialog):
 
         # Enable time alignment now that both detection stages are complete
         self.btn_compute_time_shift.setEnabled(True)
+        self.stages.set(0, Look.STAGE_DONE,
+                        f"{len(self.aruco_results_vis)} visible · {len(self.aruco_results_nir)} infrared")
         if self.auto_run:
             QTimer.singleShot(0, self.on_compute_time_shift)
 
@@ -531,6 +577,10 @@ class DialogSynchroAruco(QDialog):
         """
         self.progress_bar.setValue(0)
         self._log(f"Error during ArUco detection: {error_msg}")
+        running = next((k for k, s in enumerate(self.stages.states) if s == Look.STAGE_RUNNING), 0)
+        self.stages.set(running, Look.STAGE_FAILED, "see the log")
+        if self.auto_run:
+            self._set_manual_mode(True)
 
         QMessageBox.critical(
             self,
@@ -555,6 +605,7 @@ class DialogSynchroAruco(QDialog):
         report the error in the log.
         """
         self.progress_bar.setValue(3)
+        self.stages.set(1, Look.STAGE_RUNNING, "")
 
         try:
             worker = TimeShiftWorker(
@@ -679,11 +730,19 @@ class DialogSynchroAruco(QDialog):
         self.progress_bar.setValue(100)
         self.progress_label.setText(final_message)
         self.btn_image_pairing.setEnabled(True)
-        if self.auto_run:
-            # Last check left to the user: the alignment plot, then "Pair"
+        computed = angle_abs_for_shift_time or angle_img_for_shift_time
+        self.stages.set(1, Look.STAGE_DONE if computed else Look.STAGE_FAILED,
+                        f"infrared {time_shift:+.2f} s" + ("" if computed else " (entered)"))
+        if self.auto_run and computed:
+            # Chained: the plot is shown a moment, then the images are paired
+            self.auto_label.setText("Clocks aligned: pairing the images…")
+            QTimer.singleShot(1500, self._auto_pair)
+        elif self.auto_run:
+            # The offset could not be measured: the user takes over
+            self._set_manual_mode(True)
             self.btn_image_pairing.setDefault(True)
             self.btn_image_pairing.setFocus()
-            self.progress_label.setText(final_message + "  Check the alignment plot, then pair the images.")
+            self.progress_label.setText(final_message + "  Check the alignment, then pair the images.")
 
     def _save_and_show_alignment_plots(
             self,
@@ -781,6 +840,7 @@ class DialogSynchroAruco(QDialog):
 
         self.progress_label.setText("Image pairing - initializing")
         self.progress_bar.setValue(0)
+        self.stages.set(2, Look.STAGE_RUNNING, "")
 
         # Create the image pairing worker
         self.image_pairing_worker = ImagePairingWorker(
@@ -833,6 +893,11 @@ class DialogSynchroAruco(QDialog):
         self.timeshift_plot_label.setText("Image pairing completed.")
         self.progress_label.setText("Image pairing completed.")
         self.progress_bar.setValue(100)
+        self.stages.set(2, Look.STAGE_DONE, f"{len(pairing_result.get('shoot_points', []))} pairs")
+        if self.auto_run:
+            self._start_countdown()
+        else:
+            self.btn_continue.show()
 
     def _on_image_pairing_error(self, message: str) -> None:
         """
@@ -845,12 +910,66 @@ class DialogSynchroAruco(QDialog):
             message: Description of the image pairing error.
         """
         self._log(f"Image pairing error: {message}")
+        self.stages.set(2, Look.STAGE_FAILED, "see the log")
 
         QMessageBox.critical(
             self,
             "Image Pairing Error",
             message
         )
+
+    # ------------------------------------------------------------------
+    # Chained run (auto_run) / manual mode
+    # ------------------------------------------------------------------
+    def _set_manual_mode(self, manual: bool) -> None:
+        """Manual: the four stage buttons, each run by the user (classic Step 3).
+        Automatic: the stages follow each other, only the tracker is shown."""
+        if manual and self.auto_run:
+            self._log("Manual mode: run each stage with its button.")
+        self.auto_run = not manual
+        for b in self._substep_buttons:
+            b.setVisible(manual)
+        self.btn_manual.setVisible(not manual)
+        if manual:
+            self._continue_timer.stop()
+            self.btn_stay.hide()
+            self.auto_label.setText("")
+        else:
+            self.auto_label.setText("Automatic: detection, clock alignment and pairing follow each other.")
+
+    def _auto_pair(self) -> None:
+        if self.auto_run and not self.image_pairing_done:
+            self.on_image_pairing()
+
+    def _start_countdown(self) -> None:
+        self._continue_left = self.CONTINUE_DELAY_S
+        self.btn_stay.show()
+        self.btn_continue.show()
+        self.btn_continue.setDefault(True)
+        self.btn_manual.hide()
+        self.stages.set(3, Look.STAGE_PENDING, f"starts in {self._continue_left} s")
+        self.auto_label.setText("Cameras synchronised and images paired.")
+        self._continue_timer.start()
+
+    def _continue_tick(self) -> None:
+        self._continue_left -= 1
+        if self._continue_left <= 0:
+            self._continue_now()
+        else:
+            self.stages.detail(3, f"starts in {self._continue_left} s")
+
+    def _stay_here(self) -> None:
+        self._continue_timer.stop()
+        self.btn_stay.hide()
+        self.stages.detail(3, "when you are ready")
+        self.auto_label.setText("Cameras synchronised and images paired. Continue when you are ready.")
+
+    def _continue_now(self) -> None:
+        self._continue_timer.stop()
+        self.stages.set(3, Look.STAGE_RUNNING, "")
+        self.continue_requested.emit()
+        self.data_signal_to_main.emit(True)
+        self.close()
 
     # ------------------------------------------------------------------
     # GUI utilities

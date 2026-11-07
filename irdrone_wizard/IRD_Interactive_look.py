@@ -102,3 +102,82 @@ def fmt_time(t: float) -> str:
     sign = "-" if t < 0 else ""
     t = abs(t)
     return f"{sign}{int(t // 60)}:{t % 60:04.1f}"
+
+
+# ---------------------------------------------------------------------------
+#  Stage tracker: the chained stages of a step, left to right
+# ---------------------------------------------------------------------------
+STAGE_PENDING, STAGE_RUNNING, STAGE_DONE, STAGE_FAILED, STAGE_SKIPPED = \
+    "pending", "running", "done", "failed", "skipped"
+_STAGE_LOOK = {   # icon, icon colour, title colour
+    STAGE_PENDING: ("○", "#A0AAB4", "#6B7785"),
+    STAGE_RUNNING: ("●", "#E8A33D", "#1F2933"),
+    STAGE_DONE: ("✓", "#2E7D32", "#1F2933"),
+    STAGE_FAILED: ("✗", "#B03A2E", "#B03A2E"),
+    STAGE_SKIPPED: ("–", "#A0AAB4", "#A0AAB4"),
+}
+
+
+class StageTracker:
+    """Row of stages ("✓ Target detected  —  ● Pairing images  —  ○ ...") with a
+    detail line under each. Build with `widget()`; update with `set()`."""
+
+    def __init__(self, titles):
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtWidgets import QFrame, QHBoxLayout, QVBoxLayout, QWidget
+        self.titles = list(titles)
+        self.states = [STAGE_PENDING] * len(self.titles)
+        self._widget = QFrame()
+        self._widget.setObjectName("stages")
+        self._widget.setStyleSheet("#stages { background: white; border: 1px solid #DDE3EA; border-radius: 8px; }")
+        row = QHBoxLayout(self._widget)
+        row.setContentsMargins(12, 8, 12, 8)
+        row.setSpacing(8)
+        self._icons, self._names, self._details = [], [], []
+        for k, title in enumerate(self.titles):
+            if k:
+                line = QFrame()
+                line.setFrameShape(QFrame.Shape.HLine)
+                line.setStyleSheet("color: #DDE3EA;")
+                line.setMinimumWidth(16)
+                row.addWidget(line, 1)
+            cell = QWidget()
+            lay = QHBoxLayout(cell)
+            lay.setContentsMargins(0, 0, 0, 0)
+            lay.setSpacing(6)
+            icon = QLabel()
+            icon.setFixedWidth(18)
+            icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            text = QVBoxLayout()
+            text.setSpacing(0)
+            name = QLabel(title)
+            detail = QLabel()
+            detail.setStyleSheet("color: #6B7785; font-size: 8.5pt;")
+            text.addWidget(name)
+            text.addWidget(detail)
+            lay.addWidget(icon)
+            lay.addLayout(text)
+            row.addWidget(cell)
+            self._icons.append(icon)
+            self._names.append(name)
+            self._details.append(detail)
+            self._paint(k)
+
+    def widget(self):
+        return self._widget
+
+    def set(self, index: int, state: str, detail: str = None):
+        self.states[index] = state
+        if detail is not None:
+            self._details[index].setText(detail)
+        self._paint(index)
+
+    def detail(self, index: int, text: str):
+        self._details[index].setText(text)
+
+    def _paint(self, k):
+        icon, icolor, tcolor = _STAGE_LOOK[self.states[k]]
+        self._icons[k].setText(icon)
+        self._icons[k].setStyleSheet(f"color: {icolor}; font-size: 13pt; font-weight: bold;")
+        weight = "bold" if self.states[k] == STAGE_RUNNING else "normal"
+        self._names[k].setStyleSheet(f"color: {tcolor}; font-weight: {weight};")
