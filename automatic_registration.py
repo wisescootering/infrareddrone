@@ -15,7 +15,7 @@ import shutil
 import cv2
 import argparse
 import json
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from pathlib import Path
 from copy import deepcopy
 from config import CROP
@@ -700,22 +700,34 @@ def _initialize_alignment_worker(log_level: int = logging.WARNING) -> None:
     logging.getLogger().setLevel(log_level)
 
 
-def _alignment_task_waves(tasks, worker_count):
-    """Keep tasks sharing a NIR source out of the same parallel batch."""
+def _nir_source(task):
+    return os.path.normcase(os.path.abspath(task["pair"][1]))
+
+
+def _run_alignment_tasks(executor, function, tasks, worker_count):
+    """Submit the tasks as workers become free and yield ``(task, future)``
+    as they complete.
+
+    Two tasks sharing a NIR source (its RawTherapee proxy is written on first
+    use) never run together: such a task waits for the other one to finish.
+    Unlike fixed batches of ``worker_count`` tasks, a free worker never waits
+    for the slowest task of its batch.
+    """
     pending = list(tasks)
-    while pending:
-        wave = []
-        used_nir_paths = set()
-        remaining = []
-        for task in pending:
-            nir_path = os.path.normcase(os.path.abspath(task["pair"][1]))
-            if len(wave) < worker_count and nir_path not in used_nir_paths:
-                wave.append(task)
-                used_nir_paths.add(nir_path)
-            else:
-                remaining.append(task)
-        yield wave
-        pending = remaining
+    running = {}
+    while pending or running:
+        busy_nir_sources = {_nir_source(task) for task in running.values()}
+        for task in list(pending):
+            if len(running) >= worker_count:
+                break
+            nir_source = _nir_source(task)
+            if nir_source not in busy_nir_sources:
+                running[executor.submit(function, task)] = task
+                busy_nir_sources.add(nir_source)
+                pending.remove(task)
+        done, _ = wait(running, return_when=FIRST_COMPLETED)
+        for future in done:
+            yield running.pop(future), future
 
 
 def _process_single_pair_task(task):
@@ -843,27 +855,23 @@ def process_raw_pairs(
         initargs=(logging.getLogger().getEffectiveLevel(),),
     ) as executor:
         completed = 0
-        for wave in _alignment_task_waves(tasks, worker_count):
-            futures = {
-                executor.submit(_process_single_pair_task, task): task
-                for task in wave
-            }
-            for future in as_completed(futures):
-                task = futures[future]
-                try:
-                    result = future.result()
-                except Exception as exc:
-                    raise RuntimeError(
-                        f"Alignment failed for {osp.basename(task['pair'][0])}."
-                    ) from exc
-                results[result[0]] = result
-                completed += 1
-                if progress_callback is not None:
-                    progress_callback(
-                        completed,
-                        len(tasks),
-                        osp.basename(result[1]),
-                    )
+        for task, future in _run_alignment_tasks(
+            executor, _process_single_pair_task, tasks, worker_count
+        ):
+            try:
+                result = future.result()
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Alignment failed for {osp.basename(task['pair'][0])}."
+                ) from exc
+            results[result[0]] = result
+            completed += 1
+            if progress_callback is not None:
+                progress_callback(
+                    completed,
+                    len(tasks),
+                    osp.basename(result[1]),
+                )
 
     motion_model_list = []
     for index, (_, _, motion_models, point) in enumerate(results):

@@ -1,7 +1,9 @@
 import sys
 import tempfile
+import threading
+import time
 import unittest
-from concurrent.futures import Future
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -97,20 +99,48 @@ class Step4MultiprocessingTests(unittest.TestCase):
             {"VIS_0001.dng", "VIS_0002.dng"},
         )
 
-    def test_parallel_waves_do_not_process_a_shared_nir_source_together(self):
+    def _run_scheduled(self, tasks, worker_count, durations):
+        """Run the scheduler on a thread pool; return the (event, index) order."""
+        events = []
+        lock = threading.Lock()
+
+        def work(task):
+            with lock:
+                events.append(("start", task["index"]))
+            time.sleep(durations[task["index"]])
+            with lock:
+                events.append(("end", task["index"]))
+            return task["index"]
+
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            done = [
+                future.result()
+                for _, future in automatic_registration._run_alignment_tasks(
+                    executor, work, tasks, worker_count
+                )
+            ]
+        self.assertEqual(sorted(done), [task["index"] for task in tasks])
+        return events
+
+    def test_a_shared_nir_source_is_never_processed_twice_at_once(self):
         tasks = [
             {"index": 0, "pair": ("VIS_0001.dng", "NIR_shared.dng")},
             {"index": 1, "pair": ("VIS_0002.dng", "NIR_other.dng")},
             {"index": 2, "pair": ("VIS_0003.dng", "NIR_shared.dng")},
             {"index": 3, "pair": ("VIS_0004.dng", "NIR_last.dng")},
         ]
+        events = self._run_scheduled(tasks, 2, [0.2, 0.01, 0.01, 0.01])
+        self.assertLess(events.index(("end", 0)), events.index(("start", 2)))
 
-        waves = list(automatic_registration._alignment_task_waves(tasks, 2))
-
-        self.assertEqual(
-            [[task["index"] for task in wave] for wave in waves],
-            [[0, 1], [2, 3]],
-        )
+    def test_a_free_worker_does_not_wait_for_the_slowest_task(self):
+        # Fixed batches of 2 would start task 2 only after the slow task 0.
+        tasks = [
+            {"index": index, "pair": (f"VIS_{index}.dng", f"NIR_{index}.dng")}
+            for index in range(4)
+        ]
+        events = self._run_scheduled(tasks, 2, [0.3, 0.01, 0.01, 0.01])
+        self.assertLess(events.index(("start", 2)), events.index(("end", 0)))
+        self.assertLess(events.index(("start", 3)), events.index(("end", 0)))
 
     def test_unreadable_rawtherapee_proxy_is_regenerated(self):
         with tempfile.TemporaryDirectory() as temporary:
