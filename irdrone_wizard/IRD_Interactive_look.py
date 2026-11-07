@@ -151,11 +151,15 @@ class StageTracker:
             text = QVBoxLayout()
             text.setSpacing(0)
             name = QLabel(title)
+            bold = name.font()
+            bold.setBold(True)
+            from PyQt6.QtGui import QFontMetrics
+            name.setMinimumWidth(QFontMetrics(bold).horizontalAdvance(title) + 2)   # no jump when bold
             detail = QLabel()
             detail.setStyleSheet("color: #6B7785; font-size: 8.5pt;")
             text.addWidget(name)
             text.addWidget(detail)
-            lay.addWidget(icon)
+            lay.addWidget(icon, 0, Qt.AlignmentFlag.AlignTop)
             lay.addLayout(text)
             row.addWidget(cell)
             self._icons.append(icon)
@@ -178,6 +182,6 @@ class StageTracker:
     def _paint(self, k):
         icon, icolor, tcolor = _STAGE_LOOK[self.states[k]]
         self._icons[k].setText(icon)
-        self._icons[k].setStyleSheet(f"color: {icolor}; font-size: 13pt; font-weight: bold;")
+        self._icons[k].setStyleSheet(f"color: {icolor}; font-size: 11pt; font-weight: bold;")
         weight = "bold" if self.states[k] == STAGE_RUNNING else "normal"
         self._names[k].setStyleSheet(f"color: {tcolor}; font-weight: {weight};")
