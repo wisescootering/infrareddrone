@@ -98,6 +98,7 @@ from irdrone.file_utils import find_ci, glob_ci
 
 # External tool paths: one lookup for the whole project, see config.py.
 from config import require_tool
+from exiftool_reader import read_exiftool_json
 
 # ============================================================
 #  CLASS
@@ -1073,17 +1074,8 @@ def read_exif_and_write_json(
     """
     try:
         # 1) Run ExifTool
-        cmd = [require_tool("EXIFTOOLPATH"), "-json", str(image_path)]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr)
-
-        metadata_list = json.loads(result.stdout)
-        if not metadata_list:
-            raise RuntimeError("ExifTool returned empty output")
-
-        full_metadata = metadata_list[0]
+        # FileName / Directory come from image_path (accents in the folder name).
+        full_metadata = read_exiftool_json(require_tool("EXIFTOOLPATH"), image_path)
 
         # 2) Keep only essential keys
         essential_keys = [

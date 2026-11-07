@@ -28,6 +28,7 @@ import IRD_interactive_geo as Geo
 from IRD_Interactive_color_style import Style
 import IRD_Interactive_ArUco as Aru
 from config import SJCONVERTERPATH, EXIFTOOLPATH, require_tool
+from exiftool_reader import UTF8_FILENAME_OPTIONS
 from IRD_Interactive_diskspace import (DiskFullError, DISK_NEARLY_FULL_BYTES, free_bytes,
                                        is_valid_json_file, write_json_atomic)
 from irdrone.file_utils import glob_ci
@@ -928,11 +929,14 @@ class ExifToolPersist:
 
         # Launch exiftool in stay_open mode, reading/writing text
         self.process = subprocess.Popen(
-            [self.exiftool_path, "-stay_open", "True", "-@", "-"],
+            # UTF-8 file names both ways: accents in folder names on Windows.
+            [self.exiftool_path, *UTF8_FILENAME_OPTIONS, "-stay_open", "True", "-@", "-"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,               # use text mode for Python strings
+            encoding="utf-8",
+            errors="replace",
             universal_newlines=True,
             bufsize=1,               # line-buffered
         )
@@ -1175,10 +1179,9 @@ class CreateExif(QtCore.QObject):
             Uti.save_time_line_json(self.folder_to_scan, dic_timeline)
 
             for idx, pt in enumerate(dic_timeline[self.spectral_band]):
-                my_path = (
-                        Path(list_dic_exif[idx]["Directory"])
-                        / f'{Path(list_dic_exif[idx]["FileName"]).stem}.exif'
-                )
+                # The sidecar found on disk, not rebuilt from the EXIF tags:
+                # ExifTool wrote "D?mo" for a "Démo" folder on Windows.
+                my_path = Path(list_dic_exif[idx]["ExifPath"])
 
                 try:
                     self.update_exif_json(
@@ -1554,7 +1557,7 @@ class Alti_GPS(QtCore.QObject):
                 try:
                     with open(exif_path, "r", encoding="utf-8") as f:
                         exif_dict = json.load(f)
-                        list_exif_dict.append(exif_dict)
+                        list_exif_dict.append((Path(exif_path), exif_dict))
                 except Exception as e:
                     print(f"[ERROR] Unable to read {exif_path}: {e}")
                     continue
@@ -1674,7 +1677,7 @@ class Alti_GPS(QtCore.QObject):
             distance_cum = np.cumsum(distP0P1)  # Cumulative flight distance.
 
             # --- Update and save the EXIF metadata for each image ---
-            for idx, exif_dict in enumerate(list_exif_dict):
+            for idx, (json_path, exif_dict) in enumerate(list_exif_dict):
                 exif_dict["GroundAltitude"] = alt_ground[idx]
                 exif_dict["DroneAltitudeSeaLevel"] = alt_sea_level[idx]
                 exif_dict["DroneAltitudeGround"] = (
@@ -1684,12 +1687,6 @@ class Alti_GPS(QtCore.QObject):
                 exif_dict["CapToLastPoint"] = capP0P1[idx]
                 exif_dict["RelativeTimeLine"] = relative_timeline[idx]
                 exif_dict["CumulDistance"] = distance_cum[idx]
-
-                # Build the path to the corresponding EXIF sidecar file.
-                json_path = (
-                    Path(exif_dict["Directory"])
-                    / (Path(exif_dict["FileName"]).stem + ".exif")
-                )
 
                 with json_path.open("w", encoding="utf-8") as f:
                     json.dump(
