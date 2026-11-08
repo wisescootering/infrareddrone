@@ -495,10 +495,79 @@ class HomePage(QStackedWidget):
         left.addLayout(self.figures)
         left.addStretch(1)
         body.addLayout(left, 1)
+        right = QVBoxLayout()
+        right.setSpacing(6)
+        switch = QHBoxLayout()
+        switch.setSpacing(4)
+        switch.addStretch(1)
+        self.btn_show_map = QPushButton("Map")
+        self.btn_show_image = QPushButton("Image")
+        for b in (self.btn_show_map, self.btn_show_image):
+            b.setCheckable(True)
+            b.setStyleSheet(Look.SECONDARY_STYLE)
+            b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            switch.addWidget(b)
+        self.btn_show_map.setToolTip("The flight on the map: phases of Step 2, orthophoto of Step 5, aerial photos "
+                                     "(online). Click a point to see the ground covered by its image.")
+        self.btn_show_image.setToolTip("An aligned image of the mission")
+        self.btn_show_map.clicked.connect(lambda: self._show_right("map"))
+        self.btn_show_image.clicked.connect(lambda: self._show_right("image"))
+        right.addLayout(switch)
+        self.right_stack = QStackedWidget()
         self.picture = ScaledPicture()
-        body.addWidget(self.picture, 1)
+        self.map_holder = QWidget()
+        self.map_holder_lay = QVBoxLayout(self.map_holder)
+        self.map_holder_lay.setContentsMargins(0, 0, 0, 0)
+        self.right_stack.addWidget(self.picture)
+        self.right_stack.addWidget(self.map_holder)
+        right.addWidget(self.right_stack, 1)
+        body.addLayout(right, 1)
         lay.addLayout(body, 1)
+        self.map_view = None
+        self._map_key = None
+        self._right = "map"
         return page
+
+    def _show_right(self, which):
+        if which == "map" and self.map_view is None:
+            which = "image"
+        else:
+            self._right = which
+        self.right_stack.setCurrentWidget(self.map_holder if which == "map" else self.picture)
+        self.btn_show_map.setChecked(which == "map")
+        self.btn_show_image.setChecked(which == "image")
+
+    def _update_map(self, folder: Path):
+        """Flight map of the mission (built again only when its files changed)."""
+        import flight_map as F
+
+        def stamp(path):
+            try:
+                return path.stat().st_mtime
+            except OSError:
+                return None
+        key = (str(folder), stamp(folder / "AerialPhotography" / "shoot_points.json"),
+               stamp(F.orthophoto_path(folder)), stamp(folder / "FlightAnalytics" / "flight_timeline.json"),
+               stamp(folder / "AerialPhotography" / "VIS"))
+        if key == self._map_key:
+            return
+        self._map_key = key
+        if self.map_view is not None:
+            self.map_view.setParent(None)
+            self.map_view.deleteLater()
+            self.map_view = None
+        try:
+            import IRD_Interactive_map as MapV
+            model = MapV.map_model_for(folder, parent=self)
+        except Exception as e:  # the map is a help, never a blocker
+            print(f"Map unavailable: {e}")
+            model = None
+        if model is not None:
+            self.map_view = MapV.FlightMapView(model)
+            self.map_view.picked.connect(model.set_current)
+            self.map_view.hovered.connect(model.set_hover)
+            self.map_holder_lay.addWidget(self.map_view)
+        self.btn_show_map.setEnabled(self.map_view is not None)
 
     def show_mission(self, folder: Optional[Path]):
         """Mission page of `folder` (None: welcome page)."""
@@ -538,6 +607,8 @@ class HomePage(QStackedWidget):
         self.picture.set_picture(QPixmap(str(pic)) if pic is not None else (
             QPixmap(str(self.hero_image)) if self.hero_image and Path(self.hero_image).is_file() else None))
         self.picture.setToolTip(pic.name if pic is not None else "")
+        self._update_map(info.folder)
+        self._show_right(self._right)
         self.setCurrentIndex(1)
 
     def _continue(self):

@@ -115,3 +115,45 @@ class MainWindowHomeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HomeMapTest(unittest.TestCase):
+    """The mission page shows the flight on a map as soon as Step 1 is done."""
+
+    @classmethod
+    def setUpClass(cls):
+        import os
+        os.environ["IRDRONE_CACHE"] = tempfile.mkdtemp()
+        from PyQt6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        import flight_map as F
+        patcher = mock.patch.object(F.urllib.request, "urlopen", side_effect=OSError("offline"))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_map_from_the_step1_side_cars(self):
+        root = Path(tempfile.mkdtemp())
+        m = make_mission(root, "FLY-20220125-1159-Blassac", done=(1,))
+        vis = m / "AerialPhotography" / "VIS"
+        vis.mkdir(parents=True)
+        for k in range(4):
+            (vis / f"VIS_{k + 1:04d}.exif").write_text(json.dumps(
+                {"DroneLatitude": 45.1695, "DroneLongitude": 3.4 + 0.0002 * k, "DroneAltitudeGround": 50.0,
+                 "GimbalYawDegree": -78.9}))
+        page = Home.HomePage()
+        page.show_mission(m)
+        self.assertIsNotNone(page.map_view)
+        self.assertEqual(len(page.map_view.model.points), 4)
+        self.assertIs(page.right_stack.currentWidget(), page.map_holder)
+        page.btn_show_image.click()
+        self.assertIs(page.right_stack.currentWidget(), page.picture)
+
+    def test_no_position_shows_the_image(self):
+        m = make_mission(Path(tempfile.mkdtemp()), "FLY-20220125-1159-Blassac", done=(1,))
+        page = Home.HomePage()
+        page.show_mission(m)
+        self.assertIsNone(page.map_view)
+        self.assertIs(page.right_stack.currentWidget(), page.picture)
+        self.assertFalse(page.btn_show_map.isEnabled())

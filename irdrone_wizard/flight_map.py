@@ -192,17 +192,65 @@ def odm_yaws(mission: Path) -> Dict[int, float]:
     return out
 
 
-def mission_track(mission: Path) -> List[MapPoint]:
-    """Every paired shoot point of the mission with a position, in time order.
+def _number(stem: str, default: int) -> int:
+    digits = re.search(r"(\d+)(?!.*\d)", stem)
+    return int(digits.group(1)) if digits else default
+
+
+def image_track(mission: Path) -> List[MapPoint]:
+    """Every visible image of the mission with a position (the .exif side
+    cars written in Step 1), in shooting order: the whole flight."""
+    folder = Path(mission) / "AerialPhotography" / "VIS"
+    try:
+        sides = sorted(folder.glob("*.exif"), key=lambda p: _number(p.stem, 0))
+    except OSError:
+        return []
+    out = []
+    for side in sides:
+        try:
+            with open(side, encoding="utf-8") as f:
+                exif = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if isinstance(exif, dict):
+            point = map_point(_number(side.stem, len(out)), side.stem, exif)
+            if point is not None:
+                out.append(point)
+    return out
+
+
+def phases(mission: Path) -> Dict[int, str]:
+    """Image number -> "sync" / "survey", from the phases confirmed in Step 2."""
+    try:
+        with open(Path(mission) / "FlightAnalytics" / "flight_timeline.json", encoding="utf-8") as f:
+            state = json.load(f)
+        chosen = state.get("confirmed") or state.get("proposed") or {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+    out = {}
+    for key, name in (("VIS sync", "sync"), ("VIS survey", "survey")):
+        pair = chosen.get(key) if isinstance(chosen, dict) else None
+        if isinstance(pair, list) and len(pair) == 2:
+            a, b = (_number(Path(str(x)).stem, -1) for x in pair)
+            for n in range(min(a, b), max(a, b) + 1):
+                out[n] = name
+    return out
+
+
+def mission_track(mission: Path, shoot_points_only: bool = False) -> List[MapPoint]:
+    """The paired shoot points of the mission with a position, in time order
+    (before Step 3: every visible image, unless `shoot_points_only`).
     The image yaw comes from the mapping when it is done (else the gimbal)."""
     path = Path(mission) / "AerialPhotography" / "shoot_points.json"
     try:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, ValueError):
-        return []
+        data = None
+    if not (isinstance(data, dict) and data.get("shoot_points")):
+        return [] if shoot_points_only else _with_mapping_yaw(mission, image_track(mission))
     out = []
-    for entry in data.get("shoot_points", []) if isinstance(data, dict) else []:
+    for entry in data.get("shoot_points", []):
         vis = entry.get("VIS") if isinstance(entry, dict) else None
         if not isinstance(vis, dict):
             continue
@@ -211,6 +259,10 @@ def mission_track(mission: Path) -> List[MapPoint]:
         point = map_point(int(digits) if digits else len(out), stem, vis)
         if point is not None:
             out.append(point)
+    return _with_mapping_yaw(mission, out)
+
+
+def _with_mapping_yaw(mission: Path, out: List[MapPoint]) -> List[MapPoint]:
     yaws = odm_yaws(mission) if out else {}
     # the compass error measured on the mapped images corrects the others
     errors = [(yaws[p.number] - p.yaw + 180) % 360 - 180 for p in out if p.number in yaws and p.yaw is not None]

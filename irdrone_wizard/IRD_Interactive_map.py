@@ -112,9 +112,12 @@ class MapModel(QObject):
     changed = pyqtSignal()
 
     def __init__(self, points: List[F.MapPoint], fov=None, ortho: Optional[F.OrthoPreview] = None,
-                 color_of: Optional[Callable[[int], QColor]] = None, parent=None):
+                 color_of: Optional[Callable[[int], QColor]] = None, path: Optional[List[F.MapPoint]] = None,
+                 parent=None):
         super().__init__(parent)
         self.points = points
+        # the whole flight (line), the points are the shoot points on it
+        self.path_xy = [p.xy for p in path] if path else None
         self.numbers = [p.number for p in points]
         self._index = {n: i for i, n in enumerate(self.numbers)}
         self.xy = [p.xy for p in points]
@@ -407,8 +410,9 @@ class FlightMapView(QWidget):
         if not xy:
             return
         pts = [QPointF(*self.to_screen(x, y)) for x, y in xy]
-        path = QPainterPath(pts[0])
-        for q in pts[1:]:
+        line = [QPointF(*self.to_screen(x, y)) for x, y in self.model.path_xy] if self.model.path_xy else pts
+        path = QPainterPath(line[0])
+        for q in line[1:]:
             path.lineTo(q)
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.setPen(QPen(QColor(255, 255, 255, 200), 4 if not self.compact else 3))
@@ -424,7 +428,7 @@ class FlightMapView(QWidget):
         # take-off
         p.setPen(QPen(QColor("white"), 1.5))
         p.setBrush(QColor("#17365D"))
-        p.drawRect(QRectF(pts[0].x() - 4, pts[0].y() - 4, 8, 8))
+        p.drawRect(QRectF(line[0].x() - 4, line[0].y() - 4, 8, 8))
 
     def _quad(self, index) -> Optional[QPolygonF]:
         fp = self.model.footprint(index)
@@ -622,15 +626,31 @@ class _OrthoJob(QRunnable):
             pass
 
 
-def map_model_for(mission: Path, color_of=None, with_ortho: bool = True, parent=None) -> Optional[MapModel]:
-    """Model of a mission's flight (None without positions). The orthophoto
-    is read in the background and appears when ready. `color_of(number)`
-    gives the colour of a shoot point."""
-    track = F.mission_track(mission)
+PHASE_COLORS = {"sync": Look.SYNC, "survey": Look.SURVEY}
+
+
+def phase_colors(mission: Path):
+    """color_of(number) after the phases of Step 2 (grey outside them)."""
+    ph = F.phases(mission)
+    other = QColor("#A0AAB4")
+    return lambda number: PHASE_COLORS.get(ph.get(number), other)
+
+
+def map_model_for(mission: Path, color_of=None, with_ortho: bool = True, shoot_points_only: bool = False,
+                  parent=None) -> Optional[MapModel]:
+    """Model of a mission's flight (None without positions): the shoot
+    points (every visible image before Step 3) on the whole flight. The
+    orthophoto and the ground are read in the background. `color_of(number)`
+    gives the colour of a point (default: phases of Step 2)."""
+    track = F.mission_track(mission, shoot_points_only=shoot_points_only)
     if not track:
         return None
+    if color_of is None:
+        color_of = phase_colors(mission)
+    path = F.image_track(mission)
     model = MapModel(track, fov=F.field_of_view(F.camera_model(mission)), parent=parent,
-                     color_of=None if color_of is None else (lambda i: color_of(track[i].number)))
+                     path=path if len(path) > len(track) else None,
+                     color_of=lambda i: color_of(track[i].number))
     # in the background: ground under the drone (footprint size), orthophoto
     job = _OrthoJob(Path(mission), track, with_ortho and F.orthophoto_path(mission).is_file())
     model._job = job                      # keeps the signals alive

@@ -1101,7 +1101,7 @@ class ReviewDialog(QDialog):
     # ---- map
     def _make_map_model(self):
         try:
-            model = MapV.map_model_for(self.mission, color_of=self._map_color, parent=self)
+            model = MapV.map_model_for(self.mission, color_of=self._map_color, shoot_points_only=True, parent=self)
         except Exception as e:  # the map is a help, never a blocker
             print(f"Map unavailable: {e}")
             return None
