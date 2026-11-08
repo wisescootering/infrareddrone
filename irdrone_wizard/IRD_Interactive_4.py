@@ -45,6 +45,7 @@ from alignment_workers import (
     ALIGNMENT_WORKER_MEMORY_GB,
     MAX_WORKERS,
     available_alignment_workers,
+    clamp_workers,
 )
 
 
@@ -367,6 +368,11 @@ def redo_environment() -> QProcessEnvironment:
     return environment
 
 
+def redo_workers() -> int:
+    """Realignments computed at once: the Step 4 setting (0: automatic)."""
+    return clamp_workers(load_worker_setting() or available_alignment_workers())
+
+
 def redo_queue(output_folder: Path, points, log=print) -> list:
     """``(number, stem, arguments)`` of the points ``(number, stem)`` that have a
     readable REDO script; the others are reported through ``log``."""
@@ -382,130 +388,186 @@ def redo_queue(output_folder: Path, points, log=print) -> list:
 
 
 STAGE_MARKER = "IRDRONE_STAGE "   # printed by automatic_registration.py (manual redo)
-REDO_STAGES = [("load", "Loading the images"), ("manual", "Align by hand"),
-               ("compute", "Computing the alignment"), ("write", "Saving")]
+REDO_STAGES = [("load", "Loading the images"), ("compute", "Computing the alignment"), ("write", "Saving")]
+
+
+def _option_values(arguments, option: str) -> list:
+    """Values following ``option`` in a command line (up to the next option)."""
+    if option not in arguments:
+        return []
+    values = []
+    for value in arguments[arguments.index(option) + 1:]:
+        if value.startswith("--"):
+            break
+        values.append(value)
+    return values
+
+
+def redo_pair(arguments) -> tuple:
+    """``(visible image, infrared image, initial angles or None)`` of a REDO command."""
+    images = _option_values(arguments, "--images")
+    if len(images) < 2:
+        raise ValueError("REDO command without its two images")
+    try:
+        angles = [float(v) for v in _option_values(arguments, "--angles")][:3]
+    except ValueError:
+        angles = []
+    return Path(images[0]), Path(images[1]), (tuple(angles) if len(angles) == 3 else None)
+
+
+def manual_redo_arguments(arguments, angles) -> list:
+    """REDO command of a point aligned by hand in the wizard: no slider window,
+    the alignment starts from the user's ``(yaw, pitch, roll)``."""
+    out, skipping = [], False
+    for value in arguments:
+        if value.startswith("--"):
+            skipping = value in ("--angles", "--manual-angles")
+            if skipping or value == "--manual":
+                continue
+        elif skipping:
+            continue
+        out.append(value)
+    return out + ["--manual-angles", *(f"{float(v):.3f}" for v in angles)]
 
 
 class RedoRunner(QObject):
-    """Manual realignment of shoot points, one subprocess at a time.
+    """Realignment of shoot points whose manual alignment is already done (the
+    angles are in their arguments, see ``manual_redo_arguments``): up to
+    ``workers`` automatic_registration.py subprocesses at once, nothing to do
+    for the user meanwhile. Points may be added while others run.
 
-    Each point runs automatic_registration.py with the arguments of its REDO
-    script: a slider window opens, the user aligns VIS and NIR by hand and
-    closes it, the alignment is recomputed. ``point_done`` gives the new
-    aligned image (empty if none) or an error; the next point starts once the
-    slots connected to ``point_done`` have returned (they may ask the user),
-    or, with ``pause_between``, when ``resume()`` is called."""
+    Two points sharing an infrared image never run together (its proxy is
+    written on first use). ``point_done`` gives the new aligned image (empty if
+    none) or an error."""
 
     point_started = pyqtSignal(int, str)          # number, stem
-    stage = pyqtSignal(int, str, str)             # number, stem, load / manual / compute / write
+    stage = pyqtSignal(int, str, str)             # number, stem, load / compute / write
     output = pyqtSignal(str)                      # console output / log lines
     point_done = pyqtSignal(int, str, str, str)   # number, stem, aligned image, error
     all_done = pyqtSignal()
 
-    def __init__(self, output_folder: Path, parent=None, pause_between: bool = False):
+    def __init__(self, output_folder: Path, parent=None, workers: int = 1):
         super().__init__(parent)
         self.output_folder = Path(output_folder)
-        self.pause_between = pause_between
-        self._paused = False
-        self.process = QProcess(self)
-        self.process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
-        self.process.readyReadStandardOutput.connect(self._read_output)
-        self.process.finished.connect(self._on_finished)
-        self.process.errorOccurred.connect(self._on_error)
+        self.workers = max(1, int(workers))
         self._queue = []
-        self.current = None
-        self._started_at = 0.0
-        self._partial = ""
-        self.total = 0           # points of the run, and the rank of the current one
-        self.rank = 0
+        self.jobs = {}           # QProcess -> {"number", "stem", "nir", "started", "partial", "stage"}
+        self.total = 0           # points of the run (since the runner was last idle)
+        self.finished = 0
 
     def busy(self) -> bool:
-        return (self.current is not None or self._paused
-                or self.process.state() != QProcess.ProcessState.NotRunning)
+        return bool(self._queue or self.jobs)
 
-    def start(self, queue) -> None:
-        self._queue = list(queue)
-        self.total, self.rank = len(self._queue), 0
-        self._start_next()
+    def numbers(self) -> set:
+        """Points waiting or running."""
+        return {task[0] for task in self._queue} | {job["number"] for job in self.jobs.values()}
 
-    def resume(self) -> None:
-        """Start the next point (``pause_between``: after the user's verdict)."""
-        if self._paused:
-            self._paused = False
-            self._start_next()
+    def running(self) -> list:
+        return list(self.jobs.values())
 
-    def _point_finished(self) -> None:
-        """pause_between: wait for resume() before the next point."""
-        self.current = None
-        self._paused = True
+    def add(self, tasks) -> None:
+        """Queue ``(number, stem, arguments)`` (arguments: see ``manual_redo_arguments``)."""
+        tasks = [t for t in tasks if t[0] not in self.numbers()]
+        if not self.busy():
+            self.total = self.finished = 0
+        self._queue.extend(tasks)
+        self.total += len(tasks)
+        self._fill()
 
-    def _start_next(self) -> None:
-        if not self._queue:
-            self.current = None
+    def stop(self) -> None:
+        """Start no other point: the running ones finish."""
+        self.total -= len(self._queue)
+        self._queue = []
+        if not self.jobs:
             self.all_done.emit()
-            return
-        number, stem, arguments = self._queue.pop(0)
-        self.current = (number, stem)
-        self.rank += 1
-        self._partial = ""
-        self._started_at = time.time()
+
+    @staticmethod
+    def _nir(arguments) -> str:
+        images = _option_values(arguments, "--images")
+        return os.path.normcase(os.path.abspath(images[1])) if len(images) > 1 else ""
+
+    def _fill(self) -> None:
+        busy_nir = {job["nir"] for job in self.jobs.values()}
+        for task in list(self._queue):
+            if len(self.jobs) >= self.workers:
+                break
+            nir = self._nir(task[2])
+            if nir and nir in busy_nir:
+                continue
+            self._queue.remove(task)
+            busy_nir.add(nir)
+            self._start(task, nir)
+
+    def _start(self, task, nir) -> None:
+        number, stem, arguments = task
+        process = QProcess(self)
+        process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        process.readyReadStandardOutput.connect(lambda p=process: self._read_output(p))
+        process.finished.connect(lambda code, status, p=process: self._on_finished(p, code, status))
+        process.errorOccurred.connect(lambda error, p=process: self._on_error(p, error))
+        self.jobs[process] = {"number": number, "stem": stem, "nir": nir, "started": time.time(),
+                              "partial": "", "stage": "load"}
         full_arguments = [str(PROJECT_ROOT / "automatic_registration.py"), *arguments]
-        self.process.setProcessEnvironment(redo_environment())
-        self.process.setWorkingDirectory(str(PROJECT_ROOT))
+        process.setProcessEnvironment(redo_environment())
+        process.setWorkingDirectory(str(PROJECT_ROOT))
         self.output.emit(f"\nRedo {stem}: {sys.executable} {' '.join(full_arguments)}")
         self.point_started.emit(number, stem)
-        self.process.start(sys.executable, full_arguments)
+        process.start(sys.executable, full_arguments)
 
-    def _read_output(self) -> None:
-        output = self._partial + bytes(self.process.readAllStandardOutput()).decode("utf-8", errors="replace")
+    def _read_output(self, process) -> None:
+        job = self.jobs.get(process)
+        if job is None:
+            return
+        output = job["partial"] + bytes(process.readAllStandardOutput()).decode("utf-8", errors="replace")
         lines = output.split("\n")
-        self._partial = lines.pop()          # an unfinished line waits for the rest
+        job["partial"] = lines.pop()          # an unfinished line waits for the rest
         shown = []
         for line in lines:
             if line.startswith(STAGE_MARKER):
-                if self.current is not None:
-                    self.stage.emit(self.current[0], self.current[1], line[len(STAGE_MARKER):].strip())
+                job["stage"] = line[len(STAGE_MARKER):].strip()
+                self.stage.emit(job["number"], job["stem"], job["stage"])
             else:
                 shown.append(line.rstrip("\r"))
         text = "\n".join(shown)
         if text.strip():
             self.output.emit(text.rstrip())
 
-    def _flush_output(self) -> None:
-        self._read_output()
-        if self._partial.strip() and not self._partial.startswith(STAGE_MARKER):
-            self.output.emit(self._partial.rstrip())
-        self._partial = ""
+    def _flush_output(self, process) -> None:
+        self._read_output(process)
+        job = self.jobs[process]
+        if job["partial"].strip() and not job["partial"].startswith(STAGE_MARKER):
+            self.output.emit(job["partial"].rstrip())
+        job["partial"] = ""
 
-    def _on_error(self, error) -> None:
+    def _on_error(self, process, error) -> None:
         # A process that never started emits no "finished" signal.
-        if error != QProcess.ProcessError.FailedToStart:
+        if error != QProcess.ProcessError.FailedToStart or process not in self.jobs:
             return
-        number, stem = self.current
-        error = f"Unable to start the redo: {self.process.errorString()}"
-        if self.pause_between:
-            self._point_finished()
-            self.point_done.emit(number, stem, "", error)
-        else:
-            self.point_done.emit(number, stem, "", error)
-            self._start_next()
+        self._done(process, "", f"Unable to start the redo: {process.errorString()}")
 
-    def _on_finished(self, exit_code: int, exit_status) -> None:
-        self._flush_output()
-        number, stem = self.current
+    def _on_finished(self, process, exit_code: int, exit_status) -> None:
+        if process not in self.jobs:
+            return
+        self._flush_output(process)
+        job = self.jobs[process]
+        stem = job["stem"]
         if exit_code != 0 or exit_status != QProcess.ExitStatus.NormalExit:
             image, error = "", f"Redo of {stem} failed (exit code {exit_code})."
         else:
-            found = redo_check_image(self.output_folder, stem, self._started_at)
+            found = redo_check_image(self.output_folder, stem, job["started"])
             image = str(found) if found is not None else ""
             error = "" if found is not None else \
                 f"Redo of {stem}: no aligned image ({ALIGNED_JPEG_LABEL}) was generated."
-        if self.pause_between:
-            self._point_finished()          # paused before the slots run: they may resume()
-            self.point_done.emit(number, stem, image, error)
-        else:
-            self.point_done.emit(number, stem, image, error)
-            self._start_next()
+        self._done(process, image, error)
+
+    def _done(self, process, image, error) -> None:
+        job = self.jobs.pop(process)
+        process.deleteLater()
+        self.finished += 1
+        self._fill()
+        self.point_done.emit(job["number"], job["stem"], image, error)
+        if not self.busy():
+            self.all_done.emit()
 
 
 class DialogImageProcessing(QDialog):

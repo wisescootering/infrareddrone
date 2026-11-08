@@ -189,20 +189,97 @@ class ReviewDialogTests(MissionTests):
         self.assertEqual(d.current().number, 140)
         d.done(0)
 
-    def test_redo_result_is_accepted_in_the_window(self):
-        from unittest import mock
+    def _realigned(self, d, number=140):
+        d.select([p.number for p in d.review.points].index(number))
+        d.toggle_flag()                                   # flagged
+        vir = self.mission / "ImgIRdrone" / f"VIR_{number:04d}_local.jpg"
+        d._on_redo_done(number, f"VIS_{number:04d}", str(vir), "")
+
+    def test_redo_result_is_confirmed_in_the_window(self):
         d = self.dialog()
-        d.toggle_flag()                                   # 140 flagged
-        with mock.patch.object(d.redo_runner, "resume") as resume:
-            vir = self.mission / "ImgIRdrone" / "VIR_0140_local.jpg"
-            d._on_redo_done(140, "VIS_0140", str(vir), "")
-            self.assertTrue(d.banner.isVisibleTo(d))
-            d._verdict(True)
-            resume.assert_called_once()
+        self._realigned(d)
+        self.assertEqual(d.current().status, R.STATUS_REALIGNED)
+        self.assertTrue(d.banner.isVisibleTo(d))
+        self.assertTrue(d.btn_accept_redo.isVisibleTo(d))
+        self.assertIn("◆ 1 to confirm", d.chips[R.STATUS_REALIGNED].text())
+        # still flagged on disk (Step 5 skips it) and remembered as realigned
+        self.assertEqual(R.load_review(self.mission).by_number(140).status, R.STATUS_REALIGNED)
+        d._verdict(True)
         point = R.load_review(self.mission).by_number(140)
         self.assertFalse(point.failed)
         self.assertTrue(point.checked)
+        self.assertFalse(d.banner.isVisibleTo(d))
         d.scan.wait(10000)
+        d.done(0)
+
+    def test_rejected_redo_stays_flagged(self):
+        d = self.dialog()
+        self._realigned(d)
+        d._verdict(False)
+        point = R.load_review(self.mission).by_number(140)
+        self.assertEqual(point.status, R.STATUS_FLAGGED)
+        self.assertIn("Realign 1 flagged", d.btn_redo.text())
+        d.scan.wait(10000)
+        d.done(0)
+
+    def test_all_realigned_confirmed_at_once(self):
+        d = self.dialog()
+        self._realigned(d, 137)
+        self._realigned(d, 140)
+        self.assertTrue(d.btn_accept_all.isVisibleTo(d))
+        self.assertIn("All 2", d.btn_accept_all.text())
+        d._accept_all()
+        review = R.load_review(self.mission)
+        self.assertEqual([review.by_number(n).status for n in (137, 140)], [R.STATUS_CHECKED] * 2)
+        d.scan.wait(10000)
+        d.done(0)
+
+    def test_placed_points_are_computed_in_the_background(self):
+        """The alignment window returns the angles; the runner gets the REDO commands
+        without the slider window, and the review stays usable."""
+        from unittest import mock
+        import IRD_Interactive_manual_align as M
+        d = self.dialog()
+        d.toggle_flag()                                   # 140 flagged
+        args = ["--images", "/m/VIS_0140.dng", "/m/NIR_0101.dng", "--manual", "--angles", "1.0", "2.0", "0.0",
+                "--redo"]
+        item = M.AlignItem(140, "VIS_0140", args, Path("/m/VIS_0140.dng"), Path("/m/NIR_0101.dng"),
+                           (1.0, 2.0, 0.0), (1.5, 2.25, 0.1), M.PLACED)
+
+        class FakeWindow:
+            def __init__(self, *a, **k):
+                pass
+
+            def exec(self):
+                from PyQt6.QtWidgets import QDialog
+                return QDialog.DialogCode.Accepted
+
+            def placed(self):
+                return [item]
+        with mock.patch.object(M, "ManualAlignDialog", FakeWindow), \
+                mock.patch.object(d.redo_runner, "_start") as start:
+            import IRD_Interactive_4 as S4
+            with mock.patch.object(S4, "read_redo_command", return_value=args):
+                d._redo_flagged()
+            (number, stem, arguments), _nir = start.call_args[0]
+            self.assertEqual((number, stem), (140, "VIS_0140"))
+            self.assertNotIn("--manual", arguments)
+            self.assertEqual(arguments[-4:], ["--manual-angles", "1.500", "2.250", "0.100"])
+            # computing: the point cannot be flagged / unflagged, the others can
+            d.redo_runner.jobs[object()] = {"number": 140, "stem": "VIS_0140", "nir": _nir,
+                                            "started": 0.0, "partial": "", "stage": "compute"}
+            d._update_banner()
+            self.assertTrue(d.redo_box.isVisibleTo(d))
+            self.assertIn("0 of 1 done", d.banner_text.text())
+            d.select(1)
+            d.toggle_flag()
+            self.assertTrue(d.current().failed)
+            d.select(0)
+            d.toggle_flag()
+            self.assertTrue(d.current().failed)
+            d.redo_runner.jobs.clear()
+            d.redo_runner._queue.clear()
+        d._redo_clock.stop()
         d.done(0)
 
 
@@ -276,32 +353,10 @@ class ReviewMapTests(ReviewDialogTests):
 
 
 class RedoProgressTests(ReviewDialogTests):
-    """While a redo runs, the review shows its stage and an activity bar."""
+    """While the alignments compute, the review shows their progress."""
 
-    def test_stages_follow_the_redo_process(self):
-        d = self.dialog()
-        d.toggle_flag()
-        d.redo_runner.total, d.redo_runner.rank = 2, 1
-        d._on_redo_started(140, "VIS_0140")
-        self.assertTrue(d.redo_box.isVisibleTo(d))
-        self.assertIn("Point 1 of 2", d.banner_text.text())
-        d._on_redo_stage(140, "VIS_0140", "manual")
-        self.assertIn("slider window", d.banner_text.text())
-        d._on_redo_stage(140, "VIS_0140", "compute")
-        self.assertEqual(d.redo_stages.states[:3], ["done", "done", "running"])
-        self.assertIn("computing", d.banner_text.text())
-        from unittest import mock
-        with mock.patch.object(d.redo_runner, "resume"):
-            vir = self.mission / "ImgIRdrone" / "VIR_0140_local.jpg"
-            d._on_redo_done(140, "VIS_0140", str(vir), "")
-        self.assertFalse(d.redo_box.isVisibleTo(d))       # now the verdict question
-        self.assertTrue(d.btn_accept_redo.isVisibleTo(d))
-        d.scan.wait(10000)
-        d.done(0)
-
-
-    def test_window_keeps_its_size_during_a_redo(self):
-        """The redo banner (stages, then the verdict) takes its room from the image:
+    def test_window_keeps_its_size_while_computing(self):
+        """The banner (progress, then the verdict) takes its room from the image:
         the window neither grows nor goes past the screen."""
         d = self.dialog()
         d.show()
@@ -310,36 +365,92 @@ class RedoProgressTests(ReviewDialogTests):
         screen = d.screen().availableGeometry()
         self.assertLessEqual(d.minimumSizeHint().height(), screen.height())
         d.toggle_flag()
-        d.redo_runner.total, d.redo_runner.rank = 3, 2
-        d._on_redo_started(140, "VIS_0140_with_a_rather_long_image_name_from_the_camera")
+        runner = d.redo_runner
+        runner.total, runner.finished = 3, 1
+        runner.jobs[object()] = {"number": 140, "started": 0.0, "partial": "", "nir": "a", "stage": "compute",
+                                 "stem": "VIS_0140_with_a_rather_long_image_name_from_the_camera"}
+        runner._queue.append((137, "VIS_0137", []))
+        d._update_banner()
         self.app.processEvents()
         self.assertEqual(d.size(), size)
-        from unittest import mock
-        with mock.patch.object(d.redo_runner, "resume"):
-            d._on_redo_done(140, "VIS_0140", str(self.mission / "ImgIRdrone" / "VIR_0140_local.jpg"), "")
+        self.assertIn("1 of 3 done", d.banner_text.text())
+        self.assertTrue(d.btn_stop_redo.isVisibleTo(d))
+        self.assertEqual(d.redo_bar.value(), 1 * 3 + 1)        # one done, one at its 2nd stage
+        runner.jobs.clear()
+        runner._queue.clear()
+        d._on_redo_done(140, "VIS_0140", str(self.mission / "ImgIRdrone" / "VIR_0140_local.jpg"), "")
         self.app.processEvents()
         self.assertEqual(d.size(), size)
+        self.assertFalse(d.redo_box.isVisibleTo(d))
+        self.assertTrue(d.btn_accept_redo.isVisibleTo(d))
         self.assertLessEqual(d.minimumSizeHint().height(), screen.height())
         d.scan.wait(10000)
         d.done(0)
 
 
-class RedoRunnerOutputTests(unittest.TestCase):
-    def test_stage_lines_become_signals_not_log(self):
+class RedoRunnerTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
         import os
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         from PyQt6.QtWidgets import QApplication
         QApplication.instance() or QApplication([])
+
+    def runner(self, workers=2):
         import IRD_Interactive_4 as S4
-        r = S4.RedoRunner(Path(tempfile.mkdtemp()))
-        r.current = (140, "VIS_0140")
+        return S4.RedoRunner(Path(tempfile.mkdtemp()), workers=workers)
+
+    def test_stage_lines_become_signals_not_log(self):
+        r = self.runner()
+        process = object()
+        r.jobs[process] = {"number": 140, "stem": "VIS_0140", "partial": "", "stage": "load"}
         stages, logs = [], []
         r.stage.connect(lambda n, s, k: stages.append(k))
         r.output.connect(logs.append)
-        chunks = [b"loading\nIRDRONE_STA", b"GE manual\n2D translation\nIRDRONE_STAGE compute\n"]
+        chunks = [b"loading\nIRDRONE_STA", b"GE compute\n2D translation\nIRDRONE_STAGE write\n"]
         from unittest import mock
-        with mock.patch.object(r.process, "readAllStandardOutput", side_effect=chunks):
-            r._read_output()
-            r._read_output()
-        self.assertEqual(stages, ["manual", "compute"])          # a marker split across two reads
+        fake = mock.Mock()
+        fake.readAllStandardOutput.side_effect = chunks
+        r.jobs[fake] = r.jobs.pop(process)
+        r._read_output(fake)
+        r._read_output(fake)
+        self.assertEqual(stages, ["compute", "write"])          # a marker split across two reads
         self.assertEqual("\n".join(logs), "loading\n2D translation")
+        self.assertEqual(r.jobs[fake]["stage"], "write")
+
+    def test_runs_up_to_workers_never_two_on_the_same_infrared(self):
+        from unittest import mock
+        r = self.runner(workers=2)
+        started = []
+
+        def fake_start(task, nir):
+            started.append(task[0])
+            r.jobs[object()] = {"number": task[0], "stem": task[1], "nir": nir, "started": 0.0,
+                                "partial": "", "stage": "load"}
+        tasks = [(n, f"VIS_{n:04d}", ["--images", f"/v/VIS_{n}.dng", f"/n/NIR_{nir}.dng"])
+                 for n, nir in ((1, 10), (2, 10), (3, 11), (4, 12))]
+        with mock.patch.object(r, "_start", side_effect=fake_start):
+            r.add(tasks)
+            self.assertEqual(started, [1, 3])                     # 2 waits: same infrared as 1
+            self.assertEqual(r.numbers(), {1, 2, 3, 4})
+            r.add(tasks[:1])                                      # already there: ignored
+            self.assertEqual(r.total, 4)
+            done = []
+            r.point_done.connect(lambda n, *_: done.append(n))
+            first = next(k for k, j in r.jobs.items() if j["number"] == 1)
+            process = mock.Mock()
+            r.jobs[process] = r.jobs.pop(first)
+            r._done(process, "", "boom")
+            self.assertEqual(started, [1, 3, 2])
+            self.assertEqual((done, r.finished), ([1], 1))
+            ended = []
+            r.all_done.connect(lambda: ended.append(True))
+            r.stop()                                              # 4 never starts
+            self.assertEqual(r.total, 3)
+            self.assertEqual(ended, [])                           # 3 and 2 still running
+            for key in list(r.jobs):
+                process = mock.Mock()
+                r.jobs[process] = r.jobs.pop(key)
+                r._done(process, "", "")
+            self.assertEqual(ended, [True])
+            self.assertFalse(r.busy())

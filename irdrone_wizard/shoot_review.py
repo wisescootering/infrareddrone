@@ -56,6 +56,7 @@ STATUS_OK = "ok"
 STATUS_CHECK = "check"           # residual between SHIFT_OK and SHIFT_SUSPICIOUS
 STATUS_SUSPICIOUS = "suspicious"
 STATUS_FLAGGED = "flagged"        # failed in the inventory
+STATUS_REALIGNED = "realigned"    # flagged, realigned by hand: the user confirms the new image
 STATUS_CHECKED = "checked"        # looked at and accepted by the user
 STATUS_UNKNOWN = "unknown"        # not measured (yet, or no texture)
 STATUS_MISSING = "missing"        # no aligned image on disk
@@ -79,6 +80,7 @@ class ReviewPoint:
     shift: Optional[float] = None          # median residual (px)
     shift_worst: Optional[float] = None    # worst textured tile (px)
     checked: bool = False
+    realigned: bool = False                # flagged, realigned by hand, not confirmed yet
 
     @property
     def label(self) -> str:
@@ -97,7 +99,7 @@ class ReviewPoint:
     @property
     def status(self) -> str:
         if self.failed:
-            return STATUS_FLAGGED
+            return STATUS_REALIGNED if self.realigned else STATUS_FLAGGED
         if self.vir_image is None or self.vis_image is None:
             return STATUS_MISSING
         if self.checked:
@@ -193,6 +195,7 @@ def load_review(mission: Path) -> Review:
     state = load_state(mission)
     scores = state.get("scores", {})
     checked = set(state.get("checked", []))
+    realigned = set(state.get("realigned", []))
     points = []
     for item in inventory["shoot_points"]:
         if not isinstance(item, dict) or not isinstance(item.get("FileName"), str):
@@ -226,6 +229,7 @@ def load_review(mission: Path) -> Review:
         if p.vir_image is not None and isinstance(cached, dict) and cached.get("key") == _file_key(p.vir_image):
             p.shift, p.shift_worst = cached.get("shift"), cached.get("worst")
         p.checked = p.label in checked
+        p.realigned = p.failed and p.label in realigned
         points.append(p)
     points.sort(key=lambda q: q.number)
     return Review(mission=mission, points=points)
@@ -240,6 +244,7 @@ def load_state(mission: Path) -> dict:
         return {"version": REVIEW_VERSION, "scores": {}, "checked": []}
     data.setdefault("scores", {})
     data.setdefault("checked", [])
+    data.setdefault("realigned", [])
     return data
 
 
@@ -250,13 +255,14 @@ def _write_json(path: Path, data) -> None:
 
 
 def save_state(review: Review) -> None:
-    """Scores and checked points of the review (ImgIRdrone/review.json)."""
+    """Scores, checked and realigned points of the review (ImgIRdrone/review.json)."""
     scores = {}
     for p in review.points:
         if p.shift is not None and p.vir_image is not None:
             scores[p.label] = {"key": _file_key(p.vir_image), "shift": p.shift, "worst": p.shift_worst}
     data = {"version": REVIEW_VERSION, "scores": scores,
-            "checked": sorted(p.label for p in review.points if p.checked)}
+            "checked": sorted(p.label for p in review.points if p.checked),
+            "realigned": sorted(p.label for p in review.points if p.realigned and p.failed)}
     review.output.mkdir(parents=True, exist_ok=True)
     _write_json(review.output / REVIEW_FILE, data)
 
@@ -284,6 +290,7 @@ def set_failed(review: Review, numbers: Iterable[int], failed: bool) -> None:
     for p in review.points:
         if p.number in numbers:
             p.failed = failed
+            p.realigned = False
             if failed:
                 p.checked = False
 
@@ -309,9 +316,10 @@ def _gradient(img):
     return np.sqrt(gx * gx + gy * gy)
 
 
-def residual_shift(vis_bgr, nir_gray, width: int = SCORE_WIDTH, grid: int = SCORE_GRID):
-    """(median, worst) residual offset in pixels of the full image between the
-    edges of the visible and infrared images; (None, None) without texture."""
+def tile_shifts(vis_bgr, nir_gray, width: int = SCORE_WIDTH, grid: int = SCORE_GRID):
+    """Offsets (dx, dy) of the infrared edges against the visible ones, one per
+    textured tile, in pixels of the given images (the infrared drawn dx to the
+    right of where it should be reads dx > 0)."""
     import cv2
     scale = min(1.0, width / vis_bgr.shape[1])
     vis = cv2.cvtColor(vis_bgr, cv2.COLOR_BGR2GRAY) if vis_bgr.ndim == 3 else vis_bgr
@@ -324,7 +332,7 @@ def residual_shift(vis_bgr, nir_gray, width: int = SCORE_WIDTH, grid: int = SCOR
     h, w = gv.shape
     th, tw = h // grid, w // grid
     if th < 16 or tw < 16:
-        return None, None
+        return []
     window = cv2.createHanningWindow((tw, th), cv2.CV_32F)
     shifts = []
     for i in range(grid):
@@ -337,7 +345,14 @@ def residual_shift(vis_bgr, nir_gray, width: int = SCORE_WIDTH, grid: int = SCOR
             b = (b - b.mean()) / b.std()
             (dx, dy), response = cv2.phaseCorrelate(a, b, window)
             if response >= MIN_TILE_RESPONSE:
-                shifts.append(float(np.hypot(dx, dy)) / scale)
+                shifts.append((dx / scale, dy / scale))
+    return shifts
+
+
+def residual_shift(vis_bgr, nir_gray, width: int = SCORE_WIDTH, grid: int = SCORE_GRID):
+    """(median, worst) residual offset in pixels of the full image between the
+    edges of the visible and infrared images; (None, None) without texture."""
+    shifts = [float(np.hypot(dx, dy)) for dx, dy in tile_shifts(vis_bgr, nir_gray, width, grid)]
     if len(shifts) < MIN_TILES:
         return None, None
     return float(np.median(shifts)), float(np.percentile(shifts, 90))
