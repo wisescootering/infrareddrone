@@ -1223,8 +1223,8 @@ En cliquant sur le bouton, une fenêtre de choix des critères s'ouvre.
 
 \begin{itemize}
 	\item \texttt{Maximum |dt| (NIR rank 1)} : écart temporel maximal admis entre l'image VIS et l'image NIR la plus proche. C'est le même critère que le \texttt{Maximum VIS/NIR time difference} de l'étape~4. Valeur par défaut : $0.5\,s$ (plage $0.05$ à $6\,s$).
-	\item \texttt{Select one image every n eligible images} : permet de ne retenir qu'une image sur $n$ ($n$ de 1 à 4, valeur par défaut 3) afin de limiter le temps de calcul et le recouvrement.
-	\item \texttt{Select by image overlap} : sélection selon le taux de recouvrement des images. Cette option \textbf{n'est pas encore disponible} ; le logiciel invite à choisir le critère précédent.
+	\item \texttt{Best mapping: select by image overlap (recommended)} : choix par défaut. Ne garde que les images dont les empreintes au sol se recouvrent de la valeur indiquée (\texttt{Overlap between successive images}, par défaut la valeur choisie à l'étape~2 ou~4, $75\,\%$ sinon). C'est la même sélection qu'aux étapes~2 et~4 (§\ref{btn:step2_best_mapping}). Si l'étape~4 n'a aligné que les images utiles à la carte, elles sont toutes gardées ; si elle a tout aligné, seules les images utiles à la carte sont données à ODM. Une image déclarée mal alignée dans la revue est écartée et la suivante prend sa place.
+	\item \texttt{Select one image every n eligible images} : permet de ne retenir qu'une image sur $n$ ($n$ de 1 à 4, valeur par défaut 3) afin de limiter le temps de calcul et le recouvrement. C'est le choix par défaut quand le best mapping a été décoché à l'étape~2 ou~4.
 \end{itemize}
 
 \figureIRD{step5_odm_selection.png}{Fenêtre des critères de sélection des images pour le mapping.}{0.4}
@@ -1235,7 +1235,7 @@ Les images retenues (\emph{eligible images}) sont les shoot points qui vérifien
 	\item l'écart $|dt|$ avec l'image NIR la plus proche est inférieur ou égal à la tolérance ;
 	\item l'image VIS correspondante appartient à la phase de vol de la mission choisie à l'étape~2 (les images de décollage et de synchronisation sont donc exclues).
 \end{enumerate}
-Seule une image éligible sur $n$ est ensuite conservée.
+Parmi elles, le best mapping garde les images utiles à la carte (ou, avec l'autre critère, une image éligible sur $n$).
 
 \subsection{Lancement du calcul}
 Après le choix des critères, un message de confirmation résume la sélection et prévient que le calcul peut être long et nécessiter plusieurs gigaoctets de mémoire et d'espace disque. Si l'on confirme :

@@ -22,6 +22,7 @@ import rasterio.shutil
 from rasterio.enums import Resampling
 
 from IRD_Interactive_diskspace import is_disk_full, raise_if_disk_full
+import best_mapping
 
 
 MANIFEST_NAME = "img_best_mappping.json"
@@ -567,12 +568,33 @@ def read_orthophoto_preview(
         ) from error
 
 
+def _vis_metadata_by_name(shoot_points_path: Path) -> Dict[str, Dict[str, Any]]:
+    """VIS metadata (position, height, yaw) of the Step 3 pairs, by file name ({} if unreadable)."""
+    try:
+        data = _load_json(shoot_points_path)
+    except ODMMappingError:
+        return {}
+    points = data.get("shoot_points") if isinstance(data, dict) else None
+    out = {}
+    for point in points if isinstance(points, list) else []:
+        vis = point.get("VIS") if isinstance(point, dict) else None
+        if isinstance(vis, dict) and isinstance(vis.get("FileName"), str):
+            out[Path(vis["FileName"]).name.casefold()] = vis
+    return out
+
+
 def build_best_mapping(
     mission_folder: Path,
     dt_tolerance_s: float = 0.5,
     sample_every: int = 3,
+    overlap: Optional[float] = None,
 ) -> Dict[str, Any]:
-    """Build and save the selected shoot points and their matching TIFF quartets."""
+    """Build and save the selected shoot points and their matching TIFF quartets.
+
+    The eligible pairs (rank-one |dt| within the tolerance, survey of Step 2, not
+    flagged failed) are thinned either by ``overlap`` (best mapping: footprint
+    overlap between successive images, 0.5 to 0.95) or, when ``overlap`` is None,
+    by keeping one pair every ``sample_every``."""
     mission_folder = Path(mission_folder).expanduser().resolve()
     if not mission_folder.is_dir():
         raise ODMMappingError(f"Mission folder does not exist: {mission_folder}")
@@ -591,6 +613,15 @@ def build_best_mapping(
         or sample_every not in (1, 2, 3, 4)
     ):
         raise ODMMappingError("The image sampling interval must be 1, 2, 3, or 4.")
+    if overlap is not None and (
+        isinstance(overlap, bool)
+        or not isinstance(overlap, (int, float))
+        or not best_mapping.MIN_OVERLAP <= overlap <= best_mapping.MAX_OVERLAP
+    ):
+        raise ODMMappingError(
+            f"The image overlap must be between {best_mapping.MIN_OVERLAP:.2f} and "
+            f"{best_mapping.MAX_OVERLAP:.2f}."
+        )
 
     aerial_photography = mission_folder / "AerialPhotography"
     status_shoot_points_path = mission_folder / "ImgIRdrone" / "shoot_points.json"
@@ -691,7 +722,19 @@ def build_best_mapping(
             counters["fly_pairs_within_dt_tolerance"] += 1
             eligible_pairs.append((shoot_point_index, vis_data, nir_match, float(dt)))
 
-    sampled_pairs = eligible_pairs[::sample_every]
+    if overlap is None:
+        sampled_pairs = eligible_pairs[::sample_every]
+    else:
+        vis_metadata = _vis_metadata_by_name(aerial_photography / "shoot_points.json")
+        shots = [
+            best_mapping.shot_from_vis(
+                index,
+                vis_metadata.get(Path(str(vis_data["FileName"])).name.casefold(), vis_data),
+            )
+            for index, (_, vis_data, _, _) in enumerate(eligible_pairs)
+        ]
+        kept = best_mapping.select(shots, float(overlap), best_mapping.mission_fov(mission_folder))
+        sampled_pairs = [eligible_pairs[index] for index in kept]
     shoot_point_records: List[Dict[str, Any]] = []
     image_quartets: List[Dict[str, Any]] = []
     for selection_index, (shoot_point_index, vis_data, nir_match, dt) in enumerate(sampled_pairs):
@@ -741,7 +784,9 @@ def build_best_mapping(
             "nir_rank": 1,
             "maximum_absolute_dt_seconds": dt_tolerance_s,
             "vis_transfer_section": "fly.listCopiedImages",
-            "sample_every_nth_eligible_pair": sample_every,
+            "selection": "overlap" if overlap is not None else "sample_every",
+            "sample_every_nth_eligible_pair": sample_every if overlap is None else None,
+            "footprint_overlap": overlap,
             "sample_offset": 0,
             "band_order": list(BAND_NAMES),
         },
@@ -1181,6 +1226,7 @@ def run_odm(
     stage_callback: Optional[Callable[[str], None]] = None,
     dt_tolerance_s: float = 0.5,
     sample_every: int = 3,
+    overlap: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Prepare the selected dataset and run ODM through Docker."""
     mission_folder = Path(mission_folder).expanduser().resolve()
@@ -1203,6 +1249,7 @@ def run_odm(
         mission_folder,
         dt_tolerance_s=dt_tolerance_s,
         sample_every=sample_every,
+        overlap=overlap,
     )
     counts = manifest["counts"]
     if counts["not_ready"] or not counts["ready_for_odm"]:
