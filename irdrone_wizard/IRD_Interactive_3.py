@@ -53,6 +53,7 @@ from PyQt6.QtCore import (
 )
 from PyQt6.QtWidgets import (
     QMessageBox,
+    QFrame,
     QApplication,
     QSizePolicy,
     QDialog,
@@ -180,6 +181,8 @@ class DialogSynchroAruco(QDialog):
         self._continue_timer.setInterval(1000)
         self._continue_timer.timeout.connect(self._continue_tick)
         self._continue_left = 0
+        self._awaiting_sync = False      # chained run: alignment plot shown, waiting for the user
+        self._plot_after = None
 
         self._log("Dialog initialized.")
         self._set_manual_mode(not self.auto_run)
@@ -217,8 +220,32 @@ class DialogSynchroAruco(QDialog):
         self.btn_continue.setStyleSheet(Look.PRIMARY_STYLE)
         self.btn_continue.setToolTip("Close this window and run Step 4 (alignment of the image pairs).")
         self.btn_continue.clicked.connect(self._continue_now)
+        # Chained run: the user confirms the clock alignment before the pairing
+        self.btn_sync_adjust = QPushButton("Adjust by hand…")
+        self.btn_sync_adjust.setStyleSheet(Look.SECONDARY_STYLE)
+        self.btn_sync_adjust.setToolTip("Move the infrared curve with a slider until it lies on the visible one.")
+        self.btn_sync_adjust.clicked.connect(self.on_adjust_time_shift)
+        self.btn_sync_ok = QPushButton("✓ The curves overlap: pair the images")
+        self.btn_sync_ok.setStyleSheet(Look.PRIMARY_STYLE)
+        self.btn_sync_ok.setToolTip("The green (visible) and red (infrared) curves lie on each other: "
+                                    "the clock offset is right.")
+        self.btn_sync_ok.clicked.connect(self._confirm_sync)
         for b in (self.btn_stay, self.btn_continue):
             b.hide()
+        self.sync_banner = QFrame()
+        self.sync_banner.setObjectName("syncbanner")
+        self.sync_banner.setStyleSheet("#syncbanner { background: #FFF4E0; border: 1px solid #F0D29A;"
+                                       " border-radius: 8px; } QLabel { background: transparent; }")
+        banner = QHBoxLayout(self.sync_banner)
+        banner.setContentsMargins(12, 8, 12, 8)
+        self.sync_question = QLabel("<b>Do the green (visible) and red (infrared) curves overlap?</b><br>"
+                                    "<span style='color:#7A4B00'>If they do not, slide the infrared curve "
+                                    "by hand onto the visible one.</span>")
+        self.sync_question.setWordWrap(True)
+        banner.addWidget(self.sync_question, 1)
+        banner.addWidget(self.btn_sync_adjust)
+        banner.addWidget(self.btn_sync_ok)
+        self.sync_banner.hide()
         auto_bar.addWidget(self.auto_label, 1)
         auto_bar.addWidget(self.btn_manual)
         auto_bar.addWidget(self.btn_stay)
@@ -284,10 +311,9 @@ class DialogSynchroAruco(QDialog):
         self.timeshift_plot_label = QLabel()
         self.timeshift_plot_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.timeshift_plot_label.setMinimumHeight(220)
-        self.timeshift_plot_label.setMaximumHeight(420)
         self.timeshift_plot_label.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Ignored,
+            QSizePolicy.Policy.Ignored,
         )
         self.timeshift_plot_label.setStyleSheet(
             "QLabel { background-color: #f5f5f5; border: 1px solid #cccccc; }"
@@ -298,7 +324,7 @@ class DialogSynchroAruco(QDialog):
 
         if not pixmap.isNull():
             scaled_pixmap = pixmap.scaled(
-                self.timeshift_plot_label.size(),
+                self.timeshift_plot_label.contentsRect().size(),
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation
             )
@@ -306,15 +332,14 @@ class DialogSynchroAruco(QDialog):
         else:
             self._log(f"Unable to load image: {IMAGE_ARUCO_VIS_PATH}")
 
-        main_layout.addWidget(self.timeshift_plot_label)
+        main_layout.addWidget(self.sync_banner)
+        main_layout.addWidget(self.timeshift_plot_label, 1)
 
         # Close button at the bottom
         self.btn_close = QPushButton("Close")
         self.btn_close.setFixedWidth(120)
         self.btn_close.setStyleSheet(BUTTON_STYLE)
 
-        # Push the Close button to the bottom
-        main_layout.addStretch()
 
         # Align the Close button to the right
         close_layout = QHBoxLayout()
@@ -519,7 +544,7 @@ class DialogSynchroAruco(QDialog):
             return False
         self.timeshift_plot_label.setPixmap(
             pixmap.scaled(
-                self.timeshift_plot_label.size(),
+                self.timeshift_plot_label.contentsRect().size(),
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation
             )
@@ -734,9 +759,8 @@ class DialogSynchroAruco(QDialog):
         self.stages.set(1, Look.STAGE_DONE if computed else Look.STAGE_FAILED,
                         f"infrared {time_shift:+.2f} s" + ("" if computed else " (entered)"))
         if self.auto_run and computed:
-            # Chained: the plot is shown a moment, then the images are paired
-            self.auto_label.setText("Clocks aligned: pairing the images…")
-            QTimer.singleShot(1500, self._auto_pair)
+            # Chained: the user checks that the two curves overlap, then the pairing runs
+            self._ask_sync_confirmation()
         elif self.auto_run:
             # The offset could not be measured: the user takes over
             self._set_manual_mode(True)
@@ -779,10 +803,20 @@ class DialogSynchroAruco(QDialog):
             filename="check_time_alignment.png",
             xlim=xlim,
         )
+        self._plot_after = plot_after
+        if self._awaiting_sync and self._show_plot_after():
+            return          # confirmation: the aligned curves stay on screen
         try:
             self.animate_timeshift_plot(plot_before=plot_before, plot_after=plot_after)
         except Exception as e:
             print(f"Error in animate_timeshift_plot: {e}")
+
+    def _show_plot_after(self) -> bool:
+        """Aligned curves, fixed (no before/after animation)."""
+        self.stop_timeshift_animation()
+        if self._plot_after is None:
+            return False
+        return self._show_image_file(Path(self._plot_after))
 
     def on_adjust_time_shift(self) -> None:
         """Step 3.2b - Let the operator correct the time shift with a slider."""
@@ -932,12 +966,33 @@ class DialogSynchroAruco(QDialog):
         self.btn_manual.setVisible(not manual)
         if manual:
             self._continue_timer.stop()
+            self._hide_sync_confirmation()
             self.btn_stay.hide()
             self.auto_label.setText("")
         else:
             self.auto_label.setText("Automatic: detection, clock alignment and pairing follow each other.")
 
-    def _auto_pair(self) -> None:
+    def _ask_sync_confirmation(self) -> None:
+        """Chained run: show the aligned curves and wait for the user's word."""
+        self._awaiting_sync = True
+        self._show_plot_after()
+        self.stages.detail(1, f"infrared {self.time_shift:+.2f} s · check the curves")
+        self.auto_label.setText("Clocks aligned: check the curves below.")
+        self.sync_banner.show()
+        QTimer.singleShot(0, self._show_plot_after)     # scaled once the banner has its place
+        self.btn_sync_ok.setDefault(True)
+        self.btn_sync_ok.setFocus()
+        self.btn_manual.hide()
+
+    def _hide_sync_confirmation(self) -> None:
+        self._awaiting_sync = False
+        self.sync_banner.hide()
+
+    def _confirm_sync(self) -> None:
+        self._hide_sync_confirmation()
+        self._log(f"Clock alignment confirmed by the user: {self.time_shift:.3f} s")
+        self.stages.detail(1, f"infrared {self.time_shift:+.2f} s · checked")
+        self.auto_label.setText("Clocks aligned: pairing the images…")
         if self.auto_run and not self.image_pairing_done:
             self.on_image_pairing()
 
@@ -989,7 +1044,7 @@ class DialogSynchroAruco(QDialog):
 
         if self.timeshift_plot_label.pixmap():
             scaled = self.timeshift_plot_label.pixmap().scaled(
-                self.timeshift_plot_label.size(),
+                self.timeshift_plot_label.contentsRect().size(),
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
@@ -1032,7 +1087,7 @@ class DialogSynchroAruco(QDialog):
         # Display the first image
         self.timeshift_plot_label.setPixmap(
             self._animation_images[self._animation_index].scaled(
-                self.timeshift_plot_label.size(),
+                self.timeshift_plot_label.contentsRect().size(),
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation
             )
@@ -1056,7 +1111,7 @@ class DialogSynchroAruco(QDialog):
         ) % len(self._animation_images)
 
         pixmap = self._animation_images[self._animation_index].scaled(
-            self.timeshift_plot_label.size(),
+            self.timeshift_plot_label.contentsRect().size(),
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation
         )

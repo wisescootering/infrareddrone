@@ -39,14 +39,41 @@ class ChainedStep3Test(unittest.TestCase):
         self.assertTrue(d.btn_image_pairing.isVisibleTo(d))
         self.assertFalse(d.btn_manual.isVisibleTo(d))
 
-    def test_measured_offset_pairs_without_a_click(self):
-        d = self.dialog(True)
-        with mock.patch.object(S3.QTimer, "singleShot") as later, \
-                mock.patch.object(d, "_save_and_show_alignment_plots"):
+    def measured(self, d):
+        with mock.patch.object(d, "_save_and_show_alignment_plots"):
             d._on_timeshift_finished(3.2, [0.0, 1.0], [1.0, 2.0], [0.0, 1.0], [1.0, 2.0], "ok", True, False)
-        later.assert_called_once()
-        self.assertEqual(later.call_args.args[1], d._auto_pair)
-        self.assertEqual(d.stages.states[1], Look.STAGE_DONE)
+
+    def test_measured_offset_waits_for_the_user_to_check_the_curves(self):
+        d = self.dialog(True)
+        with mock.patch.object(d, "on_image_pairing") as pair:
+            self.measured(d)
+            pair.assert_not_called()
+            self.assertEqual(d.stages.states[1], Look.STAGE_DONE)
+            self.assertTrue(d.btn_sync_ok.isVisibleTo(d))
+            self.assertIn("overlap", d.sync_question.text())
+            d.btn_sync_ok.click()
+            pair.assert_called_once()
+        self.assertFalse(d.btn_sync_ok.isVisibleTo(d))
+
+    def test_adjust_by_hand_from_the_confirmation(self):
+        d = self.dialog(True)
+        self.measured(d)
+        with mock.patch.object(S3, "TimeShiftAdjustDialog") as adjust, \
+                mock.patch.object(d, "_save_and_show_alignment_plots"), \
+                mock.patch.object(d, "on_image_pairing") as pair:
+            adjust.return_value.exec.return_value = S3.QDialog.DialogCode.Accepted
+            adjust.return_value.value.return_value = 3.5
+            d.btn_sync_adjust.click()
+            pair.assert_not_called()                    # still waiting for the confirmation
+            self.assertEqual(d.time_shift, 3.5)
+            d.btn_sync_ok.click()
+            pair.assert_called_once()
+
+    def test_manual_mode_hides_the_confirmation(self):
+        d = self.dialog(True)
+        self.measured(d)
+        d._set_manual_mode(True)
+        self.assertFalse(d.btn_sync_ok.isVisibleTo(d))
 
     def test_pairing_done_counts_down_then_continues(self):
         d = self.dialog(True)
