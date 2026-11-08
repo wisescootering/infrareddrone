@@ -79,6 +79,7 @@ from IRD_Interactive_2 import LoadVisNirImagesDialog
 from IRD_Interactive_timeline import FlightTimelineDialog
 from IRD_Interactive_new_mission import NewMissionDialog
 from IRD_Interactive_review import ReviewDialog
+from IRD_Interactive_mission_details import MissionDetailsDialog
 from IRD_Interactive_home import HomePage, recent_missions
 from IRD_Interactive_3 import DialogSynchroAruco
 from IRD_Interactive_4 import DialogImageProcessing
@@ -605,14 +606,29 @@ class Main_Window(QMainWindow):
     def open_step(self, step: int):
         """A step of the rail: the next ones are chained as with "Continue";
         a step already done is opened as is (Step 3 without running on its own).
-        Step 1 creates a mission: never run again on the loaded mission."""
+        Step 1 created the loaded mission: its details are edited instead
+        (no new mission, the SD cards are not read again)."""
         folder = Progress.mission_folder(self.mission_parameters, self.folderMissionPath)
         if step == 1 and folder is not None and 1 in Progress.done_steps(folder):
+            self.edit_mission_details()
             return
         if step == 3 and folder is not None and 3 in Progress.done_steps(folder):
             self.on_pre_process_images(auto_run=False)
         else:
             self.run_step(step)
+
+    def edit_mission_details(self):
+        """Description, pilot, cameras of the loaded mission (Step 1 done)."""
+        folder = Progress.mission_folder(self.mission_parameters, self.folderMissionPath)
+        if folder is None:
+            return
+        try:
+            dialog = MissionDetailsDialog(Path(folder), parent=self)
+        except (OSError, ValueError) as e:
+            QMessageBox.warning(self, "Mission details", f"mission_parameters.json cannot be read:\n{e}")
+            return
+        if dialog.exec() == QDialog.DialogCode.Accepted and dialog.changed:
+            self.load_mission(Path(folder))          # the new details everywhere
 
     def on_review(self):
         """Review of the aligned images (end of Step 4)."""

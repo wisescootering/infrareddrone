@@ -150,16 +150,17 @@ class MainWindowStepsTest(unittest.TestCase):
             self.window.home.rail.tiles[4].click()
         step4.assert_called_once()
 
-    def test_step1_done_cannot_be_run_again(self):
+    def test_step1_done_edits_the_details_without_a_new_mission(self):
         Progress.mark_step_done(self.mission, 1)
         self.show()
         tile = self.window.home.rail.tiles[1]
-        self.assertTrue(tile.locked)
-        self.assertNotIn("run it again", tile.toolTip())
-        with mock.patch.object(self.main, "NewMissionDialog") as dialog:
+        self.assertIn("edit", tile.toolTip())
+        with mock.patch.object(self.main, "NewMissionDialog") as new, \
+                mock.patch.object(self.main, "MissionDetailsDialog") as details:
             tile.click()
-            self.window.open_step(1)
-        dialog.assert_not_called()
+        new.assert_not_called()
+        details.assert_called_once()
+        self.assertEqual(details.call_args.args[0], self.mission)
 
     def test_step3_done_opens_without_running_on_its_own(self):
         Progress.mark_step_done(self.mission, 2)

@@ -159,3 +159,51 @@ class DialogTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MissionDetailsTest(unittest.TestCase):
+    """Step 1 done: details edited in mission_parameters.json, nothing else."""
+
+    def setUp(self):
+        self.folder = Path(tempfile.mkdtemp()) / "FLY-20220125-1159-Blassac"
+        (self.folder / "FlightAnalytics").mkdir(parents=True)
+        self.params = {"File path mission": str(self.folder), "Location": "Blassac", "Description": "",
+                       "Pilot": "Alain", "camera VIS timelapse": 2, "camera NIR filter band": 810,
+                       "GPS lat": 45.1, "name image take-off": "VIS_0001.dng"}
+        MS.mission_parameters_path(self.folder).write_text(json.dumps(self.params))
+
+    def test_form_has_defaults_for_missing_keys(self):
+        form = MS.details_form(self.params)
+        self.assertEqual((form["pilot"], form["vis_timelapse"]), ("Alain", 2))
+        self.assertEqual(form["nir_timelapse"], MS.DEFAULT_FORM["nir_timelapse"])
+
+    def test_only_details_change_and_a_backup_is_kept(self):
+        form = MS.details_form(self.params)
+        form.update(description="Vineyard", filter_band=720, location="Blassac / haut")
+        changed = MS.update_mission_details(self.folder, form)
+        self.assertIn("Description", changed)
+        saved = json.loads(MS.mission_parameters_path(self.folder).read_text())
+        self.assertEqual(saved["Description"], "Vineyard")
+        self.assertEqual(saved["camera NIR filter band"], 720)
+        self.assertEqual(saved["Location"], "Blassac - haut")
+        self.assertEqual(saved["GPS lat"], 45.1)                       # untouched
+        self.assertEqual(saved["File path mission"], str(self.folder))
+        self.assertTrue((self.folder / "FlightAnalytics" / "mission_parameters.json.bak").is_file())
+
+    def test_nothing_changed_nothing_written(self):
+        before = MS.mission_parameters_path(self.folder).read_text()
+        form = {k: v for k, v in MS.details_form(self.params).items()
+                if MS.EDITABLE_DETAILS[k][0] in self.params}
+        self.assertEqual(MS.update_mission_details(self.folder, form), [])
+        self.assertEqual(MS.mission_parameters_path(self.folder).read_text(), before)
+
+    def test_dialog_saves(self):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PyQt6.QtWidgets import QApplication
+        QApplication.instance() or QApplication([])
+        import IRD_Interactive_mission_details as D
+        d = D.MissionDetailsDialog(self.folder)
+        d.f_description.setText("Plot 12")
+        d.btn_save.click()
+        self.assertIn("Description", d.changed)
+        self.assertEqual(MS.read_mission_parameters(self.folder)["Description"], "Plot 12")

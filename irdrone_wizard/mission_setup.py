@@ -372,3 +372,71 @@ def form_from_settings(values: Dict[str, object]) -> dict:
         except (TypeError, ValueError):
             pass
     return out
+
+
+# ---------------------------------------------------------------------------
+#  Details of an existing mission (Step 1 done): edited without the SD cards
+# ---------------------------------------------------------------------------
+# form key -> (mission_parameters.json key, type). The folder name, the take-off
+# image, the date and the position are not editable: the images are already there.
+EDITABLE_DETAILS = {
+    "location": ("Location", str),
+    "description": ("Description", str),
+    "pilot": ("Pilot", str),
+    "pilot_id": ("Pilot ID", str),
+    "vis_timelapse": ("camera VIS timelapse", int),
+    "vis_deltatime": ("camera VIS deltatime", float),
+    "nir_maker": ("camera NIR maker", str),
+    "nir_model": ("camera NIR ID", str),
+    "nir_timelapse": ("camera NIR timelapse", int),
+    "nir_deltatime": ("camera NIR deltatime", float),
+    "filter_maker": ("camera NIR filter maker", str),
+    "filter_band": ("camera NIR filter band", int),
+}
+
+
+def mission_parameters_path(folder: Path) -> Path:
+    return Path(folder) / "FlightAnalytics" / "mission_parameters.json"
+
+
+def read_mission_parameters(folder: Path) -> dict:
+    with open(mission_parameters_path(folder), encoding="utf-8") as f:
+        params = json.load(f)
+    if not isinstance(params, dict):
+        raise ValueError("mission_parameters.json is not a dictionary")
+    return params
+
+
+def details_form(params: dict) -> dict:
+    """Form values of an existing mission (defaults for the missing keys)."""
+    form = {}
+    for k, (key, kind) in EDITABLE_DETAILS.items():
+        value = params.get(key, DEFAULT_FORM.get(k, ""))
+        try:
+            form[k] = kind(value)
+        except (TypeError, ValueError):
+            form[k] = kind(DEFAULT_FORM.get(k, kind()))
+    return form
+
+
+def update_mission_details(folder: Path, form: dict) -> List[str]:
+    """Write the edited details into mission_parameters.json (other keys kept,
+    previous file kept as .bak). Returns the json keys that changed."""
+    path = mission_parameters_path(folder)
+    params = read_mission_parameters(folder)
+    changed = []
+    for k, value in form.items():
+        if k not in EDITABLE_DETAILS:
+            continue
+        key, kind = EDITABLE_DETAILS[k]
+        value = clean_location(value) if k == "location" else kind(value)
+        if params.get(key) != value:
+            params[key] = value
+            changed.append(key)
+    if changed:
+        shutil.copy2(path, path.with_suffix(".json.bak"))
+        tmp = path.with_suffix(".json.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(params, f, indent=4, ensure_ascii=False)
+        os.replace(tmp, path)
+    return changed
