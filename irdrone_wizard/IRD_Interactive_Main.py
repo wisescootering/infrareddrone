@@ -604,8 +604,11 @@ class Main_Window(QMainWindow):
 
     def open_step(self, step: int):
         """A step of the rail: the next ones are chained as with "Continue";
-        a step already done is opened as is (Step 3 without running on its own)."""
+        a step already done is opened as is (Step 3 without running on its own).
+        Step 1 creates a mission: never run again on the loaded mission."""
         folder = Progress.mission_folder(self.mission_parameters, self.folderMissionPath)
+        if step == 1 and folder is not None and 1 in Progress.done_steps(folder):
+            return
         if step == 3 and folder is not None and 3 in Progress.done_steps(folder):
             self.on_pre_process_images(auto_run=False)
         else:

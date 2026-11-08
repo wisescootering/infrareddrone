@@ -238,6 +238,8 @@ def progress_dots(done) -> str:
 
 
 TILE_DONE, TILE_NEXT, TILE_TODO = "done", "next", "todo"
+# Steps that cannot be run again on a mission: Step 1 creates the mission
+ONCE_STEPS = {1}
 _TILE_LOOK = {   # background, border, badge background, badge text, title, detail, hover
     TILE_DONE: ("white", "#CFE3D0", "#2E7D32", "white", "#1F2933", "#2E7D32", "#F1F8F1"),
     TILE_NEXT: ("#EEF3F8", "#17365D", "#17365D", "white", "#17365D", "#17365D", "#E1EAF3"),
@@ -252,6 +254,7 @@ class StepTile(QPushButton):
         super().__init__(parent)
         self.step = step
         self.state = TILE_TODO
+        self.locked = False
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         lay = QHBoxLayout(self)
@@ -277,10 +280,11 @@ class StepTile(QPushButton):
     def set_state(self, state: str, detail: str = ""):
         self.state = state
         bg, border, badge_bg, badge_fg, title, sub, hover = _TILE_LOOK[state]
+        locked = state == TILE_DONE and self.step in ONCE_STEPS
         width = 2 if state == TILE_NEXT else 1
         pad = 0 if state == TILE_NEXT else 1          # same outer size whatever the border
         self.setStyleSheet(f"StepTile {{ background: {bg}; border: {width}px solid {border}; border-radius: 8px;"
-                           f" margin: {pad}px; }} StepTile:hover {{ background: {hover}; }}")
+                           f" margin: {pad}px; }}" + ("" if locked else f" StepTile:hover {{ background: {hover}; }}"))
         self.badge.setText("✓" if state == TILE_DONE else str(self.step))
         self.badge.setStyleSheet(f"background: {badge_bg}; color: {badge_fg}; border-radius: 13px;"
                                  " font-weight: bold;")
@@ -290,6 +294,10 @@ class StepTile(QPushButton):
         what = STEP_TIPS[self.step]
         action = {TILE_DONE: "Done. Click to run it again.", TILE_NEXT: "Next step: click to start it.",
                   TILE_TODO: "Click to open it."}[state]
+        if locked:
+            action = "Done: the mission is created. A new mission is started from \"‹ All missions\"."
+        self.locked = locked             # not disabled: the tool tip and right-click help stay
+        self.setCursor(Qt.CursorShape.ArrowCursor if locked else Qt.CursorShape.PointingHandCursor)
         self.setToolTip(f"Step {self.step} · {what}\n{action}\n(Right-click: help on this step)")
 
 
@@ -311,7 +319,7 @@ class StepRail(QWidget):
                 arrow.setStyleSheet("color: #A0AAB4; font-size: 14pt; background: transparent;")
                 row.addWidget(arrow)
             tile = StepTile(s)
-            tile.clicked.connect(lambda _=False, step=s: self.clicked.emit(step))
+            tile.clicked.connect(lambda _=False, t=tile: None if t.locked else self.clicked.emit(t.step))
             row.addWidget(tile, 1)
             self.tiles[s] = tile
 
