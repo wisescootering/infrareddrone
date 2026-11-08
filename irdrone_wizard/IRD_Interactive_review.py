@@ -27,7 +27,7 @@ import numpy as np
 from PyQt6.QtCore import QObject, QPointF, QRectF, QRunnable, QSize, Qt, QThread, QThreadPool, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QImage, QKeySequence, QPainter, QPen, QPixmap, QShortcut
 from PyQt6.QtWidgets import (QApplication, QButtonGroup, QDialog, QFrame, QHBoxLayout, QLabel, QMessageBox,
-                             QStackedWidget,
+                             QScrollArea, QStackedWidget,
                              QProgressBar, QPushButton, QSizePolicy, QVBoxLayout, QWidget)
 
 sys.path.append(str(Path(__file__).resolve().parent))
@@ -764,6 +764,7 @@ class ReviewDialog(QDialog):
         banner_col.addLayout(bl)
         self.banner_text = QLabel()
         self.banner_text.setTextFormat(Qt.TextFormat.RichText)
+        self.banner_text.setWordWrap(True)     # a long image name must not widen the window
         self.btn_accept_redo = QPushButton("✓ Yes, aligned")
         self.btn_accept_redo.setStyleSheet(PRIMARY_STYLE)
         self.btn_accept_redo.clicked.connect(lambda: self._verdict(True))
@@ -835,7 +836,17 @@ class ReviewDialog(QDialog):
             self.mode_group.button(len(MODES) - 1).setToolTip("No GPS position in the shoot points: no map.")
         left.addWidget(self.view_stack, 1)
         body.addLayout(left, 1)
-        body.addWidget(self._build_sidebar())
+        # The side panel scrolls rather than set the window's minimum height: the
+        # redo banner then takes its room from the image, the window keeps its size.
+        side_scroll = QScrollArea()
+        side_scroll.setWidget(self._build_sidebar())
+        side_scroll.setWidgetResizable(True)
+        side_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        side_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        side_scroll.setFixedWidth(side_scroll.widget().width() + 14)
+        side_scroll.setStyleSheet("QScrollArea { background: transparent; }")
+        side_scroll.viewport().setAutoFillBackground(False)
+        body.addWidget(side_scroll)
         outer.addLayout(body, 1)
 
         self.strip = ReviewStrip(self.review, self.thumbs)

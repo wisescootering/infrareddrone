@@ -300,6 +300,30 @@ class RedoProgressTests(ReviewDialogTests):
         d.done(0)
 
 
+    def test_window_keeps_its_size_during_a_redo(self):
+        """The redo banner (stages, then the verdict) takes its room from the image:
+        the window neither grows nor goes past the screen."""
+        d = self.dialog()
+        d.show()
+        self.app.processEvents()
+        size = d.size()
+        screen = d.screen().availableGeometry()
+        self.assertLessEqual(d.minimumSizeHint().height(), screen.height())
+        d.toggle_flag()
+        d.redo_runner.total, d.redo_runner.rank = 3, 2
+        d._on_redo_started(140, "VIS_0140_with_a_rather_long_image_name_from_the_camera")
+        self.app.processEvents()
+        self.assertEqual(d.size(), size)
+        from unittest import mock
+        with mock.patch.object(d.redo_runner, "resume"):
+            d._on_redo_done(140, "VIS_0140", str(self.mission / "ImgIRdrone" / "VIR_0140_local.jpg"), "")
+        self.app.processEvents()
+        self.assertEqual(d.size(), size)
+        self.assertLessEqual(d.minimumSizeHint().height(), screen.height())
+        d.scan.wait(10000)
+        d.done(0)
+
+
 class RedoRunnerOutputTests(unittest.TestCase):
     def test_stage_lines_become_signals_not_log(self):
         import os
