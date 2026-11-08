@@ -107,3 +107,19 @@ class StopButtonTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FitTest(unittest.TestCase):
+    def test_long_mission_path_does_not_widen_the_window(self):
+        root = Path(tempfile.mkdtemp()) / ("very long folder name " * 6).strip() / "Missions 2022"
+        m = root / "FLY-20220125-1159-Saint-Julien-de-Chapteuil-Haute-Loire"
+        (m / "AerialPhotography" / "VIS").mkdir(parents=True)
+        (m / "AerialPhotography" / "shoot_points.json").write_text(json.dumps(
+            {"shoot_points": [{"VIS": {"FileName": "VIS_0137.dng"}, "NIR": []}]}))
+        (m / "AerialPhotography" / "VIS" / "transfer_info_VIS_dng.json").write_text(json.dumps(
+            {"fly": {"listCopiedImages": ["VIS_0137.dng"]}}))
+        d = S4.DialogImageProcessing({"File path mission": str(m)})
+        self.assertLess(d.minimumSizeHint().width(), 600)
+        screen = APP.primaryScreen().availableGeometry()
+        self.assertLessEqual(d.width(), screen.width())
+        self.assertLessEqual(d.height(), screen.height())

@@ -568,8 +568,8 @@ class DialogImageProcessing(QDialog):
 
 
         self.setWindowTitle("Step 4 – Image processing")
-        self.resize(760, 520)
         self._init_gui()
+        self._fit_to_screen(parent)
         if self.auto_run:
             self.log_text.append("Started after the synchronisation: the alignment runs at once "
                                  "with the survey range of the flight timeline.")
@@ -628,14 +628,19 @@ class DialogImageProcessing(QDialog):
 
     def _init_gui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(f"<b>Mission:</b> {self.mission_folder}"))
-        layout.addWidget(
-            QLabel(
-                f"{self.pair_count} preprocessed image pairs found. "
-                "The inclusive image-number range is pre-filled from Step 2's "
-                "visible FLY frames."
-            )
+        # The labels wrap and the mission is named, its path in the tool tip:
+        # nothing makes the window wider than the screen (long paths, display scaling).
+        mission_label = QLabel(f"<b>Mission:</b> {self.mission_folder.name}")
+        mission_label.setToolTip(str(self.mission_folder))
+        mission_label.setWordWrap(True)
+        layout.addWidget(mission_label)
+        intro = QLabel(
+            f"{self.pair_count} preprocessed image pairs found. "
+            "The inclusive image-number range is pre-filled from Step 2's "
+            "visible FLY frames."
         )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
 
         range_layout = QHBoxLayout()
         range_layout.addWidget(QLabel("First VIS image number:"))
@@ -683,6 +688,7 @@ class DialogImageProcessing(QDialog):
         layout.addLayout(time_difference_layout)
 
         self.status_label = QLabel("Ready")
+        self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
 
         self.progress_bar = QProgressBar()
@@ -753,6 +759,18 @@ class DialogImageProcessing(QDialog):
         self.review_button.setStyleSheet(colored_button_style("#2E7D32"))
 
         layout.addLayout(button_layout)
+
+    def _fit_to_screen(self, parent=None) -> None:
+        """760 x 520, smaller if the screen is (centred, title bar kept)."""
+        from PyQt6.QtWidgets import QApplication
+        screen = (parent.screen() if parent is not None else None) or QApplication.primaryScreen()
+        if screen is None:
+            self.resize(760, 520)
+            return
+        g = screen.availableGeometry()
+        w = min(max(760, self.minimumSizeHint().width()), g.width() - 20)
+        h = min(max(520, self.minimumSizeHint().height()), g.height() - 60)
+        self.setGeometry(g.x() + (g.width() - w) // 2, g.y() + (g.height() - h) // 2, w, h)
 
     def _has_alignment_output(self) -> bool:
         return (self.mission_folder / "ImgIRdrone" / "shoot_points.json").is_file()
