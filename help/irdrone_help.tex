@@ -905,7 +905,7 @@ Le traitement des images consiste pour une paire VIS-NIR à aligner ces deux ima
 En pratique on commence par convertir les images du format raw-dng au format tif (via le logiciel tiers RawTherapee
 \footnote{Via le logiciel tiers open source RawTherapee. L'opération est coûteuse la première fois mais l'image est mise en cache pour des runs ultérieurs.}).  On élimine la distorsion des deux images. On détermine les déplacements théoriques à appliquer pour ramener le centre de visée NIR sur le centre de visée VIS. Ces déplacements sont traduits en termes d'angles pitch, yaw et roll. Ils servent à initialiser la procédure d'alignement. L'alignement se déroule très schématiquement en deux temps. On détermine en premier les paramètres d'une homographie à appliquer sur l'image NIR pour qu'elle \og match \fg~avec l'image VIS. C'est un processus de minimisation complexe spécialement développé pour les images multispectrales 
 	\footnote{Les techniques habituelles pour aligner deux images, qui sont extrêmement performantes dans le cas d'une bande spectrale unique ou en RGB, comme par exemple les \og sift \fg, échouent.}. 
-Ce premier alignement (coarse process) est suivi d'un alignement fin (fine process) qui applique des homographies locales pour diminuer encore le critère d'alignement. L'objet de cette notice d'utilisation du logiciel IRDrone n'étant pas d'expliquer l'algorithme utilisé, on renvoie au site GitHub du projet. Toutefois l'utilisateur doit être conscient que la méthode n'est pas infaillible et surtout qu'elle est tributaire des conditions de vol sur le terrain. 
+Ce premier alignement (coarse process) est suivi d'un alignement fin (fine process) qui applique des homographies locales pour diminuer encore le critère d'alignement. L'algorithme est décrit en annexe (§\ref{sec:ann_algorithme}). L'utilisateur doit être conscient que la méthode n'est pas infaillible et surtout qu'elle est tributaire des conditions de vol sur le terrain. 
 
 \figurePaireIRD{fig:step4_pair_VIS_NIR}
 {step3_img_VIS.png}{Spectre visible (VIS).}
@@ -1379,7 +1379,84 @@ Ferme la fenêtre et rend la main au dialogue principal. Le bouton \bouton{?} ou
 %==========================================================
 \appendix
 \chapter{Alignement des images VIS et NIR (Step 4)}\label{ann:alignement}
-\section{Détermination des \og Pitch \fg{ } et \og Yaw \fg{ } théoriques.}
+Cette annexe s'adresse aux utilisateurs avertis. La première section décrit l'algorithme d'alignement multispectral du Step~4, la seconde l'origine physique du désalignement des deux caméras (angles de \og pitch \fg{} et de \og yaw \fg{} théoriques).
+
+\section{L'algorithme d'alignement multispectral}\label{sec:ann_algorithme}
+Le code est dans \texttt{automatic\_registration.py} (fonction \texttt{align\_raw}) et dans le dossier \texttt{registration}.
+
+\subsection{Pourquoi un algorithme spécifique ?}
+Aligner deux images d'une même bande spectrale est un problème classique, bien résolu par la mise en correspondance de points caractéristiques (SIFT, ORB) ou par corrélation de phase. Ces méthodes échouent ici : le visible et le proche infrarouge ne voient pas la même chose. La végétation est sombre en visible et claire en infrarouge, l'eau est noire en infrarouge, et les contrastes peuvent s'inverser d'une bande à l'autre. Des points caractéristiques ne se retrouvent donc pas d'une image à l'autre, et la corrélation de phase, même dans sa variante de Fourier--Mellin, n'a pas donné de résultats satisfaisants pour l'alignement grossier.
+
+Ce qui est commun aux deux bandes, ce sont les \emph{contours} : bords de routes, haies, toits, lisières. L'algorithme compare donc les images par l'intermédiaire de leurs gradients, sans jamais comparer directement les intensités.
+
+\subsection{Prétraitement}
+\begin{enumerate}
+	\item Les fichiers RAW de la SJCam M20 sont convertis en DNG (\texttt{sjcam\_raw2dng}, au Step~1).
+	\item Les DNG des deux caméras sont développés par RawTherapee en TIF RGB 16 bits \emph{linéaires} (sans courbe de tons), mis en cache (\texttt{*\_RawTherapee.tif}).
+	\item Le vignetage (assombrissement des bords) est corrigé au chargement : carte de correction mesurée pour la caméra DJI, profil radial pour la SJCam (figure~\ref{fig:annexe_shading}).
+	\item La distorsion de l'image visible est corrigée avec la calibration géométrique de la caméra DJI (méthode de Zhang, calibrations dans le dossier \texttt{calibration}).
+\end{enumerate}
+
+\figureIRD[fig:annexe_shading]{annexe_shading_sjcam.png}{Correction du vignetage de la caméra SJCam M20 au chargement : image d'origine (à gauche) et corrigée (à droite).}{0.85}
+
+\subsection{Modèle de caméra virtuelle}
+La caméra NIR est un \og fish-eye \fg{} au champ beaucoup plus large que la caméra visible. Avec sa calibration, l'image NIR est redressée dans une \emph{caméra virtuelle} qui a la même focale que la caméra visible, mais un champ plus large (1,4 fois la taille de l'image visible par défaut). Si les deux caméras visaient exactement dans la même direction, le centre de cette image NIR redressée se superposerait à l'image visible.
+
+En pratique les deux visées diffèrent (§\ref{sec:ann_theorique}) : le gimbal maintient la caméra visible vers le nadir, tandis que la caméra NIR suit l'attitude du drone. Par vent, l'écart peut atteindre une vingtaine de degrés. Le roulis du drone se traduit par un lacet (\emph{yaw}) de la caméra et le tangage par un \emph{pitch} de la caméra ; le roulis de la caméra est en général nul grâce au verrouillage du gimbal. Une rotation $R(\text{yaw},\text{pitch},\text{roll})$ de la caméra se traduit dans l'image par l'homographie
+\begin{equation}
+	H = K_{VIS}\, R\, K_{NIR}^{-1},
+\end{equation}
+où $K_{VIS}$ et $K_{NIR}$ sont les matrices de calibration des deux caméras. Tout l'alignement consiste à trouver cette rotation, puis à l'affiner.
+
+\subsection{Représentation multispectrale}
+Les deux images sont converties en niveaux de gris, lissées par un filtre gaussien (pour l'affinage, $\sigma=5$ pixels pour le visible et 3 pour l'infrarouge, qui est moins net ; moins pour la recherche grossière), puis remplacées par quatre cartes d'énergie de gradient : les carrés des dérivées horizontale et verticale (filtres de Scharr) et des deux dérivées diagonales (filtres de Roberts). Cette représentation garde les contours et ignore le niveau et le signe des contrastes : un contour présent dans les deux bandes y produit le même motif, même si ses intensités diffèrent.
+
+\subsection{Critère de ressemblance : le gradient total normalisé}
+Pour comparer deux représentations décalées, on calcule leur différence, puis la somme des valeurs absolues du gradient (Sobel) de cette différence. Ce critère dérive du \og Normalized Total Gradient \fg{} (NTG, Chen et al.) : quand les deux images sont bien superposées, leurs contours s'annulent dans la différence et le gradient total est minimal. On cherche donc le décalage qui \emph{minimise} ce critère.
+
+\subsection{Alignement grossier}
+L'alignement grossier compense l'essentiel de l'écart de visée :
+\begin{enumerate}
+	\item l'image NIR est redressée dans la caméra virtuelle élargie, avec les angles initiaux (nuls, ou ceux réglés à la main lors d'un réalignement, §\ref{btn:review_redo}) ;
+	\item les deux représentations multispectrales sont réduites d'un facteur 32 ;
+	\item une \emph{recherche exhaustive} teste toutes les translations de l'image visible à l'intérieur de l'image NIR élargie et calcule le critère pour chacune. Le minimum est localisé finement (maximum de courbure de la surface de coût) ;
+	\item à faible angle, une translation horizontale $t_x$ correspond à un lacet et une translation verticale $t_y$ à un pitch de la caméra : $\text{yaw} = \arctan(t_x/f)$, $\text{pitch} = \arctan(t_y/f)$, où $f$ est la focale en pixels ;
+	\item l'image NIR est redressée une nouvelle fois, à pleine résolution, avec ces angles corrigés.
+\end{enumerate}
+Ce résultat correspond à l'image \og globale \fg{} grossière.
+
+\subsection{Affinage pyramidal}
+L'image NIR grossièrement alignée est ensuite affinée sur une pyramide d'images, de la plus petite à la plus grande (réductions d'un facteur 16, 16 puis 4 dans le réglage actuel) :
+\begin{enumerate}
+	\item à chaque niveau, l'image est découpée en une grille de zones (4$\times$4 puis 5$\times$5) ;
+	\item pour chaque zone, la meilleure translation est recherchée dans un petit voisinage avec le même critère : on obtient un \emph{champ de vecteurs} de déplacements locaux ;
+	\item ce champ est régularisé par l'ajustement d'un modèle de mouvement global, une homographie, qui affine le yaw, le pitch et le roll ;
+	\item au niveau suivant, plus fin, l'image est d'abord recalée avec l'homographie trouvée, ce qui réduit l'horizon de recherche ; chaque niveau est itéré plusieurs fois.
+\end{enumerate}
+
+\subsection{Rééchantillonnage unique et sorties}
+Le modèle de mouvement final (angles, homographie et champ de vecteurs) est enregistré dans \texttt{VIS\_XXXX\_motion\_model.npy} ; une version lisible est écrite en \texttt{.json}. L'image NIR \emph{originale} est alors rééchantillonnée \textbf{une seule fois} sur l'image visible, ce qui évite d'accumuler le flou des interpolations successives :
+\begin{itemize}
+	\item alignement \emph{global} : rotation et homographie finale ;
+	\item alignement \emph{local} : rotation, homographie et champ de vecteurs local, en général le plus précis.
+\end{itemize}
+Les quatre couches \texttt{IRD\_XXXX\_1..4.tif} (rouge, vert, bleu et proche infrarouge) viennent de l'alignement local ; les bords, où l'infrarouge peut manquer, sont rognés. Les images de contrôle \texttt{VIR}, \texttt{NDVI} et \texttt{NIR} au format jpeg sont écrites pour l'alignement local et/ou global selon les cases cochées au Step~4 (§\ref{btn:step4_options}). Quand un modèle de mouvement existe déjà, il est relu : relancer l'alignement ne refait pas la recherche (§\ref{btn:step4_stop}).
+
+\subsection{Limites et réalignement semi-automatique}
+L'alignement multispectral est un problème mal posé. L'algorithme échoue quand les deux caméras ne voient pas la même scène (rafale de vent, écart de temps important entre les deux prises de vue), quand la zone est sans texture (eau, champ uniforme), ou quand la recherche grossière tombe sur un minimum trompeur. La revue des images alignées (chapitre~\ref{ch:review}) mesure le décalage résiduel des contours pour repérer ces échecs.
+
+Le réalignement à la main (§\ref{btn:review_redo}) remplace les angles initiaux nuls par des angles choisis à l'\oe il avec des curseurs. Ces angles ne servent que de point de départ : l'alignement grossier et l'affinage pyramidal repartent de là et retrouvent en général un alignement précis. La régularisation du champ de vecteurs local reste à améliorer, de même que l'étalonnage colorimétrique des deux caméras.
+
+\subsection{Références}
+\begin{itemize}
+	\item S.-J. Chen, H.-L. Shen, \emph{Normalized Total Gradient: A New Measure for Multispectral Image Registration}, \texttt{arXiv:1702.04562}.
+	\item M. Irani, P. Anandan, \emph{Robust multi-sensor image alignment}, ICCV 1998.
+	\item S. W. Hasinoff et al., \emph{Burst photography for high dynamic range and low-light imaging on mobile cameras}, SIGGRAPH Asia 2016 (alignement pyramidal par zones, matériel supplémentaire).
+	\item G. Rabatel, S. Labbé, \emph{Registration of visible and near infrared unmanned aerial vehicle images based on Fourier-Mellin transform}, Precision Agriculture, 2016.
+	\item J.-A. Vayssade, G. Jones, J.-N. Paoli, C. Gée, \emph{Two-step multi-spectral registration via key-point detector and gradient similarity}, 2020.
+\end{itemize}
+
+\section{Détermination des \og Pitch \fg{ } et \og Yaw \fg{ } théoriques.}\label{sec:ann_theorique}
 
 \subsection{Description du positionnement des caméras.}
 
