@@ -399,10 +399,8 @@ class Main_Window(QMainWindow):
             self.dialog_synchro_aruco.data_signal_to_main.connect(
                 self.handle_data_from_dialog_synchro_aruco
             )
-            # Pairing done: Step 4 runs on its own, then the review opens
-            self.dialog_synchro_aruco.continue_requested.connect(
-                lambda: self.on_process_images(auto_run=True)
-            )
+            # Pairing done, "Image processing": Step 4 opens, the user starts it
+            self.dialog_synchro_aruco.continue_requested.connect(self.on_process_images)
             self.dialog_synchro_aruco.show()
 
         except Exception as e:

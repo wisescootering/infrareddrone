@@ -1,5 +1,5 @@
 """Step 3 opened from the flight timeline: the stages follow each other and
-Step 4 starts after a short countdown, unless the user takes over."""
+Step 4 is never started on its own: the user opens it."""
 import os
 import sys
 import tempfile
@@ -86,24 +86,18 @@ class ChainedStep3Test(unittest.TestCase):
         d._set_manual_mode(True)
         self.assertFalse(d.btn_sync_ok.isVisibleTo(d))
 
-    def test_pairing_done_counts_down_then_continues(self):
+    def test_pairing_done_waits_for_the_user(self):
         d = self.dialog(True)
         seen = []
         d.continue_requested.connect(lambda: seen.append(True))
-        d._on_image_pairing_finished({"shoot_points": [{}, {}]})
-        self.assertTrue(d._continue_timer.isActive())
-        for _ in range(d.CONTINUE_DELAY_S):
-            d._continue_tick()
-        self.assertEqual(seen, [True])
-
-    def test_stay_here_cancels_the_countdown(self):
-        d = self.dialog(True)
-        seen = []
-        d.continue_requested.connect(lambda: seen.append(True))
-        d._on_image_pairing_finished({"shoot_points": [{}]})
-        d._stay_here()
-        self.assertFalse(d._continue_timer.isActive())
+        with mock.patch.object(S3.QTimer, "singleShot") as later:
+            d._on_image_pairing_finished({"shoot_points": [{}, {}]})
+        later.assert_not_called()                          # no countdown
         self.assertEqual(seen, [])
+        self.assertTrue(d.btn_continue.isVisibleTo(d))
+        self.assertEqual(d.stages.states[3], Look.STAGE_PENDING)
+        d.btn_continue.click()
+        self.assertEqual(seen, [True])
 
     def test_manual_mode_stops_the_chaining(self):
         d = self.dialog(True)

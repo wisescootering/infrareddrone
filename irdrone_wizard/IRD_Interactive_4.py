@@ -76,6 +76,33 @@ LOG_LEVELS = (
 )
 
 
+def kill_process_tree(pid: int, timeout: float = 3.0) -> None:
+    """End a process and every process it started (the alignment workers of
+    the ProcessPoolExecutor): terminate, then kill what is left."""
+    if not pid:
+        return
+    try:
+        import psutil
+        parent = psutil.Process(pid)
+        procs = parent.children(recursive=True) + [parent]
+    except Exception:
+        return
+    for p in procs:
+        try:
+            p.terminate()
+        except Exception:
+            pass
+    try:
+        _gone, alive = psutil.wait_procs(procs, timeout=timeout)
+    except Exception:
+        alive = procs
+    for p in alive:
+        try:
+            p.kill()
+        except Exception:
+            pass
+
+
 def _settings() -> QSettings:
     return QSettings(SETTINGS_ORGANIZATION, SETTINGS_APPLICATION)
 
@@ -797,6 +824,15 @@ class DialogImageProcessing(QDialog):
         self.run_button = QPushButton("Run alignment")
         self.run_button.clicked.connect(self._start_processing)
         button_layout.addWidget(self.run_button)
+        self.stop_button = QPushButton("\u25A0  Stop")
+        self.stop_button.setStyleSheet(
+            "QPushButton { background: white; color: #B03A2E; font-weight: bold; padding: 6px 14px;"
+            " border: 1px solid #E3B4AE; border-radius: 6px; } QPushButton:hover { background: #FBEDEB; }")
+        self.stop_button.setToolTip("Stop the alignment. The images already aligned are kept; "
+                                    "Run alignment again reuses their motion models.")
+        self.stop_button.clicked.connect(self._stop_processing)
+        self.stop_button.hide()
+        button_layout.addWidget(self.stop_button)
         self.flag_button = QPushButton("Flag misaligned points")
         self.flag_button.clicked.connect(self._flag_misaligned_points)
         self.flag_button.setStyleSheet(BUTTON_STYLE)
@@ -1124,7 +1160,33 @@ class DialogImageProcessing(QDialog):
         self.local_checkbox.setEnabled(False)
         self.global_checkbox.setEnabled(False)
         self.max_time_difference.setEnabled(False)
+        self._stopped_by_user = False
+        self.run_button.hide()
+        self.stop_button.show()
         self.process.start(sys.executable, arguments)
+
+    def _stop_processing(self) -> None:
+        """Stop button: ends the alignment and its worker processes."""
+        if self.process.state() == QProcess.ProcessState.NotRunning:
+            return
+        answer = QMessageBox.question(
+            self, "Stop the alignment",
+            "Stop the alignment now?\n\nThe images already aligned are kept. "
+            "Run alignment again later: the images already done reuse their motion model.")
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self._stopped_by_user = True
+        self.stop_button.setEnabled(False)
+        self.status_label.setText("Stopping…")
+        self.log_text.append("\nStopping the alignment (asked by the user)…")
+        kill_process_tree(self.process.processId())
+        if not self.process.waitForFinished(5000):
+            self.process.kill()
+
+    def _processing_controls_idle(self) -> None:
+        self.stop_button.hide()
+        self.stop_button.setEnabled(True)
+        self.run_button.show()
 
     def _read_process_output(self, final: bool = False) -> None:
         output = bytes(self.process.readAllStandardOutput()).decode(
@@ -1177,6 +1239,7 @@ class DialogImageProcessing(QDialog):
 
     def _on_process_finished(self, exit_code: int, exit_status) -> None:
         self._read_process_output(final=True)
+        self._processing_controls_idle()
         if self._progress_total == 0:
             self.progress_bar.setRange(0, 1)
             self.progress_bar.setValue(1 if exit_code == 0 else 0)
@@ -1196,6 +1259,15 @@ class DialogImageProcessing(QDialog):
         self.global_checkbox.setEnabled(True)
         self.max_time_difference.setEnabled(True)
 
+        if getattr(self, "_stopped_by_user", False):
+            self._stopped_by_user = False
+            done = self.progress_bar.value() if self._progress_total else 0
+            text = (f"Stopped: {done} of {self._progress_total} images aligned."
+                    if self._progress_total else "Stopped.")
+            self.status_label.setText(text + " Run alignment to go on.")
+            self.log_text.append("\n" + text)
+            self.run_button.setText("Run alignment again")
+            return
         if exit_code == 0 and exit_status == QProcess.ExitStatus.NormalExit:
             if self._last_elapsed_seconds is not None and self._progress_total:
                 average = self._last_elapsed_seconds / self._progress_total
@@ -1219,12 +1291,15 @@ class DialogImageProcessing(QDialog):
             self.log_text.append(f"\nProcessing failed (exit code {exit_code}).")
 
     def _on_process_error(self, error) -> None:
+        if getattr(self, "_stopped_by_user", False):
+            return               # killed on purpose: _on_process_finished reports it
         if error != QProcess.ProcessError.FailedToStart:
             self.log_text.append(f"\nProcessing process error: {self.process.errorString()}")
             return
 
         self.progress_bar.setRange(0, 1)
         self.progress_bar.setValue(0)
+        self._processing_controls_idle()
         self.status_label.setText("Unable to start processing.")
         self.run_button.setEnabled(True)
         self.flag_button.setEnabled(True)
@@ -1262,7 +1337,7 @@ class DialogImageProcessing(QDialog):
             QMessageBox.information(
                 self,
                 "Processing in progress",
-                "Wait for image processing to finish before closing this window.",
+                "Wait for image processing to finish, or stop it, before closing this window.",
             )
             event.ignore()
             return
