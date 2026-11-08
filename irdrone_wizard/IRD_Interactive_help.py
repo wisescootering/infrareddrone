@@ -11,10 +11,25 @@ every button section of the manual has a LaTeX label (``ch:step1``,
 label in the ``.aux`` file next to the PDF. The help buttons call :func:`show_help`
 with a label: the PDF is opened at the page of that label.
 
+Online first
+------------
+When the documentation website can be reached, the help is read online and is
+always the latest one (in English):
+
+* :func:`show_help` (``?`` buttons, right-click "Help on this button") opens the
+  web manual at the anchor of the label: ``https://wisescootering.github.io/infrareddrone/manual/#btn:step4_stop``.
+  The web page is generated from ``help/irdrone_help_en.tex`` by ``website/manual.py``:
+  every LaTeX label is an anchor of the page.
+* :func:`show_manual` (``? Manual``) opens the PDF built by the "Build help PDF"
+  GitHub Actions workflow (rolling ``help-latest`` release).
+
+Offline (or with ``IRDRONE_HELP_OFFLINE=1``), both open the local PDF as below.
+
 Usage
 -----
     import IRD_Interactive_help as Help
     Help.show_help("ch:step2")
+    Help.show_manual()
 
 Buttons are documented with :func:`attach_help` (tooltip + right-click help).
 
@@ -28,6 +43,8 @@ Notes
 
 import os
 import re
+import socket
+import time
 import webbrowser
 from pathlib import Path
 from typing import Dict, Optional
@@ -44,6 +61,37 @@ HELP_AUX = next(
                      HELP_PDF_FULL.with_suffix(".aux")) if aux.exists()),
     HELP_PDF.with_suffix(".aux"),
 )
+
+# Online help (GitHub Pages site and the PDF built by GitHub Actions)
+SITE_HOST = "wisescootering.github.io"
+MANUAL_URL = f"https://{SITE_HOST}/infrareddrone/manual/"
+PDF_URL = "https://github.com/wisescootering/infrareddrone/releases/download/help-latest/irdrone_help_en.pdf"
+ONLINE_TIMEOUT_S = 1.5
+_online_cache = {"at": -1e9, "value": False}
+
+
+def online(timeout: float = ONLINE_TIMEOUT_S, max_age: float = 60.0) -> bool:
+    """True if the documentation website can be reached (checked at most once a minute).
+
+    ``IRDRONE_HELP_OFFLINE=1`` forces the local PDF.
+    """
+    if os.environ.get("IRDRONE_HELP_OFFLINE", "").strip() not in ("", "0"):
+        return False
+    now = time.monotonic()
+    if now - _online_cache["at"] > max_age:
+        try:
+            with socket.create_connection((SITE_HOST, 443), timeout=timeout):
+                value = True
+        except OSError:
+            value = False
+        _online_cache.update(at=now, value=value)
+    return _online_cache["value"]
+
+
+def manual_url(label: Optional[str] = None) -> str:
+    """Web manual, at the anchor of ``label`` (every LaTeX label is an anchor of the page)."""
+    return f"{MANUAL_URL}#{label}" if label else MANUAL_URL
+
 
 # The title page (\maketitle) is numbered 0 by LaTeX: the physical page of the PDF viewer
 # is the printed page + 1. Set to 0 if the title page is removed from the manual.
@@ -115,6 +163,28 @@ def show_help(label: Optional[str] = None, parent=None) -> bool:
     bool
         True if the manual has been opened, False otherwise.
     """
+    if online():
+        try:
+            if webbrowser.open(manual_url(label)):
+                return True
+        except Exception:
+            pass  # the local PDF below
+    return show_local_pdf(label, parent)
+
+
+def show_manual(parent=None) -> bool:
+    """Open the whole manual: the PDF built by GitHub Actions, or the local PDF offline."""
+    if online():
+        try:
+            if webbrowser.open(PDF_URL):
+                return True
+        except Exception:
+            pass
+    return show_local_pdf(None, parent)
+
+
+def show_local_pdf(label: Optional[str] = None, parent=None) -> bool:
+    """Open the PDF shipped with the software, at the page of ``label`` when known."""
     if not HELP_PDF.exists():
         _warn(parent, f"The user manual was not found:\n{HELP_PDF}\n\n"
                       "Compile it with help/build_help.bat.")

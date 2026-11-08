@@ -528,8 +528,8 @@ class Main_Window(QMainWindow):
 
 
     def on_help(self):
-        """Open the user manual on the overview chapter."""
-        Help.show_help("ch:overview", parent=self)
+        """Open the whole user manual (the PDF built by GitHub Actions; the local PDF offline)."""
+        Help.show_manual(parent=self)
 
 
     # ====================================================================================
