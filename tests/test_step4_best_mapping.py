@@ -43,7 +43,8 @@ class Step4BestMappingTest(unittest.TestCase):
 
     def test_enabled_by_default_and_counted(self):
         d = self.dialog()
-        self.assertTrue(d.best_mapping_checkbox.isChecked())
+        self.assertTrue(d.best_mapping_radio.isChecked())
+        self.assertFalse(d.all_images_radio.isChecked())
         self.assertEqual(d.best_mapping_overlap.value(), 75)
         kept, synchronised = d.best_mapping_selection()
         self.assertEqual(synchronised, 48)
@@ -52,11 +53,12 @@ class Step4BestMappingTest(unittest.TestCase):
 
     def test_choice_of_step2_is_used(self):
         d = self.dialog(choice={"enabled": False, "overlap": 0.9})
-        self.assertFalse(d.best_mapping_checkbox.isChecked())
+        self.assertTrue(d.all_images_radio.isChecked())
         self.assertEqual(d.best_mapping_overlap.value(), 90)
         self.assertFalse(d.best_mapping_overlap.isEnabled())
         self.assertEqual(d.best_mapping_selection(), (48, 48))
-        d.best_mapping_checkbox.setChecked(True)
+        d.best_mapping_radio.setChecked(True)
+        self.assertFalse(d.all_images_radio.isChecked())
         self.assertLess(d.best_mapping_selection()[0], 48)
 
     def test_run_passes_the_overlap_and_saves_the_choice(self):
@@ -74,11 +76,42 @@ class Step4BestMappingTest(unittest.TestCase):
 
     def test_run_without_best_mapping(self):
         d = self.dialog()
-        d.best_mapping_checkbox.setChecked(False)
+        d.all_images_radio.setChecked(True)
+        self.assertFalse(d.best_mapping_radio.isChecked())
         with mock.patch.object(d.process, "start") as start:
             d._start_processing()
         self.assertNotIn("--best-mapping-overlap", start.call_args[0][1])
         self.assertFalse(best_mapping.load_choice(d.mission_folder)["enabled"])
+
+    def test_map_shows_the_shoot_points_aligned(self):
+        d = self.dialog()
+        self.assertIsNotNone(d.map_view)
+        kept, _ = d.best_mapping_selection()
+        self.assertEqual(len(d.map_model.selection), kept)
+        flags = d._aligned_flags()
+        self.assertEqual(sum(flags.values()), 48)                  # every fifth pair badly synchronised
+        d.best_mapping_overlap.setValue(90)
+        self.assertEqual(len(d.map_model.selection), d.best_mapping_selection()[0])
+        d.end_image_number.setValue(30)
+        self.assertTrue(all(d.map_model.numbers[i] <= 30 for i in d.map_model.selection))
+        d.all_images_radio.setChecked(True)
+        self.assertEqual(d.map_model.selection, [])
+        d.map_view.grab()
+
+    def test_no_map_without_positions(self):
+        m = mission()
+        data = json.loads((m / "AerialPhotography" / "shoot_points.json").read_text())
+        for point in data["shoot_points"]:
+            del point["VIS"]["DroneLatitude"]
+        (m / "AerialPhotography" / "shoot_points.json").write_text(json.dumps(data))
+        d = S4.DialogImageProcessing({"File path mission": str(m)})
+        self.assertIsNone(d.map_view)
+        self.assertEqual(d.best_mapping_selection()[1], 48)
+
+    def test_options_have_tool_tips(self):
+        d = self.dialog()
+        for widget in (d.best_mapping_radio, d.all_images_radio, d.best_mapping_overlap):
+            self.assertTrue(widget.toolTip().strip())
 
 
 if __name__ == "__main__":
