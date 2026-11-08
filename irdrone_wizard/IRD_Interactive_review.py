@@ -27,11 +27,13 @@ import numpy as np
 from PyQt6.QtCore import QObject, QPointF, QRectF, QRunnable, QSize, Qt, QThread, QThreadPool, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QImage, QKeySequence, QPainter, QPen, QPixmap, QShortcut
 from PyQt6.QtWidgets import (QApplication, QButtonGroup, QDialog, QFrame, QHBoxLayout, QLabel, QMessageBox,
+                             QStackedWidget,
                              QProgressBar, QPushButton, QSizePolicy, QVBoxLayout, QWidget)
 
 sys.path.append(str(Path(__file__).resolve().parent))
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 import shoot_review as R  # noqa: E402
+import IRD_Interactive_map as MapV  # noqa: E402
 from IRD_Interactive_look import (BLUE, CURSOR, DANGER_STYLE, DIALOG_STYLE, GRID, MESSAGE_STYLE,  # noqa: E402
                                   MUTED, NIR_ACCENT, PANEL, PRIMARY_STYLE, PROGRESS_STYLE, SECONDARY_STYLE,
                                   SUBTITLE_STYLE, TITLE_STYLE, bgr_to_qimage, chip, fit_to_screen, fmt_time,
@@ -66,6 +68,8 @@ MODES = [  # (key, button text, tooltip)
                            "edges are single and sharp. Misaligned: every edge is doubled, red on one side, "
                            "cyan on the other."),
     ("side", "Side by side", "Visible and aligned infrared next to each other."),
+    ("map", "Map", "Where the image was taken: the flight, the ground covered by the image, the orthophoto "
+                   "of Step 5 when it is built and aerial photos (online, optional)."),
 ]
 MAX_VIEW_WIDTH = 3000     # the compare view works on copies at most this wide
 
@@ -792,7 +796,19 @@ class ReviewDialog(QDialog):
         modes.addWidget(self.btn_open)
         left.addLayout(modes)
         self.view = CompareView()
-        left.addWidget(self.view, 1)
+        self.view_stack = QStackedWidget()
+        self.view_stack.addWidget(self.view)
+        self.map_model = self._make_map_model()
+        self.big_map = None
+        if self.map_model is not None:
+            self.big_map = MapV.FlightMapView(self.map_model)
+            self.big_map.picked.connect(self._on_map_picked)
+            self.big_map.hovered.connect(self._on_map_hovered)
+            self.view_stack.addWidget(self.big_map)
+        else:
+            self.mode_group.button(len(MODES) - 1).setEnabled(False)
+            self.mode_group.button(len(MODES) - 1).setToolTip("No GPS position in the shoot points: no map.")
+        left.addWidget(self.view_stack, 1)
         body.addLayout(left, 1)
         body.addWidget(self._build_sidebar())
         outer.addLayout(body, 1)
@@ -811,7 +827,7 @@ class ReviewDialog(QDialog):
         self.btn_help.setFixedWidth(36)
         self.btn_help.clicked.connect(self._on_help)
         self.btn_help.setToolTip("← → previous / next point\nN next point to review\nF flag / unflag\n"
-                                 "Space looks good (and go to the next point to review)\n1-4 compare mode\n"
+                                 "Space looks good (and go to the next point to review)\n1-4 compare mode\n5 map\n"
                                  "wheel zoom · double-click fit")
         self.btn_flag_suspicious = QPushButton()
         self.btn_flag_suspicious.setStyleSheet(SECONDARY_STYLE)
@@ -846,7 +862,8 @@ class ReviewDialog(QDialog):
         for seq, slot in (("Left", lambda: self.step(-1)), ("Right", lambda: self.step(+1)),
                           ("N", self.next_to_review), ("F", self.toggle_flag), ("Space", self.looks_good),
                           ("1", lambda: self.set_mode("swipe")), ("2", lambda: self.set_mode("blink")),
-                          ("3", lambda: self.set_mode("overlay")), ("4", lambda: self.set_mode("side"))):
+                          ("3", lambda: self.set_mode("overlay")), ("4", lambda: self.set_mode("side")),
+                          ("5", lambda: self.set_mode("map"))):
             QShortcut(QKeySequence(seq), self, activated=slot)
 
     def _build_sidebar(self):
@@ -898,12 +915,22 @@ class ReviewDialog(QDialog):
         nav.addWidget(self.btn_next)
         lay.addLayout(nav)
         lay.addStretch(1)
-        keys = QLabel("<b>Keyboard</b><br>← →&nbsp; previous / next<br>N&nbsp; next point to review<br>"
-                      "Space&nbsp; looks good<br>F&nbsp; flag / unflag<br>1 2 3 4&nbsp; swipe, blink, overlay, "
-                      "side by side")
-        keys.setTextFormat(Qt.TextFormat.RichText)
-        keys.setStyleSheet("color: #6B7785; background: #F5F7FA; border-radius: 6px; padding: 8px;")
-        lay.addWidget(keys)
+        # where the image was taken (click: the large map); keyboard help on "?"
+        self.mini_map = None
+        if self.map_model is not None:
+            self.mini_map = MapV.FlightMapView(self.map_model, compact=True)
+            self.mini_map.setFixedHeight(200)
+            self.mini_map.setToolTip("Where the image was taken. Click: large map (key 5)")
+            self.mini_map.picked.connect(self._on_map_picked)
+            self.mini_map.clicked_empty.connect(lambda: self.set_mode("map"))
+            lay.addWidget(self.mini_map)
+        else:
+            keys = QLabel("<b>Keyboard</b><br>← →&nbsp; previous / next<br>N&nbsp; next point to review<br>"
+                          "Space&nbsp; looks good<br>F&nbsp; flag / unflag<br>1 2 3 4&nbsp; swipe, blink, overlay, "
+                          "side by side")
+            keys.setTextFormat(Qt.TextFormat.RichText)
+            keys.setStyleSheet("color: #6B7785; background: #F5F7FA; border-radius: 6px; padding: 8px;")
+            lay.addWidget(keys)
         legend = QLabel(" ".join(
             f"<span style='color:{STATUS_COLORS[s].name()}'>■</span>&nbsp;{STATUS_TEXT[s]}<br>"
             for s in (R.STATUS_OK, R.STATUS_CHECKED, R.STATUS_CHECK, R.STATUS_SUSPICIOUS, R.STATUS_FLAGGED,
@@ -933,10 +960,14 @@ class ReviewDialog(QDialog):
     def _on_thumb(self, number, image):
         self.thumbs[number] = QPixmap.fromImage(image)
         self.strip.update()
+        if self.map_model is not None and self.current() is not None and self.current().number == number:
+            self.map_model.changed.emit()
         if self.current() is not None and self.current().number == number and not self.view.has_images():
             self.view.set_placeholder(self.thumbs[number], "Loading…")
 
     def _on_measured(self, _number):
+        if self.map_model is not None:
+            self.map_model.changed.emit()      # point colours
         self._refresh_counts()
         self._refresh_point()
         self.strip.update()
@@ -980,6 +1011,7 @@ class ReviewDialog(QDialog):
         self.strip.update()
         self._show_point(self.index)
         self._refresh_point()
+        self._map_follow()
         # prefetch the neighbours
         for j in (self.index + 1, self.index - 1):
             if 0 <= j < len(self.review.points):
@@ -1035,6 +1067,8 @@ class ReviewDialog(QDialog):
 
     def _on_strip_hover(self, i):
         self._hover_index = i
+        if self.map_model is not None and 0 <= i < len(self.review.points):
+            self.map_model.set_hover(self.map_model.index_of(self.review.points[i].number))
         self._hover_timer.start(60)
 
     def _show_hovered(self):
@@ -1043,14 +1077,61 @@ class ReviewDialog(QDialog):
 
     def _on_strip_left(self):
         self._hover_index = None
+        if self.map_model is not None:
+            self.map_model.set_hover(None)
         self._hover_timer.stop()
         if self.current() is not None:
             self._show_point(self.index)
 
     def set_mode(self, mode):
-        self.view.set_mode(mode)
         keys = [m[0] for m in MODES]
+        if mode == "map":
+            if self.big_map is None:
+                return
+            self.view_stack.setCurrentWidget(self.big_map)
+            if self.current() is not None:
+                i = self.map_model.index_of(self.current().number)
+                if i is not None:
+                    self.big_map.focus(i)
+        else:
+            self.view_stack.setCurrentWidget(self.view)
+            self.view.set_mode(mode)
         self.mode_group.button(keys.index(mode)).setChecked(True)
+
+    # ---- map
+    def _make_map_model(self):
+        try:
+            model = MapV.map_model_for(self.mission, color_of=self._map_color, parent=self)
+        except Exception as e:  # the map is a help, never a blocker
+            print(f"Map unavailable: {e}")
+            return None
+        if model is not None:
+            model.image_of = self.thumbs.get       # aligned image (thumbnail) in its footprint
+        return model
+
+    def _map_color(self, number):
+        pt = self.review.by_number(number)
+        return STATUS_COLORS[pt.status] if pt is not None else QColor("#A0AAB4")
+
+    def _on_map_picked(self, i):
+        number = self.map_model.numbers[i]
+        for k, p in enumerate(self.review.points):
+            if p.number == number:
+                self.select(k)
+                return
+
+    def _on_map_hovered(self, i):
+        self.map_model.set_hover(i)
+
+    def _map_follow(self):
+        if self.map_model is None or self.current() is None:
+            return
+        i = self.map_model.index_of(self.current().number)
+        self.map_model.set_current(i)
+        if i is not None:
+            for v in (self.mini_map, self.big_map):
+                if v is not None and v.isVisible():
+                    v.focus(i)
 
     # ---- point details
     def _refresh_point(self):
@@ -1154,6 +1235,8 @@ class ReviewDialog(QDialog):
             self.subtitle.setText(f"{len(points)} point(s) flagged.")
 
     def _after_change(self):
+        if self.map_model is not None:
+            self.map_model.changed.emit()
         try:
             R.save_state(self.review)
         except OSError as e:

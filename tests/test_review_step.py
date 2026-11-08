@@ -229,3 +229,47 @@ class ReviewInteractionTests(ReviewDialogTests):
         d._start_scan({137})
         d.done(0)                                     # stops and waits for both
         self.assertFalse(any(s.isRunning() for s in d._scans))
+
+
+class ReviewMapTests(ReviewDialogTests):
+    """The map of the review (positions added to the pairs; offline)."""
+
+    def setUp(self):
+        super().setUp()
+        os_env = __import__("os").environ
+        os_env["IRDRONE_CACHE"] = tempfile.mkdtemp()
+        path = self.mission / "AerialPhotography" / "shoot_points.json"
+        data = json.loads(path.read_text())
+        for k, sp in enumerate(data["shoot_points"]):
+            sp["VIS"].update(DroneLatitude=45.1695, DroneLongitude=3.4 + 0.0003 * k, GimbalYawDegree="-78.9")
+        path.write_text(json.dumps(data))
+        from unittest import mock
+        import flight_map as F
+        patcher = mock.patch.object(F.urllib.request, "urlopen", side_effect=OSError("offline"))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_map_follows_the_selection_and_picks(self):
+        d = self.dialog()
+        self.assertIsNotNone(d.mini_map)
+        d.set_mode("map")
+        self.assertIs(d.view_stack.currentWidget(), d.big_map)
+        d.select(0)
+        self.assertEqual(d.map_model.numbers[d.map_model.current], 137)
+        d._on_map_picked(d.map_model.index_of(143))
+        self.assertEqual(d.current().number, 143)
+        d.set_mode("swipe")
+        self.assertIs(d.view_stack.currentWidget(), d.view)
+        d.done(0)
+
+    def test_without_positions_the_map_is_off(self):
+        path = self.mission / "AerialPhotography" / "shoot_points.json"
+        data = json.loads(path.read_text())
+        for sp in data["shoot_points"]:
+            sp["VIS"].pop("DroneLatitude")
+        path.write_text(json.dumps(data))
+        d = self.dialog()
+        self.assertIsNone(d.map_model)
+        d.set_mode("map")                                  # ignored
+        self.assertIs(d.view_stack.currentWidget(), d.view)
+        d.done(0)
