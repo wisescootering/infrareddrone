@@ -156,6 +156,29 @@ class DialogTests(unittest.TestCase):
         self.assertTrue(d.btn_next.isEnabled())
         d.done(0)
 
+    def test_a_card_inserted_later_is_found_by_itself(self):
+        import IRD_Interactive_new_mission as NM
+        tmp = Path(tempfile.mkdtemp())
+        card = tmp / "card"
+        with mock.patch.object(NM, "mounted_volumes", return_value=[]):
+            d = NM.NewMissionDialog(tmp / "work", scan=True)
+            self.app.processEvents()                      # first scan: nothing
+        self.assertTrue(d.card_poll.isActive())
+        (card / "DCIM" / "SJ").mkdir(parents=True)
+        (card / "DCIM" / "HYPERLAPSE_0001.DNG").write_bytes(b"x")
+        (card / "DCIM" / "SJ" / "2022_0125_130413_001.RAW").write_bytes(b"x")
+        with mock.patch.object(NM, "mounted_volumes", return_value=[(str(card), "CARD")]):
+            d._poll_cards()                               # what the timer does
+        self.assertEqual((d.vis.count, d.nir.count), (1, 1))
+        self.assertFalse(d.card_poll.isActive())          # both found: no more polling
+        d.done(0)
+
+    def test_previews_take_off_and_in_flight(self):
+        s = MS.summarize(Path(tempfile.mkdtemp()), [".raw"])
+        self.assertIsNone(MS.nir_preview_jpeg(s, 5))
+        self.assertEqual(MS.flight_index(251), 167)
+        self.assertEqual(MS.flight_index(1), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

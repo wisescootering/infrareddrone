@@ -184,14 +184,20 @@ def takeoff_image(vis: FolderSummary) -> Optional[Path]:
     return vis.files[0] if vis.files else None
 
 
-def nir_preview_jpeg(nir: FolderSummary) -> Optional[Path]:
-    """A JPEG to show for the infrared images (the RAW have no preview). The
-    SJCam writes a JPEG beside the RAW, under the same name or, on the M20,
-    under the next name (..._001.RAW, ..._002.JPG): the JPEG with the same
-    name as the first RAW, else the first JPEG that follows it."""
+def flight_index(count: int) -> int:
+    """An image taken during the flight: two thirds of the way (after the
+    take-off, the synchronisation and the climb, in the survey)."""
+    return max(0, min(count - 1, (2 * count) // 3))
+
+
+def nir_preview_jpeg(nir: FolderSummary, index: int = 0) -> Optional[Path]:
+    """A JPEG to show for the infrared image `index` (the RAW have no preview).
+    The SJCam writes a JPEG beside the RAW, under the same name or, on the
+    M20, under the next name (..._001.RAW, ..._002.JPG): the JPEG with the
+    same name as the RAW, else the first JPEG that follows it."""
     if not nir.files:
         return None
-    first = nir.files[0]
+    first = nir.files[max(0, min(index, len(nir.files) - 1))]
     for ext in (".JPG", ".jpg", ".jpeg", ".JPEG"):
         same = first.with_suffix(ext)
         if same.is_file():

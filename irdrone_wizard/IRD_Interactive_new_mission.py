@@ -239,11 +239,21 @@ class SourceCard(QFrame):
         lay = QHBoxLayout(self)
         lay.setContentsMargins(14, 12, 14, 12)
         lay.setSpacing(14)
-        self.preview = QLabel()
-        self.preview.setFixedSize(192, 144)
-        self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.preview.setStyleSheet("background: #E9EDF2; border-radius: 6px; color: #6B7785;")
-        lay.addWidget(self.preview)
+        # take-off and in flight, side by side
+        self.preview, self.preview_flight = QLabel(), QLabel()
+        for label, caption in ((self.preview, "take-off"), (self.preview_flight, "in flight")):
+            label.setFixedSize(160, 120)
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            label.setStyleSheet("background: #E9EDF2; border-radius: 6px; color: #6B7785;")
+            col = QVBoxLayout()
+            col.setSpacing(2)
+            col.addWidget(label)
+            cap = QLabel(caption)
+            cap.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            cap.setStyleSheet("color: #6B7785; font-size: 8.5pt;")
+            col.addWidget(cap)
+            col.addStretch(1)
+            lay.addLayout(col)
         text = QVBoxLayout()
         text.setSpacing(4)
         head = QLabel(title)
@@ -279,8 +289,10 @@ class SourceCard(QFrame):
                                "or choose the folder of the images.")
             self.summary.setText("")
             self.extra.setText("")
-            self.preview.setPixmap(QPixmap())
-            self.preview.setText("—")
+            for label in (self.preview, self.preview_flight):
+                label.setPixmap(QPixmap())
+                label.setText("—")
+                label.setToolTip("")
             self.btn.setText("Choose folder…")
             return
         self.where.setText(f"<b>{origin}</b><br><span style='color:#6B7785'>{summary.folder}</span>"
@@ -288,15 +300,18 @@ class SourceCard(QFrame):
         self.summary.setText("✓ " + summary.describe())
         self.btn.setText("Change…")
 
-    def set_preview(self, pix: Optional[QPixmap], placeholder=""):
+    def set_preview(self, pix: Optional[QPixmap], placeholder="", flight: bool = False, tip: str = ""):
+        label = self.preview_flight if flight else self.preview
+        label.setToolTip(tip)
         if pix is None or pix.isNull():
-            self.preview.setPixmap(QPixmap())
-            self.preview.setText(placeholder)
+            label.setPixmap(QPixmap())
+            label.setText(placeholder)
             return
-        self.preview.setText("")
-        self.preview.setPixmap(pix.scaled(self.preview.size(), Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                                          Qt.TransformationMode.SmoothTransformation)
-                               .copy(0, 0, self.preview.width(), self.preview.height()))
+        label.setText("")
+        scaled = pix.scaled(label.size(), Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                            Qt.TransformationMode.SmoothTransformation)
+        x, y = (scaled.width() - label.width()) // 2, (scaled.height() - label.height()) // 2
+        label.setPixmap(scaled.copy(x, y, label.width(), label.height()))
 
 
 # ---------------------------------------------------------------------------
@@ -328,6 +343,7 @@ class NewMissionDialog(QDialog):
         Look.fit_to_screen(self, parent, max_w=1100, max_h=780)
         self._build()
         self._go(0)
+        self._polling = scan
         if scan:
             QtCore.QTimer.singleShot(0, self.scan_cards)
 
@@ -397,12 +413,12 @@ class NewMissionDialog(QDialog):
         self.clock_note = QLabel()
         self.clock_note.setStyleSheet(Look.MESSAGE_STYLE)
         self.clock_note.hide()
-        self.btn_rescan = QPushButton("Look for SD cards again")
-        self.btn_rescan.setStyleSheet(Look.SECONDARY_STYLE)
-        self.btn_rescan.clicked.connect(self.scan_cards)
         row.addWidget(self.clock_note, 1)
-        row.addStretch(0)
-        row.addWidget(self.btn_rescan)
+        # no "look again" button: while a camera is missing, the SD cards are
+        # looked for every few seconds (an inserted card shows up by itself)
+        self.card_poll = QtCore.QTimer(self)
+        self.card_poll.setInterval(3000)
+        self.card_poll.timeout.connect(self._poll_cards)
         lay.addLayout(row)
         lay.addStretch(1)
         return page
@@ -630,6 +646,13 @@ class NewMissionDialog(QDialog):
             self.clock_note.hide()
 
     # ---- page 1: images
+    def _poll_cards(self):
+        missing = not (self.vis and self.vis.count) or not (self.nir and self.nir.count)
+        if self.stack.currentIndex() != 0 or not missing:
+            self.card_poll.stop()
+            return
+        self.scan_cards()
+
     def scan_cards(self):
         found = MS.find_card_images(mounted_volumes())
         for band in ("VIS", "NIR"):
@@ -642,6 +665,12 @@ class NewMissionDialog(QDialog):
         self.subtitle.setText("Insert the SD cards of the drone and of the infrared camera: "
                               "the images are found automatically." if not found else
                               "Images found on the SD card(s). Check them, then go on.")
+        missing = not (self.vis and self.vis.count) or not (self.nir and self.nir.count)
+        if missing and self.stack.currentIndex() == 0 and self._polling:
+            if not self.card_poll.isActive():
+                self.card_poll.start()
+        else:
+            self.card_poll.stop()
 
     def _choose_folder(self, band):
         start = str((self.vis if band == "VIS" else self.nir).folder) if \
@@ -668,12 +697,17 @@ class NewMissionDialog(QDialog):
             self.vis = summary
             self.card_vis.set_found(summary, origin)
             self._set_takeoff(MS.takeoff_image(summary))
+            mid = summary.files[MS.flight_index(summary.count)] if summary.files else None
+            self.card_vis.set_preview(self._dng_preview(mid) if mid else None, "no preview",
+                                      flight=True, tip=mid.name if mid else "")
         else:
             self.nir = summary
             self.card_nir.set_found(summary, origin)
-            jpg = MS.nir_preview_jpeg(summary)
-            self.card_nir.set_preview(QPixmap(str(jpg)) if jpg else None, "RAW\n(no preview)")
-            self.card_nir.preview.setToolTip(jpg.name if jpg else "")
+            for flight in (False, True):
+                index = MS.flight_index(summary.count) if flight else 0
+                jpg = MS.nir_preview_jpeg(summary, index)
+                self.card_nir.set_preview(QPixmap(str(jpg)) if jpg else None, "RAW\n(no preview)",
+                                          flight=flight, tip=jpg.name if jpg else "")
         self._check_page_images()
 
     def _set_takeoff(self, path: Optional[Path]):
