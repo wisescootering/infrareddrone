@@ -145,5 +145,43 @@ class ChoiceTests(unittest.TestCase):
             self.assertEqual(B.load_choice(Path(d))["overlap"], B.MIN_OVERLAP)
 
 
+class PlannedNumbersTests(unittest.TestCase):
+    """The images kept by the best mapping, drawn on the main window map."""
+
+    def mission(self, n=100):
+        m = Path(tempfile.mkdtemp())
+        vis = m / "AerialPhotography" / "VIS"
+        vis.mkdir(parents=True)
+        for i in range(n):
+            (vis / f"VIS_{i + 1:04d}.exif").write_text(json.dumps(
+                {"DroneLatitude": north_of(i * 3.0), "DroneLongitude": LON0,
+                 "DroneAltitudeGround": 100.0, "GimbalYawDegree": 0.0}))
+        (m / "FlightAnalytics").mkdir()
+        (m / "FlightAnalytics" / "flight_timeline.json").write_text(json.dumps(
+            {"confirmed": {"VIS survey": ["VIS_0011.dng", "VIS_0090.dng"]}}))
+        return m
+
+    def test_selection_of_the_survey_when_nothing_saved(self):
+        m = self.mission()
+        planned = B.planned_numbers(m)
+        self.assertEqual((min(planned), max(planned)), (11, 90))
+        self.assertLess(len(planned), 30)
+        B.save_choice(m, overlap=0.9)
+        self.assertGreater(len(B.planned_numbers(m)), len(planned))
+
+    def test_step4_then_step2_selection(self):
+        m = self.mission()
+        B.save_choice(m, preview_selected=["VIS_0011.dng", "VIS_0050.dng"])
+        self.assertEqual(B.planned_numbers(m), {11, 50})
+        B.save_choice(m, step4_selected=["VIS_0012.dng", "VIS_0051.dng"])
+        self.assertEqual(B.planned_numbers(m), {12, 51})
+
+    def test_off_or_no_survey(self):
+        m = self.mission()
+        B.save_choice(m, enabled=False, step4_selected=["VIS_0012.dng"])
+        self.assertEqual(B.planned_numbers(m), set())
+        self.assertEqual(B.planned_numbers(Path(tempfile.mkdtemp())), set())
+
+
 if __name__ == "__main__":
     unittest.main()

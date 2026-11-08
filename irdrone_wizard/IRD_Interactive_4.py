@@ -798,6 +798,12 @@ class DialogImageProcessing(QDialog):
 
     def best_mapping_selection(self) -> tuple[int, int]:
         """(shoot points aligned, synchronised shoot points) with the current settings."""
+        kept, synchronised = self._best_mapping_points()
+        return (synchronised if kept is None else len(kept)), synchronised
+
+    def _best_mapping_points(self) -> tuple:
+        """(shoot points kept by the best mapping, None when it is off;
+        number of synchronised shoot points)."""
         start, end = self.start_image_number.value(), self.end_image_number.value()
         in_range = [
             point for point in self.shoot_points
@@ -810,11 +816,11 @@ class DialogImageProcessing(QDialog):
                  for point in in_range]
         synchronised = sum(flags)
         if not self.best_mapping_checkbox.isChecked():
-            return synchronised, synchronised
+            return None, synchronised
         kept = best_mapping.select_shoot_points(
             in_range, self.best_mapping_overlap.value() / 100.0,
             best_mapping.mission_fov(self.mission_folder), flags)
-        return len(kept), synchronised
+        return kept, synchronised
 
     def _update_best_mapping_count(self, *_args) -> None:
         self.best_mapping_overlap.setEnabled(self.best_mapping_checkbox.isChecked())
@@ -922,8 +928,11 @@ class DialogImageProcessing(QDialog):
         if best_mapping_on:
             arguments += ["--best-mapping-overlap", str(self.best_mapping_overlap.value())]
         try:
+            kept, _ = self._best_mapping_points()
             best_mapping.save_choice(self.mission_folder, enabled=best_mapping_on,
-                                     overlap=self.best_mapping_overlap.value() / 100.0)
+                                     overlap=self.best_mapping_overlap.value() / 100.0,
+                                     step4_selected=None if kept is None else
+                                     [point["VIS"]["FileName"] for point in kept])
         except OSError as error:
             self.log_text.append(f"Best mapping choice not saved: {error}")
         if self.ndvi_checkbox.isChecked():

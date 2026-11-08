@@ -35,6 +35,7 @@ Where it is used
 * Step 4: only the selected shoot points are aligned (the VIS/NIR time
   difference is known there: only well synchronised pairs are eligible).
 * Step 5: ODM image selection "by image overlap".
+* Main window map: the sparse trajectory of the images kept (planned_numbers).
 """
 from __future__ import annotations
 
@@ -42,7 +43,7 @@ import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 import flight_map as F
 
@@ -230,3 +231,36 @@ def save_choice(mission: Path, **changes) -> Path:
         json.dump(data, f, indent=4, ensure_ascii=False)
     tmp.replace(path)
     return path
+
+
+def _image_number(name: Any) -> Optional[int]:
+    """Number of an image name, as the flight map numbers its points."""
+    digits = "".join(c for c in Path(str(name)).stem if c.isdigit())
+    return int(digits) if digits else None
+
+
+def planned_numbers(mission: Path) -> Set[int]:
+    """Numbers of the visible images kept by the best mapping, before the
+    mapping of Step 5 (empty when the best mapping is off or unknown).
+
+    The images Step 4 aligns (saved when it starts), else the preview of
+    Step 2, else the selection made now over the survey of Step 2."""
+    mission = Path(mission)
+    choice = load_choice(mission)
+    if not choice["enabled"]:
+        return set()
+    try:
+        with open(mission / CHOICE_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        data = {}
+    for key in ("step4_selected", "preview_selected"):
+        names = data.get(key) if isinstance(data, dict) else None
+        if isinstance(names, list) and names:
+            return {n for n in map(_image_number, names) if n is not None}
+    phases = F.phases(mission)
+    track = F.image_track(mission)
+    shots = [Shot(p.number, p.lat, p.lon, p.height, p.yaw, phases.get(p.number) == "survey") for p in track]
+    if not any(s.eligible for s in shots):
+        return set()
+    return {shots[i].key for i in select(shots, choice["overlap"], mission_fov(mission))}

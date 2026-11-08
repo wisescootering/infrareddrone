@@ -67,6 +67,10 @@ class Step4BestMappingTest(unittest.TestCase):
         arguments = start.call_args[0][1]
         self.assertEqual(arguments[arguments.index("--best-mapping-overlap") + 1], "80")
         self.assertEqual(best_mapping.load_choice(d.mission_folder), {"enabled": True, "overlap": 0.8})
+        saved = json.loads((d.mission_folder / best_mapping.CHOICE_FILE).read_text(encoding="utf-8"))
+        self.assertEqual(len(saved["step4_selected"]), d.best_mapping_selection()[0])
+        self.assertEqual(best_mapping.planned_numbers(d.mission_folder),
+                         {int(name[4:8]) for name in saved["step4_selected"]})
 
     def test_run_without_best_mapping(self):
         d = self.dialog()

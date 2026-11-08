@@ -553,7 +553,9 @@ class HomePage(QStackedWidget):
                 return None
         key = (str(folder), stamp(folder / "AerialPhotography" / "shoot_points.json"),
                stamp(F.orthophoto_path(folder)), stamp(folder / "FlightAnalytics" / "flight_timeline.json"),
-               stamp(folder / "AerialPhotography" / "VIS"))
+               stamp(folder / "AerialPhotography" / "VIS"),
+               stamp(folder / "FlightAnalytics" / "best_mapping.json"),
+               stamp(folder / "mapping_MULTI" / "img_best_mappping.json"))
         if key == self._map_key:
             return
         self._map_key = key

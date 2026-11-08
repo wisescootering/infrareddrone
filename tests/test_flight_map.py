@@ -204,6 +204,37 @@ class MapViewTest(unittest.TestCase):
         self.assertEqual(self.MV.map_model_for(m, with_ortho=False).mapped, [])
         self.MV.tile_cache().stop()
 
+    def test_sparse_trajectory_of_the_best_mapping_before_the_mapping(self):
+        """Main window, before Step 5: the shoot points kept by the best
+        mapping, with their footprints; Layers ▾ shows every image again."""
+        import best_mapping as BM
+        m = make_mission(Path(tempfile.mkdtemp()), n=7)
+        BM.save_choice(m, step4_selected=[f"VIS_{n:04d}.dng" for n in (137, 140, 143)])
+        model = self.MV.map_model_for(m, with_ortho=False, sparse_mapping=True)
+        self.assertTrue(model.planned and model.sparse)
+        self.assertEqual(model.visible(), [0, 3, 6])
+        self.assertEqual(model.footprints_kept(), [0, 3, 6])
+        view = self.MV.FlightMapView(model)
+        view.resize(600, 400)
+        view.show()
+        view.fit()
+        view.grab()
+        self.assertTrue(view.act_mapped.isChecked())
+        view.act_mapped.trigger()                                    # every image again
+        self.assertEqual(model.visible(), list(range(7)))
+        self.assertEqual(model.footprints_kept(), [])
+        # best mapping off: the whole flight
+        BM.save_choice(m, enabled=False)
+        self.assertEqual(self.MV.map_model_for(m, with_ortho=False, sparse_mapping=True).mapped, [])
+        # the mapping done: its images, not the plan
+        BM.save_choice(m, enabled=True)
+        (m / "mapping_MULTI").mkdir()
+        (m / "mapping_MULTI" / "img_best_mappping.json").write_text(json.dumps(
+            {"image_quartets": [{"VIS_filename": "VIS_0138.dng"}]}))
+        model = self.MV.map_model_for(m, with_ortho=False, sparse_mapping=True)
+        self.assertEqual((model.mapped, model.planned, model.sparse), ([1], False, False))
+        self.MV.tile_cache().stop()
+
     def test_images_of_the_mapping_from_the_odm_shots(self):
         m = make_mission(Path(tempfile.mkdtemp()), mapping=True)
         self.assertEqual(F.mapped_numbers(m), {137})

@@ -11,7 +11,9 @@ the current image.
 
 While the orthophoto is shown, a model built with `mapped` (the main window)
 draws the sparse trajectory of the mapping: only the shoot points selected
-for it (one image every n), the whole flight faint behind.
+for it (one image every n), the whole flight faint behind. Before the
+mapping, the images kept by the best mapping (Steps 2 and 4) are drawn the
+same way, with their ground footprints. Layers ▾ shows every image again.
 
 Several views can share one `MapModel` (mini map and large map of the review).
 """
@@ -121,7 +123,7 @@ class MapModel(QObject):
 
     def __init__(self, points: List[F.MapPoint], fov=None, ortho: Optional[F.OrthoPreview] = None,
                  color_of: Optional[Callable[[int], QColor]] = None, path: Optional[List[F.MapPoint]] = None,
-                 mapped=None, parent=None):
+                 mapped=None, mapped_by: str = "mapping", parent=None):
         super().__init__(parent)
         self.points = points
         # the whole flight (line), the points are the shoot points on it
@@ -131,6 +133,9 @@ class MapModel(QObject):
         self.xy = [p.xy for p in points]
         # indices of the shoot points used by the mapping of Step 5
         self.mapped = [i for i, n in enumerate(self.numbers) if n in mapped] if mapped else []
+        # "mapping" (Step 5 done) or "best mapping" (planned in Steps 2 and 4)
+        self.mapped_by = mapped_by
+        self.show_mapped = True             # Layers ▾ "Only the images of the mapping"
         self.fov = fov or F.field_of_view()
         self.color_of = color_of
         self._footprints: Dict[int, List[Tuple[float, float]]] = {}
@@ -181,9 +186,28 @@ class MapModel(QObject):
         self.changed.emit()
 
     @property
+    def planned(self) -> bool:
+        """The mapped points are the best mapping planned (no mapping yet)."""
+        return self.mapped_by == "best mapping"
+
+    @property
     def sparse(self) -> bool:
-        """The orthophoto is shown: only the shoot points of the mapping."""
-        return bool(self.mapped) and bool(self.ortho_images) and self.ortho_mode in self.ortho_images
+        """Only the shoot points of the mapping: while the orthophoto is shown,
+        or before the mapping when the best mapping is chosen."""
+        if not (self.mapped and self.show_mapped):
+            return False
+        return self.planned or (bool(self.ortho_images) and self.ortho_mode in self.ortho_images)
+
+    def set_show_mapped(self, on: bool):
+        self.show_mapped = bool(on)
+        self.changed.emit()
+
+    def footprints_kept(self) -> List[int]:
+        """Indices whose footprints show the coverage: the images kept in
+        Step 2, or the best mapping planned on the main window map."""
+        if self.selection:
+            return self.selection
+        return self.mapped if self.sparse and self.planned else []
 
     def visible(self) -> List[int]:
         """Indices of the points drawn (and picked)."""
@@ -321,6 +345,14 @@ class FlightMapView(QWidget):
             act.triggered.connect(lambda _=False, k=key: self.model.set_ortho_mode(k))
             group2.addAction(act)
             menu.addAction(act)
+        if self.model.mapped:
+            menu.addSection("Trajectory")
+            self.act_mapped = QAction("Only the images of the best mapping" if self.model.planned
+                                      else "Only the images of the mapping (orthophoto shown)",
+                                      menu, checkable=True)
+            self.act_mapped.setChecked(self.model.show_mapped)
+            self.act_mapped.triggered.connect(self.model.set_show_mapped)
+            menu.addAction(self.act_mapped)
         if not self.compact:
             menu.addSection("Shoot point")
             self.act_image = QAction("Aligned image in its footprint", menu, checkable=True)
@@ -332,7 +364,10 @@ class FlightMapView(QWidget):
 
     def _sync_menu(self, menu):
         keys = list(F.TILE_SOURCES) + [F.NO_BACKGROUND, "natural", "infrared", "hidden"]
-        acts = [a for a in menu.actions() if not a.isSeparator() and a is not getattr(self, "act_image", None)]
+        extra = (getattr(self, "act_image", None), getattr(self, "act_mapped", None))
+        acts = [a for a in menu.actions() if not a.isSeparator() and a not in extra]
+        if getattr(self, "act_mapped", None) is not None:
+            self.act_mapped.setChecked(self.model.show_mapped)
         for key, act in zip(keys, acts):
             act.setChecked(key in (self.model.source, self.model.ortho_mode))
             if key in ("natural", "infrared", "hidden"):
@@ -493,9 +528,10 @@ class FlightMapView(QWidget):
 
     def _paint_selection(self, p):
         """Footprints of the images kept for the map: their overlap shows."""
-        if not self.model.selection:
+        kept = self.model.footprints_kept()
+        if not kept:
             return
-        quads = [q for q in (self._quad(i) for i in self.model.selection) if q is not None]
+        quads = [q for q in (self._quad(i) for i in kept) if q is not None]
         fill = QColor(Look.SURVEY)
         fill.setAlpha(30)
         p.setPen(Qt.PenStyle.NoPen)
@@ -578,7 +614,8 @@ class FlightMapView(QWidget):
         if self.model.ortho_images and self.model.ortho_mode != "hidden":
             bits.append("orthophoto IRDrone")
         if self.model.sparse:
-            bits.append(f"{len(self.model.mapped)} images of the mapping")
+            bits.append(f"{len(self.model.mapped)} images kept by the best mapping" if self.model.planned
+                        else f"{len(self.model.mapped)} images of the mapping")
         font = p.font()
         font.setPointSizeF(7.5 if self.compact else 8.0)
         p.setFont(font)
@@ -725,16 +762,23 @@ def map_model_for(mission: Path, color_of=None, with_ortho: bool = True, shoot_p
     orthophoto and the ground are read in the background. `color_of(number)`
     gives the colour of a point (default: phases of Step 2). With
     `sparse_mapping`, only the shoot points used by the mapping are drawn
-    while the orthophoto is shown."""
+    while the orthophoto is shown; before the mapping, the shoot points kept
+    by the best mapping."""
     track = F.mission_track(mission, shoot_points_only=shoot_points_only)
     if not track:
         return None
     if color_of is None:
         color_of = phase_colors(mission)
     path = F.image_track(mission)
+    mapped, mapped_by = None, "mapping"
+    if sparse_mapping:
+        mapped = F.mapped_numbers(mission)
+        if not mapped:
+            import best_mapping as BM
+            mapped, mapped_by = BM.planned_numbers(mission), "best mapping"
     model = MapModel(track, fov=F.field_of_view(F.camera_model(mission)), parent=parent,
                      path=path if len(path) > len(track) else None,
-                     mapped=F.mapped_numbers(mission) if sparse_mapping else None,
+                     mapped=mapped, mapped_by=mapped_by,
                      color_of=lambda i: color_of(track[i].number))
     # in the background: ground under the drone (footprint size), orthophoto
     job = _OrthoJob(Path(mission), track, with_ortho and F.orthophoto_path(mission).is_file())

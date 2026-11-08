@@ -446,6 +446,7 @@ The map is available from Step~1 on: the positions are read from the EXIF data o
 \begin{itemize}
 	\item the drone trajectory and one dot per image, colored according to the phases confirmed in Step~2 (purple: synchronization, green: survey);
 	\item the orthophoto from Step~5, once the mapping is done; while it is shown, the trajectory only joins the images selected for the mapping (one image every $n$, see section~\ref{btn:step5_selection}), the whole flight remaining as a faint dashed line; hiding the orthophoto (\bouton{Layers} > \bouton{Hidden}) shows every image again;
+	\item before the mapping, when the best mapping is chosen (Steps~2 and~4, section~\ref{btn:step2_best_mapping}), the trajectory only joins the images kept, with their ground footprints in green: you see the overlap the mapping will use; \bouton{Layers} > \bouton{Only the images of the best mapping} shows every image again;
 	\item in the background, aerial photographs: IGN for France, Esri World Imagery elsewhere, or OpenStreetMap.
 \end{itemize}
 Hovering over a dot shows the thumbnail of its image; a click on a dot shows the ground footprint of the image (the thick line is the top of the image). Mouse wheel: zoom; drag: pan; double-click or \bouton{⤢} button: the whole flight.
