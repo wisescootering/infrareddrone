@@ -157,6 +157,9 @@ class MapModel(QObject):
         # images kept for the map (best mapping): footprints drawn, bigger dots
         self.selection: List[int] = []
         self._selection_set = set()
+        # progress of a computation over the selection (Step 4 alignment):
+        # None, or the indices done and the ones being processed
+        self.progress: Optional[Tuple[set, set]] = None
 
     def set_selection(self, indices):
         self.selection = list(indices)
@@ -165,6 +168,11 @@ class MapModel(QObject):
 
     def is_selected(self, index: int) -> bool:
         return index in self._selection_set
+
+    def set_progress(self, done=None, running=None):
+        """Show the progress over the selection (None, None: no progress)."""
+        self.progress = None if done is None else (set(done), set(running or ()))
+        self.changed.emit()
 
     def grounds_found(self, source):
         """The ground under the points is known: footprints computed again."""
@@ -531,6 +539,9 @@ class FlightMapView(QWidget):
         kept = self.model.footprints_kept()
         if not kept:
             return
+        if self.model.progress is not None:
+            self._paint_progress(p, kept)
+            return
         quads = [q for q in (self._quad(i) for i in kept) if q is not None]
         fill = QColor(Look.SURVEY)
         fill.setAlpha(30)
@@ -544,6 +555,34 @@ class FlightMapView(QWidget):
             p.setPen(pen)
             for q in quads:
                 p.drawPolygon(q)
+
+    def _paint_progress(self, p, indices):
+        """Footprints still to do (dashed), done (green) and in progress
+        (orange): the computation advances along the flight."""
+        done, running = self.model.progress
+        todo = [q for i in indices if i not in done and i not in running and (q := self._quad(i)) is not None]
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        for pen in (QPen(QColor(255, 255, 255, 160), 2.4), QPen(QColor("#17365D"), 1.0, Qt.PenStyle.DashLine)):
+            p.setPen(pen)
+            for q in todo:
+                p.drawPolygon(q)
+        fill = QColor(Look.SURVEY)
+        fill.setAlpha(80)
+        quads = [q for i in indices if i in done and (q := self._quad(i)) is not None]
+        p.setBrush(fill)
+        for pen in (QPen(QColor(255, 255, 255, 170), 2.6), QPen(Look.SURVEY, 1.3)):
+            p.setPen(pen)
+            for q in quads:
+                p.drawPolygon(q)
+        fill = QColor(Look.CURSOR)
+        fill.setAlpha(30)
+        p.setBrush(fill)
+        for pen in (QPen(QColor("white"), 4.0), QPen(Look.CURSOR, 2.2)):
+            p.setPen(pen)
+            for i in indices:
+                q = self._quad(i) if i in running else None
+                if q is not None:
+                    p.drawPolygon(q)
 
     def _quad(self, index) -> Optional[QPolygonF]:
         fp = self.model.footprint(index)
@@ -613,6 +652,8 @@ class FlightMapView(QWidget):
             bits.append(src.attribution)
         if self.model.ortho_images and self.model.ortho_mode != "hidden":
             bits.append("orthophoto IRDrone")
+        if self.model.progress is not None and self.model.selection:
+            bits.append(f"{len(self.model.progress[0])} of {len(self.model.selection)} done")
         if self.model.sparse:
             bits.append(f"{len(self.model.mapped)} images kept by the best mapping" if self.model.planned
                         else f"{len(self.model.mapped)} images of the mapping")

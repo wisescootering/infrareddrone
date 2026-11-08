@@ -54,6 +54,7 @@ VIS_FILENAME_PATTERN = re.compile(r"^VIS_(\d+)\.dng$", re.IGNORECASE)
 PROGRESS_LINE_PATTERN = re.compile(
     r"^STEP4_PROGRESS (\d+) (\d+)(?: (\S+))?(?: ([\d.]+) (-?[\d.]+))?$"
 )
+WORKERS_LINE_PATTERN = re.compile(r"^Alignment workers: (\d+)")
 # Aligned images written by automatic_registration: {trace}_{number}_{mode}.jpg
 # for the VIR / NIR / NDVI traces and the local / global alignment modes.
 ALIGNED_TRACES = ("VIR", "NDVI", "NIR")
@@ -719,6 +720,7 @@ class DialogImageProcessing(QDialog):
         best_group_layout.addWidget(self.best_mapping_count)
         best_group_layout.addStretch()
         self.map_model = None
+        self._map_jobs, self._map_done, self._map_workers = [], set(), 1
         self.map_view = self._build_map()
         if self.map_view is not None:
             best_row.addWidget(self.map_view, 1)
@@ -887,10 +889,20 @@ class DialogImageProcessing(QDialog):
             if len(points) < 2:
                 return None
             synchronised, other = QColor("#4E9A3A"), QColor("#A0AAB4")
+            to_do, running = QColor("#17365D"), QColor("#E8A33D")
             self._map_flags = {}
+
+            def color_of(i):
+                progress = self.map_model.progress
+                if progress is not None:
+                    if i in progress[0]:
+                        return synchronised
+                    if i in progress[1]:
+                        return running
+                    return to_do if self.map_model.is_selected(i) else other
+                return synchronised if self._map_flags.get(points[i].number) else other
             self.map_model = Map.MapModel(
-                points, fov=best_mapping.mission_fov(self.mission_folder), parent=self,
-                color_of=lambda i: synchronised if self._map_flags.get(points[i].number) else other)
+                points, fov=best_mapping.mission_fov(self.mission_folder), parent=self, color_of=color_of)
             view = Map.FlightMapView(self.map_model, compact=True)
         except Exception as error:  # never a blocker
             print(f"Step 4 map unavailable: {error}")
@@ -908,12 +920,54 @@ class DialogImageProcessing(QDialog):
     def _update_map(self, kept) -> None:
         if self.map_model is None:
             return
+        self.map_model.set_progress(None)
         self._map_flags = self._aligned_flags()
         if kept is None:
             self.map_model.set_selection([])
             return
         indices = (self.map_model.index_of(_vis_image_number(point["VIS"]["FileName"])) for point in kept)
         self.map_model.set_selection([i for i in indices if i is not None])
+
+    def _set_best_mapping_enabled(self, on: bool) -> None:
+        """The choice is locked while aligning; the map stays usable."""
+        self.best_mapping_radio.setEnabled(on)
+        self.all_images_radio.setEnabled(on)
+        self.best_mapping_overlap.setEnabled(on and self.best_mapping_radio.isChecked())
+
+    # ---- map: the progress of the alignment along the flight
+    def _start_map_progress(self, kept) -> None:
+        """The shoot points to align, in processing order: done in green,
+        being aligned in orange (the next ones, one per worker)."""
+        self._map_jobs, self._map_done = [], set()
+        self._map_workers = load_worker_setting() or 1
+        if self.map_model is None:
+            return
+        if kept is not None:
+            numbers = [_vis_image_number(point["VIS"]["FileName"]) for point in kept]
+        else:
+            numbers = [n for n, ok in self._aligned_flags().items() if ok]
+        self._map_jobs = [i for i in map(self.map_model.index_of, numbers) if i is not None]
+        self.map_model.set_selection(self._map_jobs)
+        self._refresh_map_progress(running=True)
+
+    def _refresh_map_progress(self, running: bool = True) -> None:
+        if self.map_model is None or not self._map_jobs:
+            return
+        busy = []
+        if running:
+            busy = [i for i in self._map_jobs if i not in self._map_done][:self._map_workers]
+        self.map_model.set_progress(self._map_done, busy)
+
+    def _map_point_done(self, filename: str) -> None:
+        if self.map_model is None:
+            return
+        try:
+            index = self.map_model.index_of(_vis_image_number(filename))
+        except ValueError:
+            return
+        if index is not None:
+            self._map_done.add(index)
+            self._refresh_map_progress()
 
     def _fit_to_screen(self, parent=None) -> None:
         """760 x 520 (820 x 720 with the map), smaller if the screen is (centred, title bar kept)."""
@@ -1016,6 +1070,8 @@ class DialogImageProcessing(QDialog):
                                      [point["VIS"]["FileName"] for point in kept])
         except OSError as error:
             self.log_text.append(f"Best mapping choice not saved: {error}")
+            kept = self._best_mapping_points()[0]
+        self._start_map_progress(kept)
         if self.ndvi_checkbox.isChecked():
             arguments.append("--ndvi")
         if self.nir_checkbox.isChecked():
@@ -1040,7 +1096,7 @@ class DialogImageProcessing(QDialog):
         self.local_checkbox.setEnabled(False)
         self.global_checkbox.setEnabled(False)
         self.max_time_difference.setEnabled(False)
-        self.best_mapping_group.setEnabled(False)
+        self._set_best_mapping_enabled(False)
         self._stopped_by_user = False
         self.run_button.hide()
         self.stop_button.show()
@@ -1105,12 +1161,17 @@ class DialogImageProcessing(QDialog):
             status = f"Images processed: {current} of {total}"
             if filename and filename != "-":
                 status += f" — {filename}"
+                self._map_point_done(filename)
             if elapsed is not None:
                 status += f" — elapsed {self._format_duration(float(elapsed))}"
             if eta is not None and float(eta) >= 0:
                 status += f" — estimated remaining {self._format_duration(float(eta))}"
             self.status_label.setText(status)
             return
+        workers = WORKERS_LINE_PATTERN.match(line)
+        if workers is not None:
+            self._map_workers = max(1, int(workers.group(1)))
+            self._refresh_map_progress()
         self.log_text.append(line)
         self.log_text.ensureCursorVisible()
 
@@ -1120,6 +1181,7 @@ class DialogImageProcessing(QDialog):
 
     def _on_process_finished(self, exit_code: int, exit_status) -> None:
         self._read_process_output(final=True)
+        self._refresh_map_progress(running=False)
         self._processing_controls_idle()
         if self._progress_total == 0:
             self.progress_bar.setRange(0, 1)
@@ -1137,7 +1199,7 @@ class DialogImageProcessing(QDialog):
         self.local_checkbox.setEnabled(True)
         self.global_checkbox.setEnabled(True)
         self.max_time_difference.setEnabled(True)
-        self.best_mapping_group.setEnabled(True)
+        self._set_best_mapping_enabled(True)
 
         if getattr(self, "_stopped_by_user", False):
             self._stopped_by_user = False
@@ -1192,7 +1254,7 @@ class DialogImageProcessing(QDialog):
         self.local_checkbox.setEnabled(True)
         self.global_checkbox.setEnabled(True)
         self.max_time_difference.setEnabled(True)
-        self.best_mapping_group.setEnabled(True)
+        self._set_best_mapping_enabled(True)
         self.log_text.append(
             f"\nUnable to start processing: {self.process.errorString()}"
         )

@@ -98,6 +98,40 @@ class Step4BestMappingTest(unittest.TestCase):
         self.assertEqual(d.map_model.selection, [])
         d.map_view.grab()
 
+    def test_map_follows_the_alignment(self):
+        """Footprints done in green, the next ones (one per worker) in progress."""
+        d = self.dialog()
+        kept_points, _ = d._best_mapping_points()
+        names = [p["VIS"]["FileName"] for p in kept_points]
+        with mock.patch.object(d.process, "start"), mock.patch.object(S4, "load_worker_setting", return_value=0):
+            d._start_processing()
+        model = d.map_model
+        self.assertEqual(len(model.selection), len(names))
+        self.assertEqual(model.progress, (set(), {model.selection[0]}))
+        d._handle_process_output_line("Alignment workers: 2 (4 physical cores, 8.0 GB RAM available)")
+        self.assertEqual(model.progress[1], set(model.selection[:2]))
+        d._handle_process_output_line(f"STEP4_PROGRESS 0 {len(names)} - 0.0 -1")
+        d._handle_process_output_line(f"STEP4_PROGRESS 1 {len(names)} {names[1]} 10.0 50.0")
+        done, running = model.progress
+        self.assertEqual(done, {model.selection[1]})
+        self.assertEqual(running, {model.selection[0], model.selection[2]})
+        self.assertEqual(model.color_of(model.selection[1]).name(), "#4e9a3a")
+        self.assertEqual(model.color_of(model.selection[0]).name(), "#e8a33d")
+        self.assertTrue(d.map_view.isEnabled())                       # zoom and pan while aligning
+        self.assertFalse(d.best_mapping_radio.isEnabled())
+        d.map_view.grab()
+        d._on_process_finished(0, S4.QProcess.ExitStatus.NormalExit)
+        self.assertEqual(model.progress, ({model.selection[1]}, set()))   # the result stays shown
+        d.best_mapping_overlap.setValue(80)                              # a new setting: the plan again
+        self.assertIsNone(model.progress)
+
+    def test_map_follows_the_alignment_of_all_images(self):
+        d = self.dialog()
+        d.all_images_radio.setChecked(True)
+        with mock.patch.object(d.process, "start"):
+            d._start_processing()
+        self.assertEqual(len(d.map_model.selection), 48)
+
     def test_no_map_without_positions(self):
         m = mission()
         data = json.loads((m / "AerialPhotography" / "shoot_points.json").read_text())
