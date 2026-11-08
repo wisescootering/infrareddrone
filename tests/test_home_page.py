@@ -157,3 +157,16 @@ class HomeMapTest(unittest.TestCase):
         self.assertIsNone(page.map_view)
         self.assertIs(page.right_stack.currentWidget(), page.picture)
         self.assertFalse(page.btn_show_map.isEnabled())
+
+
+class MissionTitleTest(unittest.TestCase):
+    def test_title_click_opens_the_folder(self):
+        QApplication.instance() or QApplication([])
+        m = make_mission(Path(tempfile.mkdtemp()), "FLY-20220125-1159-Blassac", done=(1,))
+        page = Home.HomePage()
+        page.show_mission(m)
+        from PyQt6.QtCore import QPoint, Qt
+        from PyQt6.QtTest import QTest
+        with mock.patch("PyQt6.QtGui.QDesktopServices.openUrl") as open_url:
+            QTest.mouseClick(page.m_title, Qt.MouseButton.LeftButton, pos=QPoint(5, 5))
+        self.assertEqual(Path(open_url.call_args.args[0].toLocalFile()), m)
