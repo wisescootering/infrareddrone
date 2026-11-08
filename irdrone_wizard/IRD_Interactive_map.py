@@ -101,6 +101,10 @@ def tile_cache() -> TileCache:
     global _TILES
     if _TILES is None:
         _TILES = TileCache()
+        from PyQt6.QtWidgets import QApplication
+        app = QApplication.instance()
+        if app is not None:       # pending requests are dropped when the application quits
+            app.aboutToQuit.connect(_TILES.pool.clear)
     return _TILES
 
 
