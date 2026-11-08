@@ -445,7 +445,8 @@ What remains for you is to check the flight phases, the overlap of the synchroni
 The map is available from Step~1 on: the positions are read from the EXIF data of the visible images. It shows:
 \begin{itemize}
 	\item the drone trajectory and one dot per image, colored according to the phases confirmed in Step~2 (purple: synchronization, green: survey);
-	\item the orthophoto from Step~5, once the mapping is done;
+	\item the orthophoto from Step~5, once the mapping is done; while it is shown, the trajectory only joins the images selected for the mapping (one image every $n$, see section~\ref{btn:step5_selection}), the whole flight remaining as a faint dashed line; hiding the orthophoto (\bouton{Layers} > \bouton{Hidden}) shows every image again;
+	\item before the mapping, when the best mapping is chosen (Steps~2 and~4, section~\ref{btn:step2_best_mapping}), the trajectory only joins the images kept, with their ground footprints in green: you see the overlap the mapping will use; \bouton{Layers} > \bouton{Only the images of the best mapping} shows every image again;
 	\item in the background, aerial photographs: IGN for France, Esri World Imagery elsewhere, or OpenStreetMap.
 \end{itemize}
 Hovering over a dot shows the thumbnail of its image; a click on a dot shows the ground footprint of the image (the thick line is the top of the image). Mouse wheel: zoom; drag: pan; double-click or \bouton{⤢} button: the whole flight.
@@ -662,7 +663,7 @@ The duration of the transfers depends a lot on the performance of the storage me
 \section{Principle}
 Step~2 splits the flight into phases: \emph{synchronization} (hovering above the rotating ArUco target) and \emph{survey} (flight over the study area). These phases are now \textbf{detected automatically}; the user checks them and adjusts them if needed (Figure~\ref{fig:step2_flight_timeline}).
 
-\figureIRD[fig:step2_flight_timeline]{step2_flight_timeline.png}{The ``Flight timeline'' window. In the center, the preview of the visible and infrared images under the mouse; on the right, the four key points with their actual images; at the bottom, the timeline: altitude profile, phases (purple: synchronization, green: survey), target detections and strips of visible and infrared images.}{0.95}
+\figureIRD[fig:step2_flight_timeline]{step2_flight_timeline.png}{The ``Flight timeline'' window. In the center, the preview of the visible and infrared images under the mouse; on the right, the flight map with the ground footprints of the images kept for the map (Section~\ref{btn:step2_best_mapping}), then the four key points with their actual images; at the bottom, the timeline: altitude profile (green dots: images kept for the map), phases (purple: synchronization, green: survey), target detections and strips of visible and infrared images.}{0.95}
 
 \subsection*{What the software does}
 \begin{enumerate}
@@ -683,6 +684,23 @@ Step~2 splits the flight into phases: \emph{synchronization} (hovering above the
 	\item The tool tip of the \bouton{?} button recalls these controls.
 \end{itemize}
 If the target is not found (target too small, image too dark), an orange banner says so: the visible synchronization window is then the hover, and the infrared window must be placed by hand.
+
+\section{Best mapping: the images the map needs}\label{btn:step2_best_mapping}
+A survey photographed every two seconds gives far more overlap than the map needs. Aligning all these images in Step~4 takes hours, and feeding hundreds of nearly identical images to ODM slows down the computation of the map without improving it, often the opposite. The \bouton{Best mapping: keep only the images the map needs} check box, ticked by default, keeps only the survey images whose \emph{ground footprints} overlap by the value chosen on its right (\bouton{75~\% overlap} by default, the recommended value for ODM; more overlap keeps more images).
+
+The choice shows at once:
+\begin{itemize}
+	\item on the timeline, green dots on the altitude profile and green marks at the top of the visible image strip show the images kept; the cursor bubble and the preview caption say ``kept for the map'';
+	\item to the right of the previews, the \textbf{flight map} shows the path (purple: synchronization, green: survey), the ground footprints of the images kept (green rectangles: their overlap shows) and, in orange, the footprint of the image under the mouse with the image itself. Clicking a point of the map shows that image; wheel: zoom, drag: pan, \bouton{Layers}: background map (Section~\ref{btn:home_map});
+	\item below the timeline, the number of images kept, for example ``16 of 120 survey images kept for the map · 87~\% less to align''.
+\end{itemize}
+The selection follows the edges of the survey phase when they are moved.
+
+\textbf{How the images are chosen.} The position, height above the ground and heading of each image are read from the \texttt{.exif} files written in Step~1; the field of view of the camera gives the size of the ground footprint. The first survey image is kept. For each next image, IRDrone estimates the overlap of its footprint with the footprint of the last image kept, from the displacement of the drone (along the image axis and across it). As long as it stays above the chosen value, the image is only a candidate; as soon as it drops below, the previous candidate is kept: two successive images kept always overlap by at least the chosen value. The last survey image is kept as well. For a displacement along the image axis, this is the \texttt{--selection best-mapping} criterion of the former \texttt{run.py} command line.
+
+\textbf{What about synchronization?} In Step~2 the precise offset between the two cameras is not known yet: the preview covers all the survey images. In Step~4, once the cameras are synchronized, the same selection is made again among the well synchronized pairs only (Section~\ref{btn:step4_best_mapping}); the final count can therefore differ a little from the preview. The choice (check box and overlap) is saved by \bouton{Confirm and synchronize} and \bouton{Save only} in \texttt{FlightAnalytics\textbackslash best\_mapping.json}.
+
+If the images have no GPS position, the map is not shown and all the survey images are kept.
 
 \section{\bouton{Confirm and synchronize} and \bouton{Save only} buttons}\label{btn:step2_confirm}
 Both buttons save the phases in the files \texttt{transfer\_info\_VIS\_dng.json} and \texttt{transfer\_info\_NIR\_dng.json} (read by Steps 3, 4 and the mapping) and in \texttt{FlightAnalytics/flight\_timeline.json}. Reopening Step~2 brings back the confirmed phases.
@@ -913,7 +931,7 @@ This first alignment (coarse process) is followed by a fine alignment (fine proc
 {Pair of images of a shoot point. The two spectral bands record different information. For example, the surface of the river is completely black in near infrared. Water does not reflect wavelengths above $750\,nm$.}
 
 \section{Step 4 dialog}
-The Step~4 window (Figure~\ref{fig:step4_window}) shows the name of the mission (the full path is in the tool tip) and the number of image pairs. From top to bottom it contains: the output options, the status and progress bar of the computation, the log, then the buttons \bouton{Run alignment} (\bouton{Stop} during the computation), \bouton{Close}, \bouton{Review images}, \bouton{⚙} (settings) and \bouton{?}. The window adapts to the screen size.
+The Step~4 window (Figure~\ref{fig:step4_window}) shows the name of the mission (the full path is in the tool tip) and the number of image pairs. From top to bottom it contains: the output options, the choice of the images aligned with the flight map, the status and progress bar of the computation, the log, then the buttons \bouton{Run alignment} (\bouton{Stop} during the computation), \bouton{Close}, \bouton{Review images}, \bouton{⚙} (settings) and \bouton{?}. The window adapts to the screen size.
 
 \figureIRD[fig:step4_window]{step4_window.png}{Window for processing the ``shoot points'' (VIS-NIR image pairs), before the computation.}{0.7}
 
@@ -944,12 +962,22 @@ As explained above, the alignment algorithm works in two passes (coarse process 
 This field restricts the list of shoot points to align to those whose rank~1 time difference satisfies $|dt|\leq \texttt{Maximum VIS/NIR time difference}$. The default value is $0.5\,s$. This corresponds to well-synchronized images. In practice, with shooting intervals of $2 \, s$ for the VIS images and $3 \, s$ for the NIR images, this amounts to selecting one shoot point out of three.
 
 
+\section{Best mapping: align only the images the map needs}\label{btn:step4_best_mapping}
+The \bouton{Images aligned} frame offers two choices, which follow the one made in Step~2 (Section~\ref{btn:step2_best_mapping}): \bouton{Best mapping: only the images the map needs} (the default, with a $75\,\%$ overlap) or \bouton{All the synchronised images}. Among the well synchronized shoot points (\texttt{Maximum VIS/NIR time difference} box), IRDrone keeps only those whose ground footprints overlap by the chosen value (\bouton{Overlap between kept images} box): the first survey image, then each time the last image that still overlaps the previous one kept enough, and the last survey image. All the survey images are used to follow the motion of the drone; only well synchronized images can be kept. The line below the choices gives the number of shoot points that will be aligned, for example ``18 of 39 synchronised shoot points will be aligned''.
+
+On the right, the flight map shows the shoot points: in green those well synchronized and in the image range, in grey the others; the images kept by the best mapping are bigger, with their ground footprints in green, which shows the overlap. It is updated as soon as a setting changes (range, time difference, overlap, choice). Wheel to zoom, drag to pan, double-click to see the whole flight again. During the alignment, the map follows the computation along the flight: the footprints of the aligned images fill with green, those being aligned (one per worker process) are outlined in orange, those still to do are dashed; the count ``7 of 18 done'' is shown at the bottom of the map. The result stays shown at the end, until a setting changes.
+
+This is usually the best choice: much less computation (alignment is the longest step), less data, and an ODM map that is often better (too many nearly identical images slow ODM down and degrade its result). Choose \bouton{All the synchronised images} to align all the synchronized images, for example to look at them one by one in the review. The choice is saved in \texttt{FlightAnalytics\textbackslash best\_mapping.json} when the alignment starts; Step~5 uses it for the selection of the ODM images (Section~\ref{btn:step5_selection}).
+
+The same selection is available on the command line: \texttt{run\_after\_preprocessing.py --best-mapping-overlap 75}.
+
 \section{\bouton{Run alignment} button}\label{btn:step4_run_alignment}
 Runs the alignment procedure on the shoot points that satisfy both constraints
 \begin{itemize}
 	\item $\texttt{first VIS image number} \leq XXXX \leq \texttt{last VIS image number}$,
-	\item $|dt|\leq \texttt{Maximum VIS/NIR time difference}$.
+	\item $|dt|\leq \texttt{Maximum VIS/NIR time difference}$,
 \end{itemize}
+and, if \bouton{Best mapping: only the images the map needs} is chosen, only the images the map needs (Section~\ref{btn:step4_best_mapping}).
 Note that image alignment is a very time-consuming procedure. This of course depends on the computer. The computations are spread over several processors if the computer is ``multi-core''. The progress bar shows how far the computation has progressed, along with an estimate of the remaining processing time. As an example, on an HP ZBook 3 with a quad-core Intel Xeon processor, aligning the VIS and NIR images of one shoot point takes about $60\,s$. So it takes two hours to process 120 images. Running these computations at lunchtime or overnight is a good idea.
 
 The alignment never starts by itself, even when Step~4 is opened from Step~3. During the computation, the button becomes \bouton{Stop} (Section~\ref{btn:step4_stop}).
@@ -1198,8 +1226,8 @@ Clicking the button opens a window for choosing the criteria.
 
 \begin{itemize}
 	\item \texttt{Maximum |dt| (NIR rank 1)}: maximum allowed time difference between the VIS image and the nearest NIR image. This is the same criterion as the \texttt{Maximum VIS/NIR time difference} of Step~4. Default value: $0.5\,s$ (range $0.05$ to $6\,s$).
-	\item \texttt{Select one image every n eligible images}: keeps only one image out of $n$ ($n$ from 1 to 4, default value 3) to limit the computation time and the overlap.
-	\item \texttt{Select by image overlap}: selection based on the overlap ratio of the images. This option is \textbf{not available yet}; the software asks you to choose the previous criterion.
+	\item \texttt{Best mapping: select by image overlap (recommended)}: default choice. Keeps only the images whose ground footprints overlap by the value given (\texttt{Overlap between successive images}, by default the value chosen in Step~2 or~4, $75\,\%$ otherwise). This is the same selection as in Steps~2 and~4 (Section~\ref{btn:step2_best_mapping}). If Step~4 aligned only the images the map needs, they are all kept; if it aligned everything, only the images the map needs are given to ODM. An image declared misaligned in the review is left out and the next one takes its place.
+	\item \texttt{Select one image every n eligible images}: keeps only one image out of $n$ ($n$ from 1 to 4, default value 3) to limit the computation time and the overlap. This is the default choice when the best mapping was unticked in Step~2 or~4.
 \end{itemize}
 
 \figureIRD{step5_odm_selection.png}{Window of the image selection criteria for the mapping.}{0.4}
@@ -1210,7 +1238,7 @@ The selected images (\emph{eligible images}) are the shoot points that satisfy a
 	\item the difference $|dt|$ with the nearest NIR image is less than or equal to the tolerance;
 	\item the corresponding VIS image belongs to the flight phase of the mission chosen in Step~2 (the take-off and synchronization images are therefore excluded).
 \end{enumerate}
-Only one eligible image out of $n$ is then kept.
+Among them, the best mapping keeps the images the map needs (or, with the other criterion, one eligible image out of $n$).
 
 \subsection{Starting the computation}
 After the criteria are chosen, a confirmation message summarizes the selection and warns that the computation can be long and may need several gigabytes of memory and disk space. If you confirm:

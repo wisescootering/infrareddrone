@@ -285,6 +285,71 @@ class BestMappingTests(unittest.TestCase):
                 ["VIS_0121.DNG", "VIS_0128.DNG"],
             )
 
+    def _add_positions(self, mission, step_m=5.0):
+        """VIS positions of the Step 3 pairs: flying north at 100 m, step_m metres per image."""
+        path = mission / "AerialPhotography" / "shoot_points.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        for point in data["shoot_points"]:
+            index = int(point["VIS"]["FileName"][4:8]) - 120
+            point["VIS"].update({"DroneLatitude": 45.0 + index * step_m / 111195.0, "DroneLongitude": 3.0,
+                                 "DroneAltitudeGround": 100.0, "GimbalYawDegree": 0.0})
+        path.write_text(json.dumps(data), encoding="utf-8")
+
+    def test_mapping_selection_by_overlap_keeps_the_images_the_map_needs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            mission = Path(temporary)
+            self._create_mission(mission)
+            self._add_positions(mission, step_m=10.0)
+
+            manifest = build_best_mapping(mission, overlap=0.75)
+
+            self.assertEqual(manifest["selection_rules"]["selection"], "overlap")
+            self.assertEqual(manifest["selection_rules"]["footprint_overlap"], 0.75)
+            self.assertIsNone(manifest["selection_rules"]["sample_every_nth_eligible_pair"])
+            # eligible: 120 121 124 125 126 127 128 (100 m high: 25 m between images at 75 %)
+            self.assertEqual(
+                [point["VIS"]["FileName"] for point in manifest["shoot_points"]],
+                ["VIS_0120.DNG", "VIS_0121.DNG", "VIS_0124.DNG", "VIS_0126.DNG", "VIS_0128.DNG"],
+            )
+            self.assertEqual(manifest["counts"]["ready_for_odm"], 5)
+
+    def test_mapping_selection_by_overlap_reads_positions_with_step4_inventory(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            mission = Path(temporary)
+            self._create_mission(mission)
+            self._add_positions(mission, step_m=10.0)
+            inventory = {"shoot_points": [
+                {"FileName": f"VIS_{index:04d}.DNG", "dt": 0.1, "failed": index == 124}
+                for index in (120, 121, 124, 125, 126, 127, 128)
+            ]}
+            (mission / "ImgIRdrone" / "shoot_points.json").write_text(json.dumps(inventory), encoding="utf-8")
+
+            manifest = build_best_mapping(mission, overlap=0.75)
+
+            # VIS_0124 is flagged failed in the review: never kept, the next ones fill the gap
+            self.assertEqual(
+                [point["VIS"]["FileName"] for point in manifest["shoot_points"]],
+                ["VIS_0120.DNG", "VIS_0121.DNG", "VIS_0125.DNG", "VIS_0127.DNG", "VIS_0128.DNG"],
+            )
+
+    def test_mapping_selection_by_overlap_without_positions_keeps_every_eligible_pair(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            mission = Path(temporary)
+            self._create_mission(mission)
+
+            manifest = build_best_mapping(mission, overlap=0.75)
+
+            self.assertEqual(manifest["counts"]["sampled_shoot_points"], 7)
+
+    def test_mapping_selection_rejects_out_of_range_overlap(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            mission = Path(temporary)
+            self._create_mission(mission)
+            for overlap in (0.2, 0.99, 75, True):
+                with self.subTest(overlap=overlap):
+                    with self.assertRaises(ODMMappingError):
+                        build_best_mapping(mission, overlap=overlap)
+
     def test_mapping_selection_rejects_out_of_range_criteria(self):
         with tempfile.TemporaryDirectory() as temporary:
             mission = Path(temporary)

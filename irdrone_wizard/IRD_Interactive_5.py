@@ -11,7 +11,7 @@
 * **Run Geo ref**: georeferences images selected by the user
   (``IRD_Interactive_GeoRef.georef_main``). Runs in the GUI thread.
 * **Run Mapping**: selects the image quartets (``ODMSelectionDialog``: maximum
-  |dt| and one image every n), then runs OpenDroneMap in Docker through
+  |dt|, then best mapping by image overlap or one image every n), then runs OpenDroneMap in Docker through
   ``IRD_Interactive_ODM.run_odm`` in a background worker (``ODMRunWorker``).
   The orthophoto is archived in ``mapping_MULTI/mapping_result`` and displayed
   as an RGB preview (``ODMPreviewWorker``). The DTM and contour lines are then
@@ -81,6 +81,7 @@ matplotlib.use("Agg")  # Non-interactive backend. Essential here when using PyQt
 # ----------------------------------------------------
 import IRD_Interactive_help as Help
 from IRD_Interactive_progress import mark_step_done
+import best_mapping
 import IRD_Interactive_GeoRef as GeoRef
 from IRD_Interactive_contours import DEFAULT_GRID_STEP_M, generate_ortho_dtm
 from IRD_Interactive_styles import BUTTON_STYLE
@@ -114,11 +115,13 @@ class ODMRunWorker(QRunnable):
         mission_folder: Path,
         dt_tolerance_s: float = 0.5,
         sample_every: int = 3,
+        overlap: Optional[float] = None,
     ):
         super().__init__()
         self.mission_folder = mission_folder
         self.dt_tolerance_s = dt_tolerance_s
         self.sample_every = sample_every
+        self.overlap = overlap
         self.signals = ODMRunSignals()
 
     def run(self) -> None:
@@ -128,6 +131,7 @@ class ODMRunWorker(QRunnable):
                 self.mission_folder,
                 dt_tolerance_s=self.dt_tolerance_s,
                 sample_every=self.sample_every,
+                overlap=self.overlap,
                 log_callback=self.signals.log.emit,
                 stage_callback=self.signals.stage.emit,
             )
@@ -146,12 +150,18 @@ class ODMRunWorker(QRunnable):
 
 
 class ODMSelectionDialog(QDialog):
-    """Collect temporal and density criteria for an ODM mapping run."""
+    """Collect temporal and density criteria for an ODM mapping run.
 
-    def __init__(self, parent=None):
+    Default: best mapping by image overlap, with the overlap chosen in Step 2 /
+    Step 4 (FlightAnalytics/best_mapping.json). Applied to images that Step 4
+    already selected the same way, it keeps them all."""
+
+    def __init__(self, parent=None, mission_folder: Optional[Path] = None):
         super().__init__(parent)
         self.setWindowTitle("ODM image selection")
         self.setMinimumWidth(440)
+        choice = (best_mapping.load_choice(Path(mission_folder)) if mission_folder
+                  else {"enabled": True, "overlap": best_mapping.DEFAULT_OVERLAP})
 
         layout = QVBoxLayout(self)
         criteria = QFormLayout()
@@ -166,46 +176,36 @@ class ODMSelectionDialog(QDialog):
 
         density_group = QGroupBox("Image density and overlap")
         density_layout = QVBoxLayout(density_group)
+        self.overlap_radio = QRadioButton("Best mapping: select by image overlap (recommended)")
         self.sample_radio = QRadioButton("Select one image every n eligible images")
-        self.overlap_radio = QRadioButton("Select by image overlap")
-        self.sample_radio.setChecked(True)
+        self.overlap_radio.setToolTip(
+            "Keep the images whose ground footprints overlap by the chosen amount: the images the map "
+            "needs. On images already selected in Step 4, all of them are kept.")
         self.sample_radio.setToolTip("Keep one eligible image every n: less overlap, faster mapping.")
-        self.overlap_radio.setToolTip("Select by overlap between the images (not available yet).")
         for radio in (self.sample_radio, self.overlap_radio):
             Help.attach_help(radio, "btn:step5_selection", radio.toolTip(), parent=self)
         self.selection_group = QButtonGroup(self)
         self.selection_group.setExclusive(True)
-        self.selection_group.addButton(self.sample_radio)
         self.selection_group.addButton(self.overlap_radio)
-        density_layout.addWidget(self.sample_radio)
+        self.selection_group.addButton(self.sample_radio)
 
+        density_layout.addWidget(self.overlap_radio)
+        self.overlap = QSpinBox()
+        self.overlap.setRange(round(best_mapping.MIN_OVERLAP * 100), round(best_mapping.MAX_OVERLAP * 100))
+        self.overlap.setSingleStep(5)
+        self.overlap.setSuffix(" %")
+        self.overlap.setValue(round(choice["overlap"] * 100))
+        overlap_form = QFormLayout()
+        overlap_form.addRow("Overlap between successive images:", self.overlap)
+        density_layout.addLayout(overlap_form)
+
+        density_layout.addWidget(self.sample_radio)
         self.sample_every = QSpinBox()
         self.sample_every.setRange(1, 4)
         self.sample_every.setValue(3)
         sample_row = QFormLayout()
         sample_row.addRow("One image every:", self.sample_every)
         density_layout.addLayout(sample_row)
-
-        density_layout.addWidget(self.overlap_radio)
-        self.overlap_x = QSpinBox()
-        self.overlap_x.setRange(0, 100)
-        self.overlap_x.setValue(75)
-        self.overlap_x.setSuffix(" %")
-        self.overlap_y = QSpinBox()
-        self.overlap_y.setRange(0, 100)
-        self.overlap_y.setValue(75)
-        self.overlap_y.setSuffix(" %")
-        overlap_form = QFormLayout()
-        overlap_form.addRow("Overlap along image x-axis:", self.overlap_x)
-        overlap_form.addRow("Overlap along image y-axis:", self.overlap_y)
-        density_layout.addLayout(overlap_form)
-        self.overlap_warning = QLabel(
-            "Overlap-based selection is not implemented yet. "
-            "Choose the image interval criterion to start a mapping."
-        )
-        self.overlap_warning.setWordWrap(True)
-        self.overlap_warning.setStyleSheet("color: #9a5b00;")
-        density_layout.addWidget(self.overlap_warning)
         layout.addWidget(density_group)
 
         buttons = QDialogButtonBox(
@@ -216,6 +216,7 @@ class ODMSelectionDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
+        (self.overlap_radio if choice["enabled"] else self.sample_radio).setChecked(True)
         self.sample_radio.toggled.connect(self._update_selection_controls)
         self._update_selection_controls()
 
@@ -223,21 +224,18 @@ class ODMSelectionDialog(QDialog):
         """Enable only the controls of the selected criterion."""
         sample_selected = self.sample_radio.isChecked()
         self.sample_every.setEnabled(sample_selected)
-        self.overlap_x.setEnabled(not sample_selected)
-        self.overlap_y.setEnabled(not sample_selected)
-        self.overlap_warning.setVisible(not sample_selected)
+        self.overlap.setEnabled(not sample_selected)
 
-    def accept(self) -> None:
-        """Validate the dialog; the overlap criterion is not implemented yet and is refused."""
-        if self.overlap_radio.isChecked():
-            QMessageBox.information(
-                self,
-                "Overlap selection unavailable",
-                "Selection by image overlap is not implemented yet. "
-                "Please choose 'one image every n eligible images'.",
-            )
-            return
-        super().accept()
+    def selected_overlap(self) -> Optional[float]:
+        """Footprint overlap (0..1) of the best mapping, None for one image every n."""
+        return None if self.sample_radio.isChecked() else self.overlap.value() / 100.0
+
+    def description(self) -> str:
+        """The selection in words (confirmation and log)."""
+        overlap = self.selected_overlap()
+        rule = (f"best mapping, {overlap:.0%} overlap between successive images" if overlap is not None
+                else f"one image every {self.sample_every.value()} eligible images")
+        return f"|dt| <= {self.dt_tolerance.value():.2f} s; {rule}"
 
 
 class ODMPreviewSignals(QObject):
@@ -367,6 +365,7 @@ class DialogGeoRef(QDialog):
         self.georef_results: List[str] = []
         self.odm_dt_tolerance_s = 0.5
         self.odm_sample_every = 3
+        self.odm_overlap: Optional[float] = None
 
         # Connect the logger signal to the GUI log window.
         self.log_signal.connect(self._log)
@@ -645,11 +644,12 @@ class DialogGeoRef(QDialog):
             return
 
         mission_folder = Path(self.folderMissionPath)
-        selection_dialog = ODMSelectionDialog(self)
+        selection_dialog = ODMSelectionDialog(self, mission_folder)
         if selection_dialog.exec() != QDialog.DialogCode.Accepted:
             return
         self.odm_dt_tolerance_s = selection_dialog.dt_tolerance.value()
         self.odm_sample_every = selection_dialog.sample_every.value()
+        self.odm_overlap = selection_dialog.selected_overlap()
 
         confirm = QMessageBox.question(
             self,
@@ -664,8 +664,7 @@ class DialogGeoRef(QDialog):
             "and disk space. Existing ODM output folders or archived mapping results "
             "will not be overwritten; move or remove them manually before starting "
             "another run.\n\n"
-            f"Selection: |dt| <= {self.odm_dt_tolerance_s:.2f} s; "
-            f"one image every {self.odm_sample_every} eligible images.\n\n"
+            f"Selection: {selection_dialog.description()}.\n\n"
             f"Mission:\n{mission_folder}\n\nStart ODM now?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
@@ -694,6 +693,7 @@ class DialogGeoRef(QDialog):
             mission_folder,
             dt_tolerance_s=self.odm_dt_tolerance_s,
             sample_every=self.odm_sample_every,
+            overlap=self.odm_overlap,
         )
         worker.signals.log.connect(self._log)
         worker.signals.stage.connect(self._on_ODM_stage)

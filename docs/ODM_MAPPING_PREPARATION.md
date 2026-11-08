@@ -5,10 +5,12 @@ workflow through Docker Desktop. The long-running Docker process runs on a
 background worker, so the dialog remains responsive. The dialog asks for
 confirmation before starting and prevents closing while ODM is running.
 Before confirmation, the user selects the maximum rank-1 NIR `|dt|` from 0.05 to
-6 seconds and either one image every 1-4 eligible images (default: every 3) or
-an overlap-based criterion. Overlap percentages can be configured from 0% to
-100% on both image axes, but overlap-based selection is not implemented yet;
-the interface warns the user and requires choosing the image-interval option.
+6 seconds and either the **best mapping** (default: images selected by the
+overlap of their ground footprints, 50 to 95 %, default the overlap chosen in
+Step 2 / Step 4, else 75 %) or one image every 1-4 eligible images (default:
+every 3; the default criterion when the best mapping was switched off in Step 2
+or Step 4). The selection itself is in `irdrone_wizard/best_mapping.py`, shared
+with Steps 2 and 4.
 
 ## Workflow
 
@@ -27,8 +29,13 @@ The ODM module performs these steps:
 3. Keeps only VIS filenames listed in
    `AerialPhotography/VIS/transfer_info_VIS_dng.json` under
    `fly.listCopiedImages`.
-4. Selects every n-th eligible pair in original shoot-point order, starting
-   with the first; n is selected from 1 to 4 and defaults to 3.
+4. Best mapping: walks the eligible pairs in shoot-point order, keeps the
+   first, then each time the last pair whose footprint still overlaps the last
+   kept one by the chosen fraction, and the last pair. Position, height above
+   ground and yaw come from the VIS entries of
+   `AerialPhotography/shoot_points.json`; a pair without them is kept. Images
+   that Step 4 already selected this way are all kept. Alternative criterion:
+   every n-th eligible pair, starting with the first (n from 1 to 4).
 5. Resolves the four TIFF files `IRD_XXXX_1.tif` through `IRD_XXXX_4.tif` in
    `ImgIRdrone/imgMultispectral` and validates that each is readable, single-band,
    and has matching dimensions and data type.

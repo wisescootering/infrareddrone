@@ -29,6 +29,8 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QRadioButton,
+    QSizePolicy,
     QSpinBox,
     QTextEdit,
     QVBoxLayout,
@@ -37,6 +39,7 @@ from PyQt6.QtWidgets import (
 from IRD_Interactive_styles import BUTTON_STYLE, colored_button_style
 import IRD_Interactive_help as Help
 from IRD_Interactive_progress import mark_step_done
+import best_mapping
 from config import SJCONVERTERPATH
 from alignment_workers import (
     ALIGNMENT_WORKER_MEMORY_GB,
@@ -51,6 +54,7 @@ VIS_FILENAME_PATTERN = re.compile(r"^VIS_(\d+)\.dng$", re.IGNORECASE)
 PROGRESS_LINE_PATTERN = re.compile(
     r"^STEP4_PROGRESS (\d+) (\d+)(?: (\S+))?(?: ([\d.]+) (-?[\d.]+))?$"
 )
+WORKERS_LINE_PATTERN = re.compile(r"^Alignment workers: (\d+)")
 # Aligned images written by automatic_registration: {trace}_{number}_{mode}.jpg
 # for the VIR / NIR / NDVI traces and the local / global alignment modes.
 ALIGNED_TRACES = ("VIR", "NDVI", "NIR")
@@ -544,6 +548,7 @@ class DialogImageProcessing(QDialog):
             raise ValueError(f"No image pairs were found in {shoot_points_file}")
 
         self.pair_count = len(shoot_points)
+        self.shoot_points = shoot_points
         image_numbers = [
             _vis_image_number(point["VIS"]["FileName"])
             for point in shoot_points
@@ -683,6 +688,49 @@ class DialogImageProcessing(QDialog):
         traces_layout.setColumnStretch(2, 1)
         layout.addWidget(traces_group)
 
+        # Best mapping: the choice of Step 2 (FlightAnalytics/best_mapping.json)
+        choice = best_mapping.load_choice(self.mission_folder)
+        self.best_mapping_group = QGroupBox("Images aligned")
+        best_row = QHBoxLayout(self.best_mapping_group)
+        best_group_layout = QVBoxLayout()
+        best_row.addLayout(best_group_layout, 1)
+        best_layout = QHBoxLayout()
+        best_group_layout.addLayout(best_layout)
+        self.best_mapping_radio = QRadioButton("Best mapping: only the images the map needs")
+        self.all_images_radio = QRadioButton("All the synchronised images")
+        self.best_mapping_radio.setChecked(choice["enabled"])
+        self.all_images_radio.setChecked(not choice["enabled"])
+        best_layout.addWidget(self.best_mapping_radio)
+        best_layout.addStretch()
+        overlap_layout = QHBoxLayout()
+        overlap_layout.addSpacing(24)
+        overlap_layout.addWidget(QLabel("Overlap between kept images:"))
+        self.best_mapping_overlap = QSpinBox()
+        self.best_mapping_overlap.setRange(round(best_mapping.MIN_OVERLAP * 100),
+                                           round(best_mapping.MAX_OVERLAP * 100))
+        self.best_mapping_overlap.setSingleStep(5)
+        self.best_mapping_overlap.setSuffix(" %")
+        self.best_mapping_overlap.setValue(round(choice["overlap"] * 100))
+        overlap_layout.addWidget(self.best_mapping_overlap)
+        overlap_layout.addStretch()
+        best_group_layout.addLayout(overlap_layout)
+        best_group_layout.addWidget(self.all_images_radio)
+        self.best_mapping_count = QLabel()
+        self.best_mapping_count.setWordWrap(True)
+        best_group_layout.addWidget(self.best_mapping_count)
+        best_group_layout.addStretch()
+        self.map_model = None
+        self._map_jobs, self._map_done, self._map_workers = [], set(), 1
+        self.map_view = self._build_map()
+        if self.map_view is not None:
+            best_row.addWidget(self.map_view, 1)
+        layout.addWidget(self.best_mapping_group)
+        for signal in (self.best_mapping_radio.toggled, self.best_mapping_overlap.valueChanged,
+                       self.start_image_number.valueChanged, self.end_image_number.valueChanged,
+                       self.max_time_difference.valueChanged):
+            signal.connect(self._update_best_mapping_count)
+        self._update_best_mapping_count()
+
         self.status_label = QLabel("Ready")
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
@@ -744,6 +792,15 @@ class DialogImageProcessing(QDialog):
             (self.start_image_number, "btn:step4_options", "First shoot point to align (VIS image number). Default: the survey of Step 2."),
             (self.end_image_number, "btn:step4_options", "Last shoot point to align (VIS image number, included)."),
             (self.max_time_difference, "btn:step4_options", "Shoot points whose VIS/NIR time difference exceeds this value are not processed."),
+            (self.best_mapping_radio, "btn:step4_best_mapping",
+             "Align only the synchronised images whose footprints overlap by the chosen amount: "
+             "much less computing, and a better map (choice made in Step 2)."),
+            (self.all_images_radio, "btn:step4_best_mapping",
+             "Align every synchronised image of the range (more computing; Step 5 can still "
+             "select the images of the map)."),
+            (self.best_mapping_overlap, "btn:step4_best_mapping",
+             "Overlap between the ground footprints of two successive images kept for the map "
+             "(75 % recommended)."),
             (self.run_button, "btn:step4_run_alignment", "Align the VIS and NIR images of the selected shoot points (can take a long time)."),
             (self.close_button, "btn:step4_close", "Close this window."),
             (self.review_button, "ch:review", self.review_button.toolTip()),
@@ -760,16 +817,169 @@ class DialogImageProcessing(QDialog):
 
         layout.addLayout(button_layout)
 
+    def best_mapping_selection(self) -> tuple[int, int]:
+        """(shoot points aligned, synchronised shoot points) with the current settings."""
+        kept, synchronised = self._best_mapping_points()
+        return (synchronised if kept is None else len(kept)), synchronised
+
+    def _best_mapping_points(self) -> tuple:
+        """(shoot points kept by the best mapping, None when it is off;
+        number of synchronised shoot points)."""
+        start, end = self.start_image_number.value(), self.end_image_number.value()
+        in_range = [
+            point for point in self.shoot_points
+            if isinstance(point, dict) and isinstance(point.get("VIS"), dict)
+            and isinstance(point["VIS"].get("FileName"), str)
+            and start <= _vis_image_number(point["VIS"]["FileName"]) <= end
+        ]
+        limit = self.max_time_difference.value()
+        flags = [(dt := best_mapping.rank_one_dt(point)) is not None and abs(dt) < limit
+                 for point in in_range]
+        synchronised = sum(flags)
+        if not self.best_mapping_radio.isChecked():
+            return None, synchronised
+        kept = best_mapping.select_shoot_points(
+            in_range, self.best_mapping_overlap.value() / 100.0,
+            best_mapping.mission_fov(self.mission_folder), flags)
+        return kept, synchronised
+
+    def _update_best_mapping_count(self, *_args) -> None:
+        self.best_mapping_overlap.setEnabled(self.best_mapping_radio.isChecked())
+        try:
+            kept, synchronised = self._best_mapping_points()
+        except (TypeError, ValueError) as error:
+            self.best_mapping_count.setText(f"(count unavailable: {error})")
+            return
+        if kept is not None:
+            self.best_mapping_count.setText(
+                f"{len(kept)} of {synchronised} synchronised shoot points will be aligned.")
+        else:
+            self.best_mapping_count.setText(f"All {synchronised} synchronised shoot points will be aligned.")
+        self._update_map(kept)
+
+    # ---- map: the shoot points aligned, live
+    def _aligned_flags(self) -> dict:
+        """VIS image number -> the shoot point is synchronised and in the range."""
+        start, end = self.start_image_number.value(), self.end_image_number.value()
+        limit = self.max_time_difference.value()
+        flags = {}
+        for point in self.shoot_points:
+            try:
+                number = _vis_image_number(point["VIS"]["FileName"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            dt = best_mapping.rank_one_dt(point)
+            flags[number] = start <= number <= end and dt is not None and abs(dt) < limit
+        return flags
+
+    def _build_map(self):
+        """Map of the shoot points (None without positions): the map is a help."""
+        try:
+            import flight_map as F
+            import IRD_Interactive_map as Map
+            from PyQt6.QtGui import QColor
+            points = []
+            for point in self.shoot_points:
+                vis = point.get("VIS") if isinstance(point, dict) else None
+                if not isinstance(vis, dict) or not isinstance(vis.get("FileName"), str):
+                    continue
+                mp = F.map_point(_vis_image_number(vis["FileName"]), Path(vis["FileName"]).stem, vis)
+                if mp is not None:
+                    points.append(mp)
+            if len(points) < 2:
+                return None
+            synchronised, other = QColor("#4E9A3A"), QColor("#A0AAB4")
+            to_do, running = QColor("#17365D"), QColor("#E8A33D")
+            self._map_flags = {}
+
+            def color_of(i):
+                progress = self.map_model.progress
+                if progress is not None:
+                    if i in progress[0]:
+                        return synchronised
+                    if i in progress[1]:
+                        return running
+                    return to_do if self.map_model.is_selected(i) else other
+                return synchronised if self._map_flags.get(points[i].number) else other
+            self.map_model = Map.MapModel(
+                points, fov=best_mapping.mission_fov(self.mission_folder), parent=self, color_of=color_of)
+            view = Map.FlightMapView(self.map_model, compact=True)
+        except Exception as error:  # never a blocker
+            print(f"Step 4 map unavailable: {error}")
+            self.map_model = None
+            return None
+        view.setMinimumSize(180, 160)
+        view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        view.setToolTip("Shoot points: green synchronised and in the range, grey not aligned; "
+                        "the footprints of the images kept by the best mapping in green.\n"
+                        "Wheel to zoom, drag to pan, double-click to see the whole flight.")
+        view.hovered.connect(self.map_model.set_hover)
+        view.picked.connect(self.map_model.set_current)
+        return view
+
+    def _update_map(self, kept) -> None:
+        if self.map_model is None:
+            return
+        self.map_model.set_progress(None)
+        self._map_flags = self._aligned_flags()
+        if kept is None:
+            self.map_model.set_selection([])
+            return
+        indices = (self.map_model.index_of(_vis_image_number(point["VIS"]["FileName"])) for point in kept)
+        self.map_model.set_selection([i for i in indices if i is not None])
+
+    def _set_best_mapping_enabled(self, on: bool) -> None:
+        """The choice is locked while aligning; the map stays usable."""
+        self.best_mapping_radio.setEnabled(on)
+        self.all_images_radio.setEnabled(on)
+        self.best_mapping_overlap.setEnabled(on and self.best_mapping_radio.isChecked())
+
+    # ---- map: the progress of the alignment along the flight
+    def _start_map_progress(self, kept) -> None:
+        """The shoot points to align, in processing order: done in green,
+        being aligned in orange (the next ones, one per worker)."""
+        self._map_jobs, self._map_done = [], set()
+        self._map_workers = load_worker_setting() or 1
+        if self.map_model is None:
+            return
+        if kept is not None:
+            numbers = [_vis_image_number(point["VIS"]["FileName"]) for point in kept]
+        else:
+            numbers = [n for n, ok in self._aligned_flags().items() if ok]
+        self._map_jobs = [i for i in map(self.map_model.index_of, numbers) if i is not None]
+        self.map_model.set_selection(self._map_jobs)
+        self._refresh_map_progress(running=True)
+
+    def _refresh_map_progress(self, running: bool = True) -> None:
+        if self.map_model is None or not self._map_jobs:
+            return
+        busy = []
+        if running:
+            busy = [i for i in self._map_jobs if i not in self._map_done][:self._map_workers]
+        self.map_model.set_progress(self._map_done, busy)
+
+    def _map_point_done(self, filename: str) -> None:
+        if self.map_model is None:
+            return
+        try:
+            index = self.map_model.index_of(_vis_image_number(filename))
+        except ValueError:
+            return
+        if index is not None:
+            self._map_done.add(index)
+            self._refresh_map_progress()
+
     def _fit_to_screen(self, parent=None) -> None:
-        """760 x 520, smaller if the screen is (centred, title bar kept)."""
+        """760 x 520 (820 x 720 with the map), smaller if the screen is (centred, title bar kept)."""
         from PyQt6.QtWidgets import QApplication
         screen = (parent.screen() if parent is not None else None) or QApplication.primaryScreen()
         if screen is None:
             self.resize(760, 520)
             return
         g = screen.availableGeometry()
-        w = min(max(760, self.minimumSizeHint().width()), g.width() - 20)
-        h = min(max(520, self.minimumSizeHint().height()), g.height() - 60)
+        base_w, base_h = (820, 720) if self.map_view is not None else (760, 520)
+        w = min(max(base_w, self.minimumSizeHint().width()), g.width() - 20)
+        h = min(max(base_h, self.minimumSizeHint().height()), g.height() - 60)
         self.setGeometry(g.x() + (g.width() - w) // 2, g.y() + (g.height() - h) // 2, w, h)
 
     def _has_alignment_output(self) -> bool:
@@ -849,6 +1059,19 @@ class DialogImageProcessing(QDialog):
             load_log_level_setting(),
             "--progress",
         ]
+        best_mapping_on = self.best_mapping_radio.isChecked()
+        if best_mapping_on:
+            arguments += ["--best-mapping-overlap", str(self.best_mapping_overlap.value())]
+        try:
+            kept, _ = self._best_mapping_points()
+            best_mapping.save_choice(self.mission_folder, enabled=best_mapping_on,
+                                     overlap=self.best_mapping_overlap.value() / 100.0,
+                                     step4_selected=None if kept is None else
+                                     [point["VIS"]["FileName"] for point in kept])
+        except OSError as error:
+            self.log_text.append(f"Best mapping choice not saved: {error}")
+            kept = self._best_mapping_points()[0]
+        self._start_map_progress(kept)
         if self.ndvi_checkbox.isChecked():
             arguments.append("--ndvi")
         if self.nir_checkbox.isChecked():
@@ -873,6 +1096,7 @@ class DialogImageProcessing(QDialog):
         self.local_checkbox.setEnabled(False)
         self.global_checkbox.setEnabled(False)
         self.max_time_difference.setEnabled(False)
+        self._set_best_mapping_enabled(False)
         self._stopped_by_user = False
         self.run_button.hide()
         self.stop_button.show()
@@ -937,12 +1161,17 @@ class DialogImageProcessing(QDialog):
             status = f"Images processed: {current} of {total}"
             if filename and filename != "-":
                 status += f" — {filename}"
+                self._map_point_done(filename)
             if elapsed is not None:
                 status += f" — elapsed {self._format_duration(float(elapsed))}"
             if eta is not None and float(eta) >= 0:
                 status += f" — estimated remaining {self._format_duration(float(eta))}"
             self.status_label.setText(status)
             return
+        workers = WORKERS_LINE_PATTERN.match(line)
+        if workers is not None:
+            self._map_workers = max(1, int(workers.group(1)))
+            self._refresh_map_progress()
         self.log_text.append(line)
         self.log_text.ensureCursorVisible()
 
@@ -952,6 +1181,7 @@ class DialogImageProcessing(QDialog):
 
     def _on_process_finished(self, exit_code: int, exit_status) -> None:
         self._read_process_output(final=True)
+        self._refresh_map_progress(running=False)
         self._processing_controls_idle()
         if self._progress_total == 0:
             self.progress_bar.setRange(0, 1)
@@ -969,6 +1199,7 @@ class DialogImageProcessing(QDialog):
         self.local_checkbox.setEnabled(True)
         self.global_checkbox.setEnabled(True)
         self.max_time_difference.setEnabled(True)
+        self._set_best_mapping_enabled(True)
 
         if getattr(self, "_stopped_by_user", False):
             self._stopped_by_user = False
@@ -1023,6 +1254,7 @@ class DialogImageProcessing(QDialog):
         self.local_checkbox.setEnabled(True)
         self.global_checkbox.setEnabled(True)
         self.max_time_difference.setEnabled(True)
+        self._set_best_mapping_enabled(True)
         self.log_text.append(
             f"\nUnable to start processing: {self.process.errorString()}"
         )
