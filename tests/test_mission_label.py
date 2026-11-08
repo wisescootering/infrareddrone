@@ -56,17 +56,17 @@ class MainWindowMissionTest(unittest.TestCase):
 
     def test_step1_validation_shows_the_mission(self):
         window = self.main.Main_Window()
-        self.assertIn("Step 1", window.mission_label.text())
+        self.assertEqual(window.home.currentIndex(), 0)          # welcome page
         window.dialog_create_file_structure = mock.MagicMock()
         window.dialog_load_takeoff_image = mock.MagicMock()
         window.handle_data_from_dialog_create_file_structure(True, dict(MISSION))
-        self.assertIn("FLY-20220524-1715-Chalivoy-Milon", window.mission_label.text())
+        self.assertEqual(window.home.m_title.text(), "FLY-20220524-1715-Chalivoy-Milon")
 
     def test_step1_cancel_keeps_the_hint(self):
         window = self.main.Main_Window()
         window.dialog_load_takeoff_image = mock.MagicMock()
         window.handle_data_from_dialog_create_file_structure(False, {})
-        self.assertIn("Step 1", window.mission_label.text())
+        self.assertEqual(window.home.currentIndex(), 0)          # still the welcome page
 
 
 if __name__ == "__main__":

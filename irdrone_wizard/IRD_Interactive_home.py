@@ -453,8 +453,14 @@ class HomePage(QStackedWidget):
         col.addWidget(self.m_title)
         col.addWidget(self.m_sub)
         head.addLayout(col, 1)
+        self.btn_folder = QPushButton("Open folder")
+        self.btn_folder.setStyleSheet(Look.SECONDARY_STYLE)
+        self.btn_folder.setToolTip("Open the mission folder in the file manager")
+        self.btn_folder.clicked.connect(self._open_folder)
+        head.addWidget(self.btn_folder, 0, Qt.AlignmentFlag.AlignTop)
         self.btn_all = QPushButton("‹ All missions")
         self.btn_all.setStyleSheet(Look.SECONDARY_STYLE)
+        self.btn_all.setToolTip("New mission, open another mission, recent missions")
         self.btn_all.clicked.connect(lambda: self.setCurrentIndex(0))
         head.addWidget(self.btn_all, 0, Qt.AlignmentFlag.AlignTop)
         lay.addLayout(head)
@@ -610,6 +616,12 @@ class HomePage(QStackedWidget):
         self._update_map(info.folder)
         self._show_right(self._right)
         self.setCurrentIndex(1)
+
+    def _open_folder(self):
+        if self.info is not None:
+            from PyQt6.QtCore import QUrl
+            from PyQt6.QtGui import QDesktopServices
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.info.folder)))
 
     def _continue(self):
         self.run_step.emit(self._next)

@@ -192,25 +192,25 @@ class _MissionHelpers(unittest.TestCase):
 
     def open(self, window, mission):
         with mock.patch.object(self.main.Uti, "choose_mission_folder_phase_2", return_value=(mission, True)):
-            window.btn_open_mission.click()
+            window.home.card_open.click()
 
 
 
 class OpenMissionButtonTest(_MissionHelpers):
     """'Open mission...' at the bottom: switch to an existing mission directly."""
 
-    def test_button_says_open_then_load_another(self):
+    def test_the_mission_is_on_the_page_not_in_the_bottom_bar(self):
         window = self.main.Main_Window()
-        self.assertEqual(window.btn_open_mission.text(), "Open mission...")
+        self.assertFalse(hasattr(window, "btn_open_mission"))
         self.open(window, self.make_mission("FLY-A"))
-        self.assertEqual(window.btn_open_mission.text(), "Load another mission...")
+        self.assertEqual(window.home.m_title.text(), "FLY-A")
 
     def test_open_shows_the_mission_and_its_done_steps(self):
         window = self.main.Main_Window()
         mission = self.make_mission("FLY-20220125-1159-Blassac", done=(1, 2, 3))
         self.open(window, mission)
         self.assertEqual(window.folderMissionPath, mission)
-        self.assertIn("FLY-20220125-1159-Blassac", window.mission_label.text())
+        self.assertEqual(window.home.m_title.text(), "FLY-20220125-1159-Blassac")
         states = [window.home.rail.tiles[s].state for s in Progress.STEPS]
         self.assertEqual(states, ["done", "done", "done", "next", "todo", "todo"])
         # a step opened afterwards uses this mission without asking again
@@ -229,7 +229,7 @@ class OpenMissionButtonTest(_MissionHelpers):
         first = self.make_mission("FLY-A")
         self.open(window, first)
         with mock.patch.object(self.main.Uti, "choose_mission_folder_phase_2", return_value=(None, False)):
-            window.btn_open_mission.click()
+            window.home.card_open.click()
         self.assertEqual(window.folderMissionPath, first)
 
     def test_refused_while_a_step_window_is_open(self):
@@ -238,7 +238,7 @@ class OpenMissionButtonTest(_MissionHelpers):
         window.dialog_image_processing.isVisible.return_value = True
         with mock.patch.object(self.main.QMessageBox, "warning") as warning, \
                 mock.patch.object(self.main.Uti, "choose_mission_folder_phase_2") as choose:
-            window.btn_open_mission.click()
+            window.home.card_open.click()
         choose.assert_not_called()
         self.assertIn("Step 4", warning.call_args[0][2])
 

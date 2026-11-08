@@ -36,9 +36,6 @@ from PyQt6.QtWidgets import QSplashScreen
 
 print("IRDrone is starting, waiting ...", flush=True)
 
-# Bottom button: no mission loaded yet / a mission is loaded.
-OPEN_MISSION_TEXT = "Open mission..."
-LOAD_ANOTHER_MISSION_TEXT = "Load another mission..."
 # Small buttons of the status bar
 QUIET_BUTTON = """
 QPushButton { background: white; color: #17365D; border: 1px solid #C5CFDA; border-radius: 5px;
@@ -91,7 +88,7 @@ from IRD_Interactive_color_style import Style
 import config
 from config import missing_tools_message
 import IRD_Interactive_help as Help
-from IRD_Interactive_workdir import MissionLabel, WorkingDirBar, ensure_working_dir_at_startup
+from IRD_Interactive_workdir import WorkingDirBar, ensure_working_dir_at_startup
 import IRD_Interactive_progress as Progress
 
 
@@ -150,9 +147,8 @@ class Main_Window(QMainWindow):
         self.main_layout = QVBoxLayout(self.central_widget)
 
         #  Help button (bottom right of the window)
-        self.btn_help = QPushButton("?", self)
+        self.btn_help = QPushButton("? Manual", self)
         self.btn_help.setStyleSheet(QUIET_BUTTON)
-        self.btn_help.setFixedWidth(30)
         self.btn_help.setToolTip("User manual")
         self.btn_help.clicked.connect(self.on_help)
         Progress.notifier.changed.connect(lambda _folder: self._show_current_mission())
@@ -175,7 +171,8 @@ class Main_Window(QMainWindow):
         self.home.set_recent(recent_missions(Path(self.pref_screen.default_user_dir)))
         self.main_layout.addWidget(self.home, 1)
 
-        # Status bar: working folder + gear, current mission, open (left), help (right)
+        # Status bar: working folder, free space and its gear (left), manual (right).
+        # The mission itself is on the page (title, open folder, All missions).
         status = QFrame()
         status.setObjectName("statusbar")
         status.setStyleSheet("#statusbar { background: #F0F3F7; border-top: 1px solid #DDE3EA; }"
@@ -187,20 +184,9 @@ class Main_Window(QMainWindow):
         self.working_dir_bar.gear.setStyleSheet(QUIET_BUTTON)
         bottom_layout.addWidget(self.working_dir_bar)
         bottom_layout.addSpacing(30)
-        # Current mission (defined in Step 1, or chosen when opening another step)
-        self.mission_label = MissionLabel(self)
-        bottom_layout.addWidget(self.mission_label)
-        # "Open mission..." until a mission is loaded, then "Load another mission...".
-        self.btn_open_mission = QPushButton(OPEN_MISSION_TEXT, self)
-        self.btn_open_mission.setStyleSheet(QUIET_BUTTON)
-        self.btn_open_mission.setToolTip("Open an existing mission folder (FLY-YYYYMMDD-hhmm-location)")
-        self.btn_open_mission.clicked.connect(self.on_open_mission)
-        bottom_layout.addWidget(self.btn_open_mission)
         bottom_layout.addStretch()
         bottom_layout.addWidget(self.btn_help)
         self.main_layout.addWidget(status)
-        self.mission_label.setVisible(False)       # shown once a mission is loaded
-        self.btn_open_mission.setVisible(False)
 
         for step, tile in self.home.rail.tiles.items():
             Help.attach_help(tile, f"ch:step{step}", parent=self)   # right-click: manual
@@ -213,14 +199,8 @@ class Main_Window(QMainWindow):
         print(f"Working folder: {folder}")
 
     def _show_current_mission(self):
-        """Refresh the mission shown at the bottom of the window and the step buttons."""
-        self.mission_label.set_mission(self.mission_parameters, self.folderMissionPath)
+        """Refresh the mission page (title, steps, map)."""
         folder = Progress.mission_folder(self.mission_parameters, self.folderMissionPath)
-        loaded = folder is not None
-        self.btn_open_mission.setText(LOAD_ANOTHER_MISSION_TEXT if loaded else OPEN_MISSION_TEXT)
-        # Welcome page: its cards already offer New / Open
-        self.mission_label.setVisible(loaded)
-        self.btn_open_mission.setVisible(loaded)
         try:
             self.home.show_mission(folder)
         except Exception as e:  # the home page must never block the steps
@@ -666,7 +646,7 @@ class Main_Window(QMainWindow):
         return None
 
     def on_open_mission(self):
-        """'Open mission...' / 'Load another mission...' button: switch to an existing mission."""
+        """'Open a mission' card: switch to an existing mission."""
         busy = self._open_step_window()
         if busy:
             QMessageBox.warning(self, "IRDrone", f"Close the {busy} window before opening another mission.")

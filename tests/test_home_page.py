@@ -96,7 +96,7 @@ class MainWindowHomeTest(unittest.TestCase):
         m = make_mission(self.root, "FLY-20220125-1159-Blassac", done=(1,))
         self.window.handle_new_mission({"File path mission": str(m)})
         self.assertEqual(self.window.folderMissionPath, m)
-        self.assertIn("FLY-20220125-1159-Blassac", self.window.mission_label.text())
+        self.assertEqual(self.window.home.m_title.text(), "FLY-20220125-1159-Blassac")
 
     def test_new_mission_then_timeline(self):
         with mock.patch.object(self.main, "NewMissionDialog") as dialog, \
