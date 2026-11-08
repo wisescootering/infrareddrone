@@ -109,7 +109,7 @@ class MainWindowHomeTest(unittest.TestCase):
         with mock.patch.object(self.main, "NewMissionDialog") as dialog, \
                 mock.patch.object(self.window, "open_window_define_mission_classic") as classic:
             dialog.return_value.action = "classic"
-            self.window.btn_create_mission.click()
+            self.window.home.card_new.click()
         classic.assert_called_once()
 
 

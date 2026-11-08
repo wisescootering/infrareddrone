@@ -19,7 +19,6 @@ APP = QApplication.instance() or QApplication([])
 
 import IRD_Interactive_progress as Progress  # noqa: E402
 
-CHECK = "✅"
 
 
 class ProgressRecordTest(unittest.TestCase):
@@ -98,6 +97,8 @@ class ProgressRecordTest(unittest.TestCase):
 
 
 class MainWindowStepsTest(unittest.TestCase):
+    """The step rail of the mission page (no step bar at the top any more)."""
+
     @classmethod
     def setUpClass(cls):
         import IRD_Interactive_Main as main
@@ -108,42 +109,56 @@ class MainWindowStepsTest(unittest.TestCase):
         self.mission.mkdir()
         self.window = self.main.Main_Window()
 
-    def text(self, step):
-        return self.window.step_buttons[step][0].text()
+    def state(self, step):
+        return self.window.home.rail.tiles[step].state
 
-    def test_steps_not_done_keep_their_look(self):
-        for step in Progress.STEPS:
-            self.assertNotIn(CHECK, self.text(step))
+    def show(self, folder=None):
+        self.window.folderMissionPath = folder or self.mission
+        self.window.mission_parameters = {}
+        self.window._show_current_mission()
 
-    def test_step1_validation_greys_step1_out(self):
+    def test_no_step_bar_at_the_top(self):
+        self.assertFalse(hasattr(self.window, "step_buttons"))
+
+    def test_step1_validation_marks_step1_done(self):
         self.window.dialog_create_file_structure = mock.MagicMock()
         self.window.dialog_load_takeoff_image = mock.MagicMock()
         self.window.handle_data_from_dialog_create_file_structure(
             True, {"File path mission": str(self.mission)})
-        button = self.window.step_buttons[1][0]
-        self.assertTrue(button.text().startswith(CHECK))
-        self.assertIn("#A9A9A9", button.styleSheet())
-        self.assertTrue(button.isEnabled())  # can still be clicked
-        self.assertNotIn(CHECK, self.text(2))
+        self.assertEqual(self.state(1), "done")
+        self.assertEqual(self.state(2), "next")
+        self.assertEqual(self.state(3), "todo")
 
-    def test_step_done_in_another_window_updates_the_buttons(self):
-        self.window.folderMissionPath = self.mission
-        self.window.mission_parameters = {"File path mission": str(self.mission)}
+    def test_step_done_in_another_window_updates_the_rail(self):
+        self.show()
         Progress.mark_step_done(self.mission, 4)  # e.g. from the Step 4 window
-        self.assertTrue(self.text(4).startswith(CHECK))
-        self.assertIn("Click to run it again", self.window.step_buttons[4][0].toolTip())
+        self.assertEqual(self.state(4), "done")
+        self.assertIn("Click to run it again", self.window.home.rail.tiles[4].toolTip())
 
     def test_opening_another_mission_shows_its_own_progress(self):
         Progress.mark_step_done(self.mission, 2)
-        self.window.folderMissionPath = self.mission
-        self.window.mission_parameters = {}
-        self.window._show_current_mission()
-        self.assertTrue(self.text(2).startswith(CHECK))
+        self.show()
+        self.assertEqual(self.state(2), "done")
         other = self.mission.parent / "FLY-other"
         other.mkdir()
-        self.window.folderMissionPath = other
-        self.window._show_current_mission()
-        self.assertNotIn(CHECK, self.text(2))
+        self.show(other)
+        self.assertNotEqual(self.state(2), "done")
+
+    def test_a_click_on_a_step_runs_it(self):
+        self.show()
+        with mock.patch.object(self.window, "on_process_images") as step4:
+            self.window.home.rail.tiles[4].click()
+        step4.assert_called_once()
+
+    def test_step3_done_opens_without_running_on_its_own(self):
+        Progress.mark_step_done(self.mission, 2)
+        self.show()
+        with mock.patch.object(self.window, "on_pre_process_images") as step3:
+            self.window.home.rail.tiles[3].click()           # next: chained
+            step3.assert_called_with(auto_run=True)
+            with mock.patch.object(self.main.Progress, "done_steps", return_value={3: "x"}):
+                self.window.home.rail.tiles[3].click()       # done: opened as is
+            step3.assert_called_with(auto_run=False)
 
 
 class _MissionHelpers(unittest.TestCase):
@@ -184,8 +199,8 @@ class OpenMissionButtonTest(_MissionHelpers):
         self.open(window, mission)
         self.assertEqual(window.folderMissionPath, mission)
         self.assertIn("FLY-20220125-1159-Blassac", window.mission_label.text())
-        texts = [window.step_buttons[s][0].text() for s in Progress.STEPS]
-        self.assertEqual([t.startswith(CHECK) for t in texts], [True, True, True, False, False, False])
+        states = [window.home.rail.tiles[s].state for s in Progress.STEPS]
+        self.assertEqual(states, ["done", "done", "done", "next", "todo", "todo"])
         # a step opened afterwards uses this mission without asking again
         self.assertTrue(window.ensure_mission_parameters())
 
@@ -195,7 +210,7 @@ class OpenMissionButtonTest(_MissionHelpers):
         second = self.make_mission("FLY-B")
         self.open(window, second)
         self.assertEqual(window.mission_parameters["folderMissionPath"], second)
-        self.assertNotIn(CHECK, window.step_buttons[1][0].text())
+        self.assertNotEqual(window.home.rail.tiles[1].state, "done")
 
     def test_cancel_keeps_the_current_mission(self):
         window = self.main.Main_Window()
@@ -229,7 +244,7 @@ class Step2UsesCurrentMissionTest(_MissionHelpers):
             timeline.return_value.exec.return_value = 0
             timeline.return_value.action = "classic"
             dialog.return_value.exec.return_value = 0
-            window.btn_load_images.click()
+            window.open_window_load_set_images()
         return dialog
 
     def test_asked_once_then_reused(self):

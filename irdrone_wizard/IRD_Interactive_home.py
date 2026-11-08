@@ -39,6 +39,14 @@ WHAT_NEXT = {
     5: "Build the orthophoto and the terrain model with OpenDroneMap.",
     6: "Archive the mission to free disk space.",
 }
+STEP_TIPS = {
+    1: "Create a new mission: find the images on the SD cards and copy them.",
+    2: "Check the automatically detected flight phases (synchronisation, survey).",
+    3: "Synchronise the visible and infrared cameras and pair the images.",
+    4: "Align the infrared on the visible images, then review them.",
+    5: "Georeference, orthophoto and terrain model (OpenDroneMap).",
+    6: "Archive the mission (cleans the mission folder).",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -229,6 +237,103 @@ def progress_dots(done) -> str:
         (f"{len([s for s in done if s <= 6])}/6" if done else "new") + "</span>"
 
 
+TILE_DONE, TILE_NEXT, TILE_TODO = "done", "next", "todo"
+_TILE_LOOK = {   # background, border, badge background, badge text, title, detail, hover
+    TILE_DONE: ("white", "#CFE3D0", "#2E7D32", "white", "#1F2933", "#2E7D32", "#F1F8F1"),
+    TILE_NEXT: ("#EEF3F8", "#17365D", "#17365D", "white", "#17365D", "#17365D", "#E1EAF3"),
+    TILE_TODO: ("white", "#E4E8EE", "#E4E8EE", "#6B7785", "#6B7785", "#A0AAB4", "#F5F7FA"),
+}
+
+
+class StepTile(QPushButton):
+    """One step of the rail: badge (number or ✓), name and state. Click: run the step."""
+
+    def __init__(self, step: int, parent=None):
+        super().__init__(parent)
+        self.step = step
+        self.state = TILE_TODO
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(10, 8, 10, 8)
+        lay.setSpacing(8)
+        self.badge = QLabel()
+        self.badge.setFixedSize(26, 26)
+        self.badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        col = QVBoxLayout()
+        col.setSpacing(0)
+        self.name = QLabel(STEP_TITLES[step][0])
+        self.detail = QLabel()
+        col.addWidget(self.name)
+        col.addWidget(self.detail)
+        for w in (self.badge, self.name, self.detail):
+            w.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        lay.addWidget(self.badge)
+        lay.addLayout(col, 1)
+        self.setMinimumHeight(54)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.set_state(TILE_TODO)
+
+    def set_state(self, state: str, detail: str = ""):
+        self.state = state
+        bg, border, badge_bg, badge_fg, title, sub, hover = _TILE_LOOK[state]
+        width = 2 if state == TILE_NEXT else 1
+        pad = 0 if state == TILE_NEXT else 1          # same outer size whatever the border
+        self.setStyleSheet(f"StepTile {{ background: {bg}; border: {width}px solid {border}; border-radius: 8px;"
+                           f" margin: {pad}px; }} StepTile:hover {{ background: {hover}; }}")
+        self.badge.setText("✓" if state == TILE_DONE else str(self.step))
+        self.badge.setStyleSheet(f"background: {badge_bg}; color: {badge_fg}; border-radius: 13px;"
+                                 " font-weight: bold;")
+        self.name.setStyleSheet(f"color: {title}; font-weight: bold; background: transparent;")
+        self.detail.setStyleSheet(f"color: {sub}; font-size: 8.5pt; background: transparent;")
+        self.detail.setText(detail)
+        what = STEP_TIPS[self.step]
+        action = {TILE_DONE: "Done. Click to run it again.", TILE_NEXT: "Next step: click to start it.",
+                  TILE_TODO: "Click to open it."}[state]
+        self.setToolTip(f"Step {self.step} · {what}\n{action}\n(Right-click: help on this step)")
+
+
+class StepRail(QWidget):
+    """The six steps of a mission, left to right; a click on a step emits clicked(step)."""
+    clicked = pyqtSignal(int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+        self.tiles: Dict[int, StepTile] = {}
+        for s in range(1, 7):
+            if s > 1:
+                arrow = QLabel("›")
+                arrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                arrow.setFixedWidth(16)
+                arrow.setStyleSheet("color: #A0AAB4; font-size: 14pt; background: transparent;")
+                row.addWidget(arrow)
+            tile = StepTile(s)
+            tile.clicked.connect(lambda _=False, step=s: self.clicked.emit(step))
+            row.addWidget(tile, 1)
+            self.tiles[s] = tile
+
+    def show_progress(self, done: Dict[int, str], nxt: Optional[int]):
+        for s, tile in self.tiles.items():
+            if s in done:
+                tile.set_state(TILE_DONE, "Done " + _short_date(done[s]))
+            elif s == nxt:
+                tile.set_state(TILE_NEXT, "Next")
+            else:
+                tile.set_state(TILE_TODO, "")
+
+
+def _short_date(stamp: str) -> str:
+    """'2026-11-08T10:12:00' -> '08/11/2026'."""
+    try:
+        y, m, d = str(stamp)[:10].split("-")
+        return f"{d}/{m}/{y}"
+    except ValueError:
+        return str(stamp)[:10]
+
+
 class ScaledPicture(QLabel):
     """Image scaled to the label (kept whole), re-scaled when the label is resized."""
 
@@ -259,7 +364,8 @@ class HomePage(QStackedWidget):
     new_mission = pyqtSignal()
     open_mission = pyqtSignal()
     open_recent = pyqtSignal(object)      # Path
-    run_step = pyqtSignal(int)
+    run_step = pyqtSignal(int)          # "Continue": the next step, chained
+    step_clicked = pyqtSignal(int)      # a step of the rail
     review = pyqtSignal()
 
     def __init__(self, hero_image: Optional[Path] = None, parent=None):
@@ -341,13 +447,14 @@ class HomePage(QStackedWidget):
         col.addWidget(self.m_title)
         col.addWidget(self.m_sub)
         head.addLayout(col, 1)
-        self.btn_all = QPushButton("All missions")
+        self.btn_all = QPushButton("‹ All missions")
         self.btn_all.setStyleSheet(Look.SECONDARY_STYLE)
         self.btn_all.clicked.connect(lambda: self.setCurrentIndex(0))
         head.addWidget(self.btn_all, 0, Qt.AlignmentFlag.AlignTop)
         lay.addLayout(head)
-        self.tracker = Look.StageTracker([f"{s} {STEP_TITLES[s][0]}" for s in range(1, 7)])
-        lay.addWidget(self.tracker.widget())
+        self.rail = StepRail()
+        self.rail.clicked.connect(self.step_clicked.emit)
+        lay.addWidget(self.rail)
 
         body = QHBoxLayout()
         body.setSpacing(18)
@@ -399,17 +506,11 @@ class HomePage(QStackedWidget):
         self.m_title.setText(info.name)
         self.m_sub.setText(info.subtitle())
         nxt = info.next_step()
-        for s in range(1, 7):
-            if s in info.done:
-                self.tracker.set(s - 1, Look.STAGE_DONE, info.done[s][:10])
-            elif s == nxt:
-                self.tracker.set(s - 1, Look.STAGE_RUNNING, "next")
-            else:
-                self.tracker.set(s - 1, Look.STAGE_PENDING, "")
+        self.rail.show_progress(info.done, nxt)
         if nxt is None:
             self.next_title.setText("✓ Mission processed")
             self.next_text.setText("The orthophoto and the terrain model are in mapping_MULTI. "
-                                   "Archive the mission to free disk space, or run a step again from the bar above.")
+                                   "Archive the mission to free disk space, or click a step above to run it again.")
             self.btn_continue.setText("Archive the mission  ▶")
             self._next = 6
         else:

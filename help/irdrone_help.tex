@@ -388,9 +388,9 @@ Vous devez avoir sur un support numérique (carte SD, disque dur) les images des
 Pour une nouvelle mission il faut suivre dans l'ordre les étapes 1 à 5. 
 Cependant les étapes 2 à 5 peuvent être lancées individuellement, à condition que le dossier de la mission comporte au minimum les éléments produits par les étapes qui la précèdent. C'est particulièrement utile pour les étapes 4 et 5.
 
-\paragraph{Page d'accueil.} Sans mission chargée, la fenêtre principale propose \bouton{New mission} (étape~1), \bouton{Open a mission} et la liste des missions récentes du dossier de travail, avec leur avancement (un point vert par étape faite). Une fois la mission chargée, elle affiche ce qui est fait, l'étape suivante (bouton \bouton{Continue with Step N}), quelques chiffres (images, paires, images alignées, points signalés) et l'accès à la revue des images alignées (figure~\ref{fig:home_mission}).
+\paragraph{Page d'accueil.} Sans mission chargée, la fenêtre principale propose \bouton{New mission} (étape~1), \bouton{Open a mission} et la liste des missions récentes du dossier de travail, avec leur avancement (un point vert par étape faite). Une fois la mission chargée, elle affiche les six étapes de gauche à droite (coche verte et date pour une étape faite, cadre bleu pour l'étape suivante), l'étape suivante (bouton \bouton{Continue with Step N}), quelques chiffres (images, paires, images alignées, points signalés) et l'accès à la revue des images alignées (figure~\ref{fig:home_mission}). Un clic sur une étape la lance, même déjà faite (pour la refaire) ; un clic droit ouvre ce manuel à son chapitre. \bouton{All missions} revient à la liste des missions. La barre du bas rappelle le dossier de travail (roue dentée pour le changer), la mission chargée (clic : ouvre son dossier) et \bouton{Load another mission...}.
 
-\figureIRD[fig:home_mission]{home_mission.png}{La mission chargée : avancement des étapes, étape suivante, chiffres de la mission et revue des images alignées.}{0.9}
+\figureIRD[fig:home_mission]{home_mission.png}{La mission chargée : les six étapes (un clic lance une étape), étape suivante, chiffres de la mission et revue des images alignées.}{0.9}
 
 \paragraph{Enchaînement automatique.} Les étapes s'enchaînent d'elles-mêmes : à la fin de l'étape~1, \bouton{Flight timeline} ouvre l'étape~2 ; \bouton{Confirm and synchronize} de l'étape~2 lance l'étape~3 (détection des mires, décalage, appariement, sans clic), qui lance l'étape~4 au bout de 5~secondes ; à la fin de l'étape~4 la revue des images alignées s'ouvre. Il ne reste qu'à vérifier les phases du vol, puis le résultat.
 
@@ -416,7 +416,7 @@ Le bouton \bouton{Classic form…} de la page \og Images \fg~ouvre l'ancien Step
   \item \textbf{\og Create a mission \fg} : on v\'erifie et on compl\`ete les informations de la mission, puis on lance la cr\'eation
         du dossier et le transfert des images VIS et NIR.
 \end{enumerate}
-\`A la fin, le bouton \bouton{Step 2} de la fen\^etre principale devient actif.
+\`A la fin, la mission devient la mission chargée de la fen\^etre principale, qui propose l'étape~2.
 
 \paragraph{Pr\'erequis.}
 \begin{itemize}
