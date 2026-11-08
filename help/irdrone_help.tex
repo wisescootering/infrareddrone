@@ -197,7 +197,7 @@ La figure \ref{Facteur_reflexion_vegetaux} montre les courbes typiques du facteu
 Notons que les feuillus produisent aussi de la bêta-carotène et de la fucoxanthine qui absorbent le bleu et une partie du vert mais réfléchissent le rouge. 
 C'est pour cette raison qu'à l'automne, lorsque les feuillus ne produisent plus de chlorophylle mais que la bêta-carotène est encore présente, ces espèces arborent des teintes allant du marron orangé à l'ocre rouge.
 
-\figureIRD[Facteur_reflexion_vegetaux]{Facteur_reflexion_vegetaux.pdf}{Facteur de réflexion des résineux et des conifères. Dans la bande spectrale visible $[400\,nm ,\,700\,nm]$ le comportement des deux espèces est très similaire. En revanche dans la bande spectrale infrarouge IR-A $[700\,nm ,\, 1.4\,\mu m]$ bien présente dans le spectre solaire les deux espèces se distinguent nettement.}{1}
+\figureIRD[Facteur_reflexion_vegetaux]{Facteur_reflexion_vegetaux.pdf}{Facteur de réflexion des résineux et des feuillus. Dans la bande spectrale visible $[400\,nm ,\,700\,nm]$ le comportement des deux espèces est très similaire. En revanche dans la bande spectrale infrarouge IR-A $[700\,nm ,\, 1.4\,\mu m]$ bien présente dans le spectre solaire les deux espèces se distinguent nettement.}{1}
 
 
 On remarque que les feuilles des arbres réfléchissent le rayonnement autour de 550 nm qui correspond à la couleur verte perçue par l'\oe il humain. Mais les courbes étant identiques dans la partie visible du spectre (400 nm à 700 nm) on ne peut pas distinguer entre les différentes essences. En revanche les facteurs de réflexion dans le domaine infrarouge sont bien distincts entre résineux et feuillus. L'idée est d'exploiter cette propriété en produisant une image infrarouge  du couvert végétal
@@ -640,7 +640,7 @@ Le dossier de mission n'est jamais effac\'e : si le dossier existe d\'ej\`a, seu
 Pour les images VIS d\'ej\`a transf\'er\'ees (fichier \texttt{.exif} pr\'esent), le transfert est ignor\'e : relancer le Step~1 sur
 une mission existante est donc rapide.
 
-\figureIRD{step1_mission_folder.png}{Dossier de mission vu dans l'explorateur Windows.}{0.7}
+\figureIRD{Step1_mission_folder.png}{Dossier de mission vu dans l'explorateur Windows.}{0.7}
 
 La durée des transferts dépend beaucoup des performances des supports (carte SD, disque dur) et des liaisons (USB B ou C, lecteur). De plus et contrairement aux images de la caméra DJI qui sont au format dng, les images de la caméra SJCam M20 sont dans un format \og RAW \fg~qui n'est pas normalisé. Chaque image doit être convertie au format dng d'ADOBE à l'aide d'un logiciel tiers \footnote{Il s'agit du code \texttt{sjcam\_raw2dng} disponible uniquement comme un fichier exe. \texttt{sjcam\_raw2dng}
 	Convert SJCAM raw files to Adobe DNG and TIFF while also getting metadata
@@ -833,7 +833,7 @@ Pendant la détection, chaque image traitée est enregistrée avec une surcouche
 \textbf{Conseil :} parcourir ce dossier dans l'explorateur Windows est le meilleur moyen de repérer des détections douteuses avant de passer à la phase suivante.
 
 % Figure à créer par l'utilisateur (PowerPoint) : 2 lignes de 4 images (VIS en haut, NIR en bas) extraites de Synchro\Check_ARUCO.
-\figureIRD[fig:check_aruco]{step3_check_aruco_VIS_NIR.pdf}{Exemples d'images de contrôle (dossier \texttt{Synchro\textbackslash Check\_ARUCO}). Ligne du haut : bande VIS ; ligne du bas : bande NIR. La mire mobile est repérée par son axe vert ; les centres des mires fixes par des disques rouges.}{0.95}
+\figureIRD[fig:check_aruco]{Step3_check_aruco_VIS_NIR.pdf}{Exemples d'images de contrôle (dossier \texttt{Synchro\textbackslash Check\_ARUCO}). Ligne du haut : bande VIS ; ligne du bas : bande NIR. La mire mobile est repérée par son axe vert ; les centres des mires fixes par des disques rouges.}{0.95}
 
 \section{Bouton \bouton{Compute time alignment}}\label{btn:step3_time_shift}
 Ce bouton, actif seulement lorsque la détection est terminée, calcule le décalage temporel entre les deux caméras.
@@ -1051,8 +1051,8 @@ Que faire ensuite des shoot points mal alignés ? Deux options :
 
 \subsection{Exemple de succès d'alignement}
 \figurePaireIRD{fig:goodalignment}
-{Step4_goodalignment_VIS.jpg}{Image dans le spectre visible.}
-{Step4_goodalignment_NIR.jpg}{Image la plus proche $|dt|=0.165~s$ dans le spectre infrarouge.}
+{step4_goodalignment_VIS.jpg}{Image dans le spectre visible.}
+{step4_goodalignment_NIR.jpg}{Image la plus proche $|dt|=0.165~s$ dans le spectre infrarouge.}
 {Cas de succès d'alignement : l'écart temporel est faible et l'attitude du drone est restée dans les spécifications des paramètres de vol.}
 
 \figureIRD[fig:step4_goodalignment_VIR]{step4_goodalignment_VIR.jpg}{Alignement réussi. Les deux images ont été prises presque au même moment et en l'absence de vent. }{0.5}
@@ -1061,7 +1061,7 @@ Que faire ensuite des shoot points mal alignés ? Deux options :
 Si le drone sort de sa zone des paramètres de vol, par exemple en cas de fortes rafales de vent qui l'obligent à accentuer ses angles de pitch et yaw, alors les centres de visée des deux caméras peuvent être tellement éloignés qu'il est impossible de trouver un alignement. L'alignement peut aussi être défaillant si l'écart temporel entre les prises de vue VIS et NIR est important (il peut être parfois supérieur à 2\,s) car le déplacement horizontal du drone est alors mal corrigé. L'alignement peut aussi être imparfait sans être un échec s'il y a un écart temporel et que les végétaux bougent sous l'action du vent. L'image VIR présente alors des \og fantômes \fg. Les figures \ref{fig:misalignment} et \ref{fig:step4_misalignment_VIR} montrent un cas d'échec de l'alignement lié à une forte rafale de vent qui déstabilise le drone. 
 
 \figurePaireIRD{fig:misalignment}
-{Step4_misalignment_VIS.jpg}{Image dans le spectre visible.}
+{step4_misalignment_VIS.jpg}{Image dans le spectre visible.}
 {Step4_misalignment_NIR.jpg}{Image la plus proche $|dt|=1.256~s$ dans le spectre infrarouge.}
 {Cas d'échec d'alignement lié à une attitude du drone hors des spécifications des paramètres de vol et liée à une rafale de vent au moment de la prise de vue.}
 
@@ -1106,12 +1106,12 @@ Il y a aussi un gros arbre en haut à droite, un petit arbuste en bas à gauche 
 Il n'y a pas vraiment d'ordre pour arriver à un résultat satisfaisant. 
 Ne cherchez pas la perfection  car on n'applique que des transformations globales linéaires. Le code affinera globalement puis localement.
 \figurePaireIRD{fig:redo_A}
-{Step4_redo_1.png}{Situation de départ après un passage dans la procédure associée au bouton \texttt{run alignement}.}
-{Step4_redo_2.png}{On a joué sur la rotation, qui passe de $0$ à $-2.46$, pour aligner la route NIR parallèlement à la route VIS. Attention utiliser ce slider délicatement. Lorsqu'il n'y a pas de ligne évidente comme ici la route, on utilise plutôt la rotation en dernier pour mettre la \og touche finale \fg.}
+{step4_redo_1.png}{Situation de départ après un passage dans la procédure associée au bouton \texttt{run alignement}.}
+{step4_redo_2.png}{On a joué sur la rotation, qui passe de $0$ à $-2.46$, pour aligner la route NIR parallèlement à la route VIS. Attention utiliser ce slider délicatement. Lorsqu'il n'y a pas de ligne évidente comme ici la route, on utilise plutôt la rotation en dernier pour mettre la \og touche finale \fg.}
 {Première modification en jouant sur le slider de rotation (\texttt{ROLL}).}
 \figurePaireIRD{fig:redo_B}
-{Step4_redo_3.png}{Translation verticale vers le bas avec le slider \texttt{PITCH}. La valeur passe de  $-1.14$ à $2.04$. C'est une amplitude relativement importante et surtout qui change de signe.}
-{Step4_redo_4.png}{Translation horizontale avec le slider \texttt{YAW}. La valeur passe de $0.96$ à $1.8$.}
+{step4_redo_3.png}{Translation verticale vers le bas avec le slider \texttt{PITCH}. La valeur passe de  $-1.14$ à $2.04$. C'est une amplitude relativement importante et surtout qui change de signe.}
+{step4_redo_4.png}{Translation horizontale avec le slider \texttt{YAW}. La valeur passe de $0.96$ à $1.8$.}
 {On affine en jouant sur le curseur \texttt{Alpha} (en diminuant puis en agrandissant) et en observant l'alignement des éléments caractéristiques. La sensation de léger flou à la fin est liée à la transparence et aux petits défauts d'alignement locaux qui seront corrigés par la procédure d'alignement fin.}
 
 
