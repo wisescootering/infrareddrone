@@ -303,6 +303,7 @@ def _compare_view_class():
 # ---------------------------------------------------------------------------
 class ManualAlignDialog(QDialog):
     """Place the infrared of each point by hand; ``placed()`` once accepted."""
+    INTRO = "Place every point, then compute them all at once: no waiting between points."
 
     def __init__(self, items: List[AlignItem], mission_name: str = "", parent=None):
         super().__init__(parent)
@@ -338,7 +339,7 @@ class ManualAlignDialog(QDialog):
         head = QHBoxLayout()
         title = QLabel("Align the infrared by hand")
         title.setStyleSheet(TITLE_STYLE)
-        self.subtitle = QLabel("Place every point, then compute them all at once: no waiting between points.")
+        self.subtitle = QLabel(self.INTRO)
         self.subtitle.setStyleSheet(SUBTITLE_STYLE)
         self.subtitle.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         head.addWidget(title)
@@ -576,6 +577,7 @@ class ManualAlignDialog(QDialog):
             return
         self.index = min(max(index, 0), len(self.items) - 1)
         item = self.current()
+        self.subtitle.setText(self.INTRO)
         if self.list.currentRow() != self.index:
             self.list.setCurrentRow(self.index)
         if item.preview is None and item.number not in self._requested:

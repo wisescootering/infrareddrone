@@ -202,6 +202,7 @@ class ReviewDialogTests(MissionTests):
         self.assertTrue(d.banner.isVisibleTo(d))
         self.assertTrue(d.btn_accept_redo.isVisibleTo(d))
         self.assertIn("◆ 1 to confirm", d.chips[R.STATUS_REALIGNED].text())
+        self.assertFalse(d.btn_redo.isEnabled())          # its verdict first
         # still flagged on disk (Step 5 skips it) and remembered as realigned
         self.assertEqual(R.load_review(self.mission).by_number(140).status, R.STATUS_REALIGNED)
         d._verdict(True)

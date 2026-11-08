@@ -1280,9 +1280,11 @@ class ReviewDialog(QDialog):
         return runner.numbers() if runner is not None else set()
 
     def _redoable(self) -> List[R.ReviewPoint]:
-        """Flagged points (realigned ones included) that can be realigned by hand now."""
+        """Flagged points that can be realigned by hand now (not computing, not
+        waiting for the user's verdict on a new alignment)."""
         computing = self._computing()
-        return [p for p in self.review.flagged() if p.redo_script is not None and p.number not in computing]
+        return [p for p in self.review.flagged() if p.status == R.STATUS_FLAGGED and p.redo_script is not None
+                and p.number not in computing]
 
     # ---- decisions
     def _set_failed(self, points, failed):
