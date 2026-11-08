@@ -103,3 +103,43 @@ class ChainedStep3Test(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Step3ReopenedTest(unittest.TestCase):
+    """Step 3 opened again after it was done: the saved result is shown."""
+
+    def setUp(self):
+        import json
+        self.mission = Path(tempfile.mkdtemp()) / "FLY-20220125-1159-Blassac"
+        (self.mission / "FlightAnalytics").mkdir(parents=True)
+        (self.mission / "AerialPhotography").mkdir()
+        (self.mission / "Synchro").mkdir()
+        (self.mission / "AerialPhotography" / "shoot_points.json").write_text(json.dumps(
+            {"time_shift": -30.99, "created_at": "2026-11-08T11:42:46", "shoot_points": [{}, {}, {}]}))
+        from PyQt6.QtGui import QPixmap
+        for name in ("check_time_alignment.png", "check_time_before_alignment.png"):
+            pix = QPixmap(40, 30)
+            pix.fill()
+            pix.save(str(self.mission / "Synchro" / name))
+
+    def dialog(self):
+        with mock.patch.object(S3.DialogSynchroAruco, "on_run_aruco"):
+            return S3.DialogSynchroAruco({"folderMissionPath": str(self.mission)})
+
+    def test_shows_the_offset_pairs_and_aligned_curves(self):
+        d = self.dialog()
+        self.assertEqual(d.stages.states[:3], [Look.STAGE_DONE] * 3)
+        self.assertIn("-30.99", d.auto_label.text())
+        self.assertIn("3 pairs", d.auto_label.text())
+        self.assertIn("08/11/2026", d.auto_label.text())
+        self.assertEqual(d.time_shift, -30.99)
+        self.assertTrue(d.btn_before.isVisibleTo(d))
+        self.assertTrue(d.btn_continue.isVisibleTo(d))
+        d.btn_before.click()
+        self.assertEqual(d.btn_before.text(), "After alignment")
+
+    def test_not_done_yet_shows_nothing_old(self):
+        (self.mission / "AerialPhotography" / "shoot_points.json").unlink()
+        d = self.dialog()
+        self.assertEqual(d.stages.states[1], Look.STAGE_PENDING)
+        self.assertFalse(d.btn_before.isVisibleTo(d))

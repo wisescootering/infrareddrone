@@ -5,6 +5,7 @@
 #   20/10/2026   V003
 # ---------------------------------------------------------------------------------
 
+import json
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
@@ -186,6 +187,8 @@ class DialogSynchroAruco(QDialog):
 
         self._log("Dialog initialized.")
         self._set_manual_mode(not self.auto_run)
+        if not self.auto_run:
+            self._show_previous_result()
         if self.auto_run:
             self._log("Started from the flight timeline: detection, time alignment and pairing run automatically.")
             QTimer.singleShot(400, self.on_run_aruco)
@@ -207,6 +210,7 @@ class DialogSynchroAruco(QDialog):
         auto_bar = QHBoxLayout()
         self.auto_label = QLabel("")
         self.auto_label.setStyleSheet("color: #6B7785;")
+        self.auto_label.setWordWrap(True)
         self.btn_manual = QPushButton("Manual mode…")
         self.btn_manual.setStyleSheet(Look.SECONDARY_STYLE)
         self.btn_manual.setToolTip("Stop the automatic chaining and run each stage yourself "
@@ -336,6 +340,13 @@ class DialogSynchroAruco(QDialog):
         main_layout.addWidget(self.timeshift_plot_label, 1)
 
         # Close button at the bottom
+        # Step 3 done earlier: the saved plot, after or before the alignment
+        self.btn_before = QPushButton("Before alignment")
+        self.btn_before.setCheckable(True)
+        self.btn_before.setStyleSheet(Look.SECONDARY_STYLE)
+        self.btn_before.setToolTip("Show the curves before the clock offset was applied.")
+        self.btn_before.toggled.connect(self._toggle_before)
+        self.btn_before.hide()
         self.btn_close = QPushButton("Close")
         self.btn_close.setFixedWidth(120)
         self.btn_close.setStyleSheet(BUTTON_STYLE)
@@ -343,6 +354,7 @@ class DialogSynchroAruco(QDialog):
 
         # Align the Close button to the right
         close_layout = QHBoxLayout()
+        close_layout.addWidget(self.btn_before)
         close_layout.addStretch()
         close_layout.addWidget(self.btn_close)
         self.btn_help = QPushButton("?")
@@ -411,6 +423,7 @@ class DialogSynchroAruco(QDialog):
         If an exception occurs during initialization or startup,
         reset the progress bar and report the error in the log.
         """
+        self.btn_before.hide()          # a new run replaces the earlier result
         try:
             self.aruco_orchestrator = ArucoOrchestrator(
                 Path(self.folderMissionPath) / "AerialPhotography",
@@ -971,6 +984,51 @@ class DialogSynchroAruco(QDialog):
             self.auto_label.setText("")
         else:
             self.auto_label.setText("Automatic: detection, clock alignment and pairing follow each other.")
+
+    def previous_result(self) -> Optional[dict]:
+        """What an earlier run of Step 3 left: offset, pairs, plots (None if not run)."""
+        folder = Path(self.folderMissionPath)
+        try:
+            with open(folder / "AerialPhotography" / "shoot_points.json", encoding="utf-8") as f:
+                data = json.load(f)
+            time_shift = float(data["time_shift"])
+            pairs = len(data.get("shoot_points", []))
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+        synchro = folder / "Synchro"
+        after, before = synchro / "check_time_alignment.png", synchro / "check_time_before_alignment.png"
+        return {"time_shift": time_shift, "pairs": pairs, "date": str(data.get("created_at", ""))[:10],
+                "after": after if after.is_file() else None, "before": before if before.is_file() else None}
+
+    def _show_previous_result(self) -> None:
+        """Step 3 opened again: show what was found (aligned curves, offset, pairs)."""
+        prev = self.previous_result()
+        if prev is None:
+            return
+        self._previous = prev
+        self.time_shift = self.computed_time_shift = prev["time_shift"]
+        self.stages.set(0, Look.STAGE_DONE, "done earlier")
+        self.stages.set(1, Look.STAGE_DONE, f"infrared {prev['time_shift']:+.2f} s")
+        self.stages.set(2, Look.STAGE_DONE, f"{prev['pairs']} pairs")
+        y, m, d = (prev["date"].split("-") + ["", "", ""])[:3]
+        when = f" on {d}/{m}/{y}" if d else ""
+        self.auto_label.setText(f"Synchronised{when}: infrared clock offset {prev['time_shift']:+.2f} s, "
+                                f"{prev['pairs']} pairs. Run the stages again below to redo it.")
+        self.progress_label.setText("Step 3 already done: clock alignment checked on the curves below.")
+        self.progress_bar.setValue(100)
+        if prev["after"] is not None:
+            self._plot_after = prev["after"]
+            self.btn_before.setVisible(prev["before"] is not None)
+            QTimer.singleShot(0, self._show_plot_after)
+        self.btn_continue.show()
+
+    def _toggle_before(self, on: bool) -> None:
+        prev = getattr(self, "_previous", None)
+        if prev is None:
+            return
+        self.stop_timeshift_animation()
+        self._show_image_file(Path(prev["before"] if on else prev["after"]))
+        self.btn_before.setText("After alignment" if on else "Before alignment")
 
     def _ask_sync_confirmation(self) -> None:
         """Chained run: show the aligned curves and wait for the user's word."""
