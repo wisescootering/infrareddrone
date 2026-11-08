@@ -101,6 +101,11 @@ class MissionDetailsDialog(QDialog):
         lay.addWidget(card)
 
         buttons = QHBoxLayout()
+        self.btn_help = QPushButton("?")
+        self.btn_help.setStyleSheet(Look.SECONDARY_STYLE)
+        self.btn_help.setFixedWidth(36)
+        self.btn_help.clicked.connect(self._on_help)
+        buttons.addWidget(self.btn_help)
         buttons.addStretch(1)
         cancel = QPushButton("Cancel")
         cancel.setStyleSheet(Look.SECONDARY_STYLE)
@@ -112,6 +117,24 @@ class MissionDetailsDialog(QDialog):
         buttons.addWidget(cancel)
         buttons.addWidget(self.btn_save)
         lay.addLayout(buttons)
+        try:   # tool tips, right-click: the manual
+            import IRD_Interactive_help as Help
+            for widget, tip in (
+                (self.btn_help, "Open the manual at the mission details."),
+                (cancel, "Close without changing anything."),
+                (self.btn_save, "Write the details in mission_parameters.json (the previous file is kept as .bak). "
+                                "The mission folder keeps its name."),
+            ):
+                Help.attach_help(widget, "btn:step1_details", tip, parent=self)
+        except Exception as e:  # the help is a convenience
+            print(f"Help unavailable: {e}")
+
+    def _on_help(self):
+        try:
+            import IRD_Interactive_help as Help
+            Help.show_help("btn:step1_details", parent=self)
+        except Exception as e:
+            print(f"Help unavailable: {e}")
 
     def form_values(self) -> dict:
         return {

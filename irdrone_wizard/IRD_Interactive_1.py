@@ -324,6 +324,7 @@ class Window_create_file_structure(QDialog):
             self.btn_help.setFixedWidth(30)
             self.btn_help.setStyleSheet(BUTTON_STYLE)
             self.btn_help.clicked.connect(lambda: Help.show_help("btn:step1_form", parent=self))
+            self.btn_help.setToolTip("Open the manual at this window.")
             self.zone_122_layout.addWidget(self.btn_help)
             Help.attach_help(self.btn_1221, "btn:step1_validate",
                              "Create the mission folders and files from the form.", parent=self)
@@ -1954,6 +1955,7 @@ class Window_Load_TakeOff_Image(QDialog):
         self.btn_help.setFixedWidth(30)
         self.btn_help.setStyleSheet(BUTTON_STYLE)
         self.btn_help.clicked.connect(lambda: Help.show_help("btn:step1_load_takeoff", parent=self))
+        self.btn_help.setToolTip("Open the manual at this window.")
         zone4_layout.addWidget(self.btn_help)
         Help.attach_help(self.btn_load_image, "btn:step1_load_takeoff",
                          "Choose the image taken at take-off to define the mission location.", parent=self)

@@ -280,6 +280,7 @@ class LoadVisNirImagesDialog(QDialog):
             self.btn_help = QPushButton("?")
             self.btn_help.setStyleSheet(BUTTON_STYLE)
             self.btn_help.setFixedWidth(button_width)
+            self.btn_help.setToolTip("Open the manual at the classic selection.")
 
             step2_help = (
                 ("btn:step2_Load_first_mission_image", "Choose the take-off (first mission) image."),
@@ -1301,7 +1302,7 @@ class LoadVisNirImagesDialog(QDialog):
 
     def on_help(self) -> None:
         """Open the user manual on the Step 2 chapter."""
-        Help.show_help("ch:step2", parent=self)
+        Help.show_help("btn:step2_classic", parent=self)
 
     @staticmethod
     def _dict_has_keys(d: dict, keys: list[str]) -> bool:

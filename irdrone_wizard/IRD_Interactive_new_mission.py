@@ -396,6 +396,30 @@ class NewMissionDialog(QDialog):
         foot.addWidget(self.btn_cancel)
         foot.addWidget(self.btn_next)
         outer.addLayout(foot)
+        self._attach_help()
+
+    def _attach_help(self):
+        """Tool tip on every button, right-click: its section of the manual."""
+        try:
+            import IRD_Interactive_help as Help
+        except Exception as e:  # the help is a convenience
+            print(f"Help unavailable: {e}")
+            return
+        for card, band in ((self.card_vis, "visible (drone, DNG)"), (self.card_nir, "infrared (SJCam, RAW)")):
+            Help.attach_help(card.btn, "btn:step1_images",
+                             f"Choose the folder of the {band} images: an SD card or a copy on the disk. "
+                             "A folder you choose is never replaced by an SD card found later.", parent=self)
+        for widget, label, tip in (
+            (self.btn_help, "sec:step1_new_mission", "Open the manual at Step 1."),
+            (self.btn_classic, "sec:step1_classic", self.btn_classic.toolTip()),
+            (self.btn_back, "btn:step1_wizard", "Back to the Images page (nothing is lost)."),
+            (self.btn_cancel, "btn:step1_wizard", "Close without creating the mission. The SD cards are only read."),
+            (self.btn_next, "btn:step1_wizard", ""),       # tool tip set with the page
+            (self.btn_cameras, "btn:step1_mission",
+             "Show the cameras (time lapse, clock offset) and the infrared filter. "
+             "Remembered for the next mission."),
+        ):
+            Help.attach_help(widget, label, tip, parent=self)
 
     def _page_images(self):
         page = QWidget()
@@ -605,16 +629,19 @@ class NewMissionDialog(QDialog):
             self.subtitle.setText("Insert the SD cards of the drone and of the infrared camera: "
                                   "the images are found automatically.")
             self.btn_next.setText("Next  ▶")
+            self.btn_next.setToolTip("Go to the mission page: date, place, description, pilot.\n(Right-click: help on this button)")
             self._check_page_images()
         elif page == 1:
             self.subtitle.setText("Date, time and place come from the first visible image. "
                                   "Add a description and check the pilot.")
             self.btn_next.setText("Create the mission and copy the images  ▶")
+            self.btn_next.setToolTip("Create the mission folder, copy the visible images and convert the infrared ones. The SD cards are only read.\n(Right-click: help on this button)")
             self.btn_next.setEnabled(self.geo is not None)
             self._update_folder_name()
         else:
             self.subtitle.setText("Copying the images to the mission folder: it takes a few minutes.")
             self.btn_next.setText("Flight timeline  ▶")
+            self.btn_next.setToolTip("Open Step 2: check the synchronisation and survey phases of the flight.\n(Right-click: help on this button)")
             self.btn_next.setEnabled(False)
 
     def _on_next(self):

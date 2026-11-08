@@ -982,9 +982,13 @@ class FlightTimelineDialog(QDialog):
 
         try:
             import IRD_Interactive_help as Help
+            self.btn_reset.setToolTip("Undo the manual changes: back to the phases found automatically.")
+            self.btn_cancel.setToolTip("Close without saving the phases.")
             for widget, label in ((self.btn_confirm, "btn:step2_confirm"), (self.btn_save, "btn:step2_confirm"),
+                                  (self.btn_cancel, "btn:step2_confirm"), (self.btn_reset, "btn:step2_adjust"),
                                   (self.btn_classic, "btn:step2_classic")):
                 Help.attach_help(widget, label, widget.toolTip(), parent=self)
+            Help.attach_help(self.btn_help, "btn:step2_adjust", "", parent=self)   # keeps the keys as tool tip
         except Exception as e:  # help is a convenience
             print(f"Help not attached: {e}")
 

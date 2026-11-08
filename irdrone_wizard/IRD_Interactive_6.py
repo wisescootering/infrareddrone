@@ -138,6 +138,7 @@ class DialogArchive(QDialog):
             (self.btn_simulate, "btn:step6_simulate", "List what would be deleted, without changing anything."),
             (self.btn_archive, "btn:step6_archive", "Delete the technical files of the mission (irreversible)."),
             (self.btn_close, "btn:step6_close", "Close this window."),
+            (self.btn_help, "ch:step6", "Open the manual at Step 6."),
         ):
             Help.attach_help(widget, label, tip, parent=self)
 

@@ -149,6 +149,8 @@ class Step4SettingsDialog(QDialog):
         safe_button = QPushButton("Safe mode (1)")
         safe_button.setStyleSheet(BUTTON_STYLE)
         safe_button.clicked.connect(lambda: self.workers_spin.setValue(1))
+        safe_button.setToolTip("One worker only: slower, but the least memory. "
+                               "Use it if the computer freezes or the run is killed.")
         workers_layout.addWidget(safe_button)
         workers_layout.addStretch()
         layout.addLayout(workers_layout)
@@ -745,11 +747,15 @@ class DialogImageProcessing(QDialog):
             (self.nir_checkbox, "btn:step4_options", "Also write the aligned NIR image of each shoot point."),
             (self.local_checkbox, "btn:step4_options", "Write the locally aligned VIR image (VIR_XXXX_local.jpg)."),
             (self.global_checkbox, "btn:step4_options", "Write the globally aligned VIR image (VIR_XXXX_global.jpg)."),
+            (self.start_image_number, "btn:step4_options", "First shoot point to align (VIS image number). Default: the survey of Step 2."),
+            (self.end_image_number, "btn:step4_options", "Last shoot point to align (VIS image number, included)."),
             (self.max_time_difference, "btn:step4_options", "Shoot points whose VIS/NIR time difference exceeds this value are not processed."),
             (self.run_button, "btn:step4_run_alignment", "Align the VIS and NIR images of the selected shoot points (can take a long time)."),
             (self.close_button, "btn:step4_close", "Close this window."),
-            (self.review_button, "btn:step4_review", self.review_button.toolTip()),
-            (self.settings_button, "btn:step4_options", "Processing settings (worker processes / safe mode, log detail)."),
+            (self.review_button, "ch:review", self.review_button.toolTip()),
+            (self.settings_button, "btn:step4_settings", "Processing settings (worker processes / safe mode, log detail)."),
+            (self.stop_button, "btn:step4_stop", self.stop_button.toolTip()),
+            (self.help_button, "ch:step4", "Open the manual at Step 4."),
         ):
             Help.attach_help(widget, label, tip, parent=self)
 

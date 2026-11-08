@@ -209,7 +209,7 @@ def attach_help(widget, label: str, tooltip: str = "", parent=None) -> None:
     widget : QWidget
         Button (or check box, ...) to document.
     label : str
-        LaTeX label of the manual section (e.g. ``"btn:step4_redo"``).
+        LaTeX label of the manual section (e.g. ``"btn:review_redo"``).
     tooltip : str, optional
         One-sentence description. A reminder of the right-click help is appended.
     parent : QWidget, optional

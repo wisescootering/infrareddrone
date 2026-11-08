@@ -263,6 +263,15 @@ class FlightMapView(QWidget):
         self.btn_fit.setStyleSheet(self.btn_layers.styleSheet())
         self.btn_fit.clicked.connect(self.fit)
         self.btn_fit.setVisible(not compact)
+        try:   # right-click: the map section of the manual (a help, never a blocker)
+            import IRD_Interactive_help as Help
+            Help.attach_help(self.btn_layers, "btn:home_map",
+                             "Background (IGN aerial photos, Esri, OpenStreetMap or none, from the internet) "
+                             "and orthophoto of Step 5 (natural or false colours).", parent=self)
+            Help.attach_help(self.btn_fit, "btn:home_map", "Show the whole flight (or double-click the map).",
+                             parent=self)
+        except Exception as e:
+            print(f"Map help not attached: {e}")
 
     # ---- layers menu
     def _layers_menu(self) -> QMenu:

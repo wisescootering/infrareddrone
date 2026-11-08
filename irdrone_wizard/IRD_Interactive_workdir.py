@@ -57,6 +57,7 @@ class WorkingDirDialog(QDialog):
         row.addWidget(self.path_edit, 1)
         browse = QPushButton("Browse...")
         browse.setStyleSheet(BUTTON_STYLE)
+        browse.setToolTip("Choose the folder that holds the missions.")
         browse.clicked.connect(self._browse)
         row.addWidget(browse)
         layout.addLayout(row)

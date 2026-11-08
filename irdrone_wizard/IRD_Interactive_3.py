@@ -364,9 +364,15 @@ class DialogSynchroAruco(QDialog):
         for widget, label, tip in (
             (self.btn_run_aruco, "btn:step3_aruco", "Detect the ArUco targets in the synchronisation images of both cameras."),
             (self.btn_compute_time_shift, "btn:step3_time_shift", "Compute the time offset between the VIS and NIR cameras."),
-            (self.btn_adjust_time_shift, "btn:step3_time_shift", "Move the NIR curve with a slider to correct the time offset by hand."),
+            (self.btn_adjust_time_shift, "btn:step3_adjust", "Move the NIR curve with a slider to correct the time offset by hand."),
             (self.btn_image_pairing, "btn:step3_pairing", "Pair each VIS image with the closest NIR images in time."),
             (self.btn_close, "btn:step3_close", "Close this window."),
+            (self.btn_help, "ch:step3", "Open the manual at Step 3."),
+            (self.btn_sync_ok, "btn:step3_overlap", self.btn_sync_ok.toolTip()),
+            (self.btn_sync_adjust, "btn:step3_overlap", self.btn_sync_adjust.toolTip()),
+            (self.btn_manual, "btn:step3_manual", self.btn_manual.toolTip()),
+            (self.btn_continue, "btn:step3_continue", self.btn_continue.toolTip()),
+            (self.btn_before, "btn:step3_before", self.btn_before.toolTip()),
         ):
             Help.attach_help(widget, label, tip, parent=self)
 
@@ -1615,6 +1621,7 @@ class TimeShiftInputDialog(QDialog):
         btn_ok = QPushButton("OK", self)
         btn_cancel = QPushButton("Cancel", self)
 
+        btn_ok.setToolTip("Use this clock offset (seconds added to the infrared times).")
         btn_ok.clicked.connect(self.accept)
         btn_cancel.clicked.connect(self.reject)
 
@@ -1733,6 +1740,9 @@ class TimeShiftAdjustDialog(QDialog):
         btn_reset = QPushButton("Reset to computed", self)
         btn_apply = QPushButton("Apply", self)
         btn_cancel = QPushButton("Cancel", self)
+        btn_reset.setToolTip("Back to the offset computed from the targets.")
+        btn_apply.setToolTip("Keep this offset: the curves after alignment are drawn again with it.")
+        btn_cancel.setToolTip("Close without changing the offset.")
         for button in (btn_reset, btn_apply, btn_cancel):
             button.setStyleSheet(BUTTON_STYLE)
         btn_apply.setDefault(True)

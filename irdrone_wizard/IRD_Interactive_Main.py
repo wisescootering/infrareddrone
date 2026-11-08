@@ -190,6 +190,24 @@ class Main_Window(QMainWindow):
 
         for step, tile in self.home.rail.tiles.items():
             Help.attach_help(tile, f"ch:step{step}", parent=self)   # right-click: manual
+        # every button of the main window: a tool tip and, on right-click, its section of the manual
+        home = self.home
+        for widget, label, tip in (
+            (home.card_new, "btn:home_missions",
+             "Create a mission from the SD cards of the drone and of the infrared camera (Step 1)."),
+            (home.card_open, "btn:home_missions",
+             "Choose the folder of a mission already created (FLY-YYYYMMDD-hhmm-place)."),
+            (home.btn_all, "btn:home_missions", "Back to the first page: new mission, open a mission, recent missions."),
+            (home.btn_continue, "btn:home_continue", ""),       # tool tip set with the next step
+            (home.btn_review, "ch:review",
+             "Check every aligned image on a time line, flag the misaligned ones and realign them by hand."),
+            (home.btn_show_map, "btn:home_map", home.btn_show_map.toolTip()),
+            (home.btn_show_image, "btn:home_map", home.btn_show_image.toolTip()),
+            (self.working_dir_bar.gear, "btn:home_workdir",
+             "Change the working folder (the folder that holds the missions)."),
+            (self.btn_help, "sec:help", "Open this manual. Right-click any button: the manual at that button."),
+        ):
+            Help.attach_help(widget, label, tip, parent=self)
 
     def _on_working_dir_changed(self, folder):
         """New working folder chosen with the gear button."""

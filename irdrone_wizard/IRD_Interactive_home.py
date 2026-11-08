@@ -229,6 +229,7 @@ class RecentRow(QPushButton):
         lay.addLayout(col, 1)
         lay.addWidget(dots)
         self.setMinimumHeight(48)
+        self.setToolTip(f"Open this mission\n{info.folder}")
 
 
 def progress_dots(done) -> str:
@@ -483,6 +484,7 @@ class HomePage(QStackedWidget):
         self.btn_continue.setStyleSheet(Look.PRIMARY_STYLE)
         self.btn_continue.setMinimumHeight(42)
         self.btn_continue.clicked.connect(self._continue)
+        self.btn_continue.setToolTip("Open the next step of the mission.")
         nl.addWidget(self.next_title)
         nl.addWidget(self.next_text)
         nl.addSpacing(6)
@@ -512,7 +514,7 @@ class HomePage(QStackedWidget):
             switch.addWidget(b)
         self.btn_show_map.setToolTip("The flight on the map: phases of Step 2, orthophoto of Step 5, aerial photos "
                                      "(online). Click a point to see the ground covered by its image.")
-        self.btn_show_image.setToolTip("An aligned image of the mission")
+        self.btn_show_image.setToolTip("Show an aligned image of the mission instead of the map.")
         self.btn_show_map.clicked.connect(lambda: self._show_right("map"))
         self.btn_show_image.clicked.connect(lambda: self._show_right("image"))
         right.addLayout(switch)
@@ -590,12 +592,16 @@ class HomePage(QStackedWidget):
             self.next_text.setText("The orthophoto and the terrain model are in mapping_MULTI. "
                                    "Archive the mission to free disk space, or click a step above to run it again.")
             self.btn_continue.setText("Archive the mission  ▶")
+            self.btn_continue.setToolTip("Open Step 6: delete the working files, keep what is needed to "
+                                         "process the mission again.\n(Right-click: help on this button)")
             self._next = 6
         else:
             name, what = STEP_TITLES[nxt]
             self.next_title.setText(f"Next: Step {nxt} · {what}")
             self.next_text.setText(WHAT_NEXT[nxt])
             self.btn_continue.setText(f"Continue with Step {nxt}  ▶")
+            self.btn_continue.setToolTip(f"Open Step {nxt}: {what}."
+                                         "\n(Right-click: help on this button)")
             self._next = nxt
         has_review = (info.folder / "ImgIRdrone" / "shoot_points.json").is_file()
         self.btn_review.setVisible(has_review)

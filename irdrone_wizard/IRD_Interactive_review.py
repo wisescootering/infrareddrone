@@ -876,8 +876,25 @@ class ReviewDialog(QDialog):
 
         try:
             import IRD_Interactive_help as Help
-            for widget, label in ((self.btn_redo, "btn:step4_redo"), (self.btn_flag, "btn:step4_review")):
+            self.btn_close.setToolTip("Close the review. What you checked and flagged is already saved.")
+            self.btn_prev.setToolTip("Previous point (key ←)")
+            self.btn_next.setToolTip("Next point (key →)")
+            self.btn_next_review.setToolTip("Next point that still needs a look: measured as doubtful, "
+                                            "not checked yet (key N).")
+            self.btn_accept_redo.setToolTip("The realigned image is right: the point is no longer flagged.")
+            self.btn_reject_redo.setToolTip("Still misaligned: the point stays flagged (it can be realigned again).")
+            for widget, label in ((self.btn_redo, "btn:review_redo"),
+                                  (self.btn_good, "btn:review_decide"), (self.btn_flag, "btn:review_decide"),
+                                  (self.btn_flag_suspicious, "btn:review_decide"),
+                                  (self.btn_prev, "btn:review_navigation"), (self.btn_next, "btn:review_navigation"),
+                                  (self.btn_next_review, "btn:review_navigation"),
+                                  (self.btn_open, "btn:review_compare"), (self.btn_close, "btn:review_navigation"),
+                                  (self.btn_accept_redo, "btn:review_redo"), (self.btn_reject_redo, "btn:review_redo")):
                 Help.attach_help(widget, label, widget.toolTip(), parent=self)
+            for b in self.mode_group.buttons():
+                label = "btn:review_map" if b is self.mode_group.button(len(MODES) - 1) else "btn:review_compare"
+                Help.attach_help(b, label, b.toolTip(), parent=self)
+            Help.attach_help(self.btn_help, "ch:review", "", parent=self)   # keeps the keys as tool tip
         except Exception as e:  # help is a convenience
             print(f"Help not attached: {e}")
 
@@ -1398,7 +1415,7 @@ class ReviewDialog(QDialog):
     def _on_help(self):
         try:
             import IRD_Interactive_help as Help
-            Help.show_help("ch:step4", parent=self)
+            Help.show_help("ch:review", parent=self)
         except Exception as e:
             print(f"Help unavailable: {e}")
 
