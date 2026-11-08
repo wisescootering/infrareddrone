@@ -1100,16 +1100,32 @@ The \bouton{Realign N flagged by hand} button recovers the shoot points flagged 
 
 \subsection*{Procedure}
 \begin{enumerate}
-	\item A message recalls the procedure, then the flagged points are processed one after the other.
-	\item For each point, a manual alignment window opens with sliders (see below). The user adjusts the angles, then \textbf{closes the window} (key Q): these angles are used to initialize the alignment computation ``close'' to the solution.
-	\item The banner at the top of the review follows the realignment in progress: point $k$ of $n$, elapsed time and stage (loading the images, alignment by hand, computing the new alignment --- about one minute ---, saving), with an activity bar.
-	\item The new alignment is shown in the review, with curtain, blink and overlay. The user answers \bouton{Yes, aligned} or \bouton{Still misaligned}, then the next point opens.
-	\item With \bouton{Yes, aligned}, the \texttt{"failed"} key of the point is set to \texttt{false} in \texttt{shoot\_points.json} and the file \texttt{shoot\_points\_failed\_summary.json} is updated (a copy \texttt{shoot\_points.json.bak} is kept). With \bouton{Still misaligned}, the point stays flagged and can be redone later.
+	\item Flag the misaligned points, then press \bouton{Realign N flagged by hand}. The alignment window opens with all the flagged points (Figure~\ref{fig:step4_align_by_hand}).
+	\item For each point, move the infrared image over the visible one until the same features coincide (see below), then \bouton{Placed, next} (Enter key). Nothing is computed meanwhile: you go from one point to the next at once, the images of the next points are loaded in the background. \bouton{Skip this point} (S key) leaves a point out: it stays flagged.
+	\item \bouton{Compute N alignments}: the window closes and the alignments of all the placed points are computed together, in the background, several at a time (as many as the alignment workers of Step~4, gear button). Count two to three minutes per point. The banner at the top of the review shows the progress: points done, points running with their stage and elapsed time, points waiting. \textbf{The review stays usable}: you can keep checking the other points, or do something else. The points being computed cannot be flagged or unflagged. \bouton{Stop} starts no new alignment: the running ones finish, the others stay flagged. The review cannot be closed while alignments are being computed.
+	\item Each realigned point turns purple, \emph{Realigned, to confirm}: it is still flagged (Step~5 skips it). When everything is computed, the review shows the first one. Check it with the curtain, blink or overlay and answer \bouton{Yes, aligned} (Y key) or \bouton{Still misaligned}: the next point to confirm is then shown. \bouton{All N aligned} confirms all of them at once. The N key (next to review) goes to them first. The points to confirm are remembered if the review is closed.
+	\item With \bouton{Yes, aligned}, the \texttt{"failed"} key of the point is set to \texttt{false} in \texttt{shoot\_points.json} and the file \texttt{shoot\_points\_failed\_summary.json} is updated (a copy \texttt{shoot\_points.json.bak} is kept). With \bouton{Still misaligned}, the point stays flagged and can be realigned again.
 \end{enumerate}
 
 The outputs of the previous alignments are archived in the folder \texttt{VIS\_XXXX\_align\_traces\_manual\textbackslash original}.
 
-\subsection*{The semi-automatic alignment window}
+\subsection*{The alignment window}
+\figureIRD[fig:step4_align_by_hand]{step4_align_by_hand.png}{Alignment by hand: the flagged points on the left (a tick: placed, a circle: to place), the visible image in cyan and the infrared in red in the middle, the angles on the right. Here the infrared is still about 140~px too high: the edges are doubled.}{0.9}
+
+\begin{itemize}
+	\item On the left, the list of the points: a circle for the points to place, a tick for the placed ones, a dash for the skipped ones. A click goes to a point.
+	\item In the middle, the two images, shown as in the review: \bouton{Overlay} (visible in cyan, infrared in red: doubled edges mean misaligned; the default), \bouton{Swipe}, \bouton{Blink}, \bouton{Side by side} (keys 1 to 4). \bouton{Edges only} (G key) shows the outlines of both images, which helps on fields and forests where the infrared and the visible look different. Wheel to zoom, drag to pan, double-click to see the whole image.
+	\item To move the infrared: \textbf{drag it with the right mouse button} (or Shift + drag) in the image; the \textbf{arrow keys} (0.05\textdegree{} per press, about 2 to 3 pixels of the full image; with Shift, 10 times more); Q and E to rotate it; or the \texttt{Yaw}, \texttt{Pitch} and \texttt{Roll} fields and their buttons. Yaw moves it left and right, pitch up and down, roll rotates it.
+	\item \bouton{Fit} (F key) measures the offset between the edges of the two images (tile by tile) and moves the infrared by that much (yaw and pitch). It works once the images roughly overlap; if it finds no better position, it says so and changes nothing. \bouton{Reset} goes back to the angles of the previous alignment.
+	\item Under these buttons, the offset measured between the two images, in pixels of the full image: below 10~px the point is \emph{well placed}.
+	\item Roughly is enough: these angles are only the starting point, the coarse alignment and the pyramidal refinement start again from there (Section~\ref{sec:ann_algorithme}).
+	\item A point whose images cannot be read is marked with a warning sign and skipped.
+\end{itemize}
+
+\subsection*{From the command line: the slider window}
+Each aligned point has a script \texttt{VIS\_XXXX\_REDO.bat} (Windows) or \texttt{VIS\_XXXX\_REDO.sh} in \texttt{ImgIRdrone}, which runs its alignment again with a slider window (matplotlib): this is the former procedure, still usable outside the wizard. After a realignment in the wizard, the script starts from the angles placed by hand.
+
+
 
 \figureIRD[fig:redo_info]{step4_redo_info.png}{Information window of the manual alignment help window. }{0.5}
 
@@ -1473,7 +1489,7 @@ The four layers \texttt{IRD\_XXXX\_1..4.tif} (red, green, blue and near infrared
 \subsection{Limits and semi-automatic realignment}
 Multispectral alignment is an ill-posed problem. The algorithm fails when the two cameras do not see the same scene (gust of wind, large time gap between the two shots), when the area has no texture (water, uniform field), or when the coarse search falls into a misleading minimum. The review of the aligned images (Chapter~\ref{ch:review}) measures the residual offset of the edges to detect these failures.
 
-Manual realignment (Section~\ref{btn:review_redo}) replaces the zero initial angles with angles chosen by eye using sliders. These angles are only used as a starting point: the coarse alignment and the pyramidal refinement start again from there and generally find an accurate alignment. The regularization of the local vector field still needs to be improved, as does the color calibration of the two cameras.
+Manual realignment (Section~\ref{btn:review_redo}) replaces the zero initial angles with angles chosen by eye, in the alignment window of the review (or with sliders from the command line). These angles are only used as a starting point: the coarse alignment and the pyramidal refinement start again from there and generally find an accurate alignment. The regularization of the local vector field still needs to be improved, as does the color calibration of the two cameras.
 
 \subsection{References}
 \begin{itemize}

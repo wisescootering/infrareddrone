@@ -412,7 +412,10 @@ for instance, you have to copy/paste into the excel
 While reviewing the data, there may still be some issues in alignment.
 Unfortunately multispectral alignment is an ill-posed problem and sometimes the automatic system fails.
 There's still a way to save your images.
-  * There's a .bat file next to the results which allows you to re-run manually the images which failed. 
+  * In the wizard (Step 4 review): flag the misaligned points, then *Realign N flagged by hand*. A window takes every
+    flagged point in turn: drag the infrared over the visible image (right mouse button, arrow keys, or *Fit*),
+    then the alignments of all the points are computed together in the background and you confirm each result.
+  * From the command line: there's a .bat file (.sh on Linux / macOS) next to the results which allows you to re-run manually the images which failed. 
   * It will open a GUI where you can simply pick the yaw, pitch & roll
     to replace the coarse alignment & make the images overlap. 
     This will guide the automatic system to a manual initial guess which will eventually lead to an accurate automatic alignment.
@@ -504,6 +507,8 @@ Refer to the calibration documents
   * Step 1-2: mission creation (altitude, distance, heading), take-off image, VIS / NIR image loading
   * Step 3: VIS / NIR time synchronization from the ArUco target, with a slider to adjust the time shift by hand
   * Step 4: parallel alignment (worker count sized by CPU and RAM, gear settings dialog), redo of misaligned points from VIR / NDVI / NIR images
+  * Step 4 review: realign by hand every flagged point first (Qt window: overlay / swipe / blink, drag or arrow keys,
+    automatic fit), then their alignments run together in the background, then confirm each result
   * Step 5: OpenDroneMap mapping, orthorectification of single images (DJI raw and multispectral), error map, DTM and contour lines (topographic map)
   * Step 6: mission archive
   * Launchers at the root: `irdrone_wizard.bat` (Windows) and `irdrone_wizard.sh` (Linux / macOS)

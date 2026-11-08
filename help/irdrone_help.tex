@@ -1100,16 +1100,31 @@ Le bouton \bouton{Realign N flagged by hand} rattrape les shoot points signalés
 
 \subsection*{Déroulement}
 \begin{enumerate}
-	\item Un message rappelle la procédure, puis les points signalés sont repris l'un après l'autre.
-	\item Pour chaque point, une fenêtre d'alignement manuel s'ouvre avec des curseurs (voir ci-dessous). L'utilisateur règle les angles, puis \textbf{ferme la fenêtre} (touche Q) : ces angles servent à initialiser le calcul d'alignement \og près \fg~de la solution.
-	\item Le bandeau du haut de la revue suit le réalignement en cours : point $k$ sur $n$, temps écoulé et étape (chargement des images, alignement à la main, calcul du nouvel alignement --- environ une minute ---, enregistrement), avec une barre d'activité.
-	\item Le nouvel alignement s'affiche dans la revue, avec rideau, clignotement et superposition. L'utilisateur répond \bouton{Yes, aligned} ou \bouton{Still misaligned}, puis le point suivant s'ouvre.
-	\item Avec \bouton{Yes, aligned}, la clé \texttt{"failed"} du point passe à \texttt{false} dans \texttt{shoot\_points.json} et le fichier \texttt{shoot\_points\_failed\_summary.json} est mis à jour (une copie \texttt{shoot\_points.json.bak} est conservée). Avec \bouton{Still misaligned}, le point reste signalé et pourra être repris plus tard.
+	\item Signaler les points mal alignés, puis appuyer sur \bouton{Realign N flagged by hand}. La fenêtre d'alignement s'ouvre avec tous les points signalés (figure~\ref{fig:step4_align_by_hand}).
+	\item Pour chaque point, déplacer l'image infrarouge sur l'image visible jusqu'à faire coïncider les mêmes éléments (voir ci-dessous), puis \bouton{Placed, next} (touche Entrée). Rien n'est calculé pendant ce temps : on passe d'un point au suivant immédiatement, les images des points suivants sont chargées en arrière-plan. \bouton{Skip this point} (touche S) laisse un point de côté : il reste signalé.
+	\item \bouton{Compute N alignments} : la fenêtre se ferme et les alignements de tous les points placés sont calculés ensemble, en arrière-plan, plusieurs à la fois (autant que de workers d'alignement de l'étape~4, bouton engrenage). Compter deux à trois minutes par point. Le bandeau du haut de la revue suit l'avancement : points terminés, points en cours avec leur étape et le temps écoulé, points en attente. \textbf{La revue reste utilisable} : on peut continuer à vérifier les autres points, ou faire autre chose. Les points en cours de calcul ne peuvent pas être signalés ni dé-signalés. \bouton{Stop} ne lance plus de nouvel alignement : ceux en cours se terminent, les autres restent signalés. La revue ne peut pas être fermée tant que des alignements sont en cours.
+	\item Chaque point réaligné passe en violet, \emph{Realigned, to confirm} : il reste signalé (l'étape~5 l'ignore). Quand tout est calculé, la revue affiche le premier. Le vérifier avec le rideau, le clignotement ou la superposition et répondre \bouton{Yes, aligned} (touche Y) ou \bouton{Still misaligned} : le point suivant à confirmer s'affiche alors. \bouton{All N aligned} les confirme tous d'un coup. La touche N (point suivant à revoir) y va en premier. Les points à confirmer sont mémorisés si la revue est fermée.
+	\item Avec \bouton{Yes, aligned}, la clé \texttt{"failed"} du point passe à \texttt{false} dans \texttt{shoot\_points.json} et le fichier \texttt{shoot\_points\_failed\_summary.json} est mis à jour (une copie \texttt{shoot\_points.json.bak} est conservée). Avec \bouton{Still misaligned}, le point reste signalé et pourra être réaligné de nouveau.
 \end{enumerate}
 
 Les sorties des alignements précédents sont archivées dans le dossier \texttt{VIS\_XXXX\_align\_traces\_manual\textbackslash original}.
 
-\subsection*{La fenêtre d'alignement semi automatique}
+\subsection*{La fenêtre d'alignement}
+\figureIRD[fig:step4_align_by_hand]{step4_align_by_hand.png}{Alignement à la main : les points signalés à gauche (coche : placé, rond : à placer), l'image visible en cyan et l'infrarouge en rouge au centre, les angles à droite. Ici l'infrarouge est encore environ 140~px trop haut : les contours sont doublés.}{0.9}
+
+\begin{itemize}
+	\item À gauche, la liste des points : un rond pour les points à placer, une coche pour les points placés, un tiret pour les points laissés de côté. Un clic va sur un point.
+	\item Au centre, les deux images, affichées comme dans la revue : \bouton{Overlay} (visible en cyan, infrarouge en rouge : des contours doublés signalent un mauvais alignement ; affichage par défaut), \bouton{Swipe}, \bouton{Blink}, \bouton{Side by side} (touches 1 à 4). \bouton{Edges only} (touche G) montre les contours des deux images, ce qui aide sur les champs et les forêts où l'infrarouge et le visible se ressemblent peu. Molette pour zoomer, glisser pour se déplacer, double-clic pour voir toute l'image.
+	\item Pour déplacer l'infrarouge : \textbf{le faire glisser avec le bouton droit de la souris} (ou Maj + glisser) dans l'image ; les \textbf{flèches du clavier} (0,05\textdegree{} par appui, environ 2 à 3 pixels de l'image complète ; avec Maj, 10 fois plus) ; Q et E pour le faire tourner ; ou les champs \texttt{Yaw}, \texttt{Pitch} et \texttt{Roll} et leurs boutons. Le lacet (yaw) le déplace à gauche et à droite, le tangage (pitch) en haut et en bas, le roulis (roll) le fait tourner.
+	\item \bouton{Fit} (touche F) mesure le décalage entre les contours des deux images (tuile par tuile) et déplace l'infrarouge d'autant (lacet et tangage). Il fonctionne dès que les images se recouvrent à peu près ; s'il ne trouve pas de meilleure position, il le dit et ne change rien. \bouton{Reset} revient aux angles de l'alignement précédent.
+	\item Sous ces boutons, le décalage mesuré entre les deux images, en pixels de l'image complète : sous 10~px le point est \emph{well placed}.
+	\item À peu près suffit : ces angles ne sont qu'un point de départ, l'alignement grossier et l'affinage pyramidal repartent de là (§\ref{sec:ann_algorithme}).
+	\item Un point dont les images ne peuvent pas être lues est marqué d'un signe d'avertissement et laissé de côté.
+\end{itemize}
+
+\subsection*{En ligne de commande : la fenêtre à curseurs}
+Chaque point aligné a un script \texttt{VIS\_XXXX\_REDO.bat} (Windows) ou \texttt{VIS\_XXXX\_REDO.sh} dans \texttt{ImgIRdrone}, qui relance son alignement avec une fenêtre à curseurs (matplotlib) : c'est l'ancienne procédure, toujours utilisable en dehors de l'assistant. Après un réalignement dans l'assistant, le script repart des angles placés à la main.
+
 
 \figureIRD[fig:redo_info]{step4_redo_info.png}{Fenêtre d'information de la fénêtre d'aide manuelle à l'alignement. }{0.5}
 
@@ -1473,7 +1488,7 @@ Les quatre couches \texttt{IRD\_XXXX\_1..4.tif} (rouge, vert, bleu et proche inf
 \subsection{Limites et réalignement semi-automatique}
 L'alignement multispectral est un problème mal posé. L'algorithme échoue quand les deux caméras ne voient pas la même scène (rafale de vent, écart de temps important entre les deux prises de vue), quand la zone est sans texture (eau, champ uniforme), ou quand la recherche grossière tombe sur un minimum trompeur. La revue des images alignées (chapitre~\ref{ch:review}) mesure le décalage résiduel des contours pour repérer ces échecs.
 
-Le réalignement à la main (§\ref{btn:review_redo}) remplace les angles initiaux nuls par des angles choisis à l'\oe il avec des curseurs. Ces angles ne servent que de point de départ : l'alignement grossier et l'affinage pyramidal repartent de là et retrouvent en général un alignement précis. La régularisation du champ de vecteurs local reste à améliorer, de même que l'étalonnage colorimétrique des deux caméras.
+Le réalignement à la main (§\ref{btn:review_redo}) remplace les angles initiaux nuls par des angles choisis à l'\oe il, dans la fenêtre d'alignement de la revue (ou avec des curseurs en ligne de commande). Ces angles ne servent que de point de départ : l'alignement grossier et l'affinage pyramidal repartent de là et retrouvent en général un alignement précis. La régularisation du champ de vecteurs local reste à améliorer, de même que l'étalonnage colorimétrique des deux caméras.
 
 \subsection{Références}
 \begin{itemize}

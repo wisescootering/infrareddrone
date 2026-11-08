@@ -156,6 +156,7 @@ def latex_body(images: Images) -> str:
     body = re.sub(r"\\og(\{\s*\})?\s*", "« ", body)
     body = re.sub(r"\s*\\fg(\{\s*\})?", " »", body)
     body = body.replace(r"\oe ", "œ").replace(r"\oe{}", "œ").replace(r"\oe", "œ")
+    body = re.sub(r"\\textdegree(\{\})?", "°", body)     # pandoc drops it
     return "\\documentclass{report}\n\\usepackage{amsmath,amssymb}\n\\begin{document}\n" + body + "\n\\end{document}\n"
 
 
