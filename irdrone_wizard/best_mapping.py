@@ -192,10 +192,10 @@ def mission_fov(mission: Path) -> Tuple[float, float]:
 #  The choice, shared by Steps 2, 4 and 5
 # ---------------------------------------------------------------------------
 def load_choice(mission: Path) -> Dict[str, Any]:
-    """{"enabled": bool, "overlap": 0..1, "aligned_selection": bool}.
-    Default: enabled at 75 %. `aligned_selection`: Step 4 aligned only the
-    selected images (Step 5 then uses them all)."""
-    choice = {"enabled": True, "overlap": DEFAULT_OVERLAP, "aligned_selection": False}
+    """{"enabled": bool, "overlap": 0..1}. Default: enabled at 75 %.
+    Selecting again among images already selected keeps them: Step 5 can apply
+    the same overlap to the images aligned by Step 4."""
+    choice = {"enabled": True, "overlap": DEFAULT_OVERLAP}
     try:
         with open(Path(mission) / CHOICE_FILE, encoding="utf-8") as f:
             data = json.load(f)
@@ -206,8 +206,6 @@ def load_choice(mission: Path) -> Dict[str, Any]:
             choice["enabled"] = data["enabled"]
         if "overlap" in data:
             choice["overlap"] = clamp_overlap(data["overlap"])
-        if isinstance(data.get("aligned_selection"), bool):
-            choice["aligned_selection"] = data["aligned_selection"]
     return choice
 
 

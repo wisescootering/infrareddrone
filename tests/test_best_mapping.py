@@ -125,14 +125,15 @@ class ChoiceTests(unittest.TestCase):
     def test_default_is_enabled_at_75_percent(self):
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(B.load_choice(Path(d)),
-                             {"enabled": True, "overlap": 0.75, "aligned_selection": False})
+                             {"enabled": True, "overlap": 0.75})
 
     def test_saved_and_merged(self):
         with tempfile.TemporaryDirectory() as d:
             B.save_choice(Path(d), enabled=False, overlap=80)
-            B.save_choice(Path(d), aligned_selection=True)
-            self.assertEqual(B.load_choice(Path(d)),
-                             {"enabled": False, "overlap": 0.8, "aligned_selection": True})
+            B.save_choice(Path(d), selected=["VIS_0001.dng"])
+            self.assertEqual(B.load_choice(Path(d)), {"enabled": False, "overlap": 0.8})
+            data = json.loads((Path(d) / B.CHOICE_FILE).read_text(encoding="utf-8"))
+            self.assertEqual(data["selected"], ["VIS_0001.dng"])
 
     def test_invalid_file_gives_the_default(self):
         with tempfile.TemporaryDirectory() as d:
