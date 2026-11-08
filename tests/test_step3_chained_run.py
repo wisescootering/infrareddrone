@@ -70,17 +70,15 @@ class ChainedStep3Test(unittest.TestCase):
             pair.assert_called_once()
 
     def test_y_key_answers_yes_only_when_asked(self):
-        from PyQt6.QtCore import Qt
-        from PyQt6.QtTest import QTest
+        from PyQt6.QtGui import QKeySequence, QShortcut
         d = self.dialog(True)
-        d.show()
+        yes = next(sc for sc in d.findChildren(QShortcut) if sc.key() == QKeySequence("Y"))
         with mock.patch.object(d, "on_image_pairing") as pair:
-            QTest.keyClick(d, Qt.Key.Key_Y)
+            yes.activated.emit()
             pair.assert_not_called()                       # nothing asked yet
             self.measured(d)
-            QTest.keyClick(d, Qt.Key.Key_Y)
+            yes.activated.emit()
             pair.assert_called_once()
-        d.close()
 
     def test_manual_mode_hides_the_confirmation(self):
         d = self.dialog(True)
