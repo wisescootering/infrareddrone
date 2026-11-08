@@ -662,7 +662,7 @@ La durée des transferts dépend beaucoup des performances des supports (carte S
 \section{Principe}
 L'étape 2 découpe le vol en phases : \emph{synchronisation} (vol stationnaire au-dessus de la mire ArUco tournante) et \emph{survey} (vol au-dessus de la zone étudiée). Ces phases sont maintenant \textbf{détectées automatiquement} ; l'utilisateur vérifie et ajuste si besoin (figure~\ref{fig:step2_flight_timeline}).
 
-\figureIRD[fig:step2_flight_timeline]{step2_flight_timeline.png}{La fenêtre \og Flight timeline \fg. Au centre l'aperçu des images visible et infrarouge sous la souris, à droite les quatre points clés avec leurs vraies images, en bas la ligne de temps : profil d'altitude, phases (violet : synchronisation, vert : survey), détections de la mire et bandes d'images visible et infrarouge.}{0.95}
+\figureIRD[fig:step2_flight_timeline]{step2_flight_timeline.png}{La fenêtre \og Flight timeline \fg. Au centre l'aperçu des images visible et infrarouge sous la souris, à droite la carte du vol avec les empreintes au sol des images gardées pour la carte (§\ref{btn:step2_best_mapping}), puis les quatre points clés avec leurs vraies images ; en bas la ligne de temps : profil d'altitude (points verts : images gardées pour la carte), phases (violet : synchronisation, vert : survey), détections de la mire et bandes d'images visible et infrarouge.}{0.95}
 
 \subsection*{Ce que fait le logiciel}
 \begin{enumerate}
@@ -683,6 +683,23 @@ L'étape 2 découpe le vol en phases : \emph{synchronisation} (vol stationnaire 
 	\item L'info-bulle du bouton \bouton{?} rappelle ces commandes.
 \end{itemize}
 Si la mire n'est pas trouvée (mire trop petite, image trop sombre), un bandeau orange l'indique : la fenêtre de synchronisation visible est alors le vol stationnaire, et la fenêtre infrarouge doit être placée à la main.
+
+\section{Best mapping : les images utiles à la carte}\label{btn:step2_best_mapping}
+Un survol photographié toutes les deux secondes donne beaucoup plus de recouvrement que la carte n'en demande. Aligner toutes ces images à l'étape~4 prend des heures, et donner à ODM des centaines d'images presque identiques ralentit le calcul de la carte sans l'améliorer, souvent au contraire. La case \bouton{Best mapping: keep only the images the map needs}, cochée par défaut, ne garde que les images du survol dont les \emph{empreintes au sol} se recouvrent de la valeur choisie à droite (\bouton{75~\% overlap} par défaut, la valeur recommandée pour ODM ; plus de recouvrement garde plus d'images).
+
+Le choix est visible tout de suite :
+\begin{itemize}
+	\item sur la ligne de temps, des points verts sur le profil d'altitude et des repères verts en haut de la bande d'images visibles marquent les images gardées ; la bulle du curseur et la légende de l'aperçu indiquent \og kept for the map \fg ;
+	\item à droite des aperçus, la \textbf{carte du vol} montre le trajet (violet : synchronisation, vert : survey), les empreintes au sol des images gardées (rectangles verts : leur recouvrement se voit) et, en orange, l'empreinte de l'image sous la souris avec l'image elle-même. Un clic sur un point de la carte affiche cette image ; molette : zoom, glisser : déplacement, \bouton{Layers} : fond de carte (§\ref{btn:home_map}) ;
+	\item sous la ligne de temps, le nombre d'images gardées, par exemple \og 16 of 120 survey images kept for the map · 87~\% less to align \fg.
+\end{itemize}
+La sélection suit les bords de la phase survey quand on les déplace.
+
+\textbf{Comment les images sont choisies.} La position, la hauteur au-dessus du sol et l'orientation de chaque image sont lues dans les fichiers \texttt{.exif} écrits à l'étape~1 ; le champ de vue de la caméra donne la taille de l'empreinte au sol. La première image du survol est gardée. Pour chaque image suivante, IRDrone estime le recouvrement de son empreinte avec celle de la dernière image gardée, d'après le déplacement du drone (dans l'axe de l'image et en travers). Tant qu'il reste au-dessus de la valeur choisie, l'image n'est qu'une candidate ; dès qu'il passe en dessous, la candidate précédente est gardée : deux images gardées successives se recouvrent toujours d'au moins la valeur choisie. La dernière image du survol est gardée aussi. Pour un déplacement dans l'axe de l'image, c'est le critère \texttt{--selection best-mapping} de l'ancienne ligne de commande \texttt{run.py}.
+
+\textbf{Et la synchronisation ?} À l'étape~2 le décalage précis entre les deux caméras n'est pas encore connu : l'aperçu porte sur toutes les images du survol. À l'étape~4, une fois les caméras synchronisées, la même sélection est refaite parmi les seules paires bien synchronisées (§\ref{btn:step4_best_mapping}) ; le nombre final peut donc différer un peu de l'aperçu. Le choix (case et recouvrement) est enregistré par \bouton{Confirm and synchronize} et \bouton{Save only} dans \texttt{FlightAnalytics\textbackslash best\_mapping.json}.
+
+Si les images n'ont pas de position GPS, la carte n'est pas affichée et toutes les images du survol sont gardées.
 
 \section{Boutons \bouton{Confirm and synchronize} et \bouton{Save only}}\label{btn:step2_confirm}
 Les deux boutons enregistrent les phases dans les fichiers \texttt{transfer\_info\_VIS\_dng.json} et \texttt{transfer\_info\_NIR\_dng.json} (lus par les étapes 3, 4 et le mapping) et dans \texttt{FlightAnalytics/flight\_timeline.json}. Rouvrir l'étape 2 retrouve les phases confirmées.

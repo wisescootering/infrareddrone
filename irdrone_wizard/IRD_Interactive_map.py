@@ -149,6 +149,17 @@ class MapModel(QObject):
         self.ortho_mode = str(s.value(SETTINGS_KEY + "ortho", "natural") or "natural")
         self.show_image = str(s.value(SETTINGS_KEY + "image", "true")) != "false"
         self.image_of: Optional[Callable[[int], Optional[QPixmap]]] = None    # number -> image (thumbnail)
+        # images kept for the map (best mapping): footprints drawn, bigger dots
+        self.selection: List[int] = []
+        self._selection_set = set()
+
+    def set_selection(self, indices):
+        self.selection = list(indices)
+        self._selection_set = set(self.selection)
+        self.changed.emit()
+
+    def is_selected(self, index: int) -> bool:
+        return index in self._selection_set
 
     def grounds_found(self, source):
         """The ground under the points is known: footprints computed again."""
@@ -388,6 +399,7 @@ class FlightMapView(QWidget):
         p.fillRect(self.rect(), QColor("#E9EDF2"))
         note = self._paint_tiles(p)
         self._paint_ortho(p)
+        self._paint_selection(p)
         self._paint_flight(p)
         self._paint_footprints(p)
         self._paint_texts(p, note)
@@ -459,6 +471,11 @@ class FlightMapView(QWidget):
         for i in shown:
             q = pts[i]
             color = self.model.color_of(i) if self.model.color_of else QColor("#17365D")
+            if self.model.is_selected(i):
+                p.setPen(QPen(QColor("#17365D"), 1.4))
+                p.setBrush(color)
+                p.drawEllipse(q, r + 2, r + 2)
+                continue
             p.setPen(QPen(QColor("white"), 1))
             p.setBrush(color)
             p.drawEllipse(q, r, r)
@@ -473,6 +490,24 @@ class FlightMapView(QWidget):
         for q in points[1:]:
             path.lineTo(q)
         return path
+
+    def _paint_selection(self, p):
+        """Footprints of the images kept for the map: their overlap shows."""
+        if not self.model.selection:
+            return
+        quads = [q for q in (self._quad(i) for i in self.model.selection) if q is not None]
+        fill = QColor(Look.SURVEY)
+        fill.setAlpha(30)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(fill)
+        for q in quads:
+            p.drawPolygon(q)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        # a white halo under the green outline: visible on aerial photos and on plain maps
+        for pen in (QPen(QColor(255, 255, 255, 170), 2.8), QPen(Look.SURVEY, 1.3)):
+            p.setPen(pen)
+            for q in quads:
+                p.drawPolygon(q)
 
     def _quad(self, index) -> Optional[QPolygonF]:
         fp = self.model.footprint(index)

@@ -17,21 +17,23 @@ the visible one, so they never need to be looked at.
 """
 from __future__ import annotations
 
+import json
 import sys
 from collections import OrderedDict
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import numpy as np
 from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import (QBrush, QColor, QFont, QKeySequence, QLinearGradient, QPainter,
-                         QPainterPath, QPen, QPixmap, QShortcut, QTextDocumentFragment)
-from PyQt6.QtWidgets import (QApplication, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QMessageBox,
-                             QProgressBar, QPushButton, QScrollArea, QSizePolicy, QToolButton, QVBoxLayout,
-                             QWidget)
+                         QPainterPath, QPen, QPixmap, QPolygonF, QShortcut, QTextDocumentFragment)
+from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
+                             QMessageBox, QProgressBar, QPushButton, QScrollArea, QSizePolicy, QSpinBox,
+                             QToolButton, QVBoxLayout, QWidget)
 
 sys.path.append(str(Path(__file__).resolve().parent))
 import flight_timeline as FT  # noqa: E402
+import best_mapping as BM  # noqa: E402
 
 # ---------------------------------------------------------------------------
 #  Look (shared with the other modern windows)
@@ -68,6 +70,45 @@ class TimelineModel:
         self._previews: "OrderedDict[str, QPixmap]" = OrderedDict()
         self.vis_rot = self._in_segments(vis)
         self.nir_rot = self._in_segments(nir)
+        # Best mapping preview: the survey images the map needs (positions and
+        # heights from the .exif side cars of Step 1)
+        self.vis_meta = self._read_sidecars(self.mission, vis.frames)
+        self._shots = [BM.shot_from_vis(i, meta) for i, meta in enumerate(self.vis_meta)]
+        self.has_positions = any(s.lat is not None for s in self._shots)
+        self.fov = BM.mission_fov(self.mission)
+        choice = BM.load_choice(self.mission)
+        self.bm_enabled: bool = choice["enabled"]
+        self.bm_overlap: float = choice["overlap"]
+        self.bm_selected: List[int] = []
+        self._bm_set = set()
+        self.update_best_mapping()
+
+    @staticmethod
+    def _read_sidecars(mission: Path, frames) -> List[dict]:
+        folder = FT.band_folder(mission, "VIS")
+        out = []
+        for f in frames:
+            try:
+                with open(folder / (Path(f.name).stem + ".exif"), encoding="utf-8") as fh:
+                    meta = json.load(fh)
+            except (OSError, ValueError):
+                meta = {}
+            out.append(meta if isinstance(meta, dict) else {})
+        return out
+
+    def update_best_mapping(self):
+        """Images of the visible survey kept for the map (frame indexes)."""
+        w = self.windows.get("VIS survey")
+        if not self.bm_enabled or w is None:
+            self.bm_selected = []
+        else:
+            for i, shot in enumerate(self._shots):
+                shot.eligible = w.first <= i <= w.last
+            self.bm_selected = BM.select(self._shots, self.bm_overlap, self.fov)
+        self._bm_set = set(self.bm_selected)
+
+    def kept_for_map(self, index) -> bool:
+        return index in self._bm_set
 
     @staticmethod
     def _in_segments(band):
@@ -346,6 +387,16 @@ class TimelineView(QWidget):
         p.fillPath(fill, QBrush(grad))
         p.setPen(QPen(BLUE, 2))
         p.drawPath(path)
+        # images kept for the map (best mapping): dots on the altitude profile
+        if self.m.bm_selected:
+            p.setPen(QPen(QColor("white"), 1.2))
+            p.setBrush(SURVEY)
+            for i in self.m.bm_selected:
+                alt = frames[i].alt
+                if alt is not None:
+                    x = self.x_of(self.m.t_vis[i])
+                    p.drawEllipse(QPointF(x, rect.bottom() - (alt - self.alt_min) * scale), 3.6, 3.6)
+            p.setBrush(Qt.BrushStyle.NoBrush)
 
     def _paint_bands(self, p):
         for key, w in self.m.windows.items():
@@ -449,6 +500,15 @@ class TimelineView(QWidget):
             for t in times:
                 xt = self.x_of(t)
                 p.drawLine(QPointF(xt, rect.bottom() - 5), QPointF(xt, rect.bottom()))
+        # Images kept for the map: a mark at the top of the visible filmstrip
+        if name == "VIS" and self.m.bm_selected:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(SURVEY)
+            for i in self.m.bm_selected:
+                xt = self.x_of(times[i])
+                p.drawPolygon(QPolygonF([QPointF(xt - 4, rect.top()), QPointF(xt + 4, rect.top()),
+                                         QPointF(xt, rect.top() + 6)]))
+            p.setBrush(Qt.BrushStyle.NoBrush)
         # Outside the recording: veil
         veil = QColor(255, 255, 255, 200)
         if x_lo > rect.left():
@@ -489,6 +549,8 @@ class TimelineView(QWidget):
         idx = self.m.nearest("VIS", self.hover_t)
         alt = self.m.vis.frames[idx].alt if idx is not None else None
         text = fmt_time(self.hover_t) + (f"  ·  {alt:.1f} m" if alt is not None else "")
+        if idx is not None and self.m.kept_for_map(idx):
+            text += "  ·  kept for the map"
         fm = p.fontMetrics()
         w = fm.horizontalAdvance(text) + 14
         bx = min(max(x - w / 2, r["chart"].left()), r["chart"].right() - w)
@@ -809,6 +871,10 @@ class FlightTimelineDialog(QDialog):
         self.action = "close"
         self.model: Optional[TimelineModel] = None
         self.view: Optional[TimelineView] = None
+        self.map_model = None             # flight map (best mapping preview), when the images have positions
+        self.map_view = None
+        self._map_index: Dict[int, int] = {}    # VIS frame index -> map point index
+        self._map_frames: List[int] = []         # map point index -> VIS frame index
         self.cards = []
         self.setWindowTitle(f"Step 2 – Flight timeline · {self.mission.name}")
         self.setStyleSheet("QDialog { background: #FAFBFC; } QLabel { color: #1F2933; }")
@@ -908,6 +974,16 @@ class FlightTimelineDialog(QDialog):
         pv.addWidget(self.pv_nir, 0, 1)
         pv.addWidget(self.pv_vis_cap, 1, 0)
         pv.addWidget(self.pv_nir_cap, 1, 1)
+        # third column: the map of the flight (filled once the images are read)
+        self.pv_map_holder = QVBoxLayout()
+        self.pv_map_holder.setContentsMargins(0, 0, 0, 0)
+        pv.addLayout(self.pv_map_holder, 0, 2)
+        self.pv_map_cap = QLabel("")
+        self.pv_map_cap.setTextFormat(Qt.TextFormat.RichText)
+        self.pv_map_cap.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.pv_map_cap.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pv.addWidget(self.pv_map_cap, 1, 2)
+        self._pv_grid = pv
         pv.setRowStretch(0, 1)
         left.addWidget(self.preview_box, 1)
         self.view_holder = QVBoxLayout()
@@ -930,6 +1006,27 @@ class FlightTimelineDialog(QDialog):
         side.setContentsMargins(0, 0, 0, 0)
         body.addWidget(side_w)
         root.addLayout(body, 1)
+
+        # Best mapping: the survey images the map needs, previewed live
+        bm = QHBoxLayout()
+        bm.setSpacing(8)
+        self.bm_check = QCheckBox("Best mapping: keep only the images the map needs")
+        self.bm_check.setStyleSheet("QCheckBox { font-weight: bold; color: #2E7D32; }")
+        self.bm_overlap = QSpinBox()
+        self.bm_overlap.setRange(round(BM.MIN_OVERLAP * 100), round(BM.MAX_OVERLAP * 100))
+        self.bm_overlap.setSingleStep(5)
+        self.bm_overlap.setSuffix(" % overlap")
+        self.bm_summary = QLabel("")
+        self.bm_summary.setStyleSheet("color: #6B7785;")
+        self.bm_summary.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        for w_ in (self.bm_check, self.bm_overlap):
+            w_.setEnabled(False)
+        self.bm_check.toggled.connect(self._on_best_mapping_changed)
+        self.bm_overlap.valueChanged.connect(self._on_best_mapping_changed)
+        bm.addWidget(self.bm_check)
+        bm.addWidget(self.bm_overlap)
+        bm.addWidget(self.bm_summary, 1)
+        root.addLayout(bm)
         self._hint_text = ("Hover to preview (hover the images to see them big) · drag a band edge to adjust · "
                            "◀ ▶ or the arrow keys to nudge the selected keypoint · wheel to zoom · "
                            "drag to pan · double-click to see the whole flight")
@@ -988,6 +1085,14 @@ class FlightTimelineDialog(QDialog):
                                   (self.btn_cancel, "btn:step2_confirm"), (self.btn_reset, "btn:step2_adjust"),
                                   (self.btn_classic, "btn:step2_classic")):
                 Help.attach_help(widget, label, widget.toolTip(), parent=self)
+            Help.attach_help(self.bm_check, "btn:step2_best_mapping",
+                             "Keep only the survey images whose ground footprints overlap by the chosen amount: "
+                             "far less to align in Step 4, less data, a better map in Step 5.\n"
+                             "Green dots on the altitude, marks on the filmstrip and footprints on the map: "
+                             "the images kept.", parent=self)
+            Help.attach_help(self.bm_overlap, "btn:step2_best_mapping",
+                             "Overlap between the ground footprints of two successive images kept "
+                             "(75 % recommended; more: more images).", parent=self)
             Help.attach_help(self.btn_help, "btn:step2_adjust", "", parent=self)   # keeps the keys as tool tip
         except Exception as e:  # help is a convenience
             print(f"Help not attached: {e}")
@@ -1052,6 +1157,15 @@ class FlightTimelineDialog(QDialog):
             c.setEnabled(True)
         for b in (self.btn_save, self.btn_confirm, self.btn_reset):
             b.setEnabled(True)
+        self.bm_check.blockSignals(True)
+        self.bm_overlap.blockSignals(True)
+        self.bm_check.setChecked(self.model.bm_enabled)
+        self.bm_overlap.setValue(round(self.model.bm_overlap * 100))
+        self.bm_check.blockSignals(False)
+        self.bm_overlap.blockSignals(False)
+        self.bm_check.setEnabled(True)
+        self.bm_overlap.setEnabled(self.model.bm_enabled)
+        self._build_map()
         self._select("sync", "first")
         self._refresh()
 
@@ -1130,11 +1244,101 @@ class FlightTimelineDialog(QDialog):
         self._refresh()
 
     def _refresh(self):
+        self.model.update_best_mapping()
         for c in self.cards:
             c.refresh(self.model)
         self._fill_chips()
+        self._fill_best_mapping()
         if self.view:
             self.view.update()
+
+    # ---- best mapping
+    def _on_best_mapping_changed(self, *_):
+        if self.model is None:
+            return
+        self.model.bm_enabled = self.bm_check.isChecked()
+        self.model.bm_overlap = self.bm_overlap.value() / 100.0
+        self.bm_overlap.setEnabled(self.model.bm_enabled)
+        self._refresh()
+
+    def _fill_best_mapping(self):
+        m = self.model
+        w = m.windows.get("VIS survey")
+        n = len(w) if w is not None else 0
+        k = len(m.bm_selected)
+        tip = ("Preview from the positions and heights of the visible images. In Step 4, once the cameras are "
+               "synchronised, the same overlap is applied to the well synchronised pairs only: the final "
+               "count can differ a little.")
+        if not m.bm_enabled:
+            text = f"All the {n} survey images will be aligned."
+        elif not m.has_positions:
+            text = "No position in the images: every survey image is kept."
+        elif n:
+            text = (f"<b style='color:#2E7D32'>{k}</b> of {n} survey images kept for the map"
+                    f" · {100 - 100 * k / n:.0f} % less to align")
+        else:
+            text = ""
+        self.bm_summary.setText(text)
+        self.bm_summary.setToolTip(tip)
+        if self.map_model is not None:
+            self.map_model.set_selection([self._map_index[i] for i in m.bm_selected if i in self._map_index])
+            self.pv_map_cap.setText(
+                f"<b style='color:#2E7D32'>Map</b>  ·  footprints of the {k} images kept" if m.bm_selected
+                else "<b style='color:#2E7D32'>Map</b>  ·  the flight")
+
+    def _build_map(self):
+        """Map of the flight in the preview: phases, images kept and their footprints."""
+        m = self.model
+        if not m.has_positions:
+            return
+        try:
+            import flight_map as F
+            import IRD_Interactive_map as Map
+        except Exception as e:  # the map is a convenience
+            print(f"Map unavailable: {e}")
+            return
+        points = []
+        for i, (f, meta) in enumerate(zip(m.vis.frames, m.vis_meta)):
+            mp = F.map_point(f.number, Path(f.name).stem, meta)
+            if mp is not None:
+                self._map_index[i] = len(points)
+                self._map_frames.append(i)
+                points.append(mp)
+        if not points:
+            return
+        other = QColor("#A0AAB4")
+
+        def color_of(j):
+            i = self._map_frames[j]
+            for key, color in (("VIS survey", SURVEY), ("VIS sync", SYNC)):
+                w = m.windows.get(key)
+                if w is not None and w.first <= i <= w.last:
+                    return color
+            return other
+
+        numbers = {f.number: i for i, f in enumerate(m.vis.frames)}
+        self.map_model = Map.MapModel(points, fov=F.field_of_view(F.camera_model(self.mission)),
+                                      color_of=color_of, parent=self)
+        self.map_model.image_of = lambda number: m.thumb("VIS", numbers.get(number))
+        self.map_view = Map.FlightMapView(self.map_model, parent=self.preview_box)
+        self.map_view.setMinimumSize(120, 90)
+        self.map_view.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        self.map_view.setToolTip("Flight map: click an image to see it · wheel to zoom · drag to pan")
+        self.map_view.hovered.connect(self.map_model.set_hover)
+        self.map_view.picked.connect(self._on_map_picked)
+        self.pv_map_holder.addWidget(self.map_view)
+        for col in range(3):
+            self._pv_grid.setColumnStretch(col, 1)
+
+    def _on_map_picked(self, j):
+        i = self._map_frames[j]
+        t = float(self.model.t_vis[i])
+        if self.view is not None:
+            self.view.hover_t = t
+            if not (self.view.t0 < t < self.view.t1):
+                self.view.t0, self.view.t1 = self.model.span()
+            self.view.update()
+        self._show_pair(i, self.model.nearest("NIR", t), t)
 
     # ---- previews
     def _on_hover(self, t):
@@ -1190,6 +1394,8 @@ class FlightTimelineDialog(QDialog):
 
     def _show_pair(self, vis_idx, nir_idx, t):
         m = self.model
+        if self.map_model is not None:
+            self.map_model.set_current(self._map_index.get(vis_idx))
         for band, idx, tile, cap, color in (("VIS", vis_idx, self.pv_vis, self.pv_vis_cap, BLUE),
                                             ("NIR", nir_idx, self.pv_nir, self.pv_nir_cap, NIR_ACCENT)):
             frames = m.band(band).frames
@@ -1204,6 +1410,8 @@ class FlightTimelineDialog(QDialog):
                     Path(f.name).stem, fmt_time(tb)]
             if f.alt is not None:
                 bits.append(f"{f.alt:.1f} m")
+            if band == "VIS" and m.kept_for_map(idx):
+                bits.append("<b style='color:#2E7D32'>kept for the map</b>")
             if f.scanned:
                 bits.append("target turning" if (m.vis_rot if band == "VIS" else m.nir_rot)[idx]
                             else ("target still" if f.marker_angle is not None else "no target"))
@@ -1228,6 +1436,9 @@ class FlightTimelineDialog(QDialog):
                 FT.write_transfer_info(self.mission, "NIR", m.nir.frames, m.windows["NIR sync"],
                                        m.windows.get("NIR survey"))
             FT.save_state(self.mission, m.vis, m.nir, m.proposal, dict(m.windows), m.shift)
+            m.update_best_mapping()
+            BM.save_choice(self.mission, enabled=m.bm_enabled, overlap=m.bm_overlap,
+                           preview_selected=[m.vis.frames[i].name for i in m.bm_selected])
         except OSError as e:
             QMessageBox.critical(self, "Flight timeline", f"Could not save the selection:\n{e}")
             return
