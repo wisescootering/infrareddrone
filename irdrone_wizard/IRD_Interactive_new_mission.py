@@ -671,9 +671,9 @@ class NewMissionDialog(QDialog):
         else:
             self.nir = summary
             self.card_nir.set_found(summary, origin)
-            jpg = next((summary.folder / (f.stem + ext) for f in summary.files[:1]
-                        for ext in (".JPG", ".jpg") if (summary.folder / (f.stem + ext)).is_file()), None)
+            jpg = MS.nir_preview_jpeg(summary)
             self.card_nir.set_preview(QPixmap(str(jpg)) if jpg else None, "RAW\n(no preview)")
+            self.card_nir.preview.setToolTip(jpg.name if jpg else "")
         self._check_page_images()
 
     def _set_takeoff(self, path: Optional[Path]):

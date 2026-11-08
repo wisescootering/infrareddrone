@@ -184,6 +184,28 @@ def takeoff_image(vis: FolderSummary) -> Optional[Path]:
     return vis.files[0] if vis.files else None
 
 
+def nir_preview_jpeg(nir: FolderSummary) -> Optional[Path]:
+    """A JPEG to show for the infrared images (the RAW have no preview). The
+    SJCam writes a JPEG beside the RAW, under the same name or, on the M20,
+    under the next name (..._001.RAW, ..._002.JPG): the JPEG with the same
+    name as the first RAW, else the first JPEG that follows it."""
+    if not nir.files:
+        return None
+    first = nir.files[0]
+    for ext in (".JPG", ".jpg", ".jpeg", ".JPEG"):
+        same = first.with_suffix(ext)
+        if same.is_file():
+            return same
+    try:
+        jpegs = sorted((p for p in nir.folder.iterdir()
+                        if p.is_file() and p.suffix.lower() in (".jpg", ".jpeg")),
+                       key=lambda p: p.name.lower())
+    except OSError:
+        return None
+    after = [p for p in jpegs if p.name.lower() > first.name.lower()]
+    return (after or jpegs or [None])[0]
+
+
 def read_takeoff(path: Path) -> dict:
     """mission_parameters_light of the classic form, from the EXIF of the take-off
     image (no network: the place is added by add_location)."""

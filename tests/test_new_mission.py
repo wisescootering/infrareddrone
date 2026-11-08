@@ -207,3 +207,23 @@ class MissionDetailsTest(unittest.TestCase):
         d.btn_save.click()
         self.assertIn("Description", d.changed)
         self.assertEqual(MS.read_mission_parameters(self.folder)["Description"], "Plot 12")
+
+
+class NirPreviewTest(unittest.TestCase):
+    def folder(self, names):
+        d = Path(tempfile.mkdtemp())
+        for n in names:
+            (d / n).write_bytes(b"x")
+        return MS.summarize(d, [".raw"])
+
+    def test_sjcam_m20_jpeg_under_the_next_name(self):
+        s = self.folder(["2022_0125_130413_001.RAW", "2022_0125_130415_002.JPG",
+                         "2022_0125_130416_003.RAW", "2022_0125_130418_004.JPG"])
+        self.assertEqual(MS.nir_preview_jpeg(s).name, "2022_0125_130415_002.JPG")
+
+    def test_jpeg_under_the_same_name_first(self):
+        s = self.folder(["NIR_0001.RAW", "NIR_0001.JPG", "NIR_0000.JPG"])
+        self.assertEqual(MS.nir_preview_jpeg(s).name, "NIR_0001.JPG")
+
+    def test_no_jpeg(self):
+        self.assertIsNone(MS.nir_preview_jpeg(self.folder(["a.RAW"])))
