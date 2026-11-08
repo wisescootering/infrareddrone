@@ -52,6 +52,24 @@ class ManualLabelsTest(unittest.TestCase):
         missing = {label: f for label, f in labels_used_by_the_code().items() if label not in labels}
         self.assertEqual(missing, {})
 
+    def test_english_manual_has_the_same_labels(self):
+        """The web help is the English manual: the software links to the same labels."""
+        english = TEX.with_name("irdrone_help_en.tex").read_text(encoding="utf-8")
+        self.assertEqual(sorted(set(re.findall(r"\\label\{([^}#]+)\}", english))), sorted(manual_labels()))
+
+    def test_figures_exist_with_the_exact_case(self):
+        """Linux (GitHub Actions, the web site) is case sensitive: Step4_x.jpg is not step4_x.jpg."""
+        images = {p.name for p in (TEX.parent / "images").iterdir()}
+        stems = {p.stem for p in (TEX.parent / "images").iterdir()}
+        for tex in (TEX, TEX.with_name("irdrone_help_en.tex")):
+            text = re.sub(r"(?<!\\)%.*", "", tex.read_text(encoding="utf-8"))
+            text = text[text.index("\\begin{document}"):]
+            names = re.findall(r"\\figureIRD(?:\[[^\]]*\])?\{([^}]+)\}", text)
+            names += re.findall(r"\{([^{}\s]+\.(?:png|jpe?g|pdf))\}", text)      # pairs of figures
+            wrong = [n for n in names if n not in images and n not in stems
+                     and n.lower() in {x.lower() for x in images | stems}]
+            self.assertEqual(wrong, [], tex.name)
+
     def test_no_label_twice(self):
         text = TEX.read_text(encoding="utf-8")
         found = re.findall(r"\\label\{([^}#]+)\}", text)
