@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import re
 import json
+import sys
 import time
 from utils.utils_IRdrone_Class import ShootPoint
 import automatic_registration
@@ -12,6 +13,9 @@ from utils.utils_odm import create_odm_folder
 from config import CROP, EXIFTOOLPATH, CNIRCVIS_0
 from exiftool_reader import read_exiftool_json
 from alignment_workers import worker_count_report
+
+sys.path.append(str(Path(__file__).resolve().parent / "irdrone_wizard"))
+import best_mapping  # noqa: E402
 
 
 GEOREF_METADATA_KEYS = (
@@ -123,6 +127,26 @@ def filter_shoot_points_by_time_difference(
             filtered_points.append(point)
 
     return filtered_points
+
+
+def filter_shoot_points_best_mapping(
+    flight_points: list[dict],
+    synchronized_points: list[dict],
+    overlap: float,
+    fov: tuple[float, float] = None,
+) -> list[dict]:
+    """Best mapping: among the synchronized points, keep the ones the map needs.
+
+    ``flight_points`` are all the points of the image range, in shooting order
+    (they give the motion of the drone); only ``synchronized_points`` may be kept.
+    ``overlap``: footprint overlap between successive kept images (0.5 to 0.95)."""
+    synchronized = {id(point) for point in synchronized_points}
+    return best_mapping.select_shoot_points(
+        flight_points,
+        best_mapping.clamp_overlap(overlap),
+        fov,
+        eligible=[id(point) in synchronized for point in flight_points],
+    )
 
 
 def compute_theoretical_ir2vi_angles(
@@ -441,8 +465,11 @@ def run_postprocessing(
     max_time_difference_s: float = 0.5,
     progress_callback=None,
     max_workers: int = None,
+    best_mapping_overlap: float = None,
 ):
-    """``max_workers``: alignment worker processes; ``None`` picks it from cores and RAM."""
+    """``max_workers``: alignment worker processes; ``None`` picks it from cores and RAM.
+    ``best_mapping_overlap``: align only the images the map needs (footprint overlap
+    0.5 to 0.95 between successive ones); ``None`` or 0: every synchronized image."""
     if max_workers is None:
         max_workers = automatic_registration.available_alignment_workers()
     json_file = preprocessed_folder / "AerialPhotography" / "shoot_points.json"
@@ -454,6 +481,7 @@ def run_postprocessing(
         paired_points, start_image_number, end_image_number
     )
     selected_point_count = len(paired_points)
+    flight_points = paired_points
     paired_points = filter_shoot_points_by_time_difference(
         paired_points, max_time_difference_s
     )
@@ -462,6 +490,19 @@ def run_postprocessing(
         f"shoot points (|VIS/NIR rank-1 time difference| < "
         f"{max_time_difference_s:.1f} s)."
     )
+    if best_mapping_overlap:
+        synchronized_count = len(paired_points)
+        overlap = best_mapping.clamp_overlap(best_mapping_overlap)
+        paired_points = filter_shoot_points_best_mapping(
+            flight_points,
+            paired_points,
+            overlap,
+            best_mapping.mission_fov(preprocessed_folder),
+        )
+        print(
+            f"Best mapping: retained {len(paired_points)} of {synchronized_count} "
+            f"shoot points ({overlap:.0%} overlap between successive images)."
+        )
     if not paired_points:
         raise ValueError(
             "No shoot points satisfy the selected maximum VIS/NIR time difference."
@@ -670,6 +711,16 @@ if __name__ == "__main__":
         help="Maximum absolute VIS/NIR rank-1 time difference in seconds (0.1 to 6.0).",
     )
     parser.add_argument(
+        "--best-mapping-overlap",
+        dest="best_mapping_overlap",
+        type=float,
+        default=0.0,
+        help=(
+            "Align only the images the map needs: footprint overlap between successive "
+            "images, 50 to 95 (percent) or 0.5 to 0.95. 0 (default): every image."
+        ),
+    )
+    parser.add_argument(
         "--workers",
         dest="workers",
         type=int,
@@ -733,4 +784,5 @@ if __name__ == "__main__":
         max_time_difference_s=args.max_time_difference_s,
         progress_callback=report_progress if args.progress else None,
         max_workers=worker_count_setting,
+        best_mapping_overlap=args.best_mapping_overlap or None,
     )
