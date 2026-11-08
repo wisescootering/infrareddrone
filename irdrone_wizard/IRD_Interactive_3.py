@@ -224,32 +224,41 @@ class DialogSynchroAruco(QDialog):
         self.btn_continue.setStyleSheet(Look.PRIMARY_STYLE)
         self.btn_continue.setToolTip("Close this window and run Step 4 (alignment of the image pairs).")
         self.btn_continue.clicked.connect(self._continue_now)
-        # Chained run: the user confirms the clock alignment before the pairing
-        self.btn_sync_adjust = QPushButton("Adjust by hand…")
-        self.btn_sync_adjust.setStyleSheet(Look.SECONDARY_STYLE)
-        self.btn_sync_adjust.setToolTip("Move the infrared curve with a slider until it lies on the visible one.")
-        self.btn_sync_adjust.clicked.connect(self.on_adjust_time_shift)
-        self.btn_sync_ok = QPushButton("✓ The curves overlap: pair the images")
-        self.btn_sync_ok.setStyleSheet(Look.PRIMARY_STYLE)
+        # Chained run: one question before the pairing, Yes / No
+        big = ("QPushButton {{ background: {bg}; color: {fg}; border: {border}; border-radius: 8px;"
+               " padding: 8px 18px; font-size: 12pt; font-weight: bold; min-width: 190px; min-height: 44px; }}"
+               " QPushButton:hover {{ background: {hover}; }}")
+        self.btn_sync_ok = QPushButton("✓  Yes  (Y)\npair the images")
+        self.btn_sync_ok.setStyleSheet(big.format(bg="#2E7D32", fg="white", border="none", hover="#276B2B"))
         self.btn_sync_ok.setToolTip("The green (visible) and red (infrared) curves lie on each other: "
-                                    "the clock offset is right.")
+                                    "the clock offset is right, the images are paired.")
         self.btn_sync_ok.clicked.connect(self._confirm_sync)
+        self.btn_sync_adjust = QPushButton("✗  No  (N)\nadjust them by hand")
+        self.btn_sync_adjust.setStyleSheet(big.format(bg="white", fg="#B03A2E", border="2px solid #E3B4AE",
+                                                      hover="#FBEDEB"))
+        self.btn_sync_adjust.setToolTip("Slide the infrared curve onto the visible one, then answer again.")
+        self.btn_sync_adjust.clicked.connect(self.on_adjust_time_shift)
         for b in (self.btn_stay, self.btn_continue):
             b.hide()
         self.sync_banner = QFrame()
         self.sync_banner.setObjectName("syncbanner")
         self.sync_banner.setStyleSheet("#syncbanner { background: #FFF4E0; border: 1px solid #F0D29A;"
-                                       " border-radius: 8px; } QLabel { background: transparent; }")
+                                       " border-radius: 10px; } QLabel { background: transparent; }")
         banner = QHBoxLayout(self.sync_banner)
-        banner.setContentsMargins(12, 8, 12, 8)
-        self.sync_question = QLabel("<b>Do the green (visible) and red (infrared) curves overlap?</b><br>"
-                                    "<span style='color:#7A4B00'>If they do not, slide the infrared curve "
-                                    "by hand onto the visible one.</span>")
+        banner.setContentsMargins(16, 10, 16, 10)
+        banner.setSpacing(12)
+        self.sync_question = QLabel("<span style='font-size:15pt; font-weight:bold; color:#1F2933'>"
+                                    "Do the two curves overlap?</span><br>"
+                                    "<span style='color:#2E7D32; font-weight:bold'>●</span> visible &nbsp; "
+                                    "<span style='color:#C62828; font-weight:bold'>●</span> infrared")
         self.sync_question.setWordWrap(True)
         banner.addWidget(self.sync_question, 1)
         banner.addWidget(self.btn_sync_adjust)
         banner.addWidget(self.btn_sync_ok)
         self.sync_banner.hide()
+        from PyQt6.QtGui import QKeySequence, QShortcut
+        QShortcut(QKeySequence("Y"), self, activated=lambda: self._awaiting_sync and self._confirm_sync())
+        QShortcut(QKeySequence("N"), self, activated=lambda: self._awaiting_sync and self.on_adjust_time_shift())
         auto_bar.addWidget(self.auto_label, 1)
         auto_bar.addWidget(self.btn_manual)
         auto_bar.addWidget(self.btn_stay)
@@ -1035,7 +1044,7 @@ class DialogSynchroAruco(QDialog):
         self._awaiting_sync = True
         self._show_plot_after()
         self.stages.detail(1, f"infrared {self.time_shift:+.2f} s · check the curves")
-        self.auto_label.setText("Clocks aligned: check the curves below.")
+        self.auto_label.setText("Clocks aligned: one check before the pairing.")
         self.sync_banner.show()
         QTimer.singleShot(0, self._show_plot_after)     # scaled once the banner has its place
         self.btn_sync_ok.setDefault(True)

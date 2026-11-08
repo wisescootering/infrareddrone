@@ -50,7 +50,7 @@ class ChainedStep3Test(unittest.TestCase):
             pair.assert_not_called()
             self.assertEqual(d.stages.states[1], Look.STAGE_DONE)
             self.assertTrue(d.btn_sync_ok.isVisibleTo(d))
-            self.assertIn("overlap", d.sync_question.text())
+            self.assertIn("overlap?", d.sync_question.text())
             d.btn_sync_ok.click()
             pair.assert_called_once()
         self.assertFalse(d.btn_sync_ok.isVisibleTo(d))
@@ -68,6 +68,19 @@ class ChainedStep3Test(unittest.TestCase):
             self.assertEqual(d.time_shift, 3.5)
             d.btn_sync_ok.click()
             pair.assert_called_once()
+
+    def test_y_key_answers_yes_only_when_asked(self):
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtTest import QTest
+        d = self.dialog(True)
+        d.show()
+        with mock.patch.object(d, "on_image_pairing") as pair:
+            QTest.keyClick(d, Qt.Key.Key_Y)
+            pair.assert_not_called()                       # nothing asked yet
+            self.measured(d)
+            QTest.keyClick(d, Qt.Key.Key_Y)
+            pair.assert_called_once()
+        d.close()
 
     def test_manual_mode_hides_the_confirmation(self):
         d = self.dialog(True)
