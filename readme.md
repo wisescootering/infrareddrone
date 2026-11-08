@@ -510,6 +510,9 @@ Refer to the calibration documents
 * 4-channel multispectral TIF with an EXIF sidecar file
 * Linux support: `setup.sh` (uv or pip virtual environment), Docker context fallback for ODM, shell recovery scripts, case-insensitive image extensions
 * `run.py` and `run_after_preprocessing.py`: `--workers` option for parallel alignment, `--log-level`
+* 🗺️ **Best mapping in the wizard**: keep only the images the map needs (ground footprint overlap, 75 % by default),
+  previewed live in Step 2 on the time line and on a flight map, applied in Step 4 to the well synchronised pairs
+  (far less to align) and in Step 5 to the ODM images; `run_after_preprocessing.py --best-mapping-overlap 75`
 * Compatibility with recent libraries: OpenCV 4.7+ / 5.x ArUco API, SciPy 1.14+ (interp2d removed), scikit-image pyramids; GDAL is now optional
 * Fixes: black orthophoto preview after ODM (broken JPEG overviews on 16-bit data), angle interpolation across 360°, Windows tool paths, DJI RawTherapee profile
 
