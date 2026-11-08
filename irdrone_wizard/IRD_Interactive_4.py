@@ -21,6 +21,8 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
+    QFormLayout,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -644,50 +646,42 @@ class DialogImageProcessing(QDialog):
         intro.setWordWrap(True)
         layout.addWidget(intro)
 
-        range_layout = QHBoxLayout()
-        range_layout.addWidget(QLabel("First VIS image number:"))
+        # One setting per line, the label left of its field: the window stays
+        # narrow whatever the font (a row of four widgets did not).
+        settings_form = QFormLayout()
         self.start_image_number = QSpinBox()
         self.start_image_number.setRange(1, self.max_image_number)
         self.start_image_number.setValue(self.start_image_number_value)
-        range_layout.addWidget(self.start_image_number)
-
-        range_layout.addWidget(QLabel("Last VIS image number (inclusive):"))
+        settings_form.addRow("First VIS image number:", self.start_image_number)
         self.end_image_number = QSpinBox()
         self.end_image_number.setRange(1, self.max_image_number)
         self.end_image_number.setValue(self.end_image_number_value)
-        range_layout.addWidget(self.end_image_number)
-        range_layout.addStretch()
-        layout.addLayout(range_layout)
-
-        traces_group = QGroupBox("Generated image traces")
-        traces_layout = QHBoxLayout(traces_group)
-        self.ndvi_checkbox = QCheckBox("NDVI")
-        self.ndvi_checkbox.setChecked(False)
-        traces_layout.addWidget(self.ndvi_checkbox)
-        self.nir_checkbox = QCheckBox("NIR")
-        self.nir_checkbox.setChecked(False)
-        traces_layout.addWidget(self.nir_checkbox)
-        self.local_checkbox = QCheckBox("Local alignment")
-        self.local_checkbox.setChecked(True)
-        traces_layout.addWidget(self.local_checkbox)
-        self.global_checkbox = QCheckBox("Global alignment")
-        self.global_checkbox.setChecked(False)
-        traces_layout.addWidget(self.global_checkbox)
-        traces_layout.addStretch()
-        layout.addWidget(traces_group)
-
-        time_difference_layout = QHBoxLayout()
-        time_difference_layout.addWidget(
-            QLabel("Maximum VIS/NIR time difference (s):")
-        )
+        settings_form.addRow("Last VIS image number (inclusive):", self.end_image_number)
         self.max_time_difference = QDoubleSpinBox()
         self.max_time_difference.setRange(0.1, 6.0)
         self.max_time_difference.setDecimals(1)
         self.max_time_difference.setSingleStep(0.1)
         self.max_time_difference.setValue(0.5)
-        time_difference_layout.addWidget(self.max_time_difference)
-        time_difference_layout.addStretch()
-        layout.addLayout(time_difference_layout)
+        settings_form.addRow("Maximum VIS/NIR time difference (s):", self.max_time_difference)
+        settings_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
+        layout.addLayout(settings_form)
+
+        traces_group = QGroupBox("Generated image traces")
+        traces_layout = QGridLayout(traces_group)
+        self.ndvi_checkbox = QCheckBox("NDVI")
+        self.ndvi_checkbox.setChecked(False)
+        traces_layout.addWidget(self.ndvi_checkbox, 0, 0)
+        self.nir_checkbox = QCheckBox("NIR")
+        self.nir_checkbox.setChecked(False)
+        traces_layout.addWidget(self.nir_checkbox, 0, 1)
+        self.local_checkbox = QCheckBox("Local alignment")
+        self.local_checkbox.setChecked(True)
+        traces_layout.addWidget(self.local_checkbox, 1, 0)
+        self.global_checkbox = QCheckBox("Global alignment")
+        self.global_checkbox.setChecked(False)
+        traces_layout.addWidget(self.global_checkbox, 1, 1)
+        traces_layout.setColumnStretch(2, 1)
+        layout.addWidget(traces_group)
 
         self.status_label = QLabel("Ready")
         self.status_label.setWordWrap(True)
