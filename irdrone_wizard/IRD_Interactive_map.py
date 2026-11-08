@@ -9,6 +9,10 @@ the current image.
     click        pick the nearest shoot point (signal `picked`)
     Layers ▾     background source, orthophoto natural / infrared colours
 
+While the orthophoto is shown, a model built with `mapped` (the main window)
+draws the sparse trajectory of the mapping: only the shoot points selected
+for it (one image every n), the whole flight faint behind.
+
 Several views can share one `MapModel` (mini map and large map of the review).
 """
 from __future__ import annotations
@@ -117,7 +121,7 @@ class MapModel(QObject):
 
     def __init__(self, points: List[F.MapPoint], fov=None, ortho: Optional[F.OrthoPreview] = None,
                  color_of: Optional[Callable[[int], QColor]] = None, path: Optional[List[F.MapPoint]] = None,
-                 parent=None):
+                 mapped=None, parent=None):
         super().__init__(parent)
         self.points = points
         # the whole flight (line), the points are the shoot points on it
@@ -125,6 +129,8 @@ class MapModel(QObject):
         self.numbers = [p.number for p in points]
         self._index = {n: i for i, n in enumerate(self.numbers)}
         self.xy = [p.xy for p in points]
+        # indices of the shoot points used by the mapping of Step 5
+        self.mapped = [i for i, n in enumerate(self.numbers) if n in mapped] if mapped else []
         self.fov = fov or F.field_of_view()
         self.color_of = color_of
         self._footprints: Dict[int, List[Tuple[float, float]]] = {}
@@ -162,6 +168,15 @@ class MapModel(QObject):
                 self.ortho_images["infrared"] = _rgba_qimage(ortho.false_color)
             self.ortho_corners = [F.mercator(lat, lon) for lat, lon in ortho.corners]
         self.changed.emit()
+
+    @property
+    def sparse(self) -> bool:
+        """The orthophoto is shown: only the shoot points of the mapping."""
+        return bool(self.mapped) and bool(self.ortho_images) and self.ortho_mode in self.ortho_images
+
+    def visible(self) -> List[int]:
+        """Indices of the points drawn (and picked)."""
+        return self.mapped if self.sparse else list(range(len(self.xy)))
 
     def footprint(self, index: int) -> Optional[List[Tuple[float, float]]]:
         """Footprint corners in mercator metres (None without height or yaw)."""
@@ -424,16 +439,25 @@ class FlightMapView(QWidget):
             return
         pts = [QPointF(*self.to_screen(x, y)) for x, y in xy]
         line = [QPointF(*self.to_screen(x, y)) for x, y in self.model.path_xy] if self.model.path_xy else pts
-        path = QPainterPath(line[0])
-        for q in line[1:]:
-            path.lineTo(q)
+        shown = self.model.visible()
         p.setBrush(Qt.BrushStyle.NoBrush)
+        if self.model.sparse:
+            # the whole flight, faint; the trajectory of the mapping on top
+            p.setPen(QPen(QColor(255, 255, 255, 150), 1.2, Qt.PenStyle.DashLine))
+            p.drawPath(self._polyline(line))
+            line_main = [pts[i] for i in shown]
+        else:
+            line_main = line
+        path = self._polyline(line_main)
         p.setPen(QPen(QColor(255, 255, 255, 200), 4 if not self.compact else 3))
         p.drawPath(path)
         p.setPen(QPen(QColor("#17365D"), 1.6 if not self.compact else 1.2))
         p.drawPath(path)
         r = 3.2 if not self.compact else 2.2
-        for i, q in enumerate(pts):
+        if self.model.sparse:
+            r += 0.8
+        for i in shown:
+            q = pts[i]
             color = self.model.color_of(i) if self.model.color_of else QColor("#17365D")
             p.setPen(QPen(QColor("white"), 1))
             p.setBrush(color)
@@ -442,6 +466,13 @@ class FlightMapView(QWidget):
         p.setPen(QPen(QColor("white"), 1.5))
         p.setBrush(QColor("#17365D"))
         p.drawRect(QRectF(line[0].x() - 4, line[0].y() - 4, 8, 8))
+
+    @staticmethod
+    def _polyline(points) -> QPainterPath:
+        path = QPainterPath(points[0])
+        for q in points[1:]:
+            path.lineTo(q)
+        return path
 
     def _quad(self, index) -> Optional[QPolygonF]:
         fp = self.model.footprint(index)
@@ -511,6 +542,8 @@ class FlightMapView(QWidget):
             bits.append(src.attribution)
         if self.model.ortho_images and self.model.ortho_mode != "hidden":
             bits.append("orthophoto IRDrone")
+        if self.model.sparse:
+            bits.append(f"{len(self.model.mapped)} images of the mapping")
         font = p.font()
         font.setPointSizeF(7.5 if self.compact else 8.0)
         p.setFont(font)
@@ -556,7 +589,8 @@ class FlightMapView(QWidget):
     # ---- mouse
     def nearest(self, sx, sy, radius=12) -> Optional[int]:
         best, best_d = None, radius * radius
-        for i, (x, y) in enumerate(self.model.xy):
+        for i in self.model.visible():
+            x, y = self.model.xy[i]
             px, py = self.to_screen(x, y)
             d = (px - sx) ** 2 + (py - sy) ** 2
             if d <= best_d:
@@ -650,11 +684,13 @@ def phase_colors(mission: Path):
 
 
 def map_model_for(mission: Path, color_of=None, with_ortho: bool = True, shoot_points_only: bool = False,
-                  parent=None) -> Optional[MapModel]:
+                  sparse_mapping: bool = False, parent=None) -> Optional[MapModel]:
     """Model of a mission's flight (None without positions): the shoot
     points (every visible image before Step 3) on the whole flight. The
     orthophoto and the ground are read in the background. `color_of(number)`
-    gives the colour of a point (default: phases of Step 2)."""
+    gives the colour of a point (default: phases of Step 2). With
+    `sparse_mapping`, only the shoot points used by the mapping are drawn
+    while the orthophoto is shown."""
     track = F.mission_track(mission, shoot_points_only=shoot_points_only)
     if not track:
         return None
@@ -663,6 +699,7 @@ def map_model_for(mission: Path, color_of=None, with_ortho: bool = True, shoot_p
     path = F.image_track(mission)
     model = MapModel(track, fov=F.field_of_view(F.camera_model(mission)), parent=parent,
                      path=path if len(path) > len(track) else None,
+                     mapped=F.mapped_numbers(mission) if sparse_mapping else None,
                      color_of=lambda i: color_of(track[i].number))
     # in the background: ground under the drone (footprint size), orthophoto
     job = _OrthoJob(Path(mission), track, with_ortho and F.orthophoto_path(mission).is_file())

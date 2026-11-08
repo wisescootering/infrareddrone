@@ -563,7 +563,7 @@ class HomePage(QStackedWidget):
             self.map_view = None
         try:
             import IRD_Interactive_map as MapV
-            model = MapV.map_model_for(folder, parent=self)
+            model = MapV.map_model_for(folder, sparse_mapping=True, parent=self)
         except Exception as e:  # the map is a help, never a blocker
             print(f"Map unavailable: {e}")
             model = None

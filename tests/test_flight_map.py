@@ -174,6 +174,41 @@ class MapViewTest(unittest.TestCase):
         self.assertEqual(seen, [3])
         self.MV.tile_cache().stop()
 
+    def test_sparse_trajectory_of_the_mapping_while_the_orthophoto_is_shown(self):
+        """Main window: with the orthophoto, only the shoot points used by the
+        mapping (one image every n) are drawn and picked."""
+        m = make_mission(Path(tempfile.mkdtemp()), n=7)
+        (m / "mapping_MULTI").mkdir()
+        (m / "mapping_MULTI" / "img_best_mappping.json").write_text(json.dumps(
+            {"image_quartets": [{"VIS_filename": f"VIS_{n:04d}.dng"} for n in (137, 140, 143)]}))
+        self.assertEqual(F.mapped_numbers(m), {137, 140, 143})
+        model = self.MV.map_model_for(m, with_ortho=False, sparse_mapping=True)
+        self.assertEqual(model.visible(), list(range(7)))          # no orthophoto yet: whole flight
+        rgba = np.zeros((4, 4, 4), np.uint8)
+        model.set_ortho(F.OrthoPreview(rgba, rgba, [(LAT, LON), (LAT, LON + 1e-3), (LAT - 1e-3, LON)]))
+        model.set_ortho_mode("natural")
+        self.assertTrue(model.sparse)
+        self.assertEqual(model.visible(), [0, 3, 6])
+        view = self.MV.FlightMapView(model)
+        view.resize(600, 400)
+        view.show()
+        view.fit()
+        view.grab()
+        x, y = view.to_screen(*model.xy[1])
+        self.assertIsNone(view.nearest(x, y, radius=3))              # not used by the mapping
+        x, y = view.to_screen(*model.xy[3])
+        self.assertEqual(view.nearest(x, y), 3)
+        model.set_ortho_mode("hidden")                               # orthophoto hidden: whole flight
+        self.assertEqual(model.visible(), list(range(7)))
+        # the review keeps every shoot point
+        self.assertEqual(self.MV.map_model_for(m, with_ortho=False).mapped, [])
+        self.MV.tile_cache().stop()
+
+    def test_images_of_the_mapping_from_the_odm_shots(self):
+        m = make_mission(Path(tempfile.mkdtemp()), mapping=True)
+        self.assertEqual(F.mapped_numbers(m), {137})
+        self.assertEqual(F.mapped_numbers(Path(tempfile.mkdtemp())), set())
+
     def test_no_position_no_map(self):
         m = Path(tempfile.mkdtemp())
         self.assertIsNone(self.MV.map_model_for(m))

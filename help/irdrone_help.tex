@@ -445,7 +445,7 @@ Il reste donc à vérifier les phases du vol, la superposition des courbes de sy
 La carte est disponible dès l'étape~1 : les positions sont lues dans les EXIF des images visibles. Elle montre :
 \begin{itemize}
 	\item la trajectoire du drone et un point par image, coloré selon les phases confirmées à l'étape~2 (violet : synchronisation, vert : relevé) ;
-	\item l'orthophoto de l'étape~5, une fois le mapping fait ;
+	\item l'orthophoto de l'étape~5, une fois le mapping fait ; tant qu'elle est affichée, la trajectoire ne relie que les images retenues pour le mapping (une image sur $n$, voir la section~\ref{btn:step5_selection}), le vol complet restant en pointillés discrets ; masquer l'orthophoto (\bouton{Layers} > \bouton{Hidden}) remontre toutes les images ;
 	\item en fond, des photos aériennes : IGN pour la France, Esri World Imagery ailleurs, ou OpenStreetMap.
 \end{itemize}
 Survoler un point montre la vignette de son image ; un clic sur un point montre l'emprise au sol de l'image (le trait épais est le haut de l'image). Molette : zoom ; glisser : déplacement ; double-clic ou bouton \bouton{⤢} : tout le vol.

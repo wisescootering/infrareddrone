@@ -22,7 +22,7 @@ import sys
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import numpy as np
 
@@ -189,6 +189,34 @@ def odm_yaws(mission: Path) -> Dict[int, float]:
         zone_meridian = (int((lon + 180) // 6) + 1) * 6 - 183
         convergence = math.degrees(math.atan(math.tan(math.radians(lon - zone_meridian)) * math.sin(math.radians(lat))))
         out[int(digits.group(1))] = grid_yaw + convergence
+    return out
+
+
+def mapped_numbers(mission: Path) -> Set[int]:
+    """Numbers of the shoot points used by the mapping of Step 5 (the
+    "best mapping" selection, one image every n): the images solved by ODM
+    (shots.geojson), else the selection written before running it
+    (img_best_mappping.json). Empty when there is no mapping."""
+    out: Set[int] = set()
+    mapping = Path(mission) / "mapping_MULTI"
+    try:
+        with open(mapping / "mapping_result" / "shots.geojson", encoding="utf-8") as f:
+            for ft in json.load(f).get("features", []):
+                digits = re.search(r"(\d+)", Path(str(ft["properties"]["filename"])).stem)
+                if digits:
+                    out.add(int(digits.group(1)))
+    except (OSError, ValueError, AttributeError, KeyError, TypeError):
+        pass
+    if out:
+        return out
+    try:
+        with open(mapping / "img_best_mappping.json", encoding="utf-8") as f:
+            for q in json.load(f).get("image_quartets", []):
+                digits = "".join(c for c in Path(str(q["VIS_filename"])).stem if c.isdigit())
+                if digits:
+                    out.add(int(digits))
+    except (OSError, ValueError, AttributeError, KeyError, TypeError):
+        pass
     return out
 
 
