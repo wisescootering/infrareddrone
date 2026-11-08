@@ -4,12 +4,14 @@
 [![Docker](https://github.com/wisescootering/infrareddrone/actions/workflows/docker.yml/badge.svg)](https://github.com/wisescootering/infrareddrone/actions/workflows/docker.yml)
 [![Lint](https://github.com/wisescootering/infrareddrone/actions/workflows/lint.yml/badge.svg)](https://github.com/wisescootering/infrareddrone/actions/workflows/lint.yml)
 [![Documentation](https://github.com/wisescootering/infrareddrone/actions/workflows/pages.yml/badge.svg)](https://wisescootering.github.io/infrareddrone/)
-[![User manual (PDF)](https://img.shields.io/badge/manual-PDF-orange)](https://github.com/wisescootering/infrareddrone/releases/download/help-latest/irdrone_help.pdf)
+[![User manual](https://img.shields.io/badge/manual-web-orange)](https://wisescootering.github.io/infrareddrone/manual/)
+[![User manual (PDF)](https://img.shields.io/badge/manual-PDF-orange)](https://github.com/wisescootering/infrareddrone/releases/download/help-latest/irdrone_help_en.pdf)
+[![Manuel (PDF, français)](https://img.shields.io/badge/manuel-PDF%20fr-orange)](https://github.com/wisescootering/infrareddrone/releases/download/help-latest/irdrone_help.pdf)
 ![Python 3.9 | 3.12](https://img.shields.io/badge/python-3.9%20%7C%203.12-blue)
 ![Windows | Linux | macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL%20v3-green)](./LICENSE)
 
-📖 Documentation website: <https://wisescootering.github.io/infrareddrone/>
+📖 Documentation website: <https://wisescootering.github.io/infrareddrone/> · [User manual](https://wisescootering.github.io/infrareddrone/manual/)
 
 ![our drone setup](./illustrations/drone.png)
 

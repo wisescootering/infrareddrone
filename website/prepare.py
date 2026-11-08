@@ -23,6 +23,13 @@ PAGES = {
     "docs/ODM_MAPPING_PREPARATION.md": "odm-mapping.md",
     "docs/IGN_IMAGE_REGISTRATION.md": "ign-registration.md",
 }
+MATHJAX_CONFIG = """window.MathJax = {
+  tex: {inlineMath: [["\\\\(", "\\\\)"]], displayMath: [["\\\\[", "\\\\]"]],
+        processEscapes: true, processEnvironments: true, tags: "ams"},
+  options: {ignoreHtmlClass: ".*|", processHtmlClass: "arithmatex"}
+};
+document$.subscribe(() => { MathJax.typesetPromise && MathJax.typesetPromise(); });
+"""
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"}
 
 # Markdown links/images ](target) and HTML src="target" / href="target".
@@ -72,6 +79,12 @@ def main():
         text = (ROOT / source).read_text(encoding="utf-8")
         text = LINK.sub(lambda m: _rewrite(m, source), text)
         (OUT / page).write_text(text, encoding="utf-8")
+    # the user manual, converted from the LaTeX source (English version)
+    import manual
+    manual.build(OUT)
+    js = OUT / "javascripts"
+    js.mkdir(exist_ok=True)
+    (js / "mathjax.js").write_text(MATHJAX_CONFIG, encoding="utf-8")
     print(f"Site sources written to {OUT}")
 
 
