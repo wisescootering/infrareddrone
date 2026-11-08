@@ -837,15 +837,15 @@ Le bouton \bouton{Review images} (mis en avant à la fin de l'alignement, ou dep
   \item \textbf{Décider.} \bouton{Looks good} (barre d'espace) marque le point comme vérifié et passe au suivant à revoir. \bouton{Flag misaligned} (touche F) le signale comme mal aligné : il est écrit tout de suite dans \texttt{ImgIRdrone/shoot\_points.json} et l'étape~5 l'ignore. \bouton{Flag the probably misaligned} signale d'un coup tous les points orange non vérifiés.
   \item \textbf{Réaligner.} \bouton{Realign N flagged by hand} ouvre, point par point, la fenêtre d'alignement semi-automatique (§\ref{btn:step4_redo}). Le bandeau du haut suit le réalignement en cours : point $k$ sur $n$, temps écoulé et étape (chargement des images, alignement à la main, calcul du nouvel alignement --- environ une minute ---, enregistrement), avec une barre d'activité. Une fois le calcul terminé, la nouvelle image s'affiche dans la revue : \bouton{Yes, aligned} retire le signalement, \bouton{Still misaligned} le garde ; le point suivant s'ouvre ensuite.
 \end{itemize}
-Les mesures et les points vérifiés sont gardés dans \texttt{ImgIRdrone/review.json} : rouvrir la revue ne refait pas les mesures, sauf pour les images refaites. Les boutons \bouton{Flag misaligned points} et \bouton{Redo misaligned points} ci-dessous restent disponibles.
+Les mesures et les points vérifiés sont gardés dans \texttt{ImgIRdrone/review.json} : rouvrir la revue ne refait pas les mesures, sauf pour les images refaites.
 
 \figureIRD[fig:step4_review]{step4_review.png}{Revue des images alignées : rideau entre visible et infrarouge aligné, fiche du point (décalage mesuré, image infrarouge associée), et en bas la ligne de temps des points (décalage résiduel, vignettes, état).}{0.95}
 
-\section{Bouton \bouton{Flag misaligned points}}\label{btn:step4_flag_misaligned}
-Lorsque \texttt{Run alignment} est terminé, l'utilisateur peut avec cette commande regarder l'allure des vignettes des images \texttt{VIR\_XXXX\_local.jpg} (passer en affichage \og très grands icônes \fg). Il est assez simple de repérer certains échecs d'alignement (voir plus bas). Vous pouvez aussi utiliser en parallèle une visionneuse qui offre une bien meilleure visibilité et permet d'agrandir certaines zones de l'image. A l'issue de cette commande le statut d'alignement des images est mis à jour automatiquement dans le fichier \texttt{ImgIRdrone\textbackslash shoot\_points.json}
+\section{Points mal alignés}\label{btn:step4_flag_misaligned}
+Les points mal alignés se signalent dans la revue (§\ref{btn:step4_review}) : touche F ou \bouton{Flag misaligned}. Le statut d'alignement est écrit aussitôt dans le fichier \texttt{ImgIRdrone\textbackslash shoot\_points.json}
 \footnote{Ce fichier ne contient pas les mêmes informations que le fichier   \texttt{AerialPhotography\textbackslash shoot\_points.json} } .
 
-L'exemple çi dessous montre le début du fichier \texttt{ImgIRdrone\textbackslash shoot\_points.json} qui stocke ces informations. Toutes les images ont été traitées en choisissant le critère peu discriminant $|dt|<4\,s$ et la méthode "au plus près". Cela correspond à 501 images VIS et 350 images NIR. Ici l'utilisateur a estimé visuellement que le shoot point 120 était mal aligné et l'a marqué ce qui a fait automatiquement basculé la valeur de la clé \texttt{failed} de \texttt{false} à \texttt{true}.
+L'exemple çi dessous montre le début du fichier \texttt{ImgIRdrone\textbackslash shoot\_points.json} qui stocke ces informations. Toutes les images ont été traitées en choisissant le critère peu discriminant $|dt|<4\,s$ et la méthode "au plus près". Cela correspond à 501 images VIS et 350 images NIR. Ici l'utilisateur a estimé visuellement que le shoot point 120 était mal aligné et l'a signalé, ce qui a fait basculer la valeur de la clé \texttt{failed} de \texttt{false} à \texttt{true}.
 \begin{verbatim}
 	{
 		"mission_path": "C:\\Air-Mission\\FLY-20220524-1715-Chalivoy-Milon",
@@ -876,15 +876,11 @@ L'exemple çi dessous montre le début du fichier \texttt{ImgIRdrone\textbacksla
 	}	 
 \end{verbatim}
 
-Que faire ensuite des shoot points mal alignés ? Deux options s'offrent à l'utilisateur :
+Que faire ensuite des shoot points mal alignés ? Deux options :
 \begin{itemize}
-	\item \og aider \fg~l'algorithme d'IRDrone à aligner les images avec le bouton \bouton{Redo misaligned points} (voir \ref{btn:step4_redo}). Cette procédure ne s'applique qu'aux shoot points déclarés mal alignés, c'est-à-dire ceux dont la clé \texttt{"failed"} a été déclarée \texttt{true} et affiché dans la liste de choix associée à \texttt{Redo misaligned points} (figure \ref{fig:list_misalignmet}). En fonction du résultat de la procédure de  \texttt{Redo misaligned points} l'utilisateur pourra modifier (ou pas) le statut de l'alignement.
-	\item écarter le shoot point mal aligné des traitements ultérieurs. C'est l'action par défaut qui est appliquée aux shoot point marqués par l'utilisateur dans la procédure \texttt{Flag misaligned points} .	
- \texttt{ImgIRdrone\textbackslash shoot\_points.json} est mis à jour automatiquement.
+	\item \og aider \fg~l'algorithme d'IRDrone à les aligner : \bouton{Realign N flagged by hand} dans la revue (voir \ref{btn:step4_redo}). Selon le résultat, l'utilisateur garde ou retire le signalement.
+	\item les écarter des traitements ultérieurs : c'est l'effet par défaut du signalement, l'étape~5 ignore les points \texttt{"failed": true}.
 \end{itemize}
-
-	
-L'explorateur s'ouvre directement dans le dossier \texttt{ImgIRdrone}. Pour faciliter la détection des mauvais alignements il est conseillé de modifier l'affichage par \texttt{clic droit> Affichage>Très grandes icônes}. Faire défiler les images VIR et sélectionner les images mal alignées par \texttt{ctrl+clic}. Une fois toutes les images examinées terminer en appuyant sur \texttt{Ouvrir}. L'explorateur se ferme et un message indique combien d'images ont été déclarées comme mal alignées (et aussi celles qui l'étaient déjà). Le fichier
 
 \subsection{Exemple de succès d'alignement}
 \figurePaireIRD{fig:goodalignment}
@@ -904,22 +900,19 @@ Si le drone sort de sa zone des paramètres de vol, par exemple en cas de fortes
 
 \figureIRD[fig:step4_misalignment_VIR]{step4_misalignment_VIR.jpg}{Échec de l'alignement. L'effet de \og trou \fg est particulièrement caractéristique. Il peut aisément être repéré par l'utilisateur sur les images VIR. }{0.5}
 
-\section{Bouton \bouton{Redo misaligned points}}\label{btn:step4_redo}
-Ce bouton permet de rattraper les shoot points mal alignés. Il n'est utilisable qu'après avoir examiné les images et déclaré les échecs avec \bouton{Flag misaligned points} (voir \ref{btn:step4_flag_misaligned}) ; sinon un message invite à le faire. Il n'y a pas de miracle : si une rafale de vent a écarté le drone de sa zone de vol, les deux caméras ne voient pas la même scène et aucun alignement n'est possible. Mais parfois l'information existe et il suffit de \og pousser \fg~les paramètres de l'alignement grossier. En conditions normales une dizaine de shoot points au plus sont à reprendre.
+\section{Réalignement à la main}\label{btn:step4_redo}
+Le bouton \bouton{Realign N flagged by hand} de la revue permet de rattraper les shoot points signalés mal alignés (voir \ref{btn:step4_flag_misaligned}). Il n'y a pas de miracle : si une rafale de vent a écarté le drone de sa zone de vol, les deux caméras ne voient pas la même scène et aucun alignement n'est possible. Mais parfois l'information existe et il suffit de \og pousser \fg~les paramètres de l'alignement grossier. En conditions normales une dizaine de shoot points au plus sont à reprendre.
 
-\figureIRD[fig:step4_infobox_misalignment]{step4_infobox_misalignment.png}{Message d'information affiché par la commande \texttt{Flag misaligned points}.}{0.5} 
 
 \subsection*{Déroulement}
 \begin{enumerate}
-	\item Un premier message indique la procédure à suivre.
-	\item Une liste des shoot points \texttt{"failed": true} s'affiche. Cocher ceux que l'on veut reprendre (on ne reprend pas nécessairement tous les points en échec). Les boutons \bouton{Select all} et \bouton{Clear} facilitent la sélection.
-	\item Pour chaque point sélectionné, une fenêtre d'alignement manuel s'ouvre avec des curseurs (voir ci-dessous). L'utilisateur règle les angles, puis \textbf{ferme la fenêtre} : ces angles servent à initialiser le calcul d'alignement \og près \fg~de la solution.
-	\item Le nouvel alignement est calculé, puis l'image \texttt{VIR\_XXXX\_local.jpg} s'affiche. L'utilisateur répond \bouton{Yes, aligned} ou \bouton{No, still misaligned}. Le bouton \bouton{Open full size} ouvre l'image en pleine taille.
-	\item Si la réponse est \og\texttt{Yes, aligned} \fg, la clé \texttt{"failed"} du point passe à \texttt{false} dans \texttt{shoot\_points.json} et le fichier \texttt{shoot\_points\_failed\_summary.json} est mis à jour (une copie \texttt{shoot\_points.json.bak} est conservée). Si la réponse est \og \texttt{No, still misaligned} \fg, le point reste en échec et pourra être repris plus tard.
+	\item Un message rappelle la procédure, puis les points signalés sont repris l'un après l'autre ; le bandeau de la revue suit chacun (chargement, alignement à la main, calcul, enregistrement).
+	\item Pour chaque point, une fenêtre d'alignement manuel s'ouvre avec des curseurs (voir ci-dessous). L'utilisateur règle les angles, puis \textbf{ferme la fenêtre} : ces angles servent à initialiser le calcul d'alignement \og près \fg~de la solution.
+	\item Le nouvel alignement est calculé et s'affiche dans la revue, avec rideau, clignotement et superposition. L'utilisateur répond \bouton{Yes, aligned} ou \bouton{Still misaligned}.
+	\item Si la réponse est \og\texttt{Yes, aligned} \fg, la clé \texttt{"failed"} du point passe à \texttt{false} dans \texttt{shoot\_points.json} et le fichier \texttt{shoot\_points\_failed\_summary.json} est mis à jour (une copie \texttt{shoot\_points.json.bak} est conservée). Sinon le point reste signalé et pourra être repris plus tard.
 \end{enumerate}
 
-\figureIRD[fig:list_misalignmet]{step4_list_for_redo.png}{Liste de choix des shoot points mal alignés. Les numéros cochés feront l'objet d'une procédure de \og redo \fg.}{0.4}
-Un message final indique le nombre de points validés, toujours mal alignés ou en erreur. Les sorties des alignements précédents sont archivées dans le dossier \texttt{VIS\_XXXX\_align\_traces\_manual\textbackslash original}.
+Les sorties des alignements précédents sont archivées dans le dossier \texttt{VIS\_XXXX\_align\_traces\_manual\textbackslash original}.
 
 
 \subsection*{La fenêtre d'alignement semi automatique}
