@@ -17,7 +17,7 @@ from __future__ import annotations
 import sys
 import time
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from PyQt6 import QtCore
 from PyQt6.QtCore import QSettings, QStorageInfo, Qt, QThread, QUrl, pyqtSignal
@@ -74,11 +74,37 @@ class LocateThread(QThread):
         self.located.emit(MS.locate(self.light))
 
 
+class TimelinePrep(QThread):
+    """Step 2 prepared during Step 1: thumbnails and target detection of a band
+    (cached), while the next images are copied. Stopped at once when asked:
+    Step 2 goes on from the cache."""
+    progress = pyqtSignal(str, int, int)        # band, done, total
+
+    def __init__(self, mission: Path, band: str):
+        super().__init__()
+        self.mission, self.band = Path(mission), band
+        self._stop = False
+
+    def stop(self):
+        self._stop = True
+
+    def run(self):
+        import flight_timeline as FT
+        try:
+            FT.prepare_band(self.mission, self.band, cancelled=lambda: self._stop,
+                            frame_done=lambda i, n: self.progress.emit(self.band, i + 1, n))
+        except InterruptedError:
+            pass
+        except Exception as e:  # a head start only: Step 2 does it anyway
+            print(f"Flight timeline not prepared ({self.band}): {e}")
+
+
 class MissionCopy(QtCore.QObject):
     """The Step 1 workers, one after the other (copy, EXIF, conversion, altitude)."""
     stage = pyqtSignal(int, str, str)       # index, state, detail
     progress = pyqtSignal(int, str)         # percent, text
     finished = pyqtSignal(bool, str)        # ok, message
+    prep = pyqtSignal(str, int, int)        # Step 2 prepared in the background: band, done, total
 
     def __init__(self, params: dict, vis_folder: Path, nir_folder: Path, parent=None):
         super().__init__(parent)
@@ -89,6 +115,7 @@ class MissionCopy(QtCore.QObject):
         self.nir_out = base / "AerialPhotography" / "NIR"
         self.analytics = base / "FlightAnalytics"
         self._threads = []
+        self._preps: List[TimelinePrep] = []
         self._index = -1
         self.failed = False
 
@@ -109,6 +136,12 @@ class MissionCopy(QtCore.QObject):
         self.progress.emit(0, COPY_STAGES[self._index] + "…")
         import IRD_Interactive_workers as Worker
         k = self._index
+        # the visible images and their EXIF are there while the infrared ones are
+        # converted (the longest stage): Step 2 is prepared meanwhile, then the infrared
+        if k == 2:
+            self._prepare("VIS")
+        elif k == 4:
+            self._prepare("NIR")
         if k == 0:
             worker = Worker.Transfer_VIS(self.vis_in, self.vis_out)
         elif k == 1:
@@ -163,6 +196,23 @@ class MissionCopy(QtCore.QObject):
 
     def running(self):
         return any(t.isRunning() for t, _ in self._threads if _alive(t))
+
+    # ---- Step 2 prepared in the background
+    def _prepare(self, band):
+        thread = TimelinePrep(Path(self.params["File path mission"]), band)
+        thread.progress.connect(self.prep)
+        self._preps.append(thread)
+        thread.start()
+
+    def preparing(self) -> bool:
+        return any(t.isRunning() for t in self._preps)
+
+    def stop_preparation(self):
+        """Stop the head start (Step 2 goes on from the cache)."""
+        for t in self._preps:
+            t.stop()
+        for t in self._preps:
+            t.wait(10000)
 
 
 def _alive(obj):
@@ -479,6 +529,12 @@ class NewMissionDialog(QDialog):
         self.copy_bar.setStyleSheet(Look.PROGRESS_STYLE)
         lay.addWidget(self.copy_text)
         lay.addWidget(self.copy_bar)
+        self.prep_text = QLabel()
+        self.prep_text.setStyleSheet("color: #6B7785;")
+        self.prep_text.setToolTip("The flight timeline (Step 2) is prepared while the images are copied: "
+                                  "thumbnails and detection of the rotating target.")
+        lay.addWidget(self.prep_text)
+        self._prep_state = {}
         self.done_card = QFrame()
         self.done_card.setObjectName("done")
         self.done_card.setStyleSheet("#done { background: #EDF7EE; border: 1px solid #B9DDBB; border-radius: 8px; }")
@@ -764,7 +820,20 @@ class NewMissionDialog(QDialog):
         self.copy.stage.connect(self.copy_stages.set)
         self.copy.progress.connect(self._on_copy_progress)
         self.copy.finished.connect(self._on_copy_finished)
+        self.copy.prep.connect(self._on_prep)
         self.copy.start()
+
+    def _on_prep(self, band, done, total):
+        self._prep_state[band] = (done, total)
+        names = {"VIS": "visible", "NIR": "infrared"}
+        bits = []
+        for b in ("VIS", "NIR"):
+            if b in self._prep_state:
+                d, n = self._prep_state[b]
+                bits.append(f"{names[b]} ✓" if d >= n else f"{names[b]} {d}/{n}")
+        ready = all(d >= n for d, n in self._prep_state.values()) and "NIR" in self._prep_state
+        self.prep_text.setText("✓ Flight timeline ready: it opens without waiting." if ready else
+                               "Flight timeline prepared meanwhile: " + " · ".join(bits))
 
     def _on_copy_progress(self, pct, text):
         self.copy_bar.setValue(pct)
@@ -821,6 +890,8 @@ class NewMissionDialog(QDialog):
         if self.copy is not None and self.copy.running():
             QMessageBox.information(self, "New mission", "Wait for the copy to finish before closing.")
             return
+        if self.copy is not None:
+            self.copy.stop_preparation()      # Step 2 goes on from what is cached
         thread = self.locate_thread
         if thread is not None and thread.isRunning():
             # no wait (network): the thread is kept alive until it ends
