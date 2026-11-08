@@ -229,13 +229,16 @@ def report_stage(name):
     print(f"IRDRONE_STAGE {name}", flush=True)
 
 
-def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extension=1.4, manual=True, init_angles=[0., 0., 0.], motion_model_file = None):
+def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extension=1.4, manual=True, init_angles=[0., 0., 0.], motion_model_file = None,
+              manual_window=True):
     """
     :param vis_path: Path to visible DJI DNG image
     :param nir_path: Path to NIR SJCAM M20 RAW image
     :param cals_dict: Geometric calibration dictionary.
     :param debug_dir: traces folder
     :param extension: extend the FOV of the NIR camera compared to the DJI camera 1.4 by default, 1.75 is ~maximum
+    :param manual_window: manual mode only. False: the manual alignment was done beforehand
+        (the wizard's alignment window), ``init_angles`` are its result: no slider window.
     :return:
     """
     cals = deepcopy(cals_dict)
@@ -260,12 +263,14 @@ def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extens
     ts_end_load = time.perf_counter()
     logging.info("{:.2f}s elapsed in loading full resolution RAW".format(ts_end_load - ts_start))
     if motion_model_file is None or not osp.isfile(motion_model_file+".npy"):
-        if manual:
+        if manual and manual_window:
             report_stage("manual")
             alignment_params = user_assisted_manual_alignment(ref_full, mov_full, cals, init_angles[0], init_angles[1], init_angles[2])
             report_stage("compute")
             yaw_main, pitch_main, roll_main = alignment_params["yaw"], alignment_params["pitch"], alignment_params["roll"]
         else:
+            if manual:
+                report_stage("compute")
             yaw_main, pitch_main, roll_main = init_angles
         mov_wr_fullres, coarse_rotation_estimation = coarse_alignment(
             ref_full, mov_full, cals,
@@ -524,9 +529,11 @@ def _process_raw_pairs_serial(
         alignment_modes=("local", "global"),
         redo_nir_candidates=None,
         progress_callback=None,
+        manual_window=True,
     ):
     """
     listPts [optional]: contains all metadata & theoretical angles
+    manual_window: see align_raw
     """
     # if debug_folder is None:
     #     debug_folder = osp.dirname(sync_pairs[0][0])
@@ -628,7 +635,8 @@ def _process_raw_pairs_serial(
             manual=manual,
             extension=extension,
             init_angles=[yaw_init, pitch_init, roll_init],
-            motion_model_file=motion_model_file
+            motion_model_file=motion_model_file,
+            manual_window=manual_window,
         )
         
         # AGGREGATED RESULTS!
@@ -763,6 +771,7 @@ def _process_single_pair_task(task):
         skip=task["skip"],
         alignment_modes=task["alignment_modes"],
         redo_nir_candidates=[task["redo_nir_candidates"]],
+        manual_window=task.get("manual_window", True),
     )
     updated_point = point_list[0] if point_list is not None else None
     return task["index"], task["pair"][0], motion_models, updated_point
@@ -788,8 +797,11 @@ def process_raw_pairs(
     redo_nir_candidates=None,
     progress_callback=None,
     max_workers=1,
+    manual_window=True,
 ):
-    """Orchestrate independent shoot-point alignment in worker processes."""
+    """Orchestrate independent shoot-point alignment in worker processes.
+
+    manual_window: see align_raw."""
     if not sync_pairs:
         return []
     if isinstance(max_workers, bool) or not isinstance(max_workers, int) or max_workers < 1:
@@ -816,6 +828,7 @@ def process_raw_pairs(
             alignment_modes=alignment_modes,
             redo_nir_candidates=redo_nir_candidates,
             progress_callback=progress_callback,
+            manual_window=manual_window,
         )
 
     if out_dir is None:
@@ -847,6 +860,7 @@ def process_raw_pairs(
                 "debug_folder": debug_folder,
                 "out_dir": out_dir,
                 "manual": manual,
+                "manual_window": manual_window,
                 "debug": debug,
                 "crop": crop,
                 "option_alti": option_alti,
@@ -921,7 +935,15 @@ if __name__ == "__main__":
         help='Alignment modes for generated NIR, VIR, and NDVI images.',
     )
     parser.add_argument("--angles", nargs='+', type=float, help="yaw,pitch,roll")
+    parser.add_argument(
+        "--manual-angles", nargs=3, type=float, metavar=("YAW", "PITCH", "ROLL"),
+        help="manual alignment already done (the wizard's alignment window): "
+             "start from these angles, no slider window (implies --manual)",
+    )
     args = parser.parse_args()
+    if args.manual_angles is not None:
+        args.manual = True
+        args.angles = args.manual_angles
     extension = 1.6
     if args.images is None:
         import utils.utils_IRdrone as IRd
@@ -958,6 +980,7 @@ if __name__ == "__main__":
         angles=args.angles,
         traces=args.traces,
         alignment_modes=tuple(args.alignment_modes),
+        manual_window=args.manual_angles is None,
     )
     if args.redo:
         finalize_manual_redo_archives(
