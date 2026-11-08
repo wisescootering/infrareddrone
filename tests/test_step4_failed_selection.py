@@ -16,27 +16,6 @@ spec.loader.exec_module(step4)
 
 
 class FailedSelectionTests(unittest.TestCase):
-    def test_numbers_from_local_jpegs(self):
-        numbers, ignored = step4.image_numbers_from_aligned_jpegs(
-            ["C:/x/VIR_0010_local.jpg", "C:/x/VIS_0011.jpg"]
-        )
-        self.assertEqual(numbers, {10})
-        self.assertEqual(ignored, ["VIS_0011.jpg"])
-
-    def test_numbers_from_ndvi_nir_and_global_jpegs(self):
-        numbers, ignored = step4.image_numbers_from_aligned_jpegs(
-            [
-                "/x/NDVI_0012_local.jpg",
-                "/x/ndvi_0013_global.JPG",
-                "/x/NIR_0014_global.jpg",
-                "/x/VIR_0015_global.jpg",
-                "/x/VIS_0016_motion_model.json",
-                "/x/NDVI_0017.jpg",
-            ]
-        )
-        self.assertEqual(numbers, {12, 13, 14, 15})
-        self.assertEqual(ignored, ["VIS_0016_motion_model.json", "NDVI_0017.jpg"])
-
     def test_redo_check_image_prefers_vir_local_and_skips_stale_files(self):
         import os
         import tempfile

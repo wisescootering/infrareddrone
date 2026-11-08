@@ -5,6 +5,7 @@
 #   20/10/2026   V003
 # ---------------------------------------------------------------------------------
 
+import json
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
@@ -53,6 +54,7 @@ from PyQt6.QtCore import (
 )
 from PyQt6.QtWidgets import (
     QMessageBox,
+    QFrame,
     QApplication,
     QSizePolicy,
     QDialog,
@@ -88,6 +90,7 @@ from IRD_Interactive_workers import TimeShiftWorker
 from IRD_Interactive_workers import ImagePairingWorker
 from IRD_Interactive_styles import BUTTON_STYLE
 import flight_timeline as FT
+import IRD_Interactive_look as Look
 
 
 class DialogSynchroAruco(QDialog):
@@ -101,6 +104,8 @@ class DialogSynchroAruco(QDialog):
     """
 
     data_signal_to_main = pyqtSignal(bool)
+    # Chained run (from Step 2): the pairing is done, go on with Step 4
+    continue_requested = pyqtSignal()
 
     def __init__(self, mission_parameters: dict, parent=None, multi_thread=True, use_aruco_cache=False,
                  auto_run=False):
@@ -171,9 +176,15 @@ class DialogSynchroAruco(QDialog):
         self.angles_NIR = []
 
 
+        self._awaiting_sync = False      # chained run: alignment plot shown, waiting for the user
+        self._plot_after = None
+
         self._log("Dialog initialized.")
+        self._set_manual_mode(not self.auto_run)
+        if not self.auto_run:
+            self._show_previous_result()
         if self.auto_run:
-            self._log("Started from the flight timeline: ArUco detection and time alignment run automatically.")
+            self._log("Started from the flight timeline: detection, time alignment and pairing run automatically.")
             QTimer.singleShot(400, self.on_run_aruco)
 
     # ------------------------------------------------------------------
@@ -185,6 +196,63 @@ class DialogSynchroAruco(QDialog):
         # Title at the top
         title = QLabel("<b>Timeline Synchronization</b>")
         main_layout.addWidget(title)
+
+        # Chained run: the three stages and what comes next, no button to click
+        self.stages = Look.StageTracker(["Target detection", "Clock alignment", "Image pairing",
+                                         "Image processing"])
+        main_layout.addWidget(self.stages.widget())
+        auto_bar = QHBoxLayout()
+        self.auto_label = QLabel("")
+        self.auto_label.setStyleSheet("color: #6B7785;")
+        self.auto_label.setWordWrap(True)
+        self.btn_manual = QPushButton("Manual mode…")
+        self.btn_manual.setStyleSheet(Look.SECONDARY_STYLE)
+        self.btn_manual.setToolTip("Stop the automatic chaining and run each stage yourself "
+                                   "(check or adjust the time alignment before pairing).")
+        self.btn_manual.clicked.connect(lambda: self._set_manual_mode(True))
+        self.btn_continue = QPushButton("Image processing  ▶")
+        self.btn_continue.setStyleSheet(Look.PRIMARY_STYLE)
+        self.btn_continue.setToolTip("Close this window and open Step 4 (alignment of the image pairs): "
+                                     "it starts when you click Run alignment.")
+        self.btn_continue.clicked.connect(self._continue_now)
+        # Chained run: one question before the pairing, Yes / No
+        big = ("QPushButton {{ background: {bg}; color: {fg}; border: {border}; border-radius: 8px;"
+               " padding: 8px 18px; font-size: 12pt; font-weight: bold; min-width: 190px; min-height: 44px; }}"
+               " QPushButton:hover {{ background: {hover}; }}")
+        self.btn_sync_ok = QPushButton("✓  Yes  (Y)\npair the images")
+        self.btn_sync_ok.setStyleSheet(big.format(bg="#2E7D32", fg="white", border="none", hover="#276B2B"))
+        self.btn_sync_ok.setToolTip("The green (visible) and red (infrared) curves lie on each other: "
+                                    "the clock offset is right, the images are paired.")
+        self.btn_sync_ok.clicked.connect(self._confirm_sync)
+        self.btn_sync_adjust = QPushButton("✗  No  (N)\nadjust them by hand")
+        self.btn_sync_adjust.setStyleSheet(big.format(bg="white", fg="#B03A2E", border="2px solid #E3B4AE",
+                                                      hover="#FBEDEB"))
+        self.btn_sync_adjust.setToolTip("Slide the infrared curve onto the visible one, then answer again.")
+        self.btn_sync_adjust.clicked.connect(self.on_adjust_time_shift)
+        self.btn_continue.hide()
+        self.sync_banner = QFrame()
+        self.sync_banner.setObjectName("syncbanner")
+        self.sync_banner.setStyleSheet("#syncbanner { background: #FFF4E0; border: 1px solid #F0D29A;"
+                                       " border-radius: 10px; } QLabel { background: transparent; }")
+        banner = QHBoxLayout(self.sync_banner)
+        banner.setContentsMargins(16, 10, 16, 10)
+        banner.setSpacing(12)
+        self.sync_question = QLabel("<span style='font-size:15pt; font-weight:bold; color:#1F2933'>"
+                                    "Do the two curves overlap?</span><br>"
+                                    "<span style='color:#2E7D32; font-weight:bold'>●</span> visible &nbsp; "
+                                    "<span style='color:#C62828; font-weight:bold'>●</span> infrared")
+        self.sync_question.setWordWrap(True)
+        banner.addWidget(self.sync_question, 1)
+        banner.addWidget(self.btn_sync_adjust)
+        banner.addWidget(self.btn_sync_ok)
+        self.sync_banner.hide()
+        from PyQt6.QtGui import QKeySequence, QShortcut
+        QShortcut(QKeySequence("Y"), self, activated=lambda: self._awaiting_sync and self._confirm_sync())
+        QShortcut(QKeySequence("N"), self, activated=lambda: self._awaiting_sync and self.on_adjust_time_shift())
+        auto_bar.addWidget(self.auto_label, 1)
+        auto_bar.addWidget(self.btn_manual)
+        auto_bar.addWidget(self.btn_continue)
+        main_layout.addLayout(auto_bar)
 
         # Log display area
         self.log_text = QTextEdit()
@@ -219,6 +287,8 @@ class DialogSynchroAruco(QDialog):
 
         # Keep the buttons aligned to the left
         btn_layout.addStretch()
+        self._substep_buttons = (self.btn_run_aruco, self.btn_compute_time_shift,
+                                 self.btn_adjust_time_shift, self.btn_image_pairing)
 
         # Apply the common style to the three main buttons
         self.btn_run_aruco.setStyleSheet(BUTTON_STYLE)
@@ -243,10 +313,9 @@ class DialogSynchroAruco(QDialog):
         self.timeshift_plot_label = QLabel()
         self.timeshift_plot_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.timeshift_plot_label.setMinimumHeight(220)
-        self.timeshift_plot_label.setMaximumHeight(420)
         self.timeshift_plot_label.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Ignored,
+            QSizePolicy.Policy.Ignored,
         )
         self.timeshift_plot_label.setStyleSheet(
             "QLabel { background-color: #f5f5f5; border: 1px solid #cccccc; }"
@@ -257,7 +326,7 @@ class DialogSynchroAruco(QDialog):
 
         if not pixmap.isNull():
             scaled_pixmap = pixmap.scaled(
-                self.timeshift_plot_label.size(),
+                self.timeshift_plot_label.contentsRect().size(),
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation
             )
@@ -265,18 +334,25 @@ class DialogSynchroAruco(QDialog):
         else:
             self._log(f"Unable to load image: {IMAGE_ARUCO_VIS_PATH}")
 
-        main_layout.addWidget(self.timeshift_plot_label)
+        main_layout.addWidget(self.sync_banner)
+        main_layout.addWidget(self.timeshift_plot_label, 1)
 
         # Close button at the bottom
+        # Step 3 done earlier: the saved plot, after or before the alignment
+        self.btn_before = QPushButton("Before alignment")
+        self.btn_before.setCheckable(True)
+        self.btn_before.setStyleSheet(Look.SECONDARY_STYLE)
+        self.btn_before.setToolTip("Show the curves before the clock offset was applied.")
+        self.btn_before.toggled.connect(self._toggle_before)
+        self.btn_before.hide()
         self.btn_close = QPushButton("Close")
         self.btn_close.setFixedWidth(120)
         self.btn_close.setStyleSheet(BUTTON_STYLE)
 
-        # Push the Close button to the bottom
-        main_layout.addStretch()
 
         # Align the Close button to the right
         close_layout = QHBoxLayout()
+        close_layout.addWidget(self.btn_before)
         close_layout.addStretch()
         close_layout.addWidget(self.btn_close)
         self.btn_help = QPushButton("?")
@@ -288,9 +364,15 @@ class DialogSynchroAruco(QDialog):
         for widget, label, tip in (
             (self.btn_run_aruco, "btn:step3_aruco", "Detect the ArUco targets in the synchronisation images of both cameras."),
             (self.btn_compute_time_shift, "btn:step3_time_shift", "Compute the time offset between the VIS and NIR cameras."),
-            (self.btn_adjust_time_shift, "btn:step3_time_shift", "Move the NIR curve with a slider to correct the time offset by hand."),
+            (self.btn_adjust_time_shift, "btn:step3_adjust", "Move the NIR curve with a slider to correct the time offset by hand."),
             (self.btn_image_pairing, "btn:step3_pairing", "Pair each VIS image with the closest NIR images in time."),
             (self.btn_close, "btn:step3_close", "Close this window."),
+            (self.btn_help, "ch:step3", "Open the manual at Step 3."),
+            (self.btn_sync_ok, "btn:step3_overlap", self.btn_sync_ok.toolTip()),
+            (self.btn_sync_adjust, "btn:step3_overlap", self.btn_sync_adjust.toolTip()),
+            (self.btn_manual, "btn:step3_manual", self.btn_manual.toolTip()),
+            (self.btn_continue, "btn:step3_continue", self.btn_continue.toolTip()),
+            (self.btn_before, "btn:step3_before", self.btn_before.toolTip()),
         ):
             Help.attach_help(widget, label, tip, parent=self)
 
@@ -345,6 +427,7 @@ class DialogSynchroAruco(QDialog):
         If an exception occurs during initialization or startup,
         reset the progress bar and report the error in the log.
         """
+        self.btn_before.hide()          # a new run replaces the earlier result
         try:
             self.aruco_orchestrator = ArucoOrchestrator(
                 Path(self.folderMissionPath) / "AerialPhotography",
@@ -383,6 +466,9 @@ class DialogSynchroAruco(QDialog):
 
             # Reset the progress bar before starting processing
             self.progress_bar.setValue(0)
+            self.stages.set(0, Look.STAGE_RUNNING, "visible, then infrared")
+            for k in (1, 2):
+                self.stages.set(k, Look.STAGE_PENDING, "")
 
             # Start VIS processing; NIR follows automatically
             self.aruco_orchestrator.start_VIS()
@@ -429,6 +515,8 @@ class DialogSynchroAruco(QDialog):
 
         # Enable time alignment now that both detection stages are complete
         self.btn_compute_time_shift.setEnabled(True)
+        self.stages.set(0, Look.STAGE_DONE,
+                        f"{len(self.aruco_results_vis)} visible · {len(self.aruco_results_nir)} infrared")
         if self.auto_run:
             QTimer.singleShot(0, self.on_compute_time_shift)
 
@@ -473,7 +561,7 @@ class DialogSynchroAruco(QDialog):
             return False
         self.timeshift_plot_label.setPixmap(
             pixmap.scaled(
-                self.timeshift_plot_label.size(),
+                self.timeshift_plot_label.contentsRect().size(),
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation
             )
@@ -531,6 +619,10 @@ class DialogSynchroAruco(QDialog):
         """
         self.progress_bar.setValue(0)
         self._log(f"Error during ArUco detection: {error_msg}")
+        running = next((k for k, s in enumerate(self.stages.states) if s == Look.STAGE_RUNNING), 0)
+        self.stages.set(running, Look.STAGE_FAILED, "see the log")
+        if self.auto_run:
+            self._set_manual_mode(True)
 
         QMessageBox.critical(
             self,
@@ -555,6 +647,7 @@ class DialogSynchroAruco(QDialog):
         report the error in the log.
         """
         self.progress_bar.setValue(3)
+        self.stages.set(1, Look.STAGE_RUNNING, "")
 
         try:
             worker = TimeShiftWorker(
@@ -679,11 +772,18 @@ class DialogSynchroAruco(QDialog):
         self.progress_bar.setValue(100)
         self.progress_label.setText(final_message)
         self.btn_image_pairing.setEnabled(True)
-        if self.auto_run:
-            # Last check left to the user: the alignment plot, then "Pair"
+        computed = angle_abs_for_shift_time or angle_img_for_shift_time
+        self.stages.set(1, Look.STAGE_DONE if computed else Look.STAGE_FAILED,
+                        f"infrared {time_shift:+.2f} s" + ("" if computed else " (entered)"))
+        if self.auto_run and computed:
+            # Chained: the user checks that the two curves overlap, then the pairing runs
+            self._ask_sync_confirmation()
+        elif self.auto_run:
+            # The offset could not be measured: the user takes over
+            self._set_manual_mode(True)
             self.btn_image_pairing.setDefault(True)
             self.btn_image_pairing.setFocus()
-            self.progress_label.setText(final_message + "  Check the alignment plot, then pair the images.")
+            self.progress_label.setText(final_message + "  Check the alignment, then pair the images.")
 
     def _save_and_show_alignment_plots(
             self,
@@ -720,10 +820,20 @@ class DialogSynchroAruco(QDialog):
             filename="check_time_alignment.png",
             xlim=xlim,
         )
+        self._plot_after = plot_after
+        if self._awaiting_sync and self._show_plot_after():
+            return          # confirmation: the aligned curves stay on screen
         try:
             self.animate_timeshift_plot(plot_before=plot_before, plot_after=plot_after)
         except Exception as e:
             print(f"Error in animate_timeshift_plot: {e}")
+
+    def _show_plot_after(self) -> bool:
+        """Aligned curves, fixed (no before/after animation)."""
+        self.stop_timeshift_animation()
+        if self._plot_after is None:
+            return False
+        return self._show_image_file(Path(self._plot_after))
 
     def on_adjust_time_shift(self) -> None:
         """Step 3.2b - Let the operator correct the time shift with a slider."""
@@ -781,6 +891,7 @@ class DialogSynchroAruco(QDialog):
 
         self.progress_label.setText("Image pairing - initializing")
         self.progress_bar.setValue(0)
+        self.stages.set(2, Look.STAGE_RUNNING, "")
 
         # Create the image pairing worker
         self.image_pairing_worker = ImagePairingWorker(
@@ -833,6 +944,11 @@ class DialogSynchroAruco(QDialog):
         self.timeshift_plot_label.setText("Image pairing completed.")
         self.progress_label.setText("Image pairing completed.")
         self.progress_bar.setValue(100)
+        self.stages.set(2, Look.STAGE_DONE, f"{len(pairing_result.get('shoot_points', []))} pairs")
+        if self.auto_run:
+            self._paired_ready()
+        else:
+            self.btn_continue.show()
 
     def _on_image_pairing_error(self, message: str) -> None:
         """
@@ -845,12 +961,116 @@ class DialogSynchroAruco(QDialog):
             message: Description of the image pairing error.
         """
         self._log(f"Image pairing error: {message}")
+        self.stages.set(2, Look.STAGE_FAILED, "see the log")
 
         QMessageBox.critical(
             self,
             "Image Pairing Error",
             message
         )
+
+    # ------------------------------------------------------------------
+    # Chained run (auto_run) / manual mode
+    # ------------------------------------------------------------------
+    def _set_manual_mode(self, manual: bool) -> None:
+        """Manual: the four stage buttons, each run by the user (classic Step 3).
+        Automatic: the stages follow each other, only the tracker is shown."""
+        if manual and self.auto_run:
+            self._log("Manual mode: run each stage with its button.")
+        self.auto_run = not manual
+        for b in self._substep_buttons:
+            b.setVisible(manual)
+        self.btn_manual.setVisible(not manual)
+        if manual:
+            self._hide_sync_confirmation()
+            self.auto_label.setText("")
+        else:
+            self.auto_label.setText("Automatic: detection, clock alignment and pairing follow each other.")
+
+    def previous_result(self) -> Optional[dict]:
+        """What an earlier run of Step 3 left: offset, pairs, plots (None if not run)."""
+        folder = Path(self.folderMissionPath)
+        try:
+            with open(folder / "AerialPhotography" / "shoot_points.json", encoding="utf-8") as f:
+                data = json.load(f)
+            time_shift = float(data["time_shift"])
+            pairs = len(data.get("shoot_points", []))
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+        synchro = folder / "Synchro"
+        after, before = synchro / "check_time_alignment.png", synchro / "check_time_before_alignment.png"
+        return {"time_shift": time_shift, "pairs": pairs, "date": str(data.get("created_at", ""))[:10],
+                "after": after if after.is_file() else None, "before": before if before.is_file() else None}
+
+    def _show_previous_result(self) -> None:
+        """Step 3 opened again: show what was found (aligned curves, offset, pairs)."""
+        prev = self.previous_result()
+        if prev is None:
+            return
+        self._previous = prev
+        self.time_shift = self.computed_time_shift = prev["time_shift"]
+        self.stages.set(0, Look.STAGE_DONE, "done earlier")
+        self.stages.set(1, Look.STAGE_DONE, f"infrared {prev['time_shift']:+.2f} s")
+        self.stages.set(2, Look.STAGE_DONE, f"{prev['pairs']} pairs")
+        y, m, d = (prev["date"].split("-") + ["", "", ""])[:3]
+        when = f" on {d}/{m}/{y}" if d else ""
+        self.auto_label.setText(f"Synchronised{when}: infrared clock offset {prev['time_shift']:+.2f} s, "
+                                f"{prev['pairs']} pairs. Run the stages again below to redo it.")
+        self.progress_label.setText("Step 3 already done: clock alignment checked on the curves below.")
+        self.progress_bar.setValue(100)
+        if prev["after"] is not None:
+            self._plot_after = prev["after"]
+            self.btn_before.setVisible(prev["before"] is not None)
+            QTimer.singleShot(0, self._show_plot_after)
+        self.btn_continue.show()
+
+    def _toggle_before(self, on: bool) -> None:
+        prev = getattr(self, "_previous", None)
+        if prev is None:
+            return
+        self.stop_timeshift_animation()
+        self._show_image_file(Path(prev["before"] if on else prev["after"]))
+        self.btn_before.setText("After alignment" if on else "Before alignment")
+
+    def _ask_sync_confirmation(self) -> None:
+        """Chained run: show the aligned curves and wait for the user's word."""
+        self._awaiting_sync = True
+        self._show_plot_after()
+        self.stages.detail(1, f"infrared {self.time_shift:+.2f} s · check the curves")
+        self.auto_label.setText("Clocks aligned: one check before the pairing.")
+        self.sync_banner.show()
+        QTimer.singleShot(0, self._show_plot_after)     # scaled once the banner has its place
+        self.btn_sync_ok.setDefault(True)
+        self.btn_sync_ok.setFocus()
+        self.btn_manual.hide()
+
+    def _hide_sync_confirmation(self) -> None:
+        self._awaiting_sync = False
+        self.sync_banner.hide()
+
+    def _confirm_sync(self) -> None:
+        self._hide_sync_confirmation()
+        self._log(f"Clock alignment confirmed by the user: {self.time_shift:.3f} s")
+        self.stages.detail(1, f"infrared {self.time_shift:+.2f} s · checked")
+        self.auto_label.setText("Clocks aligned: pairing the images…")
+        if self.auto_run and not self.image_pairing_done:
+            self.on_image_pairing()
+
+    def _paired_ready(self) -> None:
+        """Chained run done: Step 4 is long, the user starts it (never on its own)."""
+        self.btn_continue.show()
+        self.btn_continue.setDefault(True)
+        self.btn_continue.setFocus()
+        self.btn_manual.hide()
+        self.stages.set(3, Look.STAGE_PENDING, "when you are ready")
+        self.auto_label.setText("Cameras synchronised and images paired. The alignment (Step 4) is long: "
+                                "open it when you are ready.")
+
+    def _continue_now(self) -> None:
+        self.stages.set(3, Look.STAGE_RUNNING, "")
+        self.continue_requested.emit()
+        self.data_signal_to_main.emit(True)
+        self.close()
 
     # ------------------------------------------------------------------
     # GUI utilities
@@ -870,7 +1090,7 @@ class DialogSynchroAruco(QDialog):
 
         if self.timeshift_plot_label.pixmap():
             scaled = self.timeshift_plot_label.pixmap().scaled(
-                self.timeshift_plot_label.size(),
+                self.timeshift_plot_label.contentsRect().size(),
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
@@ -913,7 +1133,7 @@ class DialogSynchroAruco(QDialog):
         # Display the first image
         self.timeshift_plot_label.setPixmap(
             self._animation_images[self._animation_index].scaled(
-                self.timeshift_plot_label.size(),
+                self.timeshift_plot_label.contentsRect().size(),
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation
             )
@@ -937,7 +1157,7 @@ class DialogSynchroAruco(QDialog):
         ) % len(self._animation_images)
 
         pixmap = self._animation_images[self._animation_index].scaled(
-            self.timeshift_plot_label.size(),
+            self.timeshift_plot_label.contentsRect().size(),
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation
         )
@@ -1401,6 +1621,7 @@ class TimeShiftInputDialog(QDialog):
         btn_ok = QPushButton("OK", self)
         btn_cancel = QPushButton("Cancel", self)
 
+        btn_ok.setToolTip("Use this clock offset (seconds added to the infrared times).")
         btn_ok.clicked.connect(self.accept)
         btn_cancel.clicked.connect(self.reject)
 
@@ -1519,6 +1740,9 @@ class TimeShiftAdjustDialog(QDialog):
         btn_reset = QPushButton("Reset to computed", self)
         btn_apply = QPushButton("Apply", self)
         btn_cancel = QPushButton("Cancel", self)
+        btn_reset.setToolTip("Back to the offset computed from the targets.")
+        btn_apply.setToolTip("Keep this offset: the curves after alignment are drawn again with it.")
+        btn_cancel.setToolTip("Close without changing the offset.")
         for button in (btn_reset, btn_apply, btn_cancel):
             button.setStyleSheet(BUTTON_STYLE)
         btn_apply.setDefault(True)

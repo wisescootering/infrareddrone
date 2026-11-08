@@ -14,20 +14,18 @@ import shutil
 import sys
 import time
 
-from PyQt6.QtCore import QProcess, QProcessEnvironment, QSettings, Qt
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtCore import QObject, QProcess, QProcessEnvironment, QSettings, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
-    QFileDialog,
+    QFormLayout,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
     QMessageBox,
     QProgressBar,
     QPushButton,
@@ -36,7 +34,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from IRD_Interactive_styles import BUTTON_STYLE
+from IRD_Interactive_styles import BUTTON_STYLE, colored_button_style
 import IRD_Interactive_help as Help
 from IRD_Interactive_progress import mark_step_done
 from config import SJCONVERTERPATH
@@ -74,6 +72,33 @@ LOG_LEVELS = (
     ("info", "Info (processing steps)"),
     ("debug", "Debug (detailed timings)"),
 )
+
+
+def kill_process_tree(pid: int, timeout: float = 3.0) -> None:
+    """End a process and every process it started (the alignment workers of
+    the ProcessPoolExecutor): terminate, then kill what is left."""
+    if not pid:
+        return
+    try:
+        import psutil
+        parent = psutil.Process(pid)
+        procs = parent.children(recursive=True) + [parent]
+    except Exception:
+        return
+    for p in procs:
+        try:
+            p.terminate()
+        except Exception:
+            pass
+    try:
+        _gone, alive = psutil.wait_procs(procs, timeout=timeout)
+    except Exception:
+        alive = procs
+    for p in alive:
+        try:
+            p.kill()
+        except Exception:
+            pass
 
 
 def _settings() -> QSettings:
@@ -126,6 +151,8 @@ class Step4SettingsDialog(QDialog):
         safe_button = QPushButton("Safe mode (1)")
         safe_button.setStyleSheet(BUTTON_STYLE)
         safe_button.clicked.connect(lambda: self.workers_spin.setValue(1))
+        safe_button.setToolTip("One worker only: slower, but the least memory. "
+                               "Use it if the computer freezes or the run is killed.")
         workers_layout.addWidget(safe_button)
         workers_layout.addStretch()
         layout.addLayout(workers_layout)
@@ -165,30 +192,6 @@ class Step4SettingsDialog(QDialog):
     def log_level(self) -> str:
         return self.log_level_combo.currentData()
 
-
-def select_aligned_jpegs(parent, folder: Path) -> list[str]:
-    """Ask for aligned VIR / NDVI / NIR images with the native file explorer."""
-    files, _ = QFileDialog.getOpenFileNames(
-        parent,
-        "Select misaligned images",
-        str(folder),
-        "Aligned images (VIR_*.jpg NDVI_*.jpg NIR_*.jpg);;All files (*)",
-    )
-    return files
-
-
-def image_numbers_from_aligned_jpegs(paths) -> tuple[set[int], list[str]]:
-    """Return the image numbers of aligned VIR / NDVI / NIR images and the ignored names."""
-    numbers = set()
-    ignored = []
-    for path in paths:
-        name = Path(path).name
-        match = ALIGNED_JPEG_PATTERN.fullmatch(name)
-        if match is None:
-            ignored.append(name)
-        else:
-            numbers.add(int(match.group(1)))
-    return numbers, ignored
 
 
 def redo_check_image(output_folder: Path, vis_stem: str, written_after: float = 0.0):
@@ -348,125 +351,169 @@ def _vis_image_number(filename: str) -> int:
     return int(match.group(1))
 
 
-class RedoSelectionDialog(QDialog):
-    """Let the user tick the failed shoot points to realign manually."""
-
-    def __init__(self, entries, parent=None):
-        """``entries``: list of ``(number, VIS stem, REDO batch available)``."""
-        super().__init__(parent)
-        self.setWindowTitle("Redo misaligned points")
-        self.resize(420, 420)
-        layout = QVBoxLayout(self)
-        layout.addWidget(
-            QLabel(
-                "Shoot points flagged as failed.\n"
-                "Tick the ones to realign manually (a slider window will open for each)."
-            )
-        )
-        self.list_widget = QListWidget()
-        for number, stem, available in entries:
-            item = QListWidgetItem(stem)
-            item.setData(Qt.ItemDataRole.UserRole, number)
-            if available:
-                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-                item.setCheckState(Qt.CheckState.Unchecked)
-            else:
-                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
-                item.setToolTip(f"{stem}{REDO_BATCH_SUFFIX} not found: run the alignment again.")
-                item.setText(f"{stem}  (no REDO file)")
-            self.list_widget.addItem(item)
-        layout.addWidget(self.list_widget)
-
-        select_layout = QHBoxLayout()
-        select_all = QPushButton("Select all")
-        select_all.clicked.connect(lambda: self._set_all(Qt.CheckState.Checked))
-        select_none = QPushButton("Clear")
-        select_none.clicked.connect(lambda: self._set_all(Qt.CheckState.Unchecked))
-        select_layout.addWidget(select_all)
-        select_layout.addWidget(select_none)
-        select_layout.addStretch()
-        layout.addLayout(select_layout)
-
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-        ok_button = QPushButton("Start redo")
-        ok_button.clicked.connect(self.accept)
-        cancel_button = QPushButton("Cancel")
-        cancel_button.clicked.connect(self.reject)
-        ok_button.setStyleSheet(BUTTON_STYLE)
-        cancel_button.setStyleSheet(BUTTON_STYLE)
-        button_layout.addWidget(ok_button)
-        button_layout.addWidget(cancel_button)
-        layout.addLayout(button_layout)
-
-    def _set_all(self, state) -> None:
-        for row in range(self.list_widget.count()):
-            item = self.list_widget.item(row)
-            if item.flags() & Qt.ItemFlag.ItemIsUserCheckable:
-                item.setCheckState(state)
-
-    def selected_numbers(self) -> list[int]:
-        return [
-            self.list_widget.item(row).data(Qt.ItemDataRole.UserRole)
-            for row in range(self.list_widget.count())
-            if self.list_widget.item(row).checkState() == Qt.CheckState.Checked
-        ]
+def redo_environment() -> QProcessEnvironment:
+    """Environment of the processing subprocesses (project modules and SJ converter)."""
+    environment = QProcessEnvironment.systemEnvironment()
+    python_path = os.environ.get("PYTHONPATH", "")
+    project_python_path = str(PROJECT_ROOT)
+    if python_path:
+        project_python_path = os.pathsep.join((project_python_path, python_path))
+    environment.insert("PYTHONPATH", project_python_path)
+    environment.insert("SJCONVERTERPATH", str(SJCONVERTERPATH))
+    return environment
 
 
-class AlignmentCheckDialog(QDialog):
-    """Show the regenerated VIR image and ask whether it is correctly aligned."""
-
-    def __init__(self, image_path: Path, title: str, parent=None):
-        super().__init__(parent)
-        self.image_path = Path(image_path)
-        self.setWindowTitle(title)
-        layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(f"<b>{self.image_path.name}</b> – is this image correctly aligned?"))
-
-        image_label = QLabel()
-        image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        pixmap = QPixmap(str(self.image_path))
-        if pixmap.isNull():
-            image_label.setText("Unable to display the image.")
-        else:
-            available = self.screen().availableGeometry()
-            pixmap = pixmap.scaled(
-                int(available.width() * 0.8),
-                int(available.height() * 0.7),
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-            image_label.setPixmap(pixmap)
-        layout.addWidget(image_label)
-
-        button_layout = QHBoxLayout()
-        open_button = QPushButton("Open full size")
-        open_button.clicked.connect(self._open_full_size)
-        yes_button = QPushButton("Yes, aligned")
-        yes_button.clicked.connect(self.accept)
-        no_button = QPushButton("No, still misaligned")
-        no_button.clicked.connect(self.reject)
-        for button in (open_button, yes_button, no_button):
-            button.setStyleSheet(BUTTON_STYLE)
-        button_layout.addWidget(open_button)
-        button_layout.addStretch()
-        button_layout.addWidget(yes_button)
-        button_layout.addWidget(no_button)
-        layout.addLayout(button_layout)
-
-    def _open_full_size(self) -> None:
+def redo_queue(output_folder: Path, points, log=print) -> list:
+    """``(number, stem, arguments)`` of the points ``(number, stem)`` that have a
+    readable REDO script; the others are reported through ``log``."""
+    queue = []
+    for number, stem in points:
         try:
-            if not Help.open_with_default_app(self.image_path):
-                raise OSError(f"No application available to open {self.image_path}")
-        except OSError as error:
-            QMessageBox.warning(self, "Unable to open the image", str(error))
+            arguments = read_redo_command(Path(output_folder) / f"{stem}{REDO_BATCH_SUFFIX}")
+        except (OSError, ValueError) as error:
+            log(f"{stem}: redo skipped ({error})")
+            continue
+        queue.append((number, stem, arguments))
+    return queue
+
+
+STAGE_MARKER = "IRDRONE_STAGE "   # printed by automatic_registration.py (manual redo)
+REDO_STAGES = [("load", "Loading the images"), ("manual", "Align by hand"),
+               ("compute", "Computing the alignment"), ("write", "Saving")]
+
+
+class RedoRunner(QObject):
+    """Manual realignment of shoot points, one subprocess at a time.
+
+    Each point runs automatic_registration.py with the arguments of its REDO
+    script: a slider window opens, the user aligns VIS and NIR by hand and
+    closes it, the alignment is recomputed. ``point_done`` gives the new
+    aligned image (empty if none) or an error; the next point starts once the
+    slots connected to ``point_done`` have returned (they may ask the user),
+    or, with ``pause_between``, when ``resume()`` is called."""
+
+    point_started = pyqtSignal(int, str)          # number, stem
+    stage = pyqtSignal(int, str, str)             # number, stem, load / manual / compute / write
+    output = pyqtSignal(str)                      # console output / log lines
+    point_done = pyqtSignal(int, str, str, str)   # number, stem, aligned image, error
+    all_done = pyqtSignal()
+
+    def __init__(self, output_folder: Path, parent=None, pause_between: bool = False):
+        super().__init__(parent)
+        self.output_folder = Path(output_folder)
+        self.pause_between = pause_between
+        self._paused = False
+        self.process = QProcess(self)
+        self.process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        self.process.readyReadStandardOutput.connect(self._read_output)
+        self.process.finished.connect(self._on_finished)
+        self.process.errorOccurred.connect(self._on_error)
+        self._queue = []
+        self.current = None
+        self._started_at = 0.0
+        self._partial = ""
+        self.total = 0           # points of the run, and the rank of the current one
+        self.rank = 0
+
+    def busy(self) -> bool:
+        return (self.current is not None or self._paused
+                or self.process.state() != QProcess.ProcessState.NotRunning)
+
+    def start(self, queue) -> None:
+        self._queue = list(queue)
+        self.total, self.rank = len(self._queue), 0
+        self._start_next()
+
+    def resume(self) -> None:
+        """Start the next point (``pause_between``: after the user's verdict)."""
+        if self._paused:
+            self._paused = False
+            self._start_next()
+
+    def _point_finished(self) -> None:
+        """pause_between: wait for resume() before the next point."""
+        self.current = None
+        self._paused = True
+
+    def _start_next(self) -> None:
+        if not self._queue:
+            self.current = None
+            self.all_done.emit()
+            return
+        number, stem, arguments = self._queue.pop(0)
+        self.current = (number, stem)
+        self.rank += 1
+        self._partial = ""
+        self._started_at = time.time()
+        full_arguments = [str(PROJECT_ROOT / "automatic_registration.py"), *arguments]
+        self.process.setProcessEnvironment(redo_environment())
+        self.process.setWorkingDirectory(str(PROJECT_ROOT))
+        self.output.emit(f"\nRedo {stem}: {sys.executable} {' '.join(full_arguments)}")
+        self.point_started.emit(number, stem)
+        self.process.start(sys.executable, full_arguments)
+
+    def _read_output(self) -> None:
+        output = self._partial + bytes(self.process.readAllStandardOutput()).decode("utf-8", errors="replace")
+        lines = output.split("\n")
+        self._partial = lines.pop()          # an unfinished line waits for the rest
+        shown = []
+        for line in lines:
+            if line.startswith(STAGE_MARKER):
+                if self.current is not None:
+                    self.stage.emit(self.current[0], self.current[1], line[len(STAGE_MARKER):].strip())
+            else:
+                shown.append(line.rstrip("\r"))
+        text = "\n".join(shown)
+        if text.strip():
+            self.output.emit(text.rstrip())
+
+    def _flush_output(self) -> None:
+        self._read_output()
+        if self._partial.strip() and not self._partial.startswith(STAGE_MARKER):
+            self.output.emit(self._partial.rstrip())
+        self._partial = ""
+
+    def _on_error(self, error) -> None:
+        # A process that never started emits no "finished" signal.
+        if error != QProcess.ProcessError.FailedToStart:
+            return
+        number, stem = self.current
+        error = f"Unable to start the redo: {self.process.errorString()}"
+        if self.pause_between:
+            self._point_finished()
+            self.point_done.emit(number, stem, "", error)
+        else:
+            self.point_done.emit(number, stem, "", error)
+            self._start_next()
+
+    def _on_finished(self, exit_code: int, exit_status) -> None:
+        self._flush_output()
+        number, stem = self.current
+        if exit_code != 0 or exit_status != QProcess.ExitStatus.NormalExit:
+            image, error = "", f"Redo of {stem} failed (exit code {exit_code})."
+        else:
+            found = redo_check_image(self.output_folder, stem, self._started_at)
+            image = str(found) if found is not None else ""
+            error = "" if found is not None else \
+                f"Redo of {stem}: no aligned image ({ALIGNED_JPEG_LABEL}) was generated."
+        if self.pause_between:
+            self._point_finished()          # paused before the slots run: they may resume()
+            self.point_done.emit(number, stem, image, error)
+        else:
+            self.point_done.emit(number, stem, image, error)
+            self._start_next()
 
 
 class DialogImageProcessing(QDialog):
-    """Run the post-preprocessing image pipeline for a mission."""
+    """Run the post-preprocessing image pipeline for a mission.
 
-    def __init__(self, mission_parameters: dict, parent=None):
+    auto_run (chained from Step 3): the alignment starts at once with the
+    survey range of Step 2, and the review of the aligned images opens when
+    it is done."""
+
+    def __init__(self, mission_parameters: dict, parent=None, auto_run: bool = False):
         super().__init__(parent)
+        self.auto_run = auto_run
 
         mission_folder = (
             mission_parameters.get("folderMissionPath")
@@ -523,22 +570,14 @@ class DialogImageProcessing(QDialog):
         self.process.finished.connect(self._on_process_finished)
         self.process.errorOccurred.connect(self._on_process_error)
 
-        # Manual redo of failed shoot points (one subprocess at a time).
-        self.redo_process = QProcess(self)
-        self.redo_process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
-        self.redo_process.readyReadStandardOutput.connect(self._read_redo_output)
-        self.redo_process.finished.connect(self._on_redo_finished)
-        self.redo_process.errorOccurred.connect(self._on_redo_error)
-        self._redo_queue = []
-        self._redo_current = None
-        self._redo_started_at = 0.0
-        self._redo_validated = []
-        self._redo_rejected = []
-        self._redo_errors = []
 
         self.setWindowTitle("Step 4 – Image processing")
-        self.resize(700, 500)
         self._init_gui()
+        self._fit_to_screen(parent)
+        if self.auto_run:
+            self.log_text.append("Started after the synchronisation: the alignment runs at once "
+                                 "with the survey range of the flight timeline.")
+            QTimer.singleShot(300, self._start_processing)
 
     def _get_fly_image_range(self, shoot_points: list[dict]) -> tuple[int, int]:
         transfer_info_file = (
@@ -593,61 +632,59 @@ class DialogImageProcessing(QDialog):
 
     def _init_gui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(f"<b>Mission:</b> {self.mission_folder}"))
-        layout.addWidget(
-            QLabel(
-                f"{self.pair_count} preprocessed image pairs found. "
-                "The inclusive image-number range is pre-filled from Step 2's "
-                "visible FLY frames."
-            )
+        # The labels wrap and the mission is named, its path in the tool tip:
+        # nothing makes the window wider than the screen (long paths, display scaling).
+        mission_label = QLabel(f"<b>Mission:</b> {self.mission_folder.name}")
+        mission_label.setToolTip(str(self.mission_folder))
+        mission_label.setWordWrap(True)
+        layout.addWidget(mission_label)
+        intro = QLabel(
+            f"{self.pair_count} preprocessed image pairs found. "
+            "The inclusive image-number range is pre-filled from Step 2's "
+            "visible FLY frames."
         )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
 
-        range_layout = QHBoxLayout()
-        range_layout.addWidget(QLabel("First VIS image number:"))
+        # One setting per line, the label left of its field: the window stays
+        # narrow whatever the font (a row of four widgets did not).
+        settings_form = QFormLayout()
         self.start_image_number = QSpinBox()
         self.start_image_number.setRange(1, self.max_image_number)
         self.start_image_number.setValue(self.start_image_number_value)
-        range_layout.addWidget(self.start_image_number)
-
-        range_layout.addWidget(QLabel("Last VIS image number (inclusive):"))
+        settings_form.addRow("First VIS image number:", self.start_image_number)
         self.end_image_number = QSpinBox()
         self.end_image_number.setRange(1, self.max_image_number)
         self.end_image_number.setValue(self.end_image_number_value)
-        range_layout.addWidget(self.end_image_number)
-        range_layout.addStretch()
-        layout.addLayout(range_layout)
-
-        traces_group = QGroupBox("Generated image traces")
-        traces_layout = QHBoxLayout(traces_group)
-        self.ndvi_checkbox = QCheckBox("NDVI")
-        self.ndvi_checkbox.setChecked(False)
-        traces_layout.addWidget(self.ndvi_checkbox)
-        self.nir_checkbox = QCheckBox("NIR")
-        self.nir_checkbox.setChecked(False)
-        traces_layout.addWidget(self.nir_checkbox)
-        self.local_checkbox = QCheckBox("Local alignment")
-        self.local_checkbox.setChecked(True)
-        traces_layout.addWidget(self.local_checkbox)
-        self.global_checkbox = QCheckBox("Global alignment")
-        self.global_checkbox.setChecked(False)
-        traces_layout.addWidget(self.global_checkbox)
-        traces_layout.addStretch()
-        layout.addWidget(traces_group)
-
-        time_difference_layout = QHBoxLayout()
-        time_difference_layout.addWidget(
-            QLabel("Maximum VIS/NIR time difference (s):")
-        )
+        settings_form.addRow("Last VIS image number (inclusive):", self.end_image_number)
         self.max_time_difference = QDoubleSpinBox()
         self.max_time_difference.setRange(0.1, 6.0)
         self.max_time_difference.setDecimals(1)
         self.max_time_difference.setSingleStep(0.1)
         self.max_time_difference.setValue(0.5)
-        time_difference_layout.addWidget(self.max_time_difference)
-        time_difference_layout.addStretch()
-        layout.addLayout(time_difference_layout)
+        settings_form.addRow("Maximum VIS/NIR time difference (s):", self.max_time_difference)
+        settings_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
+        layout.addLayout(settings_form)
+
+        traces_group = QGroupBox("Generated image traces")
+        traces_layout = QGridLayout(traces_group)
+        self.ndvi_checkbox = QCheckBox("NDVI")
+        self.ndvi_checkbox.setChecked(False)
+        traces_layout.addWidget(self.ndvi_checkbox, 0, 0)
+        self.nir_checkbox = QCheckBox("NIR")
+        self.nir_checkbox.setChecked(False)
+        traces_layout.addWidget(self.nir_checkbox, 0, 1)
+        self.local_checkbox = QCheckBox("Local alignment")
+        self.local_checkbox.setChecked(True)
+        traces_layout.addWidget(self.local_checkbox, 1, 0)
+        self.global_checkbox = QCheckBox("Global alignment")
+        self.global_checkbox.setChecked(False)
+        traces_layout.addWidget(self.global_checkbox, 1, 1)
+        traces_layout.setColumnStretch(2, 1)
+        layout.addWidget(traces_group)
 
         self.status_label = QLabel("Ready")
+        self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
 
         self.progress_bar = QProgressBar()
@@ -666,17 +703,25 @@ class DialogImageProcessing(QDialog):
         self.run_button = QPushButton("Run alignment")
         self.run_button.clicked.connect(self._start_processing)
         button_layout.addWidget(self.run_button)
-        self.flag_button = QPushButton("Flag misaligned points")
-        self.flag_button.clicked.connect(self._flag_misaligned_points)
-        self.flag_button.setStyleSheet(BUTTON_STYLE)
-        button_layout.addWidget(self.flag_button)
-        self.redo_button = QPushButton("Redo misaligned points")
-        self.redo_button.clicked.connect(self._redo_misaligned_points)
-        self.redo_button.setStyleSheet(BUTTON_STYLE)
-        button_layout.addWidget(self.redo_button)
+        self.stop_button = QPushButton("\u25A0  Stop")
+        self.stop_button.setStyleSheet(
+            "QPushButton { background: white; color: #B03A2E; font-weight: bold; padding: 6px 14px;"
+            " border: 1px solid #E3B4AE; border-radius: 6px; } QPushButton:hover { background: #FBEDEB; }")
+        self.stop_button.setToolTip("Stop the alignment. The images already aligned are kept; "
+                                    "Run alignment again reuses their motion models.")
+        self.stop_button.clicked.connect(self._stop_processing)
+        self.stop_button.hide()
+        button_layout.addWidget(self.stop_button)
         self.close_button = QPushButton("Close")
         self.close_button.clicked.connect(self.close)
         button_layout.addWidget(self.close_button)
+        self.review_button = QPushButton("Review images  \u25B6")
+        self.review_button.setToolTip(
+            "Check the aligned images on a time line, flag the misaligned ones and realign them by hand."
+        )
+        self.review_button.clicked.connect(self._open_review)
+        self.review_button.setEnabled(self._has_alignment_output())
+        button_layout.addWidget(self.review_button)
         self.settings_button = QPushButton("\u2699")
         self.settings_button.setFixedWidth(30)
         # The gear glyph renders small: enlarge it, keep the button height.
@@ -696,20 +741,51 @@ class DialogImageProcessing(QDialog):
             (self.nir_checkbox, "btn:step4_options", "Also write the aligned NIR image of each shoot point."),
             (self.local_checkbox, "btn:step4_options", "Write the locally aligned VIR image (VIR_XXXX_local.jpg)."),
             (self.global_checkbox, "btn:step4_options", "Write the globally aligned VIR image (VIR_XXXX_global.jpg)."),
+            (self.start_image_number, "btn:step4_options", "First shoot point to align (VIS image number). Default: the survey of Step 2."),
+            (self.end_image_number, "btn:step4_options", "Last shoot point to align (VIS image number, included)."),
             (self.max_time_difference, "btn:step4_options", "Shoot points whose VIS/NIR time difference exceeds this value are not processed."),
             (self.run_button, "btn:step4_run_alignment", "Align the VIS and NIR images of the selected shoot points (can take a long time)."),
-            (self.flag_button, "btn:step4_flag_misaligned", "Select in the explorer the misaligned VIR images and flag them as failed."),
-            (self.redo_button, "btn:step4_redo", "Manually realign the shoot points flagged as failed, then validate the result."),
             (self.close_button, "btn:step4_close", "Close this window."),
-            (self.settings_button, "btn:step4_options", "Processing settings (worker processes / safe mode, log detail)."),
+            (self.review_button, "ch:review", self.review_button.toolTip()),
+            (self.settings_button, "btn:step4_settings", "Processing settings (worker processes / safe mode, log detail)."),
+            (self.stop_button, "btn:step4_stop", self.stop_button.toolTip()),
+            (self.help_button, "ch:step4", "Open the manual at Step 4."),
         ):
             Help.attach_help(widget, label, tip, parent=self)
 
         # Apply the common style to the three main buttons
         self.run_button.setStyleSheet(BUTTON_STYLE)
         self.close_button.setStyleSheet(BUTTON_STYLE)
+        self.review_button.setStyleSheet(colored_button_style("#2E7D32"))
 
         layout.addLayout(button_layout)
+
+    def _fit_to_screen(self, parent=None) -> None:
+        """760 x 520, smaller if the screen is (centred, title bar kept)."""
+        from PyQt6.QtWidgets import QApplication
+        screen = (parent.screen() if parent is not None else None) or QApplication.primaryScreen()
+        if screen is None:
+            self.resize(760, 520)
+            return
+        g = screen.availableGeometry()
+        w = min(max(760, self.minimumSizeHint().width()), g.width() - 20)
+        h = min(max(520, self.minimumSizeHint().height()), g.height() - 60)
+        self.setGeometry(g.x() + (g.width() - w) // 2, g.y() + (g.height() - h) // 2, w, h)
+
+    def _has_alignment_output(self) -> bool:
+        return (self.mission_folder / "ImgIRdrone" / "shoot_points.json").is_file()
+
+    def _open_review(self) -> None:
+        """Review window (modal): flags and redo are done there."""
+        if self.process.state() != QProcess.ProcessState.NotRunning:
+            return
+        try:
+            from IRD_Interactive_review import ReviewDialog
+            dialog = ReviewDialog(self.mission_folder, parent=self)
+        except (FileNotFoundError, ValueError) as error:
+            QMessageBox.warning(self, "Review unavailable", str(error))
+            return
+        dialog.exec()
 
     def _open_settings(self) -> None:
         dialog = Step4SettingsDialog(
@@ -719,235 +795,14 @@ class DialogImageProcessing(QDialog):
             save_worker_setting(dialog.workers())
             save_log_level_setting(dialog.log_level())
 
-    def _flag_misaligned_points(self) -> None:
-        output_folder = self.mission_folder / "ImgIRdrone"
-        inventory_path = output_folder / "shoot_points.json"
-        if not inventory_path.is_file():
-            QMessageBox.warning(
-                self,
-                "Alignment output not found",
-                f"Run the alignment first. File not found:\n{inventory_path}",
-            )
-            return
-
-        QMessageBox.information(
-            self,
-            "Flag misaligned points",
-            f"Select the images ({ALIGNED_JPEG_LABEL}) that you consider "
-            "misaligned. The matching shoot points will be marked as failed.",
-        )
-        selected_files = select_aligned_jpegs(self, output_folder)
-        if not selected_files:
-            return
-
-        numbers, ignored = image_numbers_from_aligned_jpegs(selected_files)
-        if ignored:
-            self.log_text.append(
-                f"Ignored files (not {ALIGNED_JPEG_LABEL}): " + ", ".join(ignored)
-            )
-        if not numbers:
-            QMessageBox.warning(
-                self, "No valid image", f"No {ALIGNED_JPEG_LABEL} image was selected."
-            )
-            return
-
-        try:
-            inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
-            result = apply_failed_selection(inventory, numbers)
-            shutil.copy2(inventory_path, inventory_path.with_name(
-                inventory_path.name + ".bak"
-            ))
-            _write_json_atomic(inventory_path, inventory)
-            _write_json_atomic(
-                output_folder / FAILED_SUMMARY_FILENAME,
-                build_failed_summary(inventory),
-            )
-        except (OSError, ValueError) as error:
-            QMessageBox.critical(self, "Unable to update shoot points", str(error))
-            return
-
-        message = (
-            f"{result['newly_flagged']} shoot point(s) marked as failed, "
-            f"{result['already_flagged']} already failed."
-        )
-        if result["not_found"]:
-            message += " Not in shoot_points.json (ignored): " + ", ".join(
-                f"{number:04d}" for number in result["not_found"]
-            )
-        self.log_text.append(message)
-        self.status_label.setText(message)
-        QMessageBox.information(self, "Shoot points updated", message)
-
     @staticmethod
     def _project_environment() -> QProcessEnvironment:
         """Environment of the processing subprocesses (project modules and SJ converter)."""
-        environment = QProcessEnvironment.systemEnvironment()
-        python_path = os.environ.get("PYTHONPATH", "")
-        project_python_path = str(PROJECT_ROOT)
-        if python_path:
-            project_python_path = os.pathsep.join((project_python_path, python_path))
-        environment.insert("PYTHONPATH", project_python_path)
-        environment.insert("SJCONVERTERPATH", str(SJCONVERTERPATH))
-        return environment
+        return redo_environment()
 
-    def _set_redo_busy(self, busy: bool) -> None:
-        for button in (self.run_button, self.flag_button, self.redo_button, self.close_button):
-            button.setEnabled(not busy)
-
-    def _redo_misaligned_points(self) -> None:
-        """Realign manually the failed shoot points chosen by the user, then validate them."""
-        output_folder = self.mission_folder / "ImgIRdrone"
-        inventory_path = output_folder / "shoot_points.json"
-        if not inventory_path.is_file():
-            QMessageBox.warning(
-                self,
-                "Alignment output not found",
-                f"Run the alignment first. File not found:\n{inventory_path}",
-            )
-            return
-        if not (output_folder / FAILED_SUMMARY_FILENAME).is_file():
-            QMessageBox.information(
-                self,
-                "Misaligned points not flagged yet",
-                "No list of failed shoot points exists yet.\n\n"
-                f"Examine the images of the ImgIRdrone folder ({ALIGNED_JPEG_LABEL}), "
-                "use 'Flag misaligned points' to mark the misaligned ones, "
-                "then come back here.",
-            )
-            return
-        try:
-            inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
-            failed = failed_point_names(inventory)
-        except (OSError, ValueError) as error:
-            QMessageBox.critical(self, "Unable to read shoot points", str(error))
-            return
-        if not failed:
-            QMessageBox.information(
-                self,
-                "No failed shoot point",
-                "No shoot point is flagged as failed.\n"
-                "Use 'Flag misaligned points' to mark the misaligned ones first.",
-            )
-            return
-
-        entries = [
-            (number, stem, (output_folder / f"{stem}{REDO_BATCH_SUFFIX}").is_file())
-            for number, stem in failed
-        ]
-        dialog = RedoSelectionDialog(entries, self)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-        selected = set(dialog.selected_numbers())
-        if not selected:
-            return
-
-        queue = []
-        for number, stem in failed:
-            if number not in selected:
-                continue
-            try:
-                arguments = read_redo_command(output_folder / f"{stem}{REDO_BATCH_SUFFIX}")
-            except (OSError, ValueError) as error:
-                self.log_text.append(f"{stem}: redo skipped ({error})")
-                continue
-            queue.append((number, stem, arguments))
-        if not queue:
-            QMessageBox.warning(self, "Nothing to redo", "No selected point can be realigned.")
-            return
-
-        QMessageBox.information(
-            self,
-            "Manual alignment",
-            "A slider window opens for each selected point. Adjust yaw, pitch and roll "
-            "until VIS and NIR overlap, then close that window: the alignment is "
-            "recomputed and the new VIR image is shown for validation.",
-        )
-        self._redo_queue = queue
-        self._redo_validated = []
-        self._redo_rejected = []
-        self._redo_errors = []
-        self._set_redo_busy(True)
-        self._start_next_redo()
-
-    def _start_next_redo(self) -> None:
-        if not self._redo_queue:
-            self._finish_redo()
-            return
-        number, stem, arguments = self._redo_queue.pop(0)
-        self._redo_current = (number, stem)
-        self._redo_started_at = time.time()
-        full_arguments = [str(PROJECT_ROOT / "automatic_registration.py"), *arguments]
-        self.redo_process.setProcessEnvironment(self._project_environment())
-        self.redo_process.setWorkingDirectory(str(PROJECT_ROOT))
-        self.log_text.append(f"\nRedo {stem}: {sys.executable} {' '.join(full_arguments)}")
-        self.status_label.setText(
-            f"Redo {stem}: adjust the sliders, then close the window to continue."
-        )
-        self.progress_bar.setRange(0, 0)
-        self.redo_process.start(sys.executable, full_arguments)
-
-    def _read_redo_output(self) -> None:
-        output = bytes(self.redo_process.readAllStandardOutput()).decode("utf-8", errors="replace")
-        if output.strip():
-            self.log_text.append(output.rstrip())
-            self.log_text.ensureCursorVisible()
-
-    def _on_redo_error(self, error) -> None:
-        # A process that never started emits no "finished" signal.
-        if error != QProcess.ProcessError.FailedToStart:
-            return
-        stem = self._redo_current[1]
-        self.log_text.append(f"Unable to start the redo of {stem}: {self.redo_process.errorString()}")
-        self._redo_errors.append(stem)
-        self._start_next_redo()
-
-    def _on_redo_finished(self, exit_code: int, exit_status) -> None:
-        self._read_redo_output()
-        number, stem = self._redo_current
-        self.progress_bar.setRange(0, 1)
-        self.progress_bar.setValue(0)
-        if exit_code != 0 or exit_status != QProcess.ExitStatus.NormalExit:
-            self.log_text.append(f"Redo of {stem} failed (exit code {exit_code}).")
-            self._redo_errors.append(stem)
-            self._start_next_redo()
-            return
-
-        output_folder = self.mission_folder / "ImgIRdrone"
-        vir_path = redo_check_image(output_folder, stem, self._redo_started_at)
-        if vir_path is None:
-            self.log_text.append(
-                f"Redo of {stem}: no aligned image ({ALIGNED_JPEG_LABEL}) was generated."
-            )
-            self._redo_errors.append(stem)
-            self._start_next_redo()
-            return
-
-        check = AlignmentCheckDialog(vir_path, f"{stem} – new alignment", self)
-        if check.exec() == QDialog.DialogCode.Accepted:
-            try:
-                mark_points_aligned(output_folder, {number})
-            except (OSError, ValueError) as error:
-                QMessageBox.critical(self, "Unable to update shoot points", str(error))
-                self._redo_errors.append(stem)
-            else:
-                self._redo_validated.append(stem)
-                self.log_text.append(f"{stem}: alignment validated, shoot point no longer failed.")
-        else:
-            self._redo_rejected.append(stem)
-            self.log_text.append(f"{stem}: alignment rejected, shoot point still failed.")
-        self._start_next_redo()
-
-    def _finish_redo(self) -> None:
-        self._redo_current = None
-        self._set_redo_busy(False)
-        message = (
-            f"Redo finished: {len(self._redo_validated)} validated, "
-            f"{len(self._redo_rejected)} still misaligned, "
-            f"{len(self._redo_errors)} error(s)."
-        )
-        self.status_label.setText(message)
-        self.log_text.append(message)
-        QMessageBox.information(self, "Redo finished", message)
+    def _append_log(self, text: str) -> None:
+        self.log_text.append(text)
+        self.log_text.ensureCursorVisible()
 
     def _start_processing(self) -> None:
         start =  self.start_image_number.value()
@@ -1008,8 +863,7 @@ class DialogImageProcessing(QDialog):
         self._progress_total = 0
         self._last_elapsed_seconds = None
         self.run_button.setEnabled(False)
-        self.flag_button.setEnabled(False)
-        self.redo_button.setEnabled(False)
+        self.review_button.setEnabled(False)
         self.close_button.setEnabled(False)
         self.settings_button.setEnabled(False)
         self.start_image_number.setEnabled(False)
@@ -1019,7 +873,33 @@ class DialogImageProcessing(QDialog):
         self.local_checkbox.setEnabled(False)
         self.global_checkbox.setEnabled(False)
         self.max_time_difference.setEnabled(False)
+        self._stopped_by_user = False
+        self.run_button.hide()
+        self.stop_button.show()
         self.process.start(sys.executable, arguments)
+
+    def _stop_processing(self) -> None:
+        """Stop button: ends the alignment and its worker processes."""
+        if self.process.state() == QProcess.ProcessState.NotRunning:
+            return
+        answer = QMessageBox.question(
+            self, "Stop the alignment",
+            "Stop the alignment now?\n\nThe images already aligned are kept. "
+            "Run alignment again later: the images already done reuse their motion model.")
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self._stopped_by_user = True
+        self.stop_button.setEnabled(False)
+        self.status_label.setText("Stopping…")
+        self.log_text.append("\nStopping the alignment (asked by the user)…")
+        kill_process_tree(self.process.processId())
+        if not self.process.waitForFinished(5000):
+            self.process.kill()
+
+    def _processing_controls_idle(self) -> None:
+        self.stop_button.hide()
+        self.stop_button.setEnabled(True)
+        self.run_button.show()
 
     def _read_process_output(self, final: bool = False) -> None:
         output = bytes(self.process.readAllStandardOutput()).decode(
@@ -1072,14 +952,14 @@ class DialogImageProcessing(QDialog):
 
     def _on_process_finished(self, exit_code: int, exit_status) -> None:
         self._read_process_output(final=True)
+        self._processing_controls_idle()
         if self._progress_total == 0:
             self.progress_bar.setRange(0, 1)
             self.progress_bar.setValue(1 if exit_code == 0 else 0)
         elif exit_code == 0 and exit_status == QProcess.ExitStatus.NormalExit:
             self.progress_bar.setValue(self._progress_total)
         self.run_button.setEnabled(True)
-        self.flag_button.setEnabled(True)
-        self.redo_button.setEnabled(True)
+        self.review_button.setEnabled(self._has_alignment_output())
         self.close_button.setEnabled(True)
         self.settings_button.setEnabled(True)
         self.start_image_number.setEnabled(True)
@@ -1090,6 +970,15 @@ class DialogImageProcessing(QDialog):
         self.global_checkbox.setEnabled(True)
         self.max_time_difference.setEnabled(True)
 
+        if getattr(self, "_stopped_by_user", False):
+            self._stopped_by_user = False
+            done = self.progress_bar.value() if self._progress_total else 0
+            text = (f"Stopped: {done} of {self._progress_total} images aligned."
+                    if self._progress_total else "Stopped.")
+            self.status_label.setText(text + " Run alignment to go on.")
+            self.log_text.append("\n" + text)
+            self.run_button.setText("Run alignment again")
+            return
         if exit_code == 0 and exit_status == QProcess.ExitStatus.NormalExit:
             if self._last_elapsed_seconds is not None and self._progress_total:
                 average = self._last_elapsed_seconds / self._progress_total
@@ -1102,21 +991,29 @@ class DialogImageProcessing(QDialog):
                 self.status_label.setText("Processing completed successfully.")
             self.log_text.append("\nProcessing completed successfully.")
             mark_step_done(self.mission_folder, 4)
+            self.review_button.setEnabled(True)
+            self.review_button.setDefault(True)
+            self.review_button.setFocus()
+            if self.auto_run:
+                self.auto_run = False
+                QTimer.singleShot(400, self._open_review)
         else:
             self.status_label.setText(f"Processing failed (exit code {exit_code}).")
             self.log_text.append(f"\nProcessing failed (exit code {exit_code}).")
 
     def _on_process_error(self, error) -> None:
+        if getattr(self, "_stopped_by_user", False):
+            return               # killed on purpose: _on_process_finished reports it
         if error != QProcess.ProcessError.FailedToStart:
             self.log_text.append(f"\nProcessing process error: {self.process.errorString()}")
             return
 
         self.progress_bar.setRange(0, 1)
         self.progress_bar.setValue(0)
+        self._processing_controls_idle()
         self.status_label.setText("Unable to start processing.")
         self.run_button.setEnabled(True)
-        self.flag_button.setEnabled(True)
-        self.redo_button.setEnabled(True)
+        self.review_button.setEnabled(self._has_alignment_output())
         self.close_button.setEnabled(True)
         self.settings_button.setEnabled(True)
         self.start_image_number.setEnabled(True)
@@ -1144,12 +1041,11 @@ class DialogImageProcessing(QDialog):
     def closeEvent(self, event) -> None:
         if (
             self.process.state() != QProcess.ProcessState.NotRunning
-            or self.redo_process.state() != QProcess.ProcessState.NotRunning
         ):
             QMessageBox.information(
                 self,
                 "Processing in progress",
-                "Wait for image processing to finish before closing this window.",
+                "Wait for image processing to finish, or stop it, before closing this window.",
             )
             event.ignore()
             return

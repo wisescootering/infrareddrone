@@ -57,6 +57,7 @@ class WorkingDirDialog(QDialog):
         row.addWidget(self.path_edit, 1)
         browse = QPushButton("Browse...")
         browse.setStyleSheet(BUTTON_STYLE)
+        browse.setToolTip("Choose the folder that holds the missions.")
         browse.clicked.connect(self._browse)
         row.addWidget(browse)
         layout.addLayout(row)
@@ -142,10 +143,11 @@ class WorkingDirBar(QWidget):
         self.gear.setStyleSheet(GEAR_STYLE)
         self.gear.setToolTip("Options: change the working folder")
         self.gear.clicked.connect(self.open_options)
-        layout.addWidget(self.gear)
         # Free space of the working folder's disk, kept up to date while processing.
         self.free_label = QLabel()
         layout.addWidget(self.free_label)
+        layout.addSpacing(4)
+        layout.addWidget(self.gear)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh_free_space)
         self.timer.start(30_000)
@@ -154,7 +156,9 @@ class WorkingDirBar(QWidget):
     def refresh(self):
         folder = config.OUTPUT_FOLDER_NAME
         source = " (from IRDRONE_WORKING_DIR)" if config.WORKING_DIR_SOURCE == "environment" else ""
-        self.label.setText(f'Working folder: <a href="open">{folder}</a>{source}')
+        self.label.setText(f'<span style="color:#6B7785">Working folder</span>&nbsp; '
+                           f'<a href="open" style="color:#17365D; text-decoration:none; font-weight:bold">'
+                           f'{folder}</a>{source}')
         self.label.setToolTip("Click to open the folder")
         self.refresh_free_space()
 
@@ -164,8 +168,8 @@ class WorkingDirBar(QWidget):
             self.free_label.setText("")
             return
         low = free < Disk.LOW_SPACE_BYTES
-        color = "darkred; font-weight: bold" if low else "gray"
-        self.free_label.setText(f'<span style="color: {color};">{Disk.format_bytes(free)} free</span>')
+        color = "darkred; font-weight: bold" if low else "#6B7785"
+        self.free_label.setText(f'<span style="color: {color};">· {Disk.format_bytes(free)} free</span>')
         self.free_label.setToolTip(
             "Low disk space: a mission needs several GB (images, aligned TIFs, mapping)."
             if low else "Free space on the disk of the working folder")

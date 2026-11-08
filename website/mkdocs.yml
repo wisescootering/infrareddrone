@@ -14,7 +14,8 @@ nav:
   - Camera calibration: calibration.md
   - ODM mapping: odm-mapping.md
   - IGN registration: ign-registration.md
-  - User manual (PDF): https://github.com/wisescootering/infrareddrone/releases/download/help-latest/irdrone_help.pdf
+  - User manual: manual/index.md
+  - User manual (PDF): https://github.com/wisescootering/infrareddrone/releases/download/help-latest/irdrone_help_en.pdf
 
 theme:
   name: material
@@ -48,3 +49,12 @@ markdown_extensions:
       toc_depth: 3
   - pymdownx.superfences
   - pymdownx.highlight
+  - def_list
+  - footnotes
+  - pymdownx.arithmatex:
+      generic: true
+
+# Maths of the user manual (equations numbered as in the PDF, \eqref resolved)
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js

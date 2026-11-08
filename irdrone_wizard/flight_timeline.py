@@ -545,6 +545,65 @@ def derived_window(vis_times: np.ndarray, vis_window: Window,
 # ---------------------------------------------------------------------------
 #  Whole mission analysis
 # ---------------------------------------------------------------------------
+def scan_vis(mission: Path, vis_frames: List[Frame], frame_done: Callable[[int], None] = lambda i: None,
+             cancelled: Callable[[], bool] = lambda: False) -> Optional[Window]:
+    """VIS: altitude first, marker only during the low hover. Returns the hover.
+    Results are cached: a second scan (Step 2 after Step 1) is immediate."""
+    hover = low_hover_window([f.alt for f in vis_frames])
+    scan_until = hover.last if hover else len(vis_frames) - 1
+    scanner = FrameScanner(mission, "VIS")
+    lost = 0
+    for i, f in enumerate(vis_frames):
+        if cancelled():
+            scanner.save()
+            raise InterruptedError
+        detect = i <= scan_until
+        if hover is None and lost >= NIR_LOST_FRAMES:
+            detect = False   # no altitude: same early stop as NIR
+        scanner.process(f, detect)
+        if hover is None and f.scanned:
+            seen_before = any(x.marker_angle is not None for x in vis_frames[:i])
+            lost = lost + 1 if (f.marker_angle is None and seen_before) else 0
+        frame_done(i)
+    scanner.save()
+    return hover
+
+
+def scan_nir(mission: Path, nir_frames: List[Frame], frame_done: Callable[[int], None] = lambda i: None,
+             cancelled: Callable[[], bool] = lambda: False) -> Optional[Window]:
+    """NIR: scan from the start until the marker is lost for good. Returns the
+    window where the marker is seen."""
+    scanner = FrameScanner(mission, "NIR")
+    seen, lost = False, 0
+    last_seen = None
+    for i, f in enumerate(nir_frames):
+        if cancelled():
+            scanner.save()
+            raise InterruptedError
+        detect = not (seen and lost >= NIR_LOST_FRAMES) and i < max(20, int(0.7 * len(nir_frames)))
+        scanner.process(f, detect)
+        if detect and f.scanned:
+            if f.marker_angle is not None:
+                seen, lost, last_seen = True, 0, i
+            elif seen:
+                lost += 1
+        frame_done(i)
+    scanner.save()
+    if last_seen is None:
+        return None
+    first_seen = next(i for i, f in enumerate(nir_frames) if f.marker_angle is not None)
+    return Window(first_seen, last_seen)
+
+
+def prepare_band(mission: Path, band: str, cancelled: Callable[[], bool] = lambda: False,
+                 frame_done: Callable[[int, int], None] = lambda i, n: None) -> None:
+    """Scan a band ahead of Step 2 (run by Step 1 while it copies the next
+    images): thumbnails and target detections land in the cache."""
+    frames = list_frames(mission, band)
+    scan = scan_vis if band == "VIS" else scan_nir
+    scan(mission, frames, lambda i: frame_done(i, len(frames)), cancelled)
+
+
 def analyse_mission(mission: Path, progress: Progress = None,
                     cancelled: Callable[[], bool] = lambda: False
                     ) -> Tuple[BandAnalysis, BandAnalysis, TimelineProposal]:
@@ -562,49 +621,12 @@ def analyse_mission(mission: Path, progress: Progress = None,
     vis = BandAnalysis("VIS", vis_frames)
     nir = BandAnalysis("NIR", nir_frames)
     total = max(1, len(vis_frames) + len(nir_frames))
-    done = 0
 
-    # ---- VIS: altitude first, marker only during the low hover
-    vis.hover = low_hover_window([f.alt for f in vis_frames])
-    scan_until = vis.hover.last if vis.hover else len(vis_frames) - 1
-    scanner = FrameScanner(mission, "VIS")
-    lost = 0
-    for i, f in enumerate(vis_frames):
-        if cancelled():
-            scanner.save()
-            raise InterruptedError
-        detect = i <= scan_until
-        if vis.hover is None and lost >= NIR_LOST_FRAMES:
-            detect = False   # no altitude: same early stop as NIR
-        scanner.process(f, detect)
-        if vis.hover is None and f.scanned:
-            seen_before = any(x.marker_angle is not None for x in vis_frames[:i])
-            lost = lost + 1 if (f.marker_angle is None and seen_before) else 0
-        done += 1
-        report(int(100 * done / total), f"Reading the visible images ({i + 1}/{len(vis_frames)})")
-    scanner.save()
-
-    # ---- NIR: scan from the start until the marker is lost for good
-    scanner = FrameScanner(mission, "NIR")
-    seen, lost = False, 0
-    last_seen = None
-    for i, f in enumerate(nir_frames):
-        if cancelled():
-            scanner.save()
-            raise InterruptedError
-        detect = not (seen and lost >= NIR_LOST_FRAMES) and i < max(20, int(0.7 * len(nir_frames)))
-        scanner.process(f, detect)
-        if detect and f.scanned:
-            if f.marker_angle is not None:
-                seen, lost, last_seen = True, 0, i
-            elif seen:
-                lost += 1
-        done += 1
-        report(int(100 * done / total), f"Reading the infrared images ({i + 1}/{len(nir_frames)})")
-    scanner.save()
-    if last_seen is not None:
-        first_seen = next(i for i, f in enumerate(nir_frames) if f.marker_angle is not None)
-        nir.hover = Window(first_seen, last_seen)
+    vis.hover = scan_vis(mission, vis_frames, lambda i: report(
+        int(100 * (i + 1) / total), f"Reading the visible images ({i + 1}/{len(vis_frames)})"), cancelled)
+    nir.hover = scan_nir(mission, nir_frames, lambda i: report(
+        int(100 * (len(vis_frames) + i + 1) / total), f"Reading the infrared images ({i + 1}/{len(nir_frames)})"),
+        cancelled)
 
     # ---- Rotation segments, coarse shift, windows
     vis.segments = rotation_segments(vis.times, [f.marker_angle for f in vis_frames])

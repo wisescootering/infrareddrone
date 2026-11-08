@@ -36,6 +36,11 @@
   \graphicspath{{images/}}
 \fi
 
+% Symboles des boutons du logiciel (pdflatex ne les connait pas)
+\DeclareUnicodeCharacter{25C0}{\ensuremath{\blacktriangleleft}}
+\DeclareUnicodeCharacter{25B6}{\ensuremath{\blacktriangleright}}
+\DeclareUnicodeCharacter{2699}{\ensuremath{\circledast}}
+\DeclareUnicodeCharacter{2922}{\ensuremath{\nearrow}}
 % Bouton du logiciel
 \DeclareRobustCommand{\bouton}[1]{\texorpdfstring{\fbox{\small\textsf{#1}}}{#1}}
 % A completer
@@ -192,7 +197,7 @@ La figure \ref{Facteur_reflexion_vegetaux} montre les courbes typiques du facteu
 Notons que les feuillus produisent aussi de la bêta-carotène et de la fucoxanthine qui absorbent le bleu et une partie du vert mais réfléchissent le rouge. 
 C'est pour cette raison qu'à l'automne, lorsque les feuillus ne produisent plus de chlorophylle mais que la bêta-carotène est encore présente, ces espèces arborent des teintes allant du marron orangé à l'ocre rouge.
 
-\figureIRD[Facteur_reflexion_vegetaux]{Facteur_reflexion_vegetaux.pdf}{Facteur de réflexion des résineux et des conifères. Dans la bande spectrale visible $[400\,nm ,\,700\,nm]$ le comportement des deux espèces est très similaire. En revanche dans la bande spectrale infrarouge IR-A $[700\,nm ,\, 1.4\,\mu m]$ bien présente dans le spectre solaire les deux espèces se distinguent nettement.}{1}
+\figureIRD[Facteur_reflexion_vegetaux]{Facteur_reflexion_vegetaux.pdf}{Facteur de réflexion des résineux et des feuillus. Dans la bande spectrale visible $[400\,nm ,\,700\,nm]$ le comportement des deux espèces est très similaire. En revanche dans la bande spectrale infrarouge IR-A $[700\,nm ,\, 1.4\,\mu m]$ bien présente dans le spectre solaire les deux espèces se distinguent nettement.}{1}
 
 
 On remarque que les feuilles des arbres réfléchissent le rayonnement autour de 550 nm qui correspond à la couleur verte perçue par l'\oe il humain. Mais les courbes étant identiques dans la partie visible du spectre (400 nm à 700 nm) on ne peut pas distinguer entre les différentes essences. En revanche les facteurs de réflexion dans le domaine infrarouge sont bien distincts entre résineux et feuillus. L'idée est d'exploiter cette propriété en produisant une image infrarouge  du couvert végétal
@@ -291,28 +296,29 @@ figure~\ref{fig:img_VIR_1}).
 
 
 \section{Fonctionnalités principales du logiciel IRDrone}
-\figureIRD[fig:dialogueprincipal]{DialoguePrincipal}{Fen\^etre principale d'IRdrone.}{0.8}
+Au lancement, une petite fenêtre \og Loading, please wait \fg{} s'affiche pendant le chargement (quelques dizaines de secondes), puis la fenêtre principale s'ouvre (chapitre~\ref{ch:home}). Elle liste les missions du dossier de travail et, une fois une mission ouverte, ses six étapes avec leur avancement. Un clic sur une étape la lance ; les étapes 1 à 4 s'enchaînent d'elles-mêmes.
 
-Les fonctionnalités essentielles du logiciel IRDrone sont représentées dans la fen\^etre principale, chacune par une commande. Au lancement de l'application cette fenêtre de dialogue s'ouvre (voir figure~\ref{fig:dialogueprincipal}). Le démarrage peut durer quelques dizaines de secondes : une petite fenêtre
-\og Loading, please wait \fg{} s'affiche pendant le chargement et se ferme lorsque le logiciel est prêt.Elle comporte 6 boutons qui permettent d'exploiter les images d'une mission, puis de l'archiver. Le bouton \bouton{?}, en bas à droite de la fenêtre, ouvre ce manuel. 
-
-Cette exploitation comporte 6 étapes :
+L'exploitation d'une mission comporte 6 étapes :
 \begin{enumerate}
-	\item La première étape permet de transférer sur l'ordinateur les images prises par les caméras, qui sont stockées sur cartes SD. 
-	Dans cette étape on définit aussi les paramètres de la mission. 
+	\item \textbf{Mission} : les images des deux caméras sont trouvées sur les cartes SD, copiées dans un nouveau dossier de mission, et les paramètres de la mission sont enregistrés.
 	Le nom du dossier de mission est généré automatiquement en fonction de la localisation et de la date
-	\footnote{\label{fn:MissionFolderName} Par défaut le nom du dossier est FLY-YYYYMMDD-hhmm-location. Il peut être modifié une fois pour toutes à la création de la mission dans le champ \og location \fg. Par exemple si le champ \og location \fg~a la valeur Blassac on peut préciser \og Blassac Bourg \fg.}. 
-	\item La deuxième étape permet de sélectionner les images du décollage où sont visibles les mires ArUco (synchronisation des caméras) et les images prises au-dessus de la zone d'étude (alignement multispectral).
-	\item La troisième étape synchronise les deux caméras VIS et NIR et établit la liste des paires d'images VIS / NIR.
-	\item La quatrième étape, qui est le c\oe ur d'IRDrone, aligne les paires d'images pour obtenir 4 couches spectrales superposées.  
-	\item La cinquième étape permet un post-traitement des images multispectrales : géoréférencement, orthorectification, mapping, topographie.
-		\item La sixième étape est consacrée à l'archivage de la mission.
-	\end{enumerate}
+	\footnote{\label{fn:MissionFolderName} Par défaut le nom du dossier est FLY-YYYYMMDD-hhmm-location. Il peut être modifié une fois pour toutes à la création de la mission dans le champ \og Location \fg. Par exemple si le champ \og Location \fg~a la valeur Blassac on peut préciser \og Blassac Bourg \fg.}.
+	\item \textbf{Ligne de temps du vol} : les images de synchronisation (mire ArUco au décollage) et celles du relevé au-dessus de la zone d'étude sont détectées automatiquement ; l'utilisateur vérifie.
+	\item \textbf{Synchronisation} : le décalage entre les horloges des deux caméras est mesuré et les images VIS et NIR sont appariées.
+	\item \textbf{Alignement}, c\oe ur d'IRDrone : chaque paire d'images est alignée pour obtenir 4 couches spectrales superposées. La revue des images alignées (chapitre~\ref{ch:review}) permet de vérifier le résultat et de réaligner à la main les images ratées.
+	\item \textbf{Post-traitement} : géoréférencement, orthorectification, assemblage en orthophoto (mapping), modèle de terrain et courbes de niveau.
+	\item \textbf{Archivage} de la mission.
+\end{enumerate}
 
 \figureIRD[fig:Air_Mission_folder]{Air_Mission_folder.png}{Le dossier principal \texttt{Air-Mission} avec deux missions en cours de traitement (ici Chalivoy-Milon et Labout) et une mission archivée (ici Blassac). Sous Windows les icônes sont attribués automatiquement.}{0.6}
 
-\subsection*{Aide en ligne}
-Chaque fenêtre comporte un bouton \bouton{?} qui ouvre ce manuel au chapitre de l'étape en cours. Pour obtenir l'aide d'une commande précise, faire un \textbf{clic droit} sur le bouton (ou sur la case à cocher) puis choisir \og Help on this button \fg : le manuel s'ouvre à la section correspondante. Laisser le pointeur de la souris quelques instants sur un bouton affiche aussi une info-bulle qui résume son action.
+\subsection*{Aide en ligne}\label{sec:help}
+\begin{itemize}
+	\item \textbf{Info-bulles.} Laisser le pointeur de la souris quelques instants sur un bouton (ou une case à cocher) affiche une info-bulle qui résume son action.
+	\item \textbf{Clic droit.} Un clic droit sur un bouton, puis \og Help on this button \fg, ouvre ce manuel à la section qui décrit ce bouton. Sur une étape de la page d'accueil, le clic droit ouvre le chapitre de l'étape.
+	\item \textbf{Bouton \bouton{?}.} Chaque fenêtre a un bouton \bouton{?} qui ouvre ce manuel au chapitre de la fenêtre. Dans les fenêtres qui se pilotent au clavier (ligne de temps, revue), son info-bulle rappelle les touches. Dans la fenêtre principale, c'est \bouton{? Manual}, en bas à droite.
+\end{itemize}
+Le manuel s'ouvre dans le lecteur PDF par défaut (navigateur, Acrobat), à la bonne page quand le lecteur le permet.
 
 \section{Organisation numérique d'une mission IRDrone}
 
@@ -352,7 +358,8 @@ Ce dossier comporte les sous-dossiers :
 	         \end{itemize}
 	\item \texttt{FlightAnalytics}. C'est un dossier technique.
 			\begin{itemize}
-				\item \texttt{mission\_parameters.json}. Fichier contenant les paramètres de la mission.
+				\item \texttt{mission\_parameters.json}. Fichier contenant les paramètres de la mission (modifiable avec la fenêtre \og Mission details \fg, §\ref{btn:step1_details}).
+				\item \texttt{flight\_timeline.json}. Phases du vol confirmées à l'étape~2.
 				\item \texttt{fly\_vertical\_profil.png}. Graphe qui permet de visualiser les altitudes de prise de vue par rapport au sol.
 				\item \texttt{Angles analysis.png},  \texttt{Angles analysis dispersion.png}, \texttt{Angles analysis spectrum.png}. Graphes d'analyse de la qualité du vol. Le premier de ces trois graphes permet par exemple de juger si l'attitude du drone pendant la mission est restée dans les spécifications de vol.
 			\end{itemize}
@@ -366,6 +373,7 @@ Ce dossier comporte les sous-dossiers :
 				\item \texttt{VIS\_XXXX\_motion\_model.json},
 				\item \texttt{VIS\_XXXX\_motion\_model.npy}.
 			\end{itemize}
+		\item \texttt{review.json}. Mesures et points vérifiés de la revue des images alignées (chapitre~\ref{ch:review}).
 		\item \texttt{shoot\_points.json}. La liste des shoot points traités avec un indicateur de réussite. Attention : cet indicateur suppose par défaut que l'alignement est correct. L'utilisateur dispose d'une procédure pour examiner les alignements et les déclarer, le cas échéant, défaillants.
 		\item \texttt{imgMultispectral}. Dossier contenant les quadruplets d'images multispectrales au format tif. Ici ces images ne sont pas géoréférencées. Pour chaque shoot point XXXX :
 			\begin{itemize}
@@ -378,7 +386,7 @@ Ce dossier comporte les sous-dossiers :
 		\item \texttt{VIS\_XXXX\_align\_traces\_manual}. Dossier contenant toutes les informations et images suite à une opération d'alignement manuel des images VIS et NIR du shoot point XXXX.
 		\end{itemize}
 	\item \texttt{mapping\_MULTI}. Dossier de travail de l'étape~5 (mapping).
-	\item \texttt{Synchro}. Fichiers de l'étape~3 : images de travail \texttt{*\_RawTherapee.jpg} (sous-dossiers \texttt{VIS} et \texttt{NIR}), images de contrôle de la détection des mires (\texttt{Check\_ARUCO}) et graphiques \texttt{check\_time\_*.png}.
+	\item \texttt{Synchro}. Aperçus des images et détections de la mire préparés pour l'étape~2 (\texttt{Thumbnails}, un cache recréé si besoin) ; fichiers de l'étape~3 : images de travail \texttt{*\_RawTherapee.jpg} (sous-dossiers \texttt{VIS} et \texttt{NIR}), images de contrôle de la détection des mires (\texttt{Check\_ARUCO}) et graphiques \texttt{check\_time\_*.png}.
 \end{enumerate}
 
 \section{Encha\^inement des \'etapes}
@@ -388,22 +396,131 @@ Vous devez avoir sur un support numérique (carte SD, disque dur) les images des
 Pour une nouvelle mission il faut suivre dans l'ordre les étapes 1 à 5. 
 Cependant les étapes 2 à 5 peuvent être lancées individuellement, à condition que le dossier de la mission comporte au minimum les éléments produits par les étapes qui la précèdent. C'est particulièrement utile pour les étapes 4 et 5.
 
+Les étapes se lancent depuis la fenêtre principale, décrite au chapitre suivant.
+
+%==========================================================
+\chapter{La fenêtre principale}\label{ch:home}
+La fenêtre principale a deux pages : la liste des missions, puis la mission ouverte. En bas, une barre rappelle le dossier de travail et ouvre ce manuel.
+
+\section{Liste des missions}\label{btn:home_missions}
+Sans mission ouverte, la fenêtre propose (figure~\ref{fig:home_welcome}) :
+\begin{description}
+	\item[\bouton{New mission}] crée une mission à partir des cartes SD du drone et de la caméra infrarouge (étape~1, chapitre~\ref{ch:step1}).
+	\item[\bouton{Open a mission}] ouvre une mission déjà créée : choisir son dossier \texttt{FLY-YYYYMMDD-hhmm-location}.
+	\item[Missions récentes] les missions du dossier de travail, les plus récentes en premier, avec leur avancement : un point vert par étape faite. Un clic ouvre la mission.
+\end{description}
+Le bouton \bouton{All missions} de la page de la mission revient à cette liste.
+
+\figureIRD[fig:home_welcome]{home_welcome.png}{La liste des missions : nouvelle mission, ouvrir une mission, missions récentes et leur avancement.}{0.85}
+
+\section{La mission ouverte}\label{btn:home_steps}
+La page de la mission (figure~\ref{fig:home_mission}) montre :
+\begin{itemize}
+	\item en haut, le nom de la mission (un clic ouvre son dossier dans l'explorateur) et le lieu, la date et le pilote ;
+	\item les six étapes, de gauche à droite : coche verte et date pour une étape faite, cadre bleu pour l'étape suivante, gris pour les autres. \textbf{Un clic sur une étape la lance}, même déjà faite (pour la refaire). Deux exceptions :
+	\begin{itemize}
+		\item l'étape~1 faite ouvre seulement la fenêtre \og Mission details \fg~(§\ref{btn:step1_details}) : les cartes SD ne sont pas relues ;
+		\item l'étape~3 faite montre le résultat enregistré (décalage des horloges, courbes alignées) sans rien recalculer (§\ref{sec:step3_chained}).
+	\end{itemize}
+	Un clic droit sur une étape ouvre son chapitre de ce manuel ;
+	\item l'étape suivante, expliquée en une phrase, avec son bouton (§\ref{btn:home_continue}) ;
+	\item quelques chiffres : nombre d'images, de paires, d'images alignées, de points signalés mal alignés ;
+	\item \bouton{Review the aligned images}, une fois l'étape~4 faite (chapitre~\ref{ch:review}) ;
+	\item à droite, la carte du vol ou une image alignée (§\ref{btn:home_map}).
+\end{itemize}
+
+\figureIRD[fig:home_mission]{home_mission.png}{La mission ouverte : les six étapes (un clic lance une étape), étape suivante, chiffres de la mission, revue des images alignées et carte du vol sur l'orthophoto et les photos aériennes IGN.}{0.9}
+
+\section{Bouton \bouton{Continue with Step N}}\label{btn:home_continue}
+Lance l'étape suivante. Les étapes 1 à 4 s'enchaînent d'elles-mêmes :
+\begin{enumerate}
+	\item à la fin de l'étape~1, \bouton{Flight timeline} ouvre l'étape~2 ;
+	\item \bouton{Confirm and synchronize} de l'étape~2 lance l'étape~3 : détection des mires, décalage des horloges, puis une question, \og Do the two curves overlap? \fg~; \bouton{Yes} apparie les images ;
+	\item \bouton{Image processing} ouvre l'étape~4. L'alignement, long, ne démarre jamais tout seul : il se lance avec \bouton{Run alignment} et s'arrête à tout moment avec \bouton{Stop} ;
+	\item à la fin, \bouton{Review images} ouvre la revue des images alignées.
+\end{enumerate}
+Il reste donc à vérifier les phases du vol, la superposition des courbes de synchronisation, puis le résultat. Une fois toutes les étapes faites, le bouton devient \bouton{Archive the mission} (étape~6).
+
+\section{Carte du vol}\label{btn:home_map}
+La carte est disponible dès l'étape~1 : les positions sont lues dans les EXIF des images visibles. Elle montre :
+\begin{itemize}
+	\item la trajectoire du drone et un point par image, coloré selon les phases confirmées à l'étape~2 (violet : synchronisation, vert : relevé) ;
+	\item l'orthophoto de l'étape~5, une fois le mapping fait ;
+	\item en fond, des photos aériennes : IGN pour la France, Esri World Imagery ailleurs, ou OpenStreetMap.
+\end{itemize}
+Survoler un point montre la vignette de son image ; un clic sur un point montre l'emprise au sol de l'image (le trait épais est le haut de l'image). Molette : zoom ; glisser : déplacement ; double-clic ou bouton \bouton{⤢} : tout le vol.
+
+Le menu \bouton{Layers} choisit le fond (IGN, Esri, OpenStreetMap ou aucun) et l'affichage de l'orthophoto, en couleurs naturelles ou en fausses couleurs infrarouges. Le fond vient d'internet : hors ligne, la carte reste utilisable (vol, emprises, orthophoto), seul le fond manque, et rien n'est bloqué. Les tuiles déjà vues sont gardées dans un cache (\texttt{\textasciitilde/.cache/irdrone} sous Linux, \texttt{\%LOCALAPPDATA\%\textbackslash IRDrone} sous Windows) et s'affichent ensuite hors ligne.
+
+L'emprise est calculée avec la hauteur au-dessus du sol (modèle de terrain de l'étape~5, ou altitudes IGN) et le cap de l'image ; une fois le mapping fait, le cap vient d'OpenDroneMap, plus juste que la boussole du drone (souvent fausse de 5 à 10\textdegree).
+
+Les boutons \bouton{Map} et \bouton{Image}, au-dessus de la carte, choisissent entre la carte et une image alignée de la mission.
+
+\section{Barre du bas : dossier de travail et manuel}\label{btn:home_workdir}
+La barre du bas rappelle le dossier de travail (le dossier qui contient les missions, par défaut \texttt{C:/Air-Mission}) et la place libre sur son disque ; un clic sur le dossier l'ouvre dans l'explorateur. La roue dentée \bouton{⚙} permet de changer de dossier de travail : la liste des missions est alors relue. Le dossier est choisi au premier lancement ; la variable d'environnement \texttt{IRDRONE\_WORKING\_DIR}, si elle est définie, reste prioritaire.
+
+\bouton{? Manual}, à droite, ouvre ce manuel (§\ref{sec:help}).
+
 %==========================================================
 \chapter{Step 1 -- D\'efinir la mission}\label{ch:step1}
-\section{Principe}
-Le Step~1 cr\'ee le dossier de la mission et y range les images du vol. Il se d\'eroule en deux fen\^etres successives :
+\section{La fenêtre \og New mission \fg}\label{sec:step1_new_mission}
+Le Step~1 cr\'ee le dossier de la mission et y range les images du vol. Il s'ouvre avec \bouton{New mission} dans la fenêtre principale et se fait dans une seule fenêtre, en trois pages : \textbf{Images}, \textbf{Mission}, \textbf{Copy}. L'avancement est rappelé en haut de la fenêtre. Les cartes SD sont seulement lues : rien n'y est écrit ni effacé.
+
+\subsection{Page \og Images \fg}\label{btn:step1_images}
+Les cartes SD insérées sont parcourues (tout volume qui contient un dossier \texttt{DCIM}) ; on y trouve les images visibles (DNG du drone) et infrarouges (RAW de la SJCam), figure~\ref{fig:step1_new_mission_images}. Chaque caméra a sa carte :
+\begin{itemize}
+	\item le dossier trouvé, le nombre d'images, leur taille, la date et l'heure de la première et de la dernière ;
+	\item deux images : \textbf{au décollage} et \textbf{en vol} (aux deux tiers des images, en général pendant le relevé). Pour l'infrarouge, c'est le JPEG que la SJCam enregistre à côté de chaque RAW. Ces images permettent de vérifier d'un coup d'\oe il que la carte est la bonne ;
+	\item le bouton \bouton{Choose folder…} (\bouton{Change…} une fois des images trouvées) choisit un autre dossier, par exemple une copie des cartes sur le disque. Un dossier choisi ainsi n'est jamais remplacé par une carte trouvée ensuite.
+\end{itemize}
+Tant qu'il manque les images d'une caméra, la fenêtre cherche les cartes SD toutes les 3~secondes : une carte insérée après l'ouverture de la fenêtre est trouvée d'elle-même, il suffit de l'insérer.
+
+L'image de décollage est la première image visible ; le lien \og change… \fg~de la carte visible en choisit une autre. Elle donne la date, l'heure, la position et l'appareil photo de la mission.
+Un bandeau signale un écart de plus de deux minutes entre les horloges des deux caméras : il est normal, l'étape~3 le mesure précisément. Un écart de plusieurs jours fait douter que les deux cartes viennent du même vol.
+
+\figureIRD[fig:step1_new_mission_images]{step1_new_mission_images.png}{Page \og Images \fg : images visibles et infrarouges trouvées sur les cartes SD, au décollage et en vol.}{0.8}
+
+\subsection{Page \og Mission \fg}\label{btn:step1_mission}
+La date, l'heure et la position viennent de l'image de décollage ; l'altitude du sol et l'adresse sont demandées à l'IGN\footnote{\label{fn:ign}IGN : Institut national de l'information g\'eographique et foresti\`ere.} et à OpenStreetMap pendant que l'on remplit la description et le pilote (figure~\ref{fig:step1_new_mission_details}). Le nom du dossier de la mission (\texttt{FLY-YYYYMMDD-hhmm-location}) se met à jour avec le champ \og Location \fg.
+
+\bouton{Cameras and filter} déplie les réglages des caméras : intervalle de prise de vue et décalage d'horloge de chaque caméra, fabricant et modèle de la caméra infrarouge, fabricant et bande du filtre. Le pilote, son identifiant, les caméras et le filtre sont mémorisés pour la mission suivante.
+
+\figureIRD[fig:step1_new_mission_details]{step1_new_mission_details.png}{Page \og Mission \fg : lieu trouvé à partir de l'image de décollage, nom du dossier, description, pilote, caméras.}{0.8}
+
+\subsection{Page \og Copy \fg}\label{btn:step1_copy}
+Le dossier est créé, les images visibles copiées, les images infrarouges converties de RAW en DNG, les EXIF lus et l'altitude du sol calculée (détails au §\ref{btn:step1_validate}). Pendant la conversion des images infrarouges, l'étape~2 est préparée en arrière-plan (vignettes et détection de la mire, visible puis infrarouge) : la ligne de temps s'ouvre ensuite sans attendre. La fenêtre ne peut pas être fermée pendant la copie. À la fin, \bouton{Flight timeline} ouvre l'étape~2 ; si la préparation n'est pas finie, l'étape~2 la reprend là où elle en était.
+
+Le fichier \texttt{mission\_parameters.json} contient les mêmes informations qu'avec le formulaire classique.
+
+\subsection{Boutons du bas de la fenêtre}\label{btn:step1_wizard}
+\begin{description}
+	\item[\bouton{Next}] (page Images) passe à la page Mission ; il faut les images des deux caméras. \bouton{Create the mission and copy the images} (page Mission) lance la copie ; \bouton{Flight timeline} (page Copy) ouvre l'étape~2.
+	\item[\bouton{Back}] revient à la page Images ; rien n'est perdu.
+	\item[\bouton{Cancel}] ferme la fenêtre sans créer la mission.
+	\item[\bouton{Classic form…}] (page Images) ouvre l'ancien Step~1 (§\ref{sec:step1_classic}).
+	\item[\bouton{?}] ouvre ce chapitre.
+\end{description}
+
+\section{Modifier une mission : la fenêtre \og Mission details \fg}\label{btn:step1_details}
+Une fois l'étape~1 faite, un clic sur l'étape~1 de la fenêtre principale n'ouvre plus la création de mission, mais la fenêtre \og Mission details \fg~(figure~\ref{fig:step1_mission_details}). Elle modifie les informations de la mission sans relire les cartes SD : lieu, description, pilote et son identifiant, intervalle et décalage d'horloge des caméras, caméra infrarouge, filtre. La date, l'heure, la position et la caméra visible viennent de l'image de décollage et ne changent pas.
+
+\bouton{Save} écrit les informations dans \texttt{FlightAnalytics/mission\_parameters.json} ; l'ancien fichier est gardé en \texttt{mission\_parameters.json.bak}. Le dossier de la mission garde son nom, même si le lieu change. \bouton{Cancel} ferme sans rien changer.
+
+\figureIRD[fig:step1_mission_details]{step1_mission_details.png}{La fenêtre \og Mission details \fg : les images sont déjà dans la mission, seules ces informations changent.}{0.55}
+
+\section{Formulaire classique}\label{sec:step1_classic}
+Le bouton \bouton{Classic form…} de la page \og Images \fg~ouvre l'ancien Step~1, décrit ci-dessous. Il se d\'eroule en deux fen\^etres successives :
 \begin{enumerate}
   \item \textbf{\og Choose the image taken by the drone during takeoff \fg} : on choisit la premi\`ere image prise par le drone
         au d\'ecollage. Elle fournit la date, l'heure, la position GPS et l'appareil photo utilis\'e.
   \item \textbf{\og Create a mission \fg} : on v\'erifie et on compl\`ete les informations de la mission, puis on lance la cr\'eation
         du dossier et le transfert des images VIS et NIR.
 \end{enumerate}
-\`A la fin, le bouton \bouton{Step 2} de la fen\^etre principale devient actif.
+\`A la fin, la mission devient la mission chargée de la fen\^etre principale, qui propose l'étape~2.
 
 \paragraph{Pr\'erequis.}
 \begin{itemize}
-  \item Une connexion Internet : l'altitude du sol est demand\'ee \`a l'IGN
-  \footnote{\label{fn:ign}IGN : Institut national de l'information g\'eographique et foresti\`ere.} 
+  \item Une connexion Internet : l'altitude du sol est demand\'ee \`a l'IGN\textsuperscript{\ref{fn:ign}}
   (France) ou \`a OpenTopoData (hors de France),
         et l'adresse du lieu \`a OpenStreetMap.
   \item Les images du drone (visible) au format DNG, et les images de la cam\'era proche infrarouge (SJCam M20, fichiers RAW)
@@ -523,7 +640,7 @@ Le dossier de mission n'est jamais effac\'e : si le dossier existe d\'ej\`a, seu
 Pour les images VIS d\'ej\`a transf\'er\'ees (fichier \texttt{.exif} pr\'esent), le transfert est ignor\'e : relancer le Step~1 sur
 une mission existante est donc rapide.
 
-\figureIRD{step1_mission_folder.png}{Dossier de mission vu dans l'explorateur Windows.}{0.7}
+\figureIRD{Step1_mission_folder.png}{Dossier de mission vu dans l'explorateur Windows.}{0.7}
 
 La durée des transferts dépend beaucoup des performances des supports (carte SD, disque dur) et des liaisons (USB B ou C, lecteur). De plus et contrairement aux images de la caméra DJI qui sont au format dng, les images de la caméra SJCam M20 sont dans un format \og RAW \fg~qui n'est pas normalisé. Chaque image doit être convertie au format dng d'ADOBE à l'aide d'un logiciel tiers \footnote{Il s'agit du code \texttt{sjcam\_raw2dng} disponible uniquement comme un fichier exe. \texttt{sjcam\_raw2dng}
 	Convert SJCAM raw files to Adobe DNG and TIFF while also getting metadata
@@ -556,19 +673,20 @@ L'étape 2 découpe le vol en phases : \emph{synchronisation} (vol stationnaire 
 	\item La fenêtre survey infrarouge \textbf{suit} la fenêtre survey visible (zone hachurée) : il n'est pas nécessaire de regarder les images infrarouges. Après l'étape 3, le décalage précis met à jour cette fenêtre.
 \end{enumerate}
 
-\subsection*{Vérifier et ajuster}
+\subsection*{Vérifier et ajuster}\label{btn:step2_adjust}
 \begin{itemize}
 	\item Survoler la ligne de temps affiche en grand l'image visible et l'image infrarouge prises au même instant, avec l'altitude et l'état de la mire (\og target turning \fg, \og target still \fg, \og no target \fg). Laisser la souris sur cet aperçu l'affiche sur toute la fenêtre pour bien voir les détails.
 	\item Les points de la ligne \og target \fg~indiquent les images analysées : violet, la mire tourne ; gris, la mire est vue mais immobile ; cercle vide, mire non vue.
 	\item Faire glisser un bord de phase pour le déplacer (il se cale sur une image), ou cliquer sur un point clé (colonne de droite) puis utiliser \bouton{◀} \bouton{▶} ou les flèches du clavier.
 	\item Molette : zoom ; glisser le fond : déplacement ; double-clic : tout le vol.
-	\item \bouton{Back to detection} revient à la proposition automatique.
+	\item \bouton{Back to detection} annule les changements faits à la main et revient à la proposition automatique.
+	\item L'info-bulle du bouton \bouton{?} rappelle ces commandes.
 \end{itemize}
 Si la mire n'est pas trouvée (mire trop petite, image trop sombre), un bandeau orange l'indique : la fenêtre de synchronisation visible est alors le vol stationnaire, et la fenêtre infrarouge doit être placée à la main.
 
 \section{Boutons \bouton{Confirm and synchronize} et \bouton{Save only}}\label{btn:step2_confirm}
 Les deux boutons enregistrent les phases dans les fichiers \texttt{transfer\_info\_VIS\_dng.json} et \texttt{transfer\_info\_NIR\_dng.json} (lus par les étapes 3, 4 et le mapping) et dans \texttt{FlightAnalytics/flight\_timeline.json}. Rouvrir l'étape 2 retrouve les phases confirmées.
-\bouton{Confirm and synchronize} ouvre ensuite l'étape 3, qui lance d'elle-même la détection des mires et le calcul du décalage : il reste à vérifier le graphique d'alignement puis à cliquer \bouton{Pair VIS / NIR images}.
+\bouton{Confirm and synchronize} ouvre ensuite l'étape 3, qui enchaîne d'elle-même la détection des mires et le calcul du décalage, puis demande si les deux courbes se superposent avant d'apparier les images (§\ref{sec:step3_chained}). \bouton{Save only} ferme la fenêtre : l'étape~3 se lancera plus tard depuis la fenêtre principale. \bouton{Cancel} ferme sans rien enregistrer.
 
 \section{Sélection classique}\label{btn:step2_classic}
 Le bouton \bouton{Classic selection…} ouvre l'ancienne sélection manuelle des cinq images de référence de chaque caméra, décrite ci-dessous.
@@ -619,12 +737,39 @@ On mesure la position angulaire de la mire. Mais pour cela il faut un repère fi
 \footnote{Théoriquement 2 mires suffisent pour définir un axe de référence. L'utilisation de 4 mires permet une certaine redondance. À noter que le logiciel tente de synchroniser dans le repère absolu, mais s'il échoue il synchronise dans le repère relatif lié aux bords des images (moins précis). Si là encore il y a échec, en dernier recours le logiciel demande à l'utilisateur de donner la valeur de l'offset de synchronisation.}. Elles permettent de définir un repère absolu qui améliore la précision du dispositif. Il est évident que cette phase de synchronisation doit être réalisée sur le terrain avec le plus grand soin. C'est la condition pour concilier le coût modéré du matériel et une bonne qualité des images multispectrales.
 
 \subsection{Les trois phases de l'étape 3}
-Le Step~3 se déroule en trois phases successives, chacune lancée par un bouton qui n'est activé qu'une fois la phase précédente terminée (figure~\ref{fig:step3_window}) :
+Le Step~3 se déroule en trois phases successives, enchaînées automatiquement (§\ref{sec:step3_chained}). En mode manuel, chacune est lancée par un bouton qui n'est activé qu'une fois la phase précédente terminée (figure~\ref{fig:step3_window}) :
 \begin{enumerate}
   \item \emph{Détection des mires} (bouton \bouton{Run ArUco detection (VIS + NIR)}) : sur chaque image de synchronisation, on mesure l'angle de la mire mobile (§\ref{btn:step3_aruco}) ;
   \item \emph{Calcul du décalage temporel} (bouton \bouton{Compute time alignment}) : on cherche le décalage $\Delta t$ qui fait coïncider les deux séries d'angles (§\ref{btn:step3_time_shift}) ;
   \item \emph{Appariement} (bouton \bouton{Pair VIS / NIR images}) : on associe à chaque image VIS les images NIR les plus proches dans le temps (§\ref{btn:step3_pairing}).
 \end{enumerate}
+
+\subsection{Enchaînement automatique}\label{sec:step3_chained}
+Ouverte depuis l'étape~2 (ou par \bouton{Continue with Step 3} de la fenêtre principale), l'étape~3 enchaîne les trois phases. Une ligne d'avancement montre la phase en cours et son résultat : nombre de mires vues, décalage, nombre de paires (figure~\ref{fig:step3_chained}). Une seule question est posée, après l'alignement des horloges (§\ref{btn:step3_overlap}).
+
+Une fois les images appariées, rien ne démarre seul : \bouton{Image processing} ouvre l'étape~4 quand vous êtes prêt (§\ref{btn:step3_continue}).
+Si le décalage ne peut pas être mesuré, la saisie manuelle est proposée et l'enchaînement s'arrête.
+
+\figureIRD[fig:step3_chained]{step3_chained.png}{Étape 3 enchaînée : mires détectées, horloges alignées ; la question \og Do the two curves overlap? \fg~attend la réponse avant l'appariement.}{0.7}
+
+Rouverte une fois l'étape faite (clic sur l'étape~3 de la fenêtre principale), la fenêtre ne recalcule rien : elle montre le résultat enregistré, c'est-à-dire le décalage des horloges, le nombre de paires et les courbes alignées (§\ref{btn:step3_before}). Les boutons des trois phases permettent de la refaire.
+
+\section{La question \og Do the two curves overlap? \fg}\label{btn:step3_overlap}
+Après l'alignement des horloges, la fenêtre montre l'angle de la mire en fonction du temps : courbe verte pour le visible, rouge pour l'infrarouge, la courbe infrarouge étant décalée du décalage calculé.
+\begin{description}
+	\item[\bouton{Yes} (touche Y)] les deux courbes se superposent : le décalage est bon, les images sont appariées (§\ref{btn:step3_pairing}).
+	\item[\bouton{No} (touche N)] ouvre le réglage à la main (§\ref{btn:step3_adjust}) pour glisser la courbe infrarouge sur la courbe visible ; la question est ensuite reposée avec le nouveau décalage.
+\end{description}
+Des courbes bien superposées ont des points verts sur la ligne rouge, dents de scie comprises. Les exemples du §\ref{sec:step3_examples} montrent un bon et un mauvais cas.
+
+\section{Bouton \bouton{Manual mode…}}\label{btn:step3_manual}
+Arrête l'enchaînement et fait apparaître les boutons des trois phases (§\ref{btn:step3_aruco} à \ref{btn:step3_pairing}), à lancer un par un, par exemple pour corriger le décalage avec \bouton{Adjust alignment...} avant l'appariement.
+
+\section{Bouton \bouton{Image processing}}\label{btn:step3_continue}
+Apparaît une fois les images appariées. Il ferme la fenêtre et ouvre l'étape~4. L'alignement, long, n'y démarre pas tout seul : il se lance avec \bouton{Run alignment}.
+
+\section{Bouton \bouton{Before alignment}}\label{btn:step3_before}
+Quand l'étape~3 est rouverte une fois faite, la fenêtre montre les courbes après alignement (\texttt{Synchro/check\_time\_alignment.png}). \bouton{Before alignment} montre les courbes avant correction (\texttt{check\_time\_before\_alignment.png}) ; un second clic revient aux courbes alignées.
 
 \subsection{Principe du calcul}
 L'angle de la mire mobile est mesuré sur chaque image, puis déplié (voir §\ref{btn:step3_time_shift}). Comme la vitesse de rotation $\omega$ est constante, l'angle est une fonction affine du temps. La time line NIR, qui compte au moins deux points, fournit la droite de référence $\theta = \omega t + b_{NIR}$. Chaque point VIS fournit une estimation de l'ordonnée à l'origine $b_{VIS} = \theta_{VIS} - \omega t_{VIS}$ ; on en prend la médiane. Le décalage s'écrit
@@ -633,8 +778,8 @@ L'angle de la mire mobile est mesuré sur chaque image, puis déplié (voir §\r
 \end{equation}
 et la time line NIR corrigée est $t_{NIR} + \Delta t$. C'est pourquoi une seule image VIS suffit en théorie (cas~2 ci-dessous), à condition que la vitesse de rotation soit constante et que l'on travaille dans le repère absolu.
 
-\subsection{Exemples de synchronisation}
-À l'étape 2 l'utilisateur a sélectionné les images de la phase de synchronisation. On présente quelques cas ici.
+\subsection{Exemples de synchronisation}\label{sec:step3_examples}
+Les images de la phase de synchronisation viennent de l'étape~2. On présente quelques cas ici.
 
 \subsubsection{Cas 1 : bonne synchronisation}
 Les figures~\ref{fig:synchro_cas1} (\subref{fig:synchro_cas1_avant} et \subref{fig:synchro_cas1_apres}) représentent une bonne synchronisation. Le pilote a déclenché manuellement l'hyperlapse de la caméra NIR puis il a fait décoller le drone, ce qui a déclenché automatiquement la rotation de la mire. Lorsque le pilote a placé le drone au-dessus de la mire, la caméra NIR enregistrait la mire en rotation. Les images entre l'instant de déclenchement de l'hyperlapse NIR et l'instant où le drone a été stabilisé au-dessus de la mire ont été ignorées au step~2. Ensuite le pilote a réglé les paramètres de l'hyperlapse de la caméra VIS puis l'a déclenché. Cela prend en général une trentaine de secondes pour un pilote entraîné. Dès que l'hyperlapse VIS commence, il enregistre la mire en mouvement. À partir de cet instant et avec une fréquence d'enregistrement de 2s, il suffit au pilote de maintenir le drone moins d'une dizaine de secondes au-dessus de la mire pour obtenir 4 à 5 points, avant de prendre rapidement de l'altitude pour rejoindre la zone à étudier (hyperlapse survey). L'utilisateur du logiciel doit veiller lors de l'étape 2 à éliminer les images NIR prises avant la stabilisation du drone au-dessus du dispositif de synchronisation et le cas échéant celles qui après stabilisation correspondraient à une mire non encore en rotation. 
@@ -688,7 +833,7 @@ Pendant la détection, chaque image traitée est enregistrée avec une surcouche
 \textbf{Conseil :} parcourir ce dossier dans l'explorateur Windows est le meilleur moyen de repérer des détections douteuses avant de passer à la phase suivante.
 
 % Figure à créer par l'utilisateur (PowerPoint) : 2 lignes de 4 images (VIS en haut, NIR en bas) extraites de Synchro\Check_ARUCO.
-\figureIRD[fig:check_aruco]{step3_check_aruco_VIS_NIR.pdf}{Exemples d'images de contrôle (dossier \texttt{Synchro\textbackslash Check\_ARUCO}). Ligne du haut : bande VIS ; ligne du bas : bande NIR. La mire mobile est repérée par son axe vert ; les centres des mires fixes par des disques rouges.}{0.95}
+\figureIRD[fig:check_aruco]{Step3_check_aruco_VIS_NIR.pdf}{Exemples d'images de contrôle (dossier \texttt{Synchro\textbackslash Check\_ARUCO}). Ligne du haut : bande VIS ; ligne du bas : bande NIR. La mire mobile est repérée par son axe vert ; les centres des mires fixes par des disques rouges.}{0.95}
 
 \section{Bouton \bouton{Compute time alignment}}\label{btn:step3_time_shift}
 Ce bouton, actif seulement lorsque la détection est terminée, calcule le décalage temporel entre les deux caméras.
@@ -712,7 +857,7 @@ Le résultat est affiché dans le journal de la fenêtre :
 \end{itemize}
 
 \subsection*{Graphiques de contrôle}
-Deux graphiques sont enregistrés dans le dossier \texttt{Synchro} de la mission puis affichés en alternance dans la fenêtre (changement toutes les 1,5 s) :
+Deux graphiques sont enregistrés dans le dossier \texttt{Synchro} de la mission. Pendant la question \og Do the two curves overlap? \fg, la fenêtre montre les courbes après alignement ; en mode manuel, elle montre les deux graphiques en alternance (changement toutes les 1,5 s) :
 \begin{itemize}
   \item \texttt{check\_time\_before\_alignment.png} : angle de la mire en fonction du temps pour VIS (vert) et NIR (rouge) avant correction ;
   \item \texttt{check\_time\_alignment.png} : mêmes courbes après avoir décalé la time line NIR de $\Delta t$.
@@ -720,6 +865,15 @@ Deux graphiques sont enregistrés dans le dossier \texttt{Synchro} de la mission
 Si la synchronisation est bonne, les points verts se placent sur la droite des points rouges. Ce sont ces deux graphiques qui sont présentés dans les trois cas de ce chapitre.
 
 \textbf{Que faire en cas d'échec ?} Si les points VIS et NIR ne se superposent pas après alignement, ou si les vitesses de rotation VIS et NIR sont très différentes, revenir au Step~2 et redéfinir les images de synchronisation (en particulier la première image NIR, qui doit montrer la mire effectivement en rotation), puis relancer le Step~3.
+
+\section{Bouton \bouton{Adjust alignment...}}\label{btn:step3_adjust}
+Ouvre le réglage du décalage à la main, aussi ouvert par la réponse \bouton{No} à la question \og Do the two curves overlap? \fg. La fenêtre trace la courbe visible (verte), la courbe infrarouge au décalage calculé (rouge, en pointillés) et la courbe infrarouge au décalage réglé (rouge). Le curseur et la case numérique déplacent la courbe infrarouge : flèches du clavier par pas de 1\,ms, touches page précédente / suivante par pas de 0,1\,s.
+\begin{description}
+	\item[\bouton{Apply}] garde ce décalage : les graphiques de contrôle sont refaits. Si les images étaient déjà appariées, il faut refaire l'appariement.
+	\item[\bouton{Reset to computed}] revient au décalage calculé à partir des mires.
+	\item[\bouton{Cancel}] ferme sans changer le décalage.
+\end{description}
+Si le décalage n'a pas pu être calculé, une petite fenêtre demande directement sa valeur en secondes (ajoutée aux dates infrarouges).
 
 \section{Bouton \bouton{Pair VIS / NIR images}}\label{btn:step3_pairing}
 Ce bouton est actif une fois le décalage temporel connu (calculé ou saisi à la main). Il construit la liste des couples d'images qui seront alignés au Step~4.
@@ -751,7 +905,7 @@ Le traitement des images consiste pour une paire VIS-NIR à aligner ces deux ima
 En pratique on commence par convertir les images du format raw-dng au format tif (via le logiciel tiers RawTherapee
 \footnote{Via le logiciel tiers open source RawTherapee. L'opération est coûteuse la première fois mais l'image est mise en cache pour des runs ultérieurs.}).  On élimine la distorsion des deux images. On détermine les déplacements théoriques à appliquer pour ramener le centre de visée NIR sur le centre de visée VIS. Ces déplacements sont traduits en termes d'angles pitch, yaw et roll. Ils servent à initialiser la procédure d'alignement. L'alignement se déroule très schématiquement en deux temps. On détermine en premier les paramètres d'une homographie à appliquer sur l'image NIR pour qu'elle \og match \fg~avec l'image VIS. C'est un processus de minimisation complexe spécialement développé pour les images multispectrales 
 	\footnote{Les techniques habituelles pour aligner deux images, qui sont extrêmement performantes dans le cas d'une bande spectrale unique ou en RGB, comme par exemple les \og sift \fg, échouent.}. 
-Ce premier alignement (coarse process) est suivi d'un alignement fin (fine process) qui applique des homographies locales pour diminuer encore le critère d'alignement. L'objet de cette notice d'utilisation du logiciel IRDrone n'étant pas d'expliquer l'algorithme utilisé, on renvoie au site GitHub du projet. Toutefois l'utilisateur doit être conscient que la méthode n'est pas infaillible et surtout qu'elle est tributaire des conditions de vol sur le terrain. 
+Ce premier alignement (coarse process) est suivi d'un alignement fin (fine process) qui applique des homographies locales pour diminuer encore le critère d'alignement. L'algorithme est décrit en annexe (§\ref{sec:ann_algorithme}). L'utilisateur doit être conscient que la méthode n'est pas infaillible et surtout qu'elle est tributaire des conditions de vol sur le terrain. 
 
 \figurePaireIRD{fig:step4_pair_VIS_NIR}
 {step3_img_VIS.png}{Spectre visible (VIS).}
@@ -759,9 +913,9 @@ Ce premier alignement (coarse process) est suivi d'un alignement fin (fine proce
 {Couple d'images d'un shoot point. Les deux bandes spectrales enregistrent des informations différentes. Par exemple la surface de la rivière est totalement noire en proche infrarouge. L'eau ne réfléchit pas les longueurs d'onde au-delà de $750\,nm$.}  
 
 \section{Dialogue de l'étape 4}
-La fenêtre de dialogue de l'étape~4 propose deux fonctions et une zone de choix des paramètres.
+La fenêtre de l'étape~4 (figure~\ref{fig:step4_window}) rappelle le nom de la mission (le chemin complet est dans l'info-bulle) et le nombre de paires d'images. Elle comporte, de haut en bas : les options de sortie, l'état et la barre de progression du calcul, le journal, puis les boutons \bouton{Run alignment} (\bouton{Stop} pendant le calcul), \bouton{Close}, \bouton{Review images}, \bouton{⚙} (réglages) et \bouton{?}. La fenêtre s'adapte à la taille de l'écran.
 
-\figureIRD{step4_window.png}{Fen\^etre de traitement des \og shoot point \fg~(paires d'images VIS-NIR).}{0.8}
+\figureIRD[fig:step4_window]{step4_window.png}{Fen\^etre de traitement des \og shoot points \fg~(paires d'images VIS-NIR), avant le calcul.}{0.7}
 
 
 \section{Options de sortie}\label{btn:step4_options}
@@ -777,7 +931,7 @@ $\texttt{first VIS image number} \leq XXXX \leq \texttt{last VIS image number}$:
 	\item les quadruplets d'images multispectrales red (1), green (2), blue (3), nir (4) (\texttt{IRD\_XXXX\_n.tif}) placés dans le dossier \texttt{ImgIRdrone\textbackslash imgMultispectral}.
 	\item les images \texttt{VIS\_XXXX.jpg}, \texttt{VIR\_XXXX\_local.jpg}.
 	\item les fichiers \texttt{VIS\_XXXX\_REDO.bat} et deux fichiers techniques \texttt{VIS\_XXXX\_motion\_model.json}, \texttt{VIS\_XXXX\_motion\_model.npy}.
-	\item le fichier \texttt{ImgIRdrone\textbackslash shoot\_points.json} qui contient un dictionnaire des shoot points traités avec en particulier la clé  \texttt{"failed"} dont la valeur est fixée à \texttt{false} par défaut. L'utilisateur devra examiner visuellement la pertinence de cette hypothèse (voir \ref{btn:step4_flag_misaligned}). 
+	\item le fichier \texttt{ImgIRdrone\textbackslash shoot\_points.json} qui contient un dictionnaire des shoot points traités avec en particulier la clé  \texttt{"failed"} dont la valeur est fixée à \texttt{false} par défaut. L'utilisateur vérifie cette hypothèse dans la revue des images alignées (chapitre~\ref{ch:review}). 
 \end{itemize}
 
 
@@ -798,11 +952,67 @@ Lance la procédure d'alignement sur les shoot points vérifiant simultanément 
 \end{itemize} 
 Attention l'alignement des images est une procédure qui prend beaucoup de temps. Cela dépend bien entendu de la machine. Les  calculs sont parallélisés sur plusieurs processeurs si la machine est \og multi c\oe urs \fg. La barre de progression indique l'avancement des calculs ainsi qu'une estimation du temps de traitement restant. À titre d'exemple sur un HP ZBook 3 avec un quadri processeur Intel Xeon l'alignement des images VIS et NIR d'un shoot point prend environ $60\,s$. Donc il faut deux heures pour traiter 120 images. Lancer ces calculs à l'heure du déjeuner ou la nuit est une bonne idée.   
 
-\section{Bouton \bouton{Flag misaligned points}}\label{btn:step4_flag_misaligned}
-Lorsque \texttt{Run alignment} est terminé, l'utilisateur peut avec cette commande regarder l'allure des vignettes des images \texttt{VIR\_XXXX\_local.jpg} (passer en affichage \og très grands icônes \fg). Il est assez simple de repérer certains échecs d'alignement (voir plus bas). Vous pouvez aussi utiliser en parallèle une visionneuse qui offre une bien meilleure visibilité et permet d'agrandir certaines zones de l'image. A l'issue de cette commande le statut d'alignement des images est mis à jour automatiquement dans le fichier \texttt{ImgIRdrone\textbackslash shoot\_points.json}
-\footnote{Ce fichier ne contient pas les mêmes informations que le fichier   \texttt{AerialPhotography\textbackslash shoot\_points.json} } .
+L'alignement ne démarre jamais tout seul, même quand l'étape~4 est ouverte par l'étape~3. Pendant le calcul, le bouton devient \bouton{Stop} (§\ref{btn:step4_stop}).
 
-L'exemple çi dessous montre le début du fichier \texttt{ImgIRdrone\textbackslash shoot\_points.json} qui stocke ces informations. Toutes les images ont été traitées en choisissant le critère peu discriminant $|dt|<4\,s$ et la méthode "au plus près". Cela correspond à 501 images VIS et 350 images NIR. Ici l'utilisateur a estimé visuellement que le shoot point 120 était mal aligné et l'a marqué ce qui a fait automatiquement basculé la valeur de la clé \texttt{failed} de \texttt{false} à \texttt{true}.
+\section{Bouton \bouton{Stop}}\label{btn:step4_stop}
+Pendant le calcul, \bouton{Run alignment} devient \bouton{Stop}. Après confirmation, le calcul et tous ses processus de travail s'arrêtent ; la fenêtre indique combien d'images ont été alignées. Les images déjà alignées sont gardées ; \bouton{Run alignment again} relance le calcul, et les points déjà faits réutilisent leur modèle de mouvement (plus rapide). Pour ne traiter que la suite, augmentez \texttt{First VIS image number}.
+
+\section{Bouton \bouton{Review images}}\label{btn:step4_review}
+Actif dès qu'il existe des images alignées, mis en avant à la fin de l'alignement. Il ouvre la revue des images alignées (chapitre~\ref{ch:review}) : vérifier chaque image, signaler les images mal alignées et les réaligner à la main.
+
+\section{Bouton \bouton{⚙} : réglages}\label{btn:step4_settings}
+La roue dentée ouvre les réglages du calcul, gardés pour les sessions suivantes :
+\begin{itemize}
+	\item \texttt{Alignment worker processes} : nombre de shoot points alignés en parallèle. \texttt{Auto} utilise les c\oe urs physiques, dans la limite de la mémoire disponible au lancement (environ 6\,Go par processus). \bouton{Safe mode (1)} n'en garde qu'un : plus lent, mais le moins de mémoire. À utiliser si l'ordinateur se fige ou si le calcul est interrompu.
+	\item \texttt{Log detail} : quantité de messages du calcul dans le journal de la fenêtre : avertissements seulement, étapes du calcul, ou détail des temps.
+\end{itemize}
+
+\section{Bouton \bouton{Close}}\label{btn:step4_close}
+Ferme la fenêtre et rend la main au dialogue principal. Le bouton \bouton{?} ouvre cette aide à la page de ce chapitre. Il est toujours actif.
+
+%==========================================================
+\chapter{Revue des images alignées}\label{ch:review}
+La revue présente tous les points du relevé sur une ligne de temps pour vérifier l'alignement de chaque image (figure~\ref{fig:step4_review}). Elle s'ouvre avec \bouton{Review images} de l'étape~4, ou avec \bouton{Review the aligned images} de la fenêtre principale. Elle remplace l'examen des images une par une dans l'explorateur.
+
+\figureIRD[fig:step4_review]{step4_review.png}{Revue des images alignées : rideau entre visible et infrarouge aligné, fiche du point (décalage mesuré, image infrarouge associée), mini-carte, et en bas la ligne de temps des points (décalage résiduel, vignettes, état).}{0.95}
+
+\section{Mesure automatique}\label{sec:review_measure}
+Pour chaque point, le décalage résiduel entre les contours de l'image visible et ceux de l'infrarouge aligné est mesuré (en pixels de l'image complète, médiane sur 16 zones). Un point bien aligné mesure environ 1~px. Vert : moins de 3~px ; orange clair : entre 3 et 6~px, à regarder ; orange : plus de 6~px, probablement mal aligné. Une zone sans texture (eau, champ uniforme) ne se mesure pas. La fenêtre s'ouvre sur le point le plus douteux.
+
+Les mesures et les points vérifiés sont gardés dans \texttt{ImgIRdrone/review.json} : rouvrir la revue ne refait pas les mesures, sauf pour les images refaites.
+
+\section{Comparer le visible et l'infrarouge}\label{btn:review_compare}
+Quatre façons de comparer, avec les boutons au-dessus de l'image ou les touches 1 à 4 :
+\begin{description}
+	\item[\bouton{Swipe} (1)] un rideau sépare le visible (à gauche) de l'infrarouge aligné en fausses couleurs (à droite) ; routes, haies et toits doivent se prolonger à travers le rideau. Glisser le rideau pour le déplacer.
+	\item[\bouton{Blink} (2)] visible et infrarouge alternent : une image mal alignée \og saute \fg.
+	\item[\bouton{Overlay} (3)] visible en cyan, infrarouge en rouge (la végétation est naturellement rouge) ; un mauvais alignement double chaque contour.
+	\item[\bouton{Side by side} (4)] les deux images côte à côte.
+\end{description}
+Molette : zoom (un décalage de quelques pixels ne se voit qu'en zoomant) ; glisser : déplacement ; double-clic : zoom $\times 4$ ou image entière. \bouton{Open full size} ouvre l'image alignée dans la visionneuse d'images de l'ordinateur.
+
+\section{Situer l'image sur la carte}\label{btn:review_map}
+La mini-carte (dans la fiche du point) montre le vol, le point courant et l'emprise au sol de l'image (le trait épais est le haut de l'image) ; un clic l'agrandit (\bouton{Map}, touche 5). La grande carte affiche l'image alignée dans son emprise, par-dessus l'orthophoto de l'étape~5 quand elle existe et les photos aériennes en fond : l'infrarouge doit prolonger les routes et les haies du fond. Survoler un point montre sa vignette, un clic le sélectionne ; molette et glisser pour zoomer et se déplacer, double-clic pour voir tout le vol. Le menu \bouton{Layers}, le fond de carte hors ligne et le calcul de l'emprise sont décrits au §\ref{btn:home_map}. Sans position GPS dans les shoot points, la carte n'est pas disponible.
+
+\figureIRD[fig:step4_review_map]{step4_review_map.png}{Mode \og Map \fg~de la revue : vol, emprise et image alignée du point courant, orthophoto de l'étape~5 sur les photos aériennes IGN.}{0.9}
+
+\section{Se déplacer}\label{btn:review_navigation}
+\begin{itemize}
+	\item \bouton{◀} et \bouton{▶} (flèches du clavier) : point précédent, point suivant.
+	\item \bouton{Next to review} (touche N) : prochain point qui demande un coup d'\oe il (mesuré douteux, pas encore vérifié).
+	\item La ligne de temps du bas : survoler montre l'image, un clic sélectionne le point ; molette pour zoomer, glisser pour se déplacer, double-clic pour tout le relevé.
+	\item \bouton{Close} ferme la revue ; ce qui a été vérifié et signalé est déjà enregistré.
+	\item L'info-bulle du bouton \bouton{?} rappelle toutes les touches.
+\end{itemize}
+
+\section{Décider : vérifié ou mal aligné}\label{btn:review_decide}
+\begin{description}
+	\item[\bouton{Looks good} (barre d'espace)] marque le point comme vérifié et passe au suivant à revoir.
+	\item[\bouton{Flag misaligned} (touche F)] signale le point comme mal aligné ; un second appui retire le signalement. Le signalement est écrit tout de suite dans \texttt{ImgIRdrone\textbackslash shoot\_points.json}\footnote{Ce fichier ne contient pas les mêmes informations que le fichier \texttt{AerialPhotography\textbackslash shoot\_points.json}.} et l'étape~5 ignore ce point.
+	\item[\bouton{Flag the probably misaligned}] signale d'un coup tous les points mesurés au-dessus de 6~px que vous n'avez pas vérifiés.
+\end{description}
+
+L'exemple ci-dessous montre le début du fichier \texttt{ImgIRdrone\textbackslash shoot\_points.json} qui stocke ces informations. Toutes les images ont été traitées en choisissant le critère peu discriminant $|dt|<4\,s$ et la méthode "au plus près". Cela correspond à 501 images VIS et 350 images NIR. Ici l'utilisateur a estimé visuellement que le shoot point 120 était mal aligné et l'a signalé, ce qui a fait basculer la valeur de la clé \texttt{failed} de \texttt{false} à \texttt{true}.
 \begin{verbatim}
 	{
 		"mission_path": "C:\\Air-Mission\\FLY-20220524-1715-Chalivoy-Milon",
@@ -833,20 +1043,16 @@ L'exemple çi dessous montre le début du fichier \texttt{ImgIRdrone\textbacksla
 	}	 
 \end{verbatim}
 
-Que faire ensuite des shoot points mal alignés ? Deux options s'offrent à l'utilisateur :
+Que faire ensuite des shoot points mal alignés ? Deux options :
 \begin{itemize}
-	\item \og aider \fg~l'algorithme d'IRDrone à aligner les images avec le bouton \bouton{Redo misaligned points} (voir \ref{btn:step4_redo}). Cette procédure ne s'applique qu'aux shoot points déclarés mal alignés, c'est-à-dire ceux dont la clé \texttt{"failed"} a été déclarée \texttt{true} et affiché dans la liste de choix associée à \texttt{Redo misaligned points} (figure \ref{fig:list_misalignmet}). En fonction du résultat de la procédure de  \texttt{Redo misaligned points} l'utilisateur pourra modifier (ou pas) le statut de l'alignement.
-	\item écarter le shoot point mal aligné des traitements ultérieurs. C'est l'action par défaut qui est appliquée aux shoot point marqués par l'utilisateur dans la procédure \texttt{Flag misaligned points} .	
- \texttt{ImgIRdrone\textbackslash shoot\_points.json} est mis à jour automatiquement.
+	\item \og aider \fg~l'algorithme d'IRDrone à les aligner : \bouton{Realign N flagged by hand} (§\ref{btn:review_redo}). Selon le résultat, le signalement est gardé ou retiré.
+	\item les écarter des traitements ultérieurs : c'est l'effet par défaut du signalement, l'étape~5 ignore les points \texttt{"failed": true}.
 \end{itemize}
-
-	
-L'explorateur s'ouvre directement dans le dossier \texttt{ImgIRdrone}. Pour faciliter la détection des mauvais alignements il est conseillé de modifier l'affichage par \texttt{clic droit> Affichage>Très grandes icônes}. Faire défiler les images VIR et sélectionner les images mal alignées par \texttt{ctrl+clic}. Une fois toutes les images examinées terminer en appuyant sur \texttt{Ouvrir}. L'explorateur se ferme et un message indique combien d'images ont été déclarées comme mal alignées (et aussi celles qui l'étaient déjà). Le fichier
 
 \subsection{Exemple de succès d'alignement}
 \figurePaireIRD{fig:goodalignment}
-{Step4_goodalignment_VIS.jpg}{Image dans le spectre visible.}
-{Step4_goodalignment_NIR.jpg}{Image la plus proche $|dt|=0.165~s$ dans le spectre infrarouge.}
+{step4_goodalignment_VIS.jpg}{Image dans le spectre visible.}
+{step4_goodalignment_NIR.jpg}{Image la plus proche $|dt|=0.165~s$ dans le spectre infrarouge.}
 {Cas de succès d'alignement : l'écart temporel est faible et l'attitude du drone est restée dans les spécifications des paramètres de vol.}
 
 \figureIRD[fig:step4_goodalignment_VIR]{step4_goodalignment_VIR.jpg}{Alignement réussi. Les deux images ont été prises presque au même moment et en l'absence de vent. }{0.5}
@@ -855,29 +1061,25 @@ L'explorateur s'ouvre directement dans le dossier \texttt{ImgIRdrone}. Pour faci
 Si le drone sort de sa zone des paramètres de vol, par exemple en cas de fortes rafales de vent qui l'obligent à accentuer ses angles de pitch et yaw, alors les centres de visée des deux caméras peuvent être tellement éloignés qu'il est impossible de trouver un alignement. L'alignement peut aussi être défaillant si l'écart temporel entre les prises de vue VIS et NIR est important (il peut être parfois supérieur à 2\,s) car le déplacement horizontal du drone est alors mal corrigé. L'alignement peut aussi être imparfait sans être un échec s'il y a un écart temporel et que les végétaux bougent sous l'action du vent. L'image VIR présente alors des \og fantômes \fg. Les figures \ref{fig:misalignment} et \ref{fig:step4_misalignment_VIR} montrent un cas d'échec de l'alignement lié à une forte rafale de vent qui déstabilise le drone. 
 
 \figurePaireIRD{fig:misalignment}
-{Step4_misalignment_VIS.jpg}{Image dans le spectre visible.}
+{step4_misalignment_VIS.jpg}{Image dans le spectre visible.}
 {Step4_misalignment_NIR.jpg}{Image la plus proche $|dt|=1.256~s$ dans le spectre infrarouge.}
 {Cas d'échec d'alignement lié à une attitude du drone hors des spécifications des paramètres de vol et liée à une rafale de vent au moment de la prise de vue.}
 
 \figureIRD[fig:step4_misalignment_VIR]{step4_misalignment_VIR.jpg}{Échec de l'alignement. L'effet de \og trou \fg est particulièrement caractéristique. Il peut aisément être repéré par l'utilisateur sur les images VIR. }{0.5}
 
-\section{Bouton \bouton{Redo misaligned points}}\label{btn:step4_redo}
-Ce bouton permet de rattraper les shoot points mal alignés. Il n'est utilisable qu'après avoir examiné les images et déclaré les échecs avec \bouton{Flag misaligned points} (voir \ref{btn:step4_flag_misaligned}) ; sinon un message invite à le faire. Il n'y a pas de miracle : si une rafale de vent a écarté le drone de sa zone de vol, les deux caméras ne voient pas la même scène et aucun alignement n'est possible. Mais parfois l'information existe et il suffit de \og pousser \fg~les paramètres de l'alignement grossier. En conditions normales une dizaine de shoot points au plus sont à reprendre.
-
-\figureIRD[fig:step4_infobox_misalignment]{step4_infobox_misalignment.png}{Message d'information affiché par la commande \texttt{Flag misaligned points}.}{0.5} 
+\section{Réalignement à la main}\label{btn:review_redo}
+Le bouton \bouton{Realign N flagged by hand} rattrape les shoot points signalés mal alignés. Il n'y a pas de miracle : si une rafale de vent a écarté le drone de sa zone de vol, les deux caméras ne voient pas la même scène et aucun alignement n'est possible. Mais parfois l'information existe et il suffit de \og pousser \fg~les paramètres de l'alignement grossier. En conditions normales une dizaine de shoot points au plus sont à reprendre.
 
 \subsection*{Déroulement}
 \begin{enumerate}
-	\item Un premier message indique la procédure à suivre.
-	\item Une liste des shoot points \texttt{"failed": true} s'affiche. Cocher ceux que l'on veut reprendre (on ne reprend pas nécessairement tous les points en échec). Les boutons \bouton{Select all} et \bouton{Clear} facilitent la sélection.
-	\item Pour chaque point sélectionné, une fenêtre d'alignement manuel s'ouvre avec des curseurs (voir ci-dessous). L'utilisateur règle les angles, puis \textbf{ferme la fenêtre} : ces angles servent à initialiser le calcul d'alignement \og près \fg~de la solution.
-	\item Le nouvel alignement est calculé, puis l'image \texttt{VIR\_XXXX\_local.jpg} s'affiche. L'utilisateur répond \bouton{Yes, aligned} ou \bouton{No, still misaligned}. Le bouton \bouton{Open full size} ouvre l'image en pleine taille.
-	\item Si la réponse est \og\texttt{Yes, aligned} \fg, la clé \texttt{"failed"} du point passe à \texttt{false} dans \texttt{shoot\_points.json} et le fichier \texttt{shoot\_points\_failed\_summary.json} est mis à jour (une copie \texttt{shoot\_points.json.bak} est conservée). Si la réponse est \og \texttt{No, still misaligned} \fg, le point reste en échec et pourra être repris plus tard.
+	\item Un message rappelle la procédure, puis les points signalés sont repris l'un après l'autre.
+	\item Pour chaque point, une fenêtre d'alignement manuel s'ouvre avec des curseurs (voir ci-dessous). L'utilisateur règle les angles, puis \textbf{ferme la fenêtre} (touche Q) : ces angles servent à initialiser le calcul d'alignement \og près \fg~de la solution.
+	\item Le bandeau du haut de la revue suit le réalignement en cours : point $k$ sur $n$, temps écoulé et étape (chargement des images, alignement à la main, calcul du nouvel alignement --- environ une minute ---, enregistrement), avec une barre d'activité.
+	\item Le nouvel alignement s'affiche dans la revue, avec rideau, clignotement et superposition. L'utilisateur répond \bouton{Yes, aligned} ou \bouton{Still misaligned}, puis le point suivant s'ouvre.
+	\item Avec \bouton{Yes, aligned}, la clé \texttt{"failed"} du point passe à \texttt{false} dans \texttt{shoot\_points.json} et le fichier \texttt{shoot\_points\_failed\_summary.json} est mis à jour (une copie \texttt{shoot\_points.json.bak} est conservée). Avec \bouton{Still misaligned}, le point reste signalé et pourra être repris plus tard.
 \end{enumerate}
 
-\figureIRD[fig:list_misalignmet]{step4_list_for_redo.png}{Liste de choix des shoot points mal alignés. Les numéros cochés feront l'objet d'une procédure de \og redo \fg.}{0.4}
-Un message final indique le nombre de points validés, toujours mal alignés ou en erreur. Les sorties des alignements précédents sont archivées dans le dossier \texttt{VIS\_XXXX\_align\_traces\_manual\textbackslash original}.
-
+Les sorties des alignements précédents sont archivées dans le dossier \texttt{VIS\_XXXX\_align\_traces\_manual\textbackslash original}.
 
 \subsection*{La fenêtre d'alignement semi automatique}
 
@@ -904,18 +1106,15 @@ Il y a aussi un gros arbre en haut à droite, un petit arbuste en bas à gauche 
 Il n'y a pas vraiment d'ordre pour arriver à un résultat satisfaisant. 
 Ne cherchez pas la perfection  car on n'applique que des transformations globales linéaires. Le code affinera globalement puis localement.
 \figurePaireIRD{fig:redo_A}
-{Step4_redo_1.png}{Situation de départ après un passage dans la procédure associée au bouton \texttt{run alignement}.}
-{Step4_redo_2.png}{On a joué sur la rotation, qui passe de $0$ à $-2.46$, pour aligner la route NIR parallèlement à la route VIS. Attention utiliser ce slider délicatement. Lorsqu'il n'y a pas de ligne évidente comme ici la route, on utilise plutôt la rotation en dernier pour mettre la \og touche finale \fg.}
+{step4_redo_1.png}{Situation de départ après un passage dans la procédure associée au bouton \texttt{run alignement}.}
+{step4_redo_2.png}{On a joué sur la rotation, qui passe de $0$ à $-2.46$, pour aligner la route NIR parallèlement à la route VIS. Attention utiliser ce slider délicatement. Lorsqu'il n'y a pas de ligne évidente comme ici la route, on utilise plutôt la rotation en dernier pour mettre la \og touche finale \fg.}
 {Première modification en jouant sur le slider de rotation (\texttt{ROLL}).}
 \figurePaireIRD{fig:redo_B}
-{Step4_redo_3.png}{Translation verticale vers le bas avec le slider \texttt{PITCH}. La valeur passe de  $-1.14$ à $2.04$. C'est une amplitude relativement importante et surtout qui change de signe.}
-{Step4_redo_4.png}{Translation horizontale avec le slider \texttt{YAW}. La valeur passe de $0.96$ à $1.8$.}
+{step4_redo_3.png}{Translation verticale vers le bas avec le slider \texttt{PITCH}. La valeur passe de  $-1.14$ à $2.04$. C'est une amplitude relativement importante et surtout qui change de signe.}
+{step4_redo_4.png}{Translation horizontale avec le slider \texttt{YAW}. La valeur passe de $0.96$ à $1.8$.}
 {On affine en jouant sur le curseur \texttt{Alpha} (en diminuant puis en agrandissant) et en observant l'alignement des éléments caractéristiques. La sensation de léger flou à la fin est liée à la transparence et aux petits défauts d'alignement locaux qui seront corrigés par la procédure d'alignement fin.}
 
 
-
-\section{Bouton \bouton{Close}}\label{btn:step4_close}
-Ferme la fenêtre et rend la main au dialogue principal. Le bouton \bouton{?} ouvre cette aide à la page de ce chapitre. Il est toujours actif.
 
 %==========================================================
 \chapter{Step 5 -- Post-traitement}\label{ch:step5}
@@ -1007,7 +1206,7 @@ En cliquant sur le bouton, une fenêtre de choix des critères s'ouvre.
 
 Les images retenues (\emph{eligible images}) sont les shoot points qui vérifient simultanément :
 \begin{enumerate}
-	\item ils n'ont pas été déclarés mal alignés à l'étape~4 (clé \texttt{"failed": false}, voir \ref{btn:step4_flag_misaligned}) ;
+	\item ils n'ont pas été déclarés mal alignés à l'étape~4 (clé \texttt{"failed": false}, voir §\ref{btn:review_decide}) ;
 	\item l'écart $|dt|$ avec l'image NIR la plus proche est inférieur ou égal à la tolérance ;
 	\item l'image VIS correspondante appartient à la phase de vol de la mission choisie à l'étape~2 (les images de décollage et de synchronisation sont donc exclues).
 \end{enumerate}
@@ -1119,7 +1318,7 @@ Si vous souhaitez conserver une copie de la mission, d'un dossier \texttt{mappin
 Tout élément du dossier de mission qui ne figure pas dans la liste ci-dessous est supprimé, y compris les copies de dossiers (par exemple \texttt{mapping\_MULTI - Copie}).}}
 \end{center}
 
-Comme pour les étapes~3, 4 et 5, le dossier de la mission est celui des étapes précédentes ou, à défaut, celui que l'utilisateur choisit au lancement de l'étape.
+Comme pour les autres étapes, la mission archivée est la mission ouverte dans la fenêtre principale.
 
 \section{Ce qui est conservé}\label{btn:step6_rules}
 La comparaison des noms de fichiers ne tient pas compte des majuscules et minuscules (\texttt{.dng} et \texttt{.DNG} sont équivalents).
@@ -1180,7 +1379,84 @@ Ferme la fenêtre et rend la main au dialogue principal. Le bouton \bouton{?} ou
 %==========================================================
 \appendix
 \chapter{Alignement des images VIS et NIR (Step 4)}\label{ann:alignement}
-\section{Détermination des \og Pitch \fg{ } et \og Yaw \fg{ } théoriques.}
+Cette annexe s'adresse aux utilisateurs avertis. La première section décrit l'algorithme d'alignement multispectral du Step~4, la seconde l'origine physique du désalignement des deux caméras (angles de \og pitch \fg{} et de \og yaw \fg{} théoriques).
+
+\section{L'algorithme d'alignement multispectral}\label{sec:ann_algorithme}
+Le code est dans \texttt{automatic\_registration.py} (fonction \texttt{align\_raw}) et dans le dossier \texttt{registration}.
+
+\subsection{Pourquoi un algorithme spécifique ?}
+Aligner deux images d'une même bande spectrale est un problème classique, bien résolu par la mise en correspondance de points caractéristiques (SIFT, ORB) ou par corrélation de phase. Ces méthodes échouent ici : le visible et le proche infrarouge ne voient pas la même chose. La végétation est sombre en visible et claire en infrarouge, l'eau est noire en infrarouge, et les contrastes peuvent s'inverser d'une bande à l'autre. Des points caractéristiques ne se retrouvent donc pas d'une image à l'autre, et la corrélation de phase, même dans sa variante de Fourier--Mellin, n'a pas donné de résultats satisfaisants pour l'alignement grossier.
+
+Ce qui est commun aux deux bandes, ce sont les \emph{contours} : bords de routes, haies, toits, lisières. L'algorithme compare donc les images par l'intermédiaire de leurs gradients, sans jamais comparer directement les intensités.
+
+\subsection{Prétraitement}
+\begin{enumerate}
+	\item Les fichiers RAW de la SJCam M20 sont convertis en DNG (\texttt{sjcam\_raw2dng}, au Step~1).
+	\item Les DNG des deux caméras sont développés par RawTherapee en TIF RGB 16 bits \emph{linéaires} (sans courbe de tons), mis en cache (\texttt{*\_RawTherapee.tif}).
+	\item Le vignetage (assombrissement des bords) est corrigé au chargement : carte de correction mesurée pour la caméra DJI, profil radial pour la SJCam (figure~\ref{fig:annexe_shading}).
+	\item La distorsion de l'image visible est corrigée avec la calibration géométrique de la caméra DJI (méthode de Zhang, calibrations dans le dossier \texttt{calibration}).
+\end{enumerate}
+
+\figureIRD[fig:annexe_shading]{annexe_shading_sjcam.png}{Correction du vignetage de la caméra SJCam M20 au chargement : image d'origine (à gauche) et corrigée (à droite).}{0.85}
+
+\subsection{Modèle de caméra virtuelle}
+La caméra NIR est un \og fish-eye \fg{} au champ beaucoup plus large que la caméra visible. Avec sa calibration, l'image NIR est redressée dans une \emph{caméra virtuelle} qui a la même focale que la caméra visible, mais un champ plus large (1,4 fois la taille de l'image visible par défaut). Si les deux caméras visaient exactement dans la même direction, le centre de cette image NIR redressée se superposerait à l'image visible.
+
+En pratique les deux visées diffèrent (§\ref{sec:ann_theorique}) : le gimbal maintient la caméra visible vers le nadir, tandis que la caméra NIR suit l'attitude du drone. Par vent, l'écart peut atteindre une vingtaine de degrés. Le roulis du drone se traduit par un lacet (\emph{yaw}) de la caméra et le tangage par un \emph{pitch} de la caméra ; le roulis de la caméra est en général nul grâce au verrouillage du gimbal. Une rotation $R(\text{yaw},\text{pitch},\text{roll})$ de la caméra se traduit dans l'image par l'homographie
+\begin{equation}
+	H = K_{VIS}\, R\, K_{NIR}^{-1},
+\end{equation}
+où $K_{VIS}$ et $K_{NIR}$ sont les matrices de calibration des deux caméras. Tout l'alignement consiste à trouver cette rotation, puis à l'affiner.
+
+\subsection{Représentation multispectrale}
+Les deux images sont converties en niveaux de gris, lissées par un filtre gaussien (pour l'affinage, $\sigma=5$ pixels pour le visible et 3 pour l'infrarouge, qui est moins net ; moins pour la recherche grossière), puis remplacées par quatre cartes d'énergie de gradient : les carrés des dérivées horizontale et verticale (filtres de Scharr) et des deux dérivées diagonales (filtres de Roberts). Cette représentation garde les contours et ignore le niveau et le signe des contrastes : un contour présent dans les deux bandes y produit le même motif, même si ses intensités diffèrent.
+
+\subsection{Critère de ressemblance : le gradient total normalisé}
+Pour comparer deux représentations décalées, on calcule leur différence, puis la somme des valeurs absolues du gradient (Sobel) de cette différence. Ce critère dérive du \og Normalized Total Gradient \fg{} (NTG, Chen et al.) : quand les deux images sont bien superposées, leurs contours s'annulent dans la différence et le gradient total est minimal. On cherche donc le décalage qui \emph{minimise} ce critère.
+
+\subsection{Alignement grossier}
+L'alignement grossier compense l'essentiel de l'écart de visée :
+\begin{enumerate}
+	\item l'image NIR est redressée dans la caméra virtuelle élargie, avec les angles initiaux (nuls, ou ceux réglés à la main lors d'un réalignement, §\ref{btn:review_redo}) ;
+	\item les deux représentations multispectrales sont réduites d'un facteur 32 ;
+	\item une \emph{recherche exhaustive} teste toutes les translations de l'image visible à l'intérieur de l'image NIR élargie et calcule le critère pour chacune. Le minimum est localisé finement (maximum de courbure de la surface de coût) ;
+	\item à faible angle, une translation horizontale $t_x$ correspond à un lacet et une translation verticale $t_y$ à un pitch de la caméra : $\text{yaw} = \arctan(t_x/f)$, $\text{pitch} = \arctan(t_y/f)$, où $f$ est la focale en pixels ;
+	\item l'image NIR est redressée une nouvelle fois, à pleine résolution, avec ces angles corrigés.
+\end{enumerate}
+Ce résultat correspond à l'image \og globale \fg{} grossière.
+
+\subsection{Affinage pyramidal}
+L'image NIR grossièrement alignée est ensuite affinée sur une pyramide d'images, de la plus petite à la plus grande (réductions d'un facteur 16, 16 puis 4 dans le réglage actuel) :
+\begin{enumerate}
+	\item à chaque niveau, l'image est découpée en une grille de zones (4$\times$4 puis 5$\times$5) ;
+	\item pour chaque zone, la meilleure translation est recherchée dans un petit voisinage avec le même critère : on obtient un \emph{champ de vecteurs} de déplacements locaux ;
+	\item ce champ est régularisé par l'ajustement d'un modèle de mouvement global, une homographie, qui affine le yaw, le pitch et le roll ;
+	\item au niveau suivant, plus fin, l'image est d'abord recalée avec l'homographie trouvée, ce qui réduit l'horizon de recherche ; chaque niveau est itéré plusieurs fois.
+\end{enumerate}
+
+\subsection{Rééchantillonnage unique et sorties}
+Le modèle de mouvement final (angles, homographie et champ de vecteurs) est enregistré dans \texttt{VIS\_XXXX\_motion\_model.npy} ; une version lisible est écrite en \texttt{.json}. L'image NIR \emph{originale} est alors rééchantillonnée \textbf{une seule fois} sur l'image visible, ce qui évite d'accumuler le flou des interpolations successives :
+\begin{itemize}
+	\item alignement \emph{global} : rotation et homographie finale ;
+	\item alignement \emph{local} : rotation, homographie et champ de vecteurs local, en général le plus précis.
+\end{itemize}
+Les quatre couches \texttt{IRD\_XXXX\_1..4.tif} (rouge, vert, bleu et proche infrarouge) viennent de l'alignement local ; les bords, où l'infrarouge peut manquer, sont rognés. Les images de contrôle \texttt{VIR}, \texttt{NDVI} et \texttt{NIR} au format jpeg sont écrites pour l'alignement local et/ou global selon les cases cochées au Step~4 (§\ref{btn:step4_options}). Quand un modèle de mouvement existe déjà, il est relu : relancer l'alignement ne refait pas la recherche (§\ref{btn:step4_stop}).
+
+\subsection{Limites et réalignement semi-automatique}
+L'alignement multispectral est un problème mal posé. L'algorithme échoue quand les deux caméras ne voient pas la même scène (rafale de vent, écart de temps important entre les deux prises de vue), quand la zone est sans texture (eau, champ uniforme), ou quand la recherche grossière tombe sur un minimum trompeur. La revue des images alignées (chapitre~\ref{ch:review}) mesure le décalage résiduel des contours pour repérer ces échecs.
+
+Le réalignement à la main (§\ref{btn:review_redo}) remplace les angles initiaux nuls par des angles choisis à l'\oe il avec des curseurs. Ces angles ne servent que de point de départ : l'alignement grossier et l'affinage pyramidal repartent de là et retrouvent en général un alignement précis. La régularisation du champ de vecteurs local reste à améliorer, de même que l'étalonnage colorimétrique des deux caméras.
+
+\subsection{Références}
+\begin{itemize}
+	\item S.-J. Chen, H.-L. Shen, \emph{Normalized Total Gradient: A New Measure for Multispectral Image Registration}, \texttt{arXiv:1702.04562}.
+	\item M. Irani, P. Anandan, \emph{Robust multi-sensor image alignment}, ICCV 1998.
+	\item S. W. Hasinoff et al., \emph{Burst photography for high dynamic range and low-light imaging on mobile cameras}, SIGGRAPH Asia 2016 (alignement pyramidal par zones, matériel supplémentaire).
+	\item G. Rabatel, S. Labbé, \emph{Registration of visible and near infrared unmanned aerial vehicle images based on Fourier-Mellin transform}, Precision Agriculture, 2016.
+	\item J.-A. Vayssade, G. Jones, J.-N. Paoli, C. Gée, \emph{Two-step multi-spectral registration via key-point detector and gradient similarity}, 2020.
+\end{itemize}
+
+\section{Détermination des \og Pitch \fg{ } et \og Yaw \fg{ } théoriques.}\label{sec:ann_theorique}
 
 \subsection{Description du positionnement des caméras.}
 

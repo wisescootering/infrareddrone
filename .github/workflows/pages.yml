@@ -1,7 +1,8 @@
 name: GitHub Pages
 
-# The site is built from readme.md, docs/, calibration/readme.md and illustrations/
-# by website/prepare.py. Pull requests only build it (strict: broken links fail),
+# The site is built from readme.md, docs/, calibration/readme.md, illustrations/ and the
+# English user manual (help/irdrone_help_en.tex, converted by pandoc) by website/prepare.py.
+# The software's contextual help links to the anchors of the manual page. Pull requests only build it (strict: broken links fail),
 # master also deploys it to https://wisescootering.github.io/infrareddrone/
 on:
   push:
@@ -11,6 +12,8 @@ on:
       - "docs/**"
       - "calibration/readme.md"
       - "illustrations/**"
+      - "help/**"
+      - "irdrone_wizard/IRD_Interactive_*.py"
       - "website/**"
       - ".github/workflows/pages.yml"
   pull_request:
@@ -19,6 +22,8 @@ on:
       - "docs/**"
       - "calibration/readme.md"
       - "illustrations/**"
+      - "help/**"
+      - "irdrone_wizard/IRD_Interactive_*.py"
       - "website/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
@@ -40,6 +45,8 @@ jobs:
         with:
           python-version: "3.12"
           activate-environment: true
+      - name: Install pandoc (user manual)
+        run: sudo apt-get update && sudo apt-get install -y pandoc
       - name: Build site
         run: |
           uv pip install -r website/requirements.txt

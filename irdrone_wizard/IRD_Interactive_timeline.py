@@ -24,7 +24,7 @@ from typing import Dict, Optional
 
 import numpy as np
 from PyQt6.QtCore import QPointF, QRectF, QSize, Qt, QThread, QTimer, pyqtSignal
-from PyQt6.QtGui import (QBrush, QColor, QFont, QImage, QKeySequence, QLinearGradient, QPainter,
+from PyQt6.QtGui import (QBrush, QColor, QFont, QKeySequence, QLinearGradient, QPainter,
                          QPainterPath, QPen, QPixmap, QShortcut, QTextDocumentFragment)
 from PyQt6.QtWidgets import (QApplication, QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QMessageBox,
                              QProgressBar, QPushButton, QScrollArea, QSizePolicy, QToolButton, QVBoxLayout,
@@ -34,17 +34,11 @@ sys.path.append(str(Path(__file__).resolve().parent))
 import flight_timeline as FT  # noqa: E402
 
 # ---------------------------------------------------------------------------
-#  Look
+#  Look (shared with the other modern windows)
 # ---------------------------------------------------------------------------
-INK = QColor("#1F2933")
-MUTED = QColor("#6B7785")
-GRID = QColor("#E4E8EE")
-PANEL = QColor("#F5F7FA")
-BLUE = QColor("#17365D")
-SYNC = QColor("#7B3FA0")
-SURVEY = QColor("#2E7D32")
-NIR_ACCENT = QColor("#B03A2E")
-CURSOR = QColor("#E8A33D")
+from IRD_Interactive_look import (BLUE, CURSOR, GRID, INK, MUTED, NIR_ACCENT, NUDGE_STYLE,  # noqa: E402,F401
+                                  PANEL, PRIMARY_STYLE, SECONDARY_STYLE, SURVEY, SYNC, bgr_to_pixmap,
+                                  fmt_time)
 
 PHASE_COLORS = {"sync": SYNC, "survey": SURVEY}
 KEYPOINTS = [  # (card title, phase, edge)
@@ -53,37 +47,6 @@ KEYPOINTS = [  # (card title, phase, edge)
     ("Survey start", "survey", "first"),
     ("Survey end", "survey", "last"),
 ]
-
-PRIMARY_STYLE = """
-QPushButton { background-color: #17365D; color: white; font-weight: bold; padding: 9px 18px;
-              border: none; border-radius: 6px; }
-QPushButton:hover { background-color: #244A73; }
-QPushButton:disabled { background-color: #B8C2CC; color: #666666; }
-"""
-SECONDARY_STYLE = """
-QPushButton { background-color: white; color: #17365D; padding: 8px 14px;
-              border: 1px solid #C5CFDA; border-radius: 6px; }
-QPushButton:hover { background-color: #EEF3F8; }
-QPushButton:disabled { color: #A0AAB4; }
-"""
-NUDGE_STYLE = """
-QToolButton { background: white; color: #17365D; border: 1px solid #C5CFDA; border-radius: 4px;
-              min-width: 22px; min-height: 20px; font-weight: bold; }
-QToolButton:hover { background: #EEF3F8; }
-QToolButton:disabled { color: #C5CFDA; border-color: #E4E8EE; }
-"""
-
-
-def fmt_time(t: float) -> str:
-    sign = "-" if t < 0 else ""
-    t = abs(t)
-    return f"{sign}{int(t // 60)}:{t % 60:04.1f}"
-
-
-def bgr_to_pixmap(img) -> QPixmap:
-    img = np.ascontiguousarray(img[:, :, ::-1])   # BGR -> RGB
-    h, w = img.shape[:2]
-    return QPixmap.fromImage(QImage(img.data, w, h, 3 * w, QImage.Format.Format_RGB888).copy())
 
 
 # ---------------------------------------------------------------------------
@@ -1019,9 +982,13 @@ class FlightTimelineDialog(QDialog):
 
         try:
             import IRD_Interactive_help as Help
+            self.btn_reset.setToolTip("Undo the manual changes: back to the phases found automatically.")
+            self.btn_cancel.setToolTip("Close without saving the phases.")
             for widget, label in ((self.btn_confirm, "btn:step2_confirm"), (self.btn_save, "btn:step2_confirm"),
+                                  (self.btn_cancel, "btn:step2_confirm"), (self.btn_reset, "btn:step2_adjust"),
                                   (self.btn_classic, "btn:step2_classic")):
                 Help.attach_help(widget, label, widget.toolTip(), parent=self)
+            Help.attach_help(self.btn_help, "btn:step2_adjust", "", parent=self)   # keeps the keys as tool tip
         except Exception as e:  # help is a convenience
             print(f"Help not attached: {e}")
 

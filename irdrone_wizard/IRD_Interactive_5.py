@@ -169,6 +169,10 @@ class ODMSelectionDialog(QDialog):
         self.sample_radio = QRadioButton("Select one image every n eligible images")
         self.overlap_radio = QRadioButton("Select by image overlap")
         self.sample_radio.setChecked(True)
+        self.sample_radio.setToolTip("Keep one eligible image every n: less overlap, faster mapping.")
+        self.overlap_radio.setToolTip("Select by overlap between the images (not available yet).")
+        for radio in (self.sample_radio, self.overlap_radio):
+            Help.attach_help(radio, "btn:step5_selection", radio.toolTip(), parent=self)
         self.selection_group = QButtonGroup(self)
         self.selection_group.setExclusive(True)
         self.selection_group.addButton(self.sample_radio)
@@ -371,7 +375,8 @@ class DialogGeoRef(QDialog):
         self.image_signal.connect(self._display_image)
 
         # Forward GeoRef logger messages to this dialog.
-        GeoRef.logger.log_callback = self.log_signal.emit
+        self._log_callback = self.log_signal.emit
+        GeoRef.logger.log_callback = self._log_callback
 
         self._log("Dialog initialized.")
 
@@ -450,10 +455,14 @@ class DialogGeoRef(QDialog):
         close_layout.addWidget(self.btn_help)
 
         for widget, label, tip in (
-            (self.btn_run_GeoRef, "btn:step5_georef", "Georeference and orthorectify the selected shoot points."),
-            (self.btn_run_Mapping, "btn:step5_mapping", "Prepare the images and run the ODM mapping."),
-            (self.btn_run_DTM, "btn:step5_dtm", "Build the DTM and the contour lines from the mapped image."),
+            (self.btn_run_GeoRef, "btn:step5_georef",
+             "Choose images (drone DNG, or IRD_XXXX_1..4.tif groups) and georeference and orthorectify each one."),
+            (self.btn_run_Mapping, "btn:step5_mapping",
+             "Choose the images, then assemble them into one 4-band orthophoto with OpenDroneMap (Docker)."),
+            (self.btn_run_DTM, "btn:step5_dtm",
+             "Build the terrain model and the contour lines over the orthophoto (IGN altitudes, internet)."),
             (self.btn_close, "btn:step5_close", "Close this window."),
+            (self.btn_help, "ch:step5", "Open the manual at Step 5."),
         ):
             Help.attach_help(widget, label, tip, parent=self)
 
@@ -899,6 +908,12 @@ class DialogGeoRef(QDialog):
         )
         self.progress_label.setText("ODM failed.")
         self._set_preview_text("ODM failed: see the log above.")
+
+    def done(self, result) -> None:
+        """Closed: the shared GeoRef logger stops writing to this window (deleted later)."""
+        super().done(result)
+        if GeoRef.logger.log_callback is getattr(self, "_log_callback", None):
+            GeoRef.logger.log_callback = None
 
     def closeEvent(self, event) -> None:
         """Refuse to close the window while ODM or the DTM is running."""

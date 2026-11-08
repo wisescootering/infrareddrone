@@ -1,2 +1,4 @@
 mkdocs==1.6.1
 mkdocs-material==9.5.49
+pymupdf==1.24.14
+pillow==11.0.0

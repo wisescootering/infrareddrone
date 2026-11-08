@@ -23,7 +23,10 @@ jobs:
         uses: xu-cheng/latex-action@v4
         with:
           working_directory: help
-          root_file: irdrone_help.tex
+          # French manual and its English translation (same labels)
+          root_file: |
+            irdrone_help.tex
+            irdrone_help_en.tex
           latexmk_use_lualatex: false
 
       # Build artifact: shown at the bottom of the workflow run page.
@@ -31,7 +34,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: irdrone_help
-          path: help/irdrone_help.pdf
+          path: |
+            help/irdrone_help.pdf
+            help/irdrone_help_en.pdf
           if-no-files-found: error
 
       # Rolling release: stable link on the repo's "Releases" sidebar,
@@ -45,4 +50,4 @@ jobs:
             gh release create help-latest --title "Help manual (latest)" \
               --notes "Automatically rebuilt from master by the Build help PDF workflow." \
               --target "$GITHUB_SHA"
-          gh release upload help-latest help/irdrone_help.pdf --clobber
+          gh release upload help-latest help/irdrone_help.pdf help/irdrone_help_en.pdf --clobber
