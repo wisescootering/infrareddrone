@@ -401,6 +401,11 @@ def redo_queue(output_folder: Path, points, log=print) -> list:
     return queue
 
 
+STAGE_MARKER = "IRDRONE_STAGE "   # printed by automatic_registration.py (manual redo)
+REDO_STAGES = [("load", "Loading the images"), ("manual", "Align by hand"),
+               ("compute", "Computing the alignment"), ("write", "Saving")]
+
+
 class RedoRunner(QObject):
     """Manual realignment of shoot points, one subprocess at a time.
 
@@ -412,6 +417,7 @@ class RedoRunner(QObject):
     or, with ``pause_between``, when ``resume()`` is called."""
 
     point_started = pyqtSignal(int, str)          # number, stem
+    stage = pyqtSignal(int, str, str)             # number, stem, load / manual / compute / write
     output = pyqtSignal(str)                      # console output / log lines
     point_done = pyqtSignal(int, str, str, str)   # number, stem, aligned image, error
     all_done = pyqtSignal()
@@ -429,6 +435,9 @@ class RedoRunner(QObject):
         self._queue = []
         self.current = None
         self._started_at = 0.0
+        self._partial = ""
+        self.total = 0           # points of the run, and the rank of the current one
+        self.rank = 0
 
     def busy(self) -> bool:
         return (self.current is not None or self._paused
@@ -436,6 +445,7 @@ class RedoRunner(QObject):
 
     def start(self, queue) -> None:
         self._queue = list(queue)
+        self.total, self.rank = len(self._queue), 0
         self._start_next()
 
     def resume(self) -> None:
@@ -456,6 +466,8 @@ class RedoRunner(QObject):
             return
         number, stem, arguments = self._queue.pop(0)
         self.current = (number, stem)
+        self.rank += 1
+        self._partial = ""
         self._started_at = time.time()
         full_arguments = [str(PROJECT_ROOT / "automatic_registration.py"), *arguments]
         self.process.setProcessEnvironment(redo_environment())
@@ -465,9 +477,25 @@ class RedoRunner(QObject):
         self.process.start(sys.executable, full_arguments)
 
     def _read_output(self) -> None:
-        output = bytes(self.process.readAllStandardOutput()).decode("utf-8", errors="replace")
-        if output.strip():
-            self.output.emit(output.rstrip())
+        output = self._partial + bytes(self.process.readAllStandardOutput()).decode("utf-8", errors="replace")
+        lines = output.split("\n")
+        self._partial = lines.pop()          # an unfinished line waits for the rest
+        shown = []
+        for line in lines:
+            if line.startswith(STAGE_MARKER):
+                if self.current is not None:
+                    self.stage.emit(self.current[0], self.current[1], line[len(STAGE_MARKER):].strip())
+            else:
+                shown.append(line.rstrip("\r"))
+        text = "\n".join(shown)
+        if text.strip():
+            self.output.emit(text.rstrip())
+
+    def _flush_output(self) -> None:
+        self._read_output()
+        if self._partial.strip() and not self._partial.startswith(STAGE_MARKER):
+            self.output.emit(self._partial.rstrip())
+        self._partial = ""
 
     def _on_error(self, error) -> None:
         # A process that never started emits no "finished" signal.
@@ -483,7 +511,7 @@ class RedoRunner(QObject):
             self._start_next()
 
     def _on_finished(self, exit_code: int, exit_status) -> None:
-        self._read_output()
+        self._flush_output()
         number, stem = self.current
         if exit_code != 0 or exit_status != QProcess.ExitStatus.NormalExit:
             image, error = "", f"Redo of {stem} failed (exit code {exit_code})."
@@ -684,6 +712,7 @@ class DialogImageProcessing(QDialog):
         self.redo_runner = RedoRunner(self.mission_folder / "ImgIRdrone", self)
         self.redo_runner.output.connect(self._append_log)
         self.redo_runner.point_started.connect(self._on_redo_started)
+        self.redo_runner.stage.connect(self._on_redo_stage)
         self.redo_runner.point_done.connect(self._on_redo_point_done)
         self.redo_runner.all_done.connect(self._finish_redo)
         self._redo_validated = []
@@ -1051,10 +1080,17 @@ class DialogImageProcessing(QDialog):
         self.redo_runner.start(queue)
 
     def _on_redo_started(self, number: int, stem: str) -> None:
-        self.status_label.setText(
-            f"Redo {stem}: adjust the sliders, then close the window to continue."
-        )
+        self._on_redo_stage(number, stem, "load")
         self.progress_bar.setRange(0, 0)
+
+    def _on_redo_stage(self, number: int, stem: str, key: str) -> None:
+        texts = {"load": "loading the images…",
+                 "manual": "adjust the sliders, then close the window to continue.",
+                 "compute": "computing the new alignment (about a minute)…",
+                 "write": "saving the aligned images…"}
+        runner = self.redo_runner
+        rank = f" ({runner.rank}/{runner.total})" if runner.total > 1 else ""
+        self.status_label.setText(f"Redo {stem}{rank}: {texts.get(key, key)}")
 
     def _on_redo_point_done(self, number: int, stem: str, image: str, error: str) -> None:
         self.progress_bar.setRange(0, 1)

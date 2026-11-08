@@ -223,6 +223,12 @@ def coarse_alignment(ref_full, mov_full, cals, yaw_main, pitch_main, roll_main, 
     return mov_wr_fullres, dict(yaw=yaw_main + yaw_refine, pitch=pitch_main + pitch_refine, roll=roll_main)
 
 
+def report_stage(name):
+    """Stage of a manual redo for the wizard (it shows the progress): load,
+    manual (the slider window is open), compute, write."""
+    print(f"IRDRONE_STAGE {name}", flush=True)
+
+
 def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extension=1.4, manual=True, init_angles=[0., 0., 0.], motion_model_file = None):
     """
     :param vis_path: Path to visible DJI DNG image
@@ -238,6 +244,8 @@ def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extens
     if debug_dir is not None:
         motion_model_file = osp.join(debug_dir, "motion_model")
     ts_start = time.perf_counter()
+    if manual:
+        report_stage("load")
     vis = pr.Image(vis_path)
     nir = pr.Image(nir_path)
     vis_undist = warp(vis.data, cals["refcalib"], np.eye(3))
@@ -253,7 +261,9 @@ def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extens
     logging.info("{:.2f}s elapsed in loading full resolution RAW".format(ts_end_load - ts_start))
     if motion_model_file is None or not osp.isfile(motion_model_file+".npy"):
         if manual:
+            report_stage("manual")
             alignment_params = user_assisted_manual_alignment(ref_full, mov_full, cals, init_angles[0], init_angles[1], init_angles[2])
+            report_stage("compute")
             yaw_main, pitch_main, roll_main = alignment_params["yaw"], alignment_params["pitch"], alignment_params["roll"]
         else:
             yaw_main, pitch_main, roll_main = init_angles
@@ -622,6 +632,8 @@ def _process_raw_pairs_serial(
         )
         
         # AGGREGATED RESULTS!
+        if manual:
+            report_stage("write")
         if crop is not None:
             aligned_full = aligned_full[crop:-crop, crop:-crop, :]
             align_full_global = align_full_global[crop:-crop, crop:-crop, :]

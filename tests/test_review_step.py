@@ -273,3 +273,49 @@ class ReviewMapTests(ReviewDialogTests):
         d.set_mode("map")                                  # ignored
         self.assertIs(d.view_stack.currentWidget(), d.view)
         d.done(0)
+
+
+class RedoProgressTests(ReviewDialogTests):
+    """While a redo runs, the review shows its stage and an activity bar."""
+
+    def test_stages_follow_the_redo_process(self):
+        d = self.dialog()
+        d.toggle_flag()
+        d.redo_runner.total, d.redo_runner.rank = 2, 1
+        d._on_redo_started(140, "VIS_0140")
+        self.assertTrue(d.redo_box.isVisibleTo(d))
+        self.assertIn("Point 1 of 2", d.banner_text.text())
+        d._on_redo_stage(140, "VIS_0140", "manual")
+        self.assertIn("slider window", d.banner_text.text())
+        d._on_redo_stage(140, "VIS_0140", "compute")
+        self.assertEqual(d.redo_stages.states[:3], ["done", "done", "running"])
+        self.assertIn("computing", d.banner_text.text())
+        from unittest import mock
+        with mock.patch.object(d.redo_runner, "resume"):
+            vir = self.mission / "ImgIRdrone" / "VIR_0140_local.jpg"
+            d._on_redo_done(140, "VIS_0140", str(vir), "")
+        self.assertFalse(d.redo_box.isVisibleTo(d))       # now the verdict question
+        self.assertTrue(d.btn_accept_redo.isVisibleTo(d))
+        d.scan.wait(10000)
+        d.done(0)
+
+
+class RedoRunnerOutputTests(unittest.TestCase):
+    def test_stage_lines_become_signals_not_log(self):
+        import os
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PyQt6.QtWidgets import QApplication
+        QApplication.instance() or QApplication([])
+        import IRD_Interactive_4 as S4
+        r = S4.RedoRunner(Path(tempfile.mkdtemp()))
+        r.current = (140, "VIS_0140")
+        stages, logs = [], []
+        r.stage.connect(lambda n, s, k: stages.append(k))
+        r.output.connect(logs.append)
+        chunks = [b"loading\nIRDRONE_STA", b"GE manual\n2D translation\nIRDRONE_STAGE compute\n"]
+        from unittest import mock
+        with mock.patch.object(r.process, "readAllStandardOutput", side_effect=chunks):
+            r._read_output()
+            r._read_output()
+        self.assertEqual(stages, ["manual", "compute"])          # a marker split across two reads
+        self.assertEqual("\n".join(logs), "loading\n2D translation")

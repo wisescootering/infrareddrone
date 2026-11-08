@@ -37,7 +37,7 @@ import IRD_Interactive_map as MapV  # noqa: E402
 from IRD_Interactive_look import (BLUE, CURSOR, DANGER_STYLE, DIALOG_STYLE, GRID, MESSAGE_STYLE,  # noqa: E402
                                   MUTED, NIR_ACCENT, PANEL, PRIMARY_STYLE, PROGRESS_STYLE, SECONDARY_STYLE,
                                   SUBTITLE_STYLE, TITLE_STYLE, bgr_to_qimage, chip, fit_to_screen, fmt_time,
-                                  set_chip)
+                                  set_chip, StageTracker, STAGE_DONE, STAGE_PENDING, STAGE_RUNNING)
 
 STATUS_COLORS = {
     R.STATUS_OK: QColor("#2E7D32"),
@@ -712,6 +712,7 @@ class ReviewDialog(QDialog):
         self.redo_runner.output.connect(lambda text: print(text))
         self.redo_runner.point_started.connect(self._on_redo_started)
         self.redo_runner.point_done.connect(self._on_redo_done)
+        self.redo_runner.stage.connect(self._on_redo_stage)
         self.redo_runner.all_done.connect(self._on_redo_all_done)
         self._hover_timer = QTimer(self)
         self._hover_timer.setSingleShot(True)
@@ -756,8 +757,11 @@ class ReviewDialog(QDialog):
         self.banner = QFrame()
         self.banner.setObjectName("banner")
         self.banner.setStyleSheet("#banner { background: #EAF2FB; border: 1px solid #B9D3EE; border-radius: 8px; }")
-        bl = QHBoxLayout(self.banner)
-        bl.setContentsMargins(12, 6, 8, 6)
+        banner_col = QVBoxLayout(self.banner)
+        banner_col.setContentsMargins(12, 6, 8, 8)
+        banner_col.setSpacing(6)
+        bl = QHBoxLayout()
+        banner_col.addLayout(bl)
         self.banner_text = QLabel()
         self.banner_text.setTextFormat(Qt.TextFormat.RichText)
         self.btn_accept_redo = QPushButton("✓ Yes, aligned")
@@ -769,6 +773,27 @@ class ReviewDialog(QDialog):
         bl.addWidget(self.banner_text, 1)
         bl.addWidget(self.btn_reject_redo)
         bl.addWidget(self.btn_accept_redo)
+        # progress of the redo running (stages printed by the redo process)
+        import IRD_Interactive_4 as Step4
+        self.redo_box = QWidget()
+        rl = QVBoxLayout(self.redo_box)
+        rl.setContentsMargins(0, 0, 0, 0)
+        rl.setSpacing(4)
+        self.redo_stages = StageTracker([title for _key, title in Step4.REDO_STAGES])
+        self.redo_stage_keys = [key for key, _title in Step4.REDO_STAGES]
+        rl.addWidget(self.redo_stages.widget())
+        self.redo_bar = QProgressBar()
+        self.redo_bar.setTextVisible(False)
+        self.redo_bar.setFixedHeight(5)
+        self.redo_bar.setRange(0, 0)                     # busy
+        self.redo_bar.setStyleSheet(PROGRESS_STYLE)
+        rl.addWidget(self.redo_bar)
+        banner_col.addWidget(self.redo_box)
+        self.redo_box.hide()
+        self._redo_clock = QTimer(self)
+        self._redo_clock.setInterval(1000)
+        self._redo_clock.timeout.connect(self._show_redo_progress)
+        self._redo_point = None              # (stem, started at, stage key)
         self.banner.hide()
         outer.addWidget(self.banner)
 
@@ -1270,12 +1295,52 @@ class ReviewDialog(QDialog):
         pt = self.review.by_number(number)
         if pt is not None:
             self.select(self.review.points.index(pt), by_user=False)
-        self.banner_text.setText(f"<b>{stem}</b>: align the images in the slider window, then close it…")
+        import time as _time
+        self._redo_point = [stem, _time.time(), "load"]
+        for k in range(len(self.redo_stage_keys)):
+            self.redo_stages.set(k, STAGE_PENDING, "")
+        self.redo_stages.set(0, STAGE_RUNNING, "")
         self.btn_accept_redo.hide()
         self.btn_reject_redo.hide()
+        self.redo_box.show()
+        self.redo_bar.setRange(0, 0)
         self.banner.show()
+        self._redo_clock.start()
+        self._show_redo_progress()
+
+    REDO_HINTS = {
+        "load": "loading the full resolution images…",
+        "manual": "align the images in the slider window, then close it",
+        "compute": "computing the new alignment (about a minute)…",
+        "write": "saving the aligned images…",
+    }
+
+    def _on_redo_stage(self, number, stem, key):
+        if self._redo_point is None or key not in self.redo_stage_keys:
+            return
+        self._redo_point[2] = key
+        k = self.redo_stage_keys.index(key)
+        for j in range(len(self.redo_stage_keys)):
+            self.redo_stages.set(j, STAGE_DONE if j < k else STAGE_RUNNING if j == k else STAGE_PENDING)
+        self._show_redo_progress()
+
+    def _show_redo_progress(self):
+        if self._redo_point is None:
+            return
+        import time as _time
+        stem, started, key = self._redo_point
+        runner = self.redo_runner
+        rank = f"Point {runner.rank} of {runner.total} · " if runner.total > 1 else ""
+        self.banner_text.setText(f"{rank}<b>{stem}</b>: {self.REDO_HINTS.get(key, '')} "
+                                 f"<span style='color:#6B7785'>{fmt_time(_time.time() - started)[:-2]}</span>")
+
+    def _end_redo_progress(self):
+        self._redo_clock.stop()
+        self._redo_point = None
+        self.redo_box.hide()
 
     def _on_redo_done(self, number, stem, image, error):
+        self._end_redo_progress()
         pt = self.review.by_number(number)
         if error or pt is None:
             self._redo_stats["errors"] += 1
@@ -1311,6 +1376,7 @@ class ReviewDialog(QDialog):
         self.redo_runner.resume()
 
     def _on_redo_all_done(self):
+        self._end_redo_progress()
         s = self._redo_stats
         self.banner.hide()
         self._refresh_counts()
