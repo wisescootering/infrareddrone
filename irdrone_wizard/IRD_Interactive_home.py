@@ -297,7 +297,7 @@ class StepTile(QPushButton):
             what = "Mission created."
             action = ("Click to edit its details (description, pilot, cameras): the SD cards are not read again.\n"
                       "A new mission is started from \"‹ All missions\".")
-        self.setToolTip(f"Step {self.step} · {what}\n{action}\n(Right-click: help on this step)")
+        self.setToolTip(f"Step {self.step} · {what}\n{action}\n(F1: help on this step)")
 
 
 class StepRail(QWidget):
@@ -595,7 +595,7 @@ class HomePage(QStackedWidget):
                                    "Archive the mission to free disk space, or click a step above to run it again.")
             self.btn_continue.setText("Archive the mission  ▶")
             self.btn_continue.setToolTip("Open Step 6: delete the working files, keep what is needed to "
-                                         "process the mission again.\n(Right-click: help on this button)")
+                                         "process the mission again.\n(F1: help on this button)")
             self._next = 6
         else:
             name, what = STEP_TITLES[nxt]
@@ -603,7 +603,7 @@ class HomePage(QStackedWidget):
             self.next_text.setText(WHAT_NEXT[nxt])
             self.btn_continue.setText(f"Continue with Step {nxt}  ▶")
             self.btn_continue.setToolTip(f"Open Step {nxt}: {what}."
-                                         "\n(Right-click: help on this button)")
+                                         "\n(F1: help on this button)")
             self._next = nxt
         has_review = (info.folder / "ImgIRdrone" / "shoot_points.json").is_file()
         self.btn_review.setVisible(has_review)

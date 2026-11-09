@@ -220,7 +220,7 @@ def to_mkdocs(md: str) -> str:
     header = (f"# User manual\n\n"
               f"!!! info \"PDF version\"\n    The same manual as a PDF, rebuilt on every change: "
               f"[irdrone_help_en.pdf]({PDF_URL}) (in French: [irdrone_help.pdf]({PDF_URL_FR})). "
-              f"In the software, right-click a button to open this page at the section of that button.\n\n")
+              f"In the software, press F1 over a button to open this page at the section of that button.\n\n")
     return header + md
 
 

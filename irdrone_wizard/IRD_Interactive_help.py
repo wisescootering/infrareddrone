@@ -16,7 +16,7 @@ Online first
 When the documentation website can be reached, the help is read online and is
 always the latest one (in English):
 
-* :func:`show_help` (``?`` buttons, right-click "Help on this button") opens the
+* :func:`show_help` (``?`` buttons, F1 on a button) opens the
   web manual at the anchor of the label: ``https://wisescootering.github.io/infrareddrone/manual/#btn:step4_stop``.
   The web page is generated from ``help/irdrone_help_en.tex`` by ``website/manual.py``:
   every LaTeX label is an anchor of the page.
@@ -31,7 +31,7 @@ Usage
     Help.show_help("ch:step2")
     Help.show_manual()
 
-Buttons are documented with :func:`attach_help` (tooltip + right-click help).
+Buttons are documented with :func:`attach_help` (tooltip + F1 help).
 
 Notes
 -----
@@ -268,11 +268,16 @@ def _open_with_acrobat(pdf_path: Path, page: int) -> bool:
     return True
 
 
+HELP_PROPERTY = "irdrone_help"     # Qt property holding the manual label of a widget
+_f1_filter = None
+
+
 def attach_help(widget, label: str, tooltip: str = "", parent=None) -> None:
     """
-    Add a tooltip and a right-click "Help on this button" entry to a widget.
+    Add a tooltip and the F1 help to a widget.
 
-    The context-menu entry opens the manual at the section linked to ``label``.
+    F1 pressed while the mouse is over the widget (or while it has the keyboard
+    focus) opens the manual at the section linked to ``label``.
 
     Parameters
     ----------
@@ -281,27 +286,76 @@ def attach_help(widget, label: str, tooltip: str = "", parent=None) -> None:
     label : str
         LaTeX label of the manual section (e.g. ``"btn:review_redo"``).
     tooltip : str, optional
-        One-sentence description. A reminder of the right-click help is appended.
+        One-sentence description. A reminder of the F1 help is appended.
     parent : QWidget, optional
-        Parent of the message box shown if the manual cannot be opened
-        (default: the widget itself).
+        Kept for compatibility (the message box of a failure goes to the active window).
     """
-    from PyQt6.QtCore import Qt
-    from PyQt6.QtGui import QAction
-    from PyQt6.QtWidgets import QMenu
-
     if tooltip:
-        widget.setToolTip(f"{tooltip}\n(Right-click: help on this button)")
-    widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        widget.setToolTip(f"{tooltip}\n(F1: help on this button)")
+    widget.setProperty(HELP_PROPERTY, label)
+    install_f1_help()
 
-    def _menu(position):
-        menu = QMenu(widget)
-        action = QAction("Help on this button", menu)
-        action.triggered.connect(lambda: show_help(label, parent=parent or widget))
-        menu.addAction(action)
-        menu.exec(widget.mapToGlobal(position))
 
-    widget.customContextMenuRequested.connect(_menu)
+def help_label_for(widget) -> Optional[str]:
+    """Manual label of ``widget`` or of its closest parent in the same window, None if none."""
+    while widget is not None:
+        label = widget.property(HELP_PROPERTY)
+        if label:
+            return str(label)
+        if widget.isWindow():
+            return None
+        widget = widget.parentWidget()
+    return None
+
+
+def help_on_f1() -> None:
+    """
+    F1: the manual at the widget under the mouse, else at the widget with the
+    keyboard focus, else what the ``?`` button of the active window opens.
+    """
+    from PyQt6.QtGui import QCursor
+    from PyQt6.QtWidgets import QApplication
+
+    window = QApplication.activeModalWidget() or QApplication.activeWindow()
+    hovered = QApplication.widgetAt(QCursor.pos())
+    label = None
+    if hovered is not None and (window is None or hovered.window() is window):
+        label = help_label_for(hovered)
+    if label is None:
+        label = help_label_for(QApplication.focusWidget())
+    if label is not None:
+        show_help(label, parent=window)
+        return
+    for name in ("btn_help", "help_button"):          # the ? button of the window
+        button = getattr(window, name, None)
+        if button is not None and button.isEnabled():
+            button.click()
+            return
+    show_manual(parent=window)
+
+
+def install_f1_help() -> None:
+    """Install, once, the application-wide F1 key of the contextual help."""
+    global _f1_filter
+    if _f1_filter is not None:
+        return
+    from PyQt6.QtCore import QEvent, QObject, Qt
+    from PyQt6.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    if app is None:
+        return
+
+    class _F1Filter(QObject):
+        def eventFilter(self, obj, event):
+            if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_F1:
+                if not event.isAutoRepeat():
+                    help_on_f1()
+                return True
+            return False
+
+    _f1_filter = _F1Filter(app)
+    app.installEventFilter(_f1_filter)
 
 
 def _warn(parent, message: str) -> None:

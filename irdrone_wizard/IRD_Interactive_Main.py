@@ -189,8 +189,8 @@ class Main_Window(QMainWindow):
         self.main_layout.addWidget(status)
 
         for step, tile in self.home.rail.tiles.items():
-            Help.attach_help(tile, f"ch:step{step}", parent=self)   # right-click: manual
-        # every button of the main window: a tool tip and, on right-click, its section of the manual
+            Help.attach_help(tile, f"ch:step{step}", parent=self)   # F1: manual
+        # every button of the main window: a tool tip and, with F1, its section of the manual
         home = self.home
         for widget, label, tip in (
             (home.card_new, "btn:home_missions",
@@ -205,7 +205,7 @@ class Main_Window(QMainWindow):
             (home.btn_show_image, "btn:home_map", home.btn_show_image.toolTip()),
             (self.working_dir_bar.gear, "btn:home_workdir",
              "Change the working folder (the folder that holds the missions)."),
-            (self.btn_help, "sec:help", "Open this manual. Right-click any button: the manual at that button."),
+            (self.btn_help, "sec:help", "Open this manual. F1 over any button: the manual at that button."),
         ):
             Help.attach_help(widget, label, tip, parent=self)
 

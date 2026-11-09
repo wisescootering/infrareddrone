@@ -321,7 +321,7 @@ class FlightMapView(QWidget):
         self.btn_fit.setStyleSheet(self.btn_layers.styleSheet())
         self.btn_fit.clicked.connect(self.fit)
         self.btn_fit.setVisible(not compact)
-        try:   # right-click: the map section of the manual (a help, never a blocker)
+        try:   # F1: the map section of the manual (a help, never a blocker)
             import IRD_Interactive_help as Help
             Help.attach_help(self.btn_layers, "btn:home_map",
                              "Background (IGN aerial photos, Esri, OpenStreetMap or none, from the internet) "

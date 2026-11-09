@@ -117,7 +117,7 @@ class MissionDetailsDialog(QDialog):
         buttons.addWidget(cancel)
         buttons.addWidget(self.btn_save)
         lay.addLayout(buttons)
-        try:   # tool tips, right-click: the manual
+        try:   # tool tips, F1: the manual
             import IRD_Interactive_help as Help
             for widget, tip in (
                 (self.btn_help, "Open the manual at the mission details."),
