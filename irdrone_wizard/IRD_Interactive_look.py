@@ -6,7 +6,7 @@ review, home page): colours, button styles, chips and window sizing.
 from __future__ import annotations
 
 from PyQt6.QtGui import QColor, QImage, QPixmap
-from PyQt6.QtWidgets import QApplication, QLabel
+from PyQt6.QtWidgets import QApplication, QLabel, QPushButton
 
 INK = QColor("#1F2933")
 MUTED = QColor("#6B7785")
@@ -54,6 +54,23 @@ SUBTITLE_STYLE = "color: #6B7785;"
 MESSAGE_STYLE = "background: #FFF4E0; color: #7A4B00; border-radius: 6px; padding: 3px 10px;"
 PROGRESS_STYLE = ("QProgressBar { background: #E4E8EE; border: none; border-radius: 2px; }"
                   "QProgressBar::chunk { background: #17365D; border-radius: 2px; }")
+
+
+def reset_button(tip: str) -> QPushButton:
+    """The ↺ button of the windows that edit something: next to ?, at the bottom
+    left, shown only when there is something to put back. It puts the values
+    back; the window stays open."""
+    button = QPushButton("↺")
+    button.setStyleSheet(SECONDARY_STYLE)
+    button.setFixedWidth(36)
+    button.setToolTip(tip)
+    button.hide()
+    return button
+
+
+def close_text(changed: bool) -> str:
+    """Label of the Close button of a window that saves when it closes."""
+    return "Save and close" if changed else "Close"
 
 
 def chip(color, text: str = "", tip: str = "") -> QLabel:

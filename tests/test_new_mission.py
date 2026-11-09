@@ -238,10 +238,16 @@ class MissionDetailsTest(unittest.TestCase):
         import IRD_Interactive_mission_details as D
         before = MS.mission_parameters_path(self.folder).read_text()
         d = D.MissionDetailsDialog(self.folder)
+        self.assertEqual((d.btn_reset.text(), d.btn_close.text()), ("↺", "Close"))
+        self.assertTrue(d.btn_reset.isHidden())                     # nothing to reset yet
         d.f_description.setText("Plot 12")
         d.f_filter_band.setValue(d.f_filter_band.value() + 10)
+        self.assertEqual(d.btn_close.text(), "Save and close")
+        self.assertFalse(d.btn_reset.isHidden())
         d.btn_reset.click()
         self.assertNotEqual(d.f_description.text(), "Plot 12")
+        self.assertEqual(d.btn_close.text(), "Close")
+        self.assertTrue(d.btn_reset.isHidden())
         d.reject()                                                   # title bar / Esc: saves, like Close
         self.assertEqual(d.result(), d.DialogCode.Accepted)
         self.assertEqual(MS.mission_parameters_path(self.folder).read_text(), before)

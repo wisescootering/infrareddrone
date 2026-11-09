@@ -109,14 +109,24 @@ class Step2BestMappingTest(unittest.TestCase):
     def test_close_saves_and_reset_keeps_the_window_open(self):
         mission = make_mission()
         d = open_dialog(mission)
+        self.assertEqual(d.btn_close.text(), "Save and close")      # never saved
+        self.assertTrue(d.btn_reset.isHidden())                     # the detection as it is
         d.bm_overlap.setValue(80)
         d._on_nudge("VIS survey", "last", -40)
+        self.assertFalse(d.btn_reset.isHidden())
         d.btn_reset.click()
         self.assertEqual(d.model.windows["VIS survey"], d.model.proposal.vis_survey)
+        self.assertTrue(d.btn_reset.isHidden())
         self.assertEqual(d.result(), 0)                  # still open
         d.btn_close.click()
         self.assertEqual((d.result(), d.action), (d.DialogCode.Accepted, "close"))
         self.assertEqual(BM.load_choice(mission), {"enabled": True, "overlap": 0.8})
+        again = open_dialog(mission)                     # saved: Close until something changes
+        self.assertEqual(again.btn_close.text(), "Close")
+        again.bm_overlap.setValue(85)
+        self.assertEqual(again.btn_close.text(), "Save and close")
+        again.bm_overlap.setValue(80)
+        self.assertEqual(again.btn_close.text(), "Close")
 
     def test_closing_during_the_analysis_saves_nothing(self):
         mission = make_mission()

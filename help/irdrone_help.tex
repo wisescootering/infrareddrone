@@ -41,6 +41,7 @@
 \DeclareUnicodeCharacter{25B6}{\ensuremath{\blacktriangleright}}
 \DeclareUnicodeCharacter{2699}{\ensuremath{\circledast}}
 \DeclareUnicodeCharacter{2922}{\ensuremath{\nearrow}}
+\DeclareUnicodeCharacter{21BA}{\ensuremath{\circlearrowleft}}
 % Bouton du logiciel
 \DeclareRobustCommand{\bouton}[1]{\texorpdfstring{\fbox{\small\textsf{#1}}}{#1}}
 % A completer
@@ -317,6 +318,7 @@ L'exploitation d'une mission comporte 6 étapes :
 	\item \textbf{Info-bulles.} Laisser le pointeur de la souris quelques instants sur un bouton (ou une case à cocher) affiche une info-bulle qui résume son action.
 	\item \textbf{Touche \textsf{F1}.} La touche \textsf{F1}, le pointeur de la souris sur un bouton, ouvre ce manuel à la section qui décrit ce bouton. Sur une étape de la page d'accueil, elle ouvre le chapitre de l'étape. Ailleurs dans une fenêtre, elle ouvre le chapitre de la fenêtre, comme le bouton \bouton{?}.
 	\item \textbf{Bouton \bouton{?}.} Chaque fenêtre a un bouton \bouton{?} qui ouvre ce manuel au chapitre de la fenêtre. Dans les fenêtres qui se pilotent au clavier (ligne de temps, revue), son info-bulle rappelle les touches. Il est en bas à gauche ; le bouton \bouton{Close} des fenêtres d'étape et de la revue est toujours en bas à droite. Dans la fenêtre principale aussi, en bas à gauche, il ouvre le manuel entier.
+	\item \textbf{Boutons \bouton{↺} et \bouton{Close} des fenêtres qui modifient quelque chose} (détails de la mission, ligne de temps, réglage du décalage, réglages de l'étape~4). Fermer garde ce qui a été changé : dès qu'une valeur change, \bouton{Close} devient \bouton{Save and close} ; fermer la fenêtre par sa barre de titre ou avec \textsf{Échap} fait de même. Le bouton \bouton{↺}, à côté de \bouton{?}, n'apparaît que s'il y a quelque chose à remettre : il remet les valeurs et la fenêtre reste ouverte.
 \end{itemize}
 Le manuel s'ouvre dans le lecteur PDF par défaut (navigateur, Acrobat), à la bonne page quand le lecteur le permet.
 
@@ -505,7 +507,7 @@ Le fichier \texttt{mission\_parameters.json} contient les mêmes informations qu
 \section{Modifier une mission : la fenêtre \og Mission details \fg}\label{btn:step1_details}
 Une fois l'étape~1 faite, un clic sur l'étape~1 de la fenêtre principale n'ouvre plus la création de mission, mais la fenêtre \og Mission details \fg~(figure~\ref{fig:step1_mission_details}). Elle modifie les informations de la mission sans relire les cartes SD : lieu, description, pilote et son identifiant, intervalle et décalage d'horloge des caméras, caméra infrarouge, filtre. La date, l'heure, la position et la caméra visible viennent de l'image de décollage et ne changent pas.
 
-\bouton{Close} (comme fermer la fenêtre) enregistre les informations dans \texttt{FlightAnalytics/mission\_parameters.json} et ferme ; l'ancien fichier est gardé en \texttt{mission\_parameters.json.bak}. Le dossier de la mission garde son nom, même si le lieu change. \bouton{Reset} remet les informations telles qu'à l'ouverture de la fenêtre ; la fenêtre reste ouverte.
+Dès qu'une information change, \bouton{Close} devient \bouton{Save and close} : il écrit les changements dans \texttt{FlightAnalytics/mission\_parameters.json} (fermer la fenêtre fait de même) ; l'ancien fichier est gardé en \texttt{mission\_parameters.json.bak}. Le dossier de la mission garde son nom, même si le lieu change. \bouton{↺}, à côté de \bouton{?}, apparaît alors : il remet les informations telles qu'à l'ouverture de la fenêtre ; la fenêtre reste ouverte.
 
 \figureIRD[fig:step1_mission_details]{step1_mission_details.png}{La fenêtre \og Mission details \fg : les images sont déjà dans la mission, seules ces informations changent.}{0.55}
 
@@ -681,7 +683,7 @@ L'étape 2 découpe le vol en phases : \emph{synchronisation} (vol stationnaire 
 	\item Les points de la ligne \og target \fg~indiquent les images analysées : violet, la mire tourne ; gris, la mire est vue mais immobile ; cercle vide, mire non vue.
 	\item Faire glisser un bord de phase pour le déplacer (il se cale sur une image), ou cliquer sur un point clé (colonne de droite) puis utiliser \bouton{◀} \bouton{▶} ou les flèches du clavier.
 	\item Molette : zoom ; glisser le fond : déplacement ; double-clic : tout le vol.
-	\item \bouton{Reset} annule les changements faits à la main et revient à la proposition automatique ; la fenêtre reste ouverte.
+	\item \bouton{↺}, à côté de \bouton{?}, apparaît dès qu'une phase est déplacée : il annule les changements faits à la main et revient à la proposition automatique ; la fenêtre reste ouverte.
 	\item L'info-bulle du bouton \bouton{?} rappelle ces commandes.
 \end{itemize}
 Si la mire n'est pas trouvée (mire trop petite, image trop sombre), un bandeau orange l'indique : la fenêtre de synchronisation visible est alors le vol stationnaire, et la fenêtre infrarouge doit être placée à la main.
@@ -705,7 +707,7 @@ Si les images n'ont pas de position GPS, la carte n'est pas affichée et toutes 
 
 \section{Boutons \bouton{Confirm and synchronize} et \bouton{Close}}\label{btn:step2_confirm}
 Les deux boutons enregistrent les phases dans les fichiers \texttt{transfer\_info\_VIS\_dng.json} et \texttt{transfer\_info\_NIR\_dng.json} (lus par les étapes 3, 4 et le mapping) et dans \texttt{FlightAnalytics/flight\_timeline.json}. Rouvrir l'étape 2 retrouve les phases confirmées.
-\bouton{Confirm and synchronize} ouvre ensuite l'étape 3, qui enchaîne d'elle-même la détection des mires et le calcul du décalage, puis demande si les deux courbes se superposent avant d'apparier les images (§\ref{sec:step3_chained}). \bouton{Close} (comme fermer la fenêtre) ferme simplement : l'étape~3 se lancera plus tard depuis la fenêtre principale. S'il manque une phase, fermer demande s'il faut fermer sans enregistrer.
+\bouton{Confirm and synchronize} ouvre ensuite l'étape 3, qui enchaîne d'elle-même la détection des mires et le calcul du décalage, puis demande si les deux courbes se superposent avant d'apparier les images (§\ref{sec:step3_chained}). \bouton{Close} ferme simplement la fenêtre : l'étape~3 se lancera plus tard depuis la fenêtre principale. Il devient \bouton{Save and close} quand les phases ou le choix best mapping ont changé, ou n'ont jamais été enregistrés : fermer la fenêtre les enregistre alors aussi. S'il manque une phase, fermer demande s'il faut fermer sans enregistrer.
 
 \section{Sélection classique}\label{btn:step2_classic}
 Le bouton \bouton{Classic selection…} ouvre l'ancienne sélection manuelle des cinq images de référence de chaque caméra, décrite ci-dessous.
@@ -888,9 +890,8 @@ Si la synchronisation est bonne, les points verts se placent sur la droite des p
 \section{Bouton \bouton{Adjust alignment...}}\label{btn:step3_adjust}
 Ouvre le réglage du décalage à la main, aussi ouvert par la réponse \bouton{No} à la question \og Do the two curves overlap? \fg. La fenêtre trace la courbe visible (verte), la courbe infrarouge au décalage calculé (rouge, en pointillés) et la courbe infrarouge au décalage réglé (rouge). Le curseur et la case numérique déplacent la courbe infrarouge : flèches du clavier par pas de 1\,ms, touches page précédente / suivante par pas de 0,1\,s.
 \begin{description}
-	\item[\bouton{Apply}] garde ce décalage : les graphiques de contrôle sont refaits. Si les images étaient déjà appariées, il faut refaire l'appariement.
-	\item[\bouton{Reset to computed}] revient au décalage calculé à partir des mires.
-	\item[\bouton{Cancel}] ferme sans changer le décalage.
+	\item[\bouton{Save and close}] (\bouton{Close} tant que le décalage n'a pas changé ; fermer la fenêtre fait de même) garde ce décalage : les graphiques de contrôle sont refaits. Si les images étaient déjà appariées, il faut refaire l'appariement.
+	\item[\bouton{↺}] (en bas à gauche, affiché quand le décalage diffère du décalage calculé) revient au décalage calculé à partir des mires.
 \end{description}
 Si le décalage n'a pas pu être calculé, une petite fenêtre demande directement sa valeur en secondes (ajoutée aux dates infrarouges).
 
@@ -995,6 +996,7 @@ La roue dentée ouvre les réglages du calcul, gardés pour les sessions suivant
 	\item \texttt{Alignment worker processes} : nombre de shoot points alignés en parallèle. \texttt{Auto} utilise les c\oe urs physiques, dans la limite de la mémoire disponible au lancement (environ 6\,Go par processus). \bouton{Safe mode (1)} n'en garde qu'un : plus lent, mais le moins de mémoire. À utiliser si l'ordinateur se fige ou si le calcul est interrompu.
 	\item \texttt{Log detail} : quantité de messages du calcul dans le journal de la fenêtre : avertissements seulement, étapes du calcul, ou détail des temps.
 \end{itemize}
+\bouton{Save and close} (\bouton{Close} tant que rien n'a changé) garde les réglages. \bouton{↺}, affiché quand les réglages diffèrent des réglages par défaut, revient à \texttt{Auto} et aux avertissements seulement.
 
 \section{Bouton \bouton{Close}}\label{btn:step4_close}
 Ferme la fenêtre et rend la main au dialogue principal. Le bouton \bouton{?} ouvre cette aide à la page de ce chapitre. Il est toujours actif.

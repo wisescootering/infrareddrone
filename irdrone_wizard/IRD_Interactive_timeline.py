@@ -40,7 +40,7 @@ import best_mapping as BM  # noqa: E402
 # ---------------------------------------------------------------------------
 from IRD_Interactive_look import (BLUE, CURSOR, GRID, INK, MUTED, NIR_ACCENT, NUDGE_STYLE,  # noqa: E402,F401
                                   PANEL, PRIMARY_STYLE, SECONDARY_STYLE, SURVEY, SYNC, bgr_to_pixmap,
-                                  fmt_time)
+                                  close_text, fmt_time, reset_button)
 
 PHASE_COLORS = {"sync": SYNC, "survey": SURVEY}
 KEYPOINTS = [  # (card title, phase, edge)
@@ -870,6 +870,7 @@ class FlightTimelineDialog(QDialog):
         super().__init__(parent)
         self.mission = Path(mission)
         self.action = "close"
+        self._saved = None                # what was saved when the window opened (None: nothing)
         self.model: Optional[TimelineModel] = None
         self.view: Optional[TimelineView] = None
         self.map_model = None             # flight map (best mapping preview), when the images have positions
@@ -1051,14 +1052,13 @@ class FlightTimelineDialog(QDialog):
         self.btn_classic.setStyleSheet(SECONDARY_STYLE)
         self.btn_classic.setToolTip("Pick the 5 reference images of each camera by hand (previous Step 2).")
         self.btn_classic.clicked.connect(self._on_classic)
-        self.btn_reset = QPushButton("Reset")
-        self.btn_reset.setStyleSheet(SECONDARY_STYLE)
-        self.btn_reset.setToolTip("Undo the manual changes: back to the phases found automatically.")
+        self.btn_reset = reset_button("Undo the manual changes: back to the phases found automatically.")
         self.btn_reset.clicked.connect(self._on_reset)
         self.btn_reset.setEnabled(False)
-        self.btn_close = QPushButton("Close")
+        self.btn_close = QPushButton(close_text(False))
         self.btn_close.setStyleSheet(SECONDARY_STYLE)
-        self.btn_close.setToolTip("Save the phases and close (Step 3 can be run later).")
+        self.btn_close.setToolTip("Close; once the phases are changed (or never saved), save them first "
+                                  "(Step 3 can be run later).")
         self.btn_close.clicked.connect(self.reject)
         self.btn_confirm = QPushButton("Confirm and synchronize  ▶")
         self.btn_confirm.setStyleSheet(PRIMARY_STYLE)
@@ -1066,8 +1066,8 @@ class FlightTimelineDialog(QDialog):
         self.btn_confirm.clicked.connect(lambda: self._confirm("synchronize"))
         self.btn_confirm.setEnabled(False)
         foot.addWidget(self.btn_help)
-        foot.addWidget(self.btn_classic)
         foot.addWidget(self.btn_reset)
+        foot.addWidget(self.btn_classic)
         foot.addStretch(1)
         foot.addWidget(self.btn_close)
         foot.addWidget(self.btn_confirm)
@@ -1160,6 +1160,8 @@ class FlightTimelineDialog(QDialog):
         self.bm_check.setEnabled(True)
         self.bm_overlap.setEnabled(self.model.bm_enabled)
         self._build_map()
+        confirmed = bool((FT.load_state(self.mission) or {}).get("confirmed"))
+        self._saved = self._snapshot() if confirmed else None     # None: never saved
         self._select("sync", "first")
         self._refresh()
 
@@ -1237,7 +1239,21 @@ class FlightTimelineDialog(QDialog):
         self._select("sync", "first")
         self._refresh()
 
+    def _snapshot(self):
+        """What Close saves: the phases and the best mapping choice."""
+        m = self.model
+        return (sorted((k, None if w is None else (w.first, w.last)) for k, w in m.windows.items()),
+                m.bm_enabled, round(m.bm_overlap, 2))
+
+    def changed(self) -> bool:
+        """Phases or choice not saved yet (Close then saves them)."""
+        return self.model is not None and (self._saved is None or self._snapshot() != self._saved)
+
     def _refresh(self):
+        self.btn_close.setText(close_text(self.changed()))
+        p = self.model.proposal
+        self.btn_reset.setVisible(self.model.windows != {"VIS sync": p.vis_sync, "NIR sync": p.nir_sync,
+                                                         "VIS survey": p.vis_survey, "NIR survey": p.nir_survey})
         self.model.update_best_mapping()
         for c in self.cards:
             c.refresh(self.model)
@@ -1428,6 +1444,10 @@ class FlightTimelineDialog(QDialog):
         """Close (button, title bar, Esc) saves the phases, once the analysis is done."""
         if self.action == "classic" or self.model is None:
             super().reject()
+            return
+        if not self.changed():           # already saved as it is
+            self.action = "close"
+            self.accept()
             return
         problem = self._not_ready()
         if problem is None:

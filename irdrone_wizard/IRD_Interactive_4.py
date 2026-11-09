@@ -17,7 +17,6 @@ import time
 from PyQt6.QtCore import QObject, QProcess, QProcessEnvironment, QSettings, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog,
-    QDialogButtonBox,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
@@ -36,7 +35,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from IRD_Interactive_look import DIALOG_STYLE, PRIMARY_STYLE, SECONDARY_STYLE
+from IRD_Interactive_look import DIALOG_STYLE, PRIMARY_STYLE, SECONDARY_STYLE, close_text, reset_button
 import IRD_Interactive_help as Help
 from IRD_Interactive_progress import mark_step_done
 import best_mapping
@@ -184,12 +183,37 @@ class Step4SettingsDialog(QDialog):
         log_layout.addStretch()
         layout.addLayout(log_layout)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        self._opened = (self.workers(), self.log_level())
+        self.btn_reset = reset_button("Back to the default settings: Auto workers, warnings only.")
+        self.btn_reset.clicked.connect(self.reset)
+        self.btn_close = QPushButton(close_text(False))
+        self.btn_close.setStyleSheet(PRIMARY_STYLE)
+        self.btn_close.setDefault(True)
+        self.btn_close.setToolTip("Close; once a setting is changed, keep it for the next runs and sessions.")
+        self.btn_close.clicked.connect(self.accept)
+        buttons = QHBoxLayout()
+        buttons.addWidget(self.btn_reset)
+        buttons.addStretch()
+        buttons.addWidget(self.btn_close)
+        layout.addLayout(buttons)
+        self.workers_spin.valueChanged.connect(self._update_close)
+        self.log_level_combo.currentIndexChanged.connect(self._update_close)
+        self._update_close()
+
+    def changed(self) -> bool:
+        return (self.workers(), self.log_level()) != self._opened
+
+    def _update_close(self, *_):
+        self.btn_close.setText(close_text(self.changed()))
+        self.btn_reset.setVisible((self.workers(), self.log_level()) != (0, LOG_LEVELS[0][0]))
+
+    def reset(self):
+        self.workers_spin.setValue(0)
+        self.log_level_combo.setCurrentIndex(0)
+
+    def reject(self):
+        """Closing the window (title bar, Esc) keeps the settings, like Close."""
+        self.accept()
 
     def workers(self) -> int:
         return self.workers_spin.value()

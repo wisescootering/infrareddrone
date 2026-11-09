@@ -41,6 +41,7 @@
 \DeclareUnicodeCharacter{25B6}{\ensuremath{\blacktriangleright}}
 \DeclareUnicodeCharacter{2699}{\ensuremath{\circledast}}
 \DeclareUnicodeCharacter{2922}{\ensuremath{\nearrow}}
+\DeclareUnicodeCharacter{21BA}{\ensuremath{\circlearrowleft}}
 % Software button
 \DeclareRobustCommand{\bouton}[1]{\texorpdfstring{\fbox{\small\textsf{#1}}}{#1}}
 % To be completed
@@ -317,6 +318,7 @@ Processing a mission has 6 steps:
 	\item \textbf{Tool tips.} Leaving the mouse pointer for a moment on a button (or a check box) shows a tool tip that summarizes what it does.
 	\item \textbf{\textsf{F1} key.} \textsf{F1}, with the mouse pointer over a button, opens this manual at the section that describes this button. On a step of the home page, it opens the chapter of the step. Elsewhere in a window, it opens the chapter of the window, like the \bouton{?} button.
 	\item \textbf{\bouton{?} button.} Each window has a \bouton{?} button that opens this manual at the chapter of the window. In the windows driven from the keyboard (timeline, review), its tool tip recalls the keys. It sits at the bottom left; the \bouton{Close} button of the step windows and of the review is always at the bottom right. In the main window too, at the bottom left, it opens the whole manual.
+	\item \textbf{\bouton{↺} and \bouton{Close} buttons of the windows that edit something} (mission details, timeline, offset adjustment, Step~4 settings). Closing keeps what was changed: as soon as something is changed, \bouton{Close} becomes \bouton{Save and close}; closing the window by its title bar or with \textsf{Esc} does the same. The \bouton{↺} button, next to \bouton{?}, appears only when there is something to put back: it puts the values back and the window stays open.
 \end{itemize}
 The manual opens in the default PDF reader (browser, Acrobat), at the right page when the reader allows it.
 
@@ -505,7 +507,7 @@ The \texttt{mission\_parameters.json} file contains the same information as with
 \section{Editing a mission: the ``Mission details'' window}\label{btn:step1_details}
 Once Step~1 is done, a click on Step~1 in the main window no longer opens the mission creation, but the ``Mission details'' window (Figure~\ref{fig:step1_mission_details}). It edits the mission information without reading the SD cards again: location, description, pilot and pilot's ID, interval and clock offset of the cameras, infrared camera, filter. The date, time, position and visible camera come from the take-off image and do not change.
 
-\bouton{Close} (like closing the window) saves the information to \texttt{FlightAnalytics/mission\_parameters.json} and closes; the old file is kept as \texttt{mission\_parameters.json.bak}. The mission folder keeps its name, even if the location changes. \bouton{Reset} puts back the information as it was when the window opened; the window stays open.
+As soon as a piece of information is changed, \bouton{Close} becomes \bouton{Save and close}: it writes the changes to \texttt{FlightAnalytics/mission\_parameters.json} (closing the window does the same); the old file is kept as \texttt{mission\_parameters.json.bak}. The mission folder keeps its name, even if the location changes. \bouton{↺}, next to \bouton{?}, then appears: it puts back the information as it was when the window opened; the window stays open.
 
 \figureIRD[fig:step1_mission_details]{step1_mission_details.png}{The ``Mission details'' window: the images are already in the mission, only this information changes.}{0.55}
 
@@ -681,7 +683,7 @@ Step~2 splits the flight into phases: \emph{synchronization} (hovering above the
 	\item The dots on the ``target'' line show the analyzed images: purple, the target is turning; grey, the target is seen but still; empty circle, target not seen.
 	\item Drag a phase edge to move it (it snaps to an image), or click a key point (right-hand column) then use \bouton{◀} \bouton{▶} or the keyboard arrows.
 	\item Mouse wheel: zoom; drag the background: pan; double-click: the whole flight.
-	\item \bouton{Reset} cancels the manual changes and returns to the automatic proposal; the window stays open.
+	\item \bouton{↺}, next to \bouton{?}, appears once a phase is moved: it cancels the manual changes and returns to the automatic proposal; the window stays open.
 	\item The tool tip of the \bouton{?} button recalls these controls.
 \end{itemize}
 If the target is not found (target too small, image too dark), an orange banner says so: the visible synchronization window is then the hover, and the infrared window must be placed by hand.
@@ -705,7 +707,7 @@ If the images have no GPS position, the map is not shown and all the survey imag
 
 \section{\bouton{Confirm and synchronize} and \bouton{Close} buttons}\label{btn:step2_confirm}
 Both buttons save the phases in the files \texttt{transfer\_info\_VIS\_dng.json} and \texttt{transfer\_info\_NIR\_dng.json} (read by Steps 3, 4 and the mapping) and in \texttt{FlightAnalytics/flight\_timeline.json}. Reopening Step~2 brings back the confirmed phases.
-\bouton{Confirm and synchronize} then opens Step~3, which runs the target detection and the offset computation by itself, then asks whether the two curves overlap before pairing the images (Section~\ref{sec:step3_chained}). \bouton{Close} (like closing the window) only closes it: Step~3 will be run later from the main window. If a phase is missing, closing asks whether to close without saving.
+\bouton{Confirm and synchronize} then opens Step~3, which runs the target detection and the offset computation by itself, then asks whether the two curves overlap before pairing the images (Section~\ref{sec:step3_chained}). \bouton{Close} only closes the window: Step~3 will be run later from the main window. It reads \bouton{Save and close} when the phases or the best mapping choice are changed, or were never saved: closing the window then saves them too. If a phase is missing, closing asks whether to close without saving.
 
 \section{Classic selection}\label{btn:step2_classic}
 The \bouton{Classic selection…} button opens the old manual selection of the five reference images of each camera, described below.
@@ -888,9 +890,8 @@ If the synchronization is good, the green dots lie on the line of the red dots. 
 \section{\bouton{Adjust alignment...} button}\label{btn:step3_adjust}
 Opens the manual offset adjustment, also opened by answering \bouton{No} to the question ``Do the two curves overlap?''. The window plots the visible curve (green), the infrared curve at the computed offset (red, dashed) and the infrared curve at the adjusted offset (red). The slider and the numeric box move the infrared curve: keyboard arrows in steps of 1\,ms, Page Up / Page Down keys in steps of 0.1\,s.
 \begin{description}
-	\item[\bouton{Apply}] keeps this offset: the check plots are redone. If the images were already paired, the pairing must be redone.
-	\item[\bouton{Reset to computed}] returns to the offset computed from the targets.
-	\item[\bouton{Cancel}] closes without changing the offset.
+	\item[\bouton{Save and close}] (\bouton{Close} while the offset is unchanged; closing the window does the same) keeps this offset: the check plots are redone. If the images were already paired, the pairing must be redone.
+	\item[\bouton{↺}] (bottom left, shown when the offset differs from the computed one) returns to the offset computed from the targets.
 \end{description}
 If the offset could not be computed, a small window asks directly for its value in seconds (added to the infrared dates).
 
@@ -995,6 +996,7 @@ The gear wheel opens the computation settings, which are kept for later sessions
 	\item \texttt{Alignment worker processes}: number of shoot points aligned in parallel. \texttt{Auto} uses the physical cores, within the limit of the memory available at launch (about 6\,GB per process). \bouton{Safe mode (1)} keeps only one: slower, but uses the least memory. Use it if the computer freezes or if the computation is interrupted.
 	\item \texttt{Log detail}: amount of computation messages in the window log: warnings only, computation steps, or timing details.
 \end{itemize}
+\bouton{Save and close} (\bouton{Close} while nothing is changed) keeps the settings. \bouton{↺}, shown when the settings differ from the default ones, goes back to \texttt{Auto} and warnings only.
 
 \section{\bouton{Close} button}\label{btn:step4_close}
 Closes the window and returns to the main dialog. The \bouton{?} button opens this help at the page of this chapter. It is always enabled.

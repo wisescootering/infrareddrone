@@ -1738,22 +1738,19 @@ class TimeShiftAdjustDialog(QDialog):
         self.info_label = QLabel(self)
         self.info_label.setWordWrap(True)
 
-        btn_reset = QPushButton("Reset to computed", self)
-        btn_apply = QPushButton("Apply", self)
-        btn_cancel = QPushButton("Cancel", self)
-        btn_reset.setToolTip("Back to the offset computed from the targets.")
-        btn_apply.setToolTip("Keep this offset: the curves after alignment are drawn again with it.")
-        btn_cancel.setToolTip("Close without changing the offset.")
-        for button in (btn_reset, btn_cancel):
-            button.setStyleSheet(Look.SECONDARY_STYLE)
-        btn_apply.setStyleSheet(Look.PRIMARY_STYLE)
-        btn_apply.setDefault(True)
+        self._opened_shift = float(time_shift)
+        self.btn_reset = Look.reset_button("Back to the offset computed from the targets.")
+        self.btn_close = QPushButton(Look.close_text(False), self)
+        self.btn_close.setToolTip("Close; once the offset is changed, keep it: "
+                                  "the curves after alignment are drawn again with it.")
+        self.btn_close.setStyleSheet(Look.PRIMARY_STYLE)
+        self.btn_close.setDefault(True)
 
         self.slider.valueChanged.connect(self._on_slider)
         self.spinbox.valueChanged.connect(self._on_spinbox)
-        btn_reset.clicked.connect(lambda: self.spinbox.setValue(self.computed_time_shift))
-        btn_apply.clicked.connect(self.accept)
-        btn_cancel.clicked.connect(self.reject)
+        self.spinbox.valueChanged.connect(self._update_buttons)
+        self.btn_reset.clicked.connect(lambda: self.spinbox.setValue(self.computed_time_shift))
+        self.btn_close.clicked.connect(self.accept)
 
         # ---------------- Layout ----------------
         help_label = QLabel(
@@ -1770,10 +1767,9 @@ class TimeShiftAdjustDialog(QDialog):
         slider_row.addWidget(self.spinbox)
 
         button_row = QHBoxLayout()
-        button_row.addWidget(btn_reset)
+        button_row.addWidget(self.btn_reset)
         button_row.addStretch()
-        button_row.addWidget(btn_cancel)
-        button_row.addWidget(btn_apply)
+        button_row.addWidget(self.btn_close)
 
         layout = QVBoxLayout(self)
         layout.addWidget(help_label)
@@ -1787,6 +1783,7 @@ class TimeShiftAdjustDialog(QDialog):
             self.t_vis, self.a_vis, self.t_nir, self.a_nir, self.computed_time_shift
         )
         self._update_plot(time_shift)
+        self._update_buttons(self.value())
 
     # ------------------------------------------------------------------
     def _center_slider(self, time_shift: float) -> None:
@@ -1840,6 +1837,14 @@ class TimeShiftAdjustDialog(QDialog):
                 text += f" (computed shift: {self._computed_rms:.2f}°)"
             text += "."
         self.info_label.setText(text)
+
+    def _update_buttons(self, value: float) -> None:
+        self.btn_close.setText(Look.close_text(abs(value - self._opened_shift) > 1e-9))
+        self.btn_reset.setVisible(abs(value - self.computed_time_shift) > 1e-9)
+
+    def reject(self) -> None:
+        """Closing the window (title bar, Esc) keeps the offset, like Close."""
+        self.accept()
 
     def value(self) -> float:
         """Return the selected time shift (seconds)."""
