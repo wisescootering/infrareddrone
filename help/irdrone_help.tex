@@ -317,7 +317,7 @@ L'exploitation d'une mission comporte 6 étapes :
 \begin{itemize}
 	\item \textbf{Info-bulles.} Laisser le pointeur de la souris quelques instants sur un bouton (ou une case à cocher) affiche une info-bulle qui résume son action.
 	\item \textbf{Touche \textsf{F1}.} La touche \textsf{F1}, le pointeur de la souris sur un bouton, ouvre ce manuel à la section qui décrit ce bouton. Sur une étape de la page d'accueil, elle ouvre le chapitre de l'étape. Ailleurs dans une fenêtre, elle ouvre le chapitre de la fenêtre, comme le bouton \bouton{?}.
-	\item \textbf{Bouton \bouton{?}.} Chaque fenêtre a un bouton \bouton{?} qui ouvre ce manuel au chapitre de la fenêtre. Dans les fenêtres qui se pilotent au clavier (ligne de temps, revue), son info-bulle rappelle les touches. Il est en bas à gauche ; le bouton \bouton{Close} des fenêtres d'étape et de la revue est toujours en bas à droite. Dans la fenêtre principale aussi, en bas à gauche, il ouvre le manuel entier.
+	\item \textbf{Bouton \bouton{?}.} Chaque fenêtre a un bouton \bouton{?} qui ouvre ce manuel au chapitre de la fenêtre. Dans les fenêtres qui se pilotent au clavier (ligne de temps, revue), son info-bulle rappelle les touches. Il est en bas à gauche ; le bouton \bouton{Close} des fenêtres d'étape et de la revue est en bas à droite ; aux étapes 2 et 3, le bouton qui passe à l'étape suivante (\bouton{Continue with \ldots ▶}) est à sa droite et ne lance jamais un calcul tout seul. Dans la fenêtre principale aussi, en bas à gauche, il ouvre le manuel entier.
 	\item \textbf{Boutons \bouton{↺} et \bouton{Close} des fenêtres qui modifient quelque chose} (détails de la mission, ligne de temps, réglage du décalage, réglages de l'étape~4). Fermer garde ce qui a été changé : dès qu'une valeur change, \bouton{Close} devient \bouton{Save and close} ; fermer la fenêtre par sa barre de titre ou avec \textsf{Échap} fait de même. Le bouton \bouton{↺}, à côté de \bouton{?}, n'apparaît que s'il y a quelque chose à remettre : il remet les valeurs et la fenêtre reste ouverte.
 \end{itemize}
 Le manuel s'ouvre dans le lecteur PDF par défaut (navigateur, Acrobat), à la bonne page quand le lecteur le permet.
@@ -438,7 +438,7 @@ Lance l'étape suivante. Les étapes 1 à 4 s'enchaînent d'elles-mêmes :
 \begin{enumerate}
 	\item à la fin de l'étape~1, \bouton{Flight timeline} ouvre l'étape~2 ;
 	\item \bouton{Continue with synchronisation} de l'étape~2 ouvre l'étape~3 sans la lancer ; \bouton{Continue with Step 3} la lance : détection des mires, décalage des horloges, puis une question, \og Do the two curves overlap? \fg~; \bouton{Yes} apparie les images ;
-	\item \bouton{Image processing} ouvre l'étape~4. L'alignement, long, ne démarre jamais tout seul : il se lance avec \bouton{Run alignment} et s'arrête à tout moment avec \bouton{Stop} ;
+	\item \bouton{Continue with image processing} ouvre l'étape~4. L'alignement, long, ne démarre jamais tout seul : il se lance avec \bouton{Run alignment} et s'arrête à tout moment avec \bouton{Stop} ;
 	\item à la fin, \bouton{Review images} ouvre la revue des images alignées.
 \end{enumerate}
 Il reste donc à vérifier les phases du vol, la superposition des courbes de synchronisation, puis le résultat. Une fois toutes les étapes faites, le bouton devient \bouton{Archive the mission} (étape~6).
@@ -768,7 +768,7 @@ Le Step~3 se déroule en trois phases successives, enchaînées automatiquement 
 \subsection{Enchaînement automatique}\label{sec:step3_chained}
 Ouverte par \bouton{Continue with Step 3} de la fenêtre principale, l'étape~3 enchaîne les trois phases. Une ligne d'avancement montre la phase en cours et son résultat : nombre de mires vues, décalage, nombre de paires (figure~\ref{fig:step3_chained}). Une seule question est posée, après l'alignement des horloges (§\ref{btn:step3_overlap}).
 
-Une fois les images appariées, rien ne démarre seul : \bouton{Image processing} ouvre l'étape~4 quand vous êtes prêt (§\ref{btn:step3_continue}).
+Une fois les images appariées, rien ne démarre seul : \bouton{Continue with image processing} ouvre l'étape~4 quand vous êtes prêt (§\ref{btn:step3_continue}).
 Si le décalage ne peut pas être mesuré, la saisie manuelle est proposée et l'enchaînement s'arrête.
 
 \figureIRD[fig:step3_chained]{step3_chained.png}{Étape 3 enchaînée : mires détectées, horloges alignées ; la question \og Do the two curves overlap? \fg~attend la réponse avant l'appariement.}{0.7}
@@ -786,8 +786,8 @@ Des courbes bien superposées ont des points verts sur la ligne rouge, dents de 
 \section{Bouton \bouton{Manual mode…}}\label{btn:step3_manual}
 Arrête l'enchaînement et fait apparaître les boutons des trois phases (§\ref{btn:step3_aruco} à \ref{btn:step3_pairing}), à lancer un par un, par exemple pour corriger le décalage avec \bouton{Adjust alignment...} avant l'appariement.
 
-\section{Bouton \bouton{Image processing}}\label{btn:step3_continue}
-Apparaît une fois les images appariées. Il ferme la fenêtre et ouvre l'étape~4. L'alignement, long, n'y démarre pas tout seul : il se lance avec \bouton{Run alignment}.
+\section{Bouton \bouton{Continue with image processing}}\label{btn:step3_continue}
+Apparaît en bas à droite, à côté de \bouton{Close}, une fois les images appariées. Il ferme la fenêtre et ouvre l'étape~4. L'alignement, long, n'y démarre pas tout seul : il se lance avec \bouton{Run alignment}.
 
 \section{Bouton \bouton{Before alignment}}\label{btn:step3_before}
 Quand l'étape~3 est rouverte une fois faite, la fenêtre montre les courbes après alignement (\texttt{Synchro/check\_time\_alignment.png}). \bouton{Before alignment} montre les courbes avant correction (\texttt{check\_time\_before\_alignment.png}) ; un second clic revient aux courbes alignées.

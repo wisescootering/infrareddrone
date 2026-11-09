@@ -210,7 +210,7 @@ class DialogSynchroAruco(QDialog):
         self.btn_manual.setToolTip("Stop the automatic chaining and run each stage yourself "
                                    "(check or adjust the time alignment before pairing).")
         self.btn_manual.clicked.connect(lambda: self._set_manual_mode(True))
-        self.btn_continue = QPushButton("Image processing  ▶")
+        self.btn_continue = QPushButton("Continue with image processing  ▶")
         self.btn_continue.setStyleSheet(Look.PRIMARY_STYLE)
         self.btn_continue.setToolTip("Close this window and open Step 4 (alignment of the image pairs): "
                                      "it starts when you click Run alignment.")
@@ -251,7 +251,6 @@ class DialogSynchroAruco(QDialog):
         QShortcut(QKeySequence("N"), self, activated=lambda: self._awaiting_sync and self.on_adjust_time_shift())
         auto_bar.addWidget(self.auto_label, 1)
         auto_bar.addWidget(self.btn_manual)
-        auto_bar.addWidget(self.btn_continue)
         main_layout.addLayout(auto_bar)
 
         # Log display area
@@ -348,7 +347,7 @@ class DialogSynchroAruco(QDialog):
         self.btn_close.setStyleSheet(Look.SECONDARY_STYLE)
 
 
-        # Footer: the manual (?) on the left, Close always at the bottom right
+        # Footer: the manual (?) on the left, Close then the next step on the right (as in Step 2)
         close_layout = QHBoxLayout()
         self.btn_help = QPushButton("?")
         self.btn_help.setFixedWidth(36)
@@ -358,6 +357,7 @@ class DialogSynchroAruco(QDialog):
         close_layout.addWidget(self.btn_before)
         close_layout.addStretch()
         close_layout.addWidget(self.btn_close)
+        close_layout.addWidget(self.btn_continue)
 
         for widget, label, tip in (
             (self.btn_run_aruco, "btn:step3_aruco", "Detect the ArUco targets in the synchronisation images of both cameras."),
