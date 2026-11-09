@@ -173,7 +173,7 @@ class Main_Window(QMainWindow):
         self.home.set_recent(recent_missions(Path(self.pref_screen.default_user_dir)))
         self.main_layout.addWidget(self.home, 1)
 
-        # Status bar: manual (?), then working folder, free space and its gear (left).
+        # Status bar: manual (?), then (list of the missions only) working folder, free space and its gear.
         # The mission itself is on the page (title, open folder, All missions).
         status = QFrame()
         status.setObjectName("statusbar")
@@ -188,6 +188,9 @@ class Main_Window(QMainWindow):
         bottom_layout.addSpacing(8)
         bottom_layout.addWidget(self.working_dir_bar)
         bottom_layout.addStretch()
+        # The working folder is chosen with the list of the missions: on the mission page, only "?"
+        self.home.currentChanged.connect(lambda page: self.working_dir_bar.setVisible(page == 0))
+        self.working_dir_bar.setVisible(self.home.currentIndex() == 0)
         self.main_layout.addWidget(status)
 
         for step, tile in self.home.rail.tiles.items():
