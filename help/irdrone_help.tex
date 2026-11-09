@@ -505,7 +505,7 @@ Le fichier \texttt{mission\_parameters.json} contient les mêmes informations qu
 \section{Modifier une mission : la fenêtre \og Mission details \fg}\label{btn:step1_details}
 Une fois l'étape~1 faite, un clic sur l'étape~1 de la fenêtre principale n'ouvre plus la création de mission, mais la fenêtre \og Mission details \fg~(figure~\ref{fig:step1_mission_details}). Elle modifie les informations de la mission sans relire les cartes SD : lieu, description, pilote et son identifiant, intervalle et décalage d'horloge des caméras, caméra infrarouge, filtre. La date, l'heure, la position et la caméra visible viennent de l'image de décollage et ne changent pas.
 
-\bouton{Save} écrit les informations dans \texttt{FlightAnalytics/mission\_parameters.json} ; l'ancien fichier est gardé en \texttt{mission\_parameters.json.bak}. Le dossier de la mission garde son nom, même si le lieu change. \bouton{Cancel} ferme sans rien changer.
+\bouton{Close} (comme fermer la fenêtre) enregistre les informations dans \texttt{FlightAnalytics/mission\_parameters.json} et ferme ; l'ancien fichier est gardé en \texttt{mission\_parameters.json.bak}. Le dossier de la mission garde son nom, même si le lieu change. \bouton{Reset} remet les informations telles qu'à l'ouverture de la fenêtre ; la fenêtre reste ouverte.
 
 \figureIRD[fig:step1_mission_details]{step1_mission_details.png}{La fenêtre \og Mission details \fg : les images sont déjà dans la mission, seules ces informations changent.}{0.55}
 

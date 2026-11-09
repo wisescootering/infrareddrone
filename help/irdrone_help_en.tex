@@ -505,7 +505,7 @@ The \texttt{mission\_parameters.json} file contains the same information as with
 \section{Editing a mission: the ``Mission details'' window}\label{btn:step1_details}
 Once Step~1 is done, a click on Step~1 in the main window no longer opens the mission creation, but the ``Mission details'' window (Figure~\ref{fig:step1_mission_details}). It edits the mission information without reading the SD cards again: location, description, pilot and pilot's ID, interval and clock offset of the cameras, infrared camera, filter. The date, time, position and visible camera come from the take-off image and do not change.
 
-\bouton{Save} writes the information to \texttt{FlightAnalytics/mission\_parameters.json}; the old file is kept as \texttt{mission\_parameters.json.bak}. The mission folder keeps its name, even if the location changes. \bouton{Cancel} closes without changing anything.
+\bouton{Close} (like closing the window) saves the information to \texttt{FlightAnalytics/mission\_parameters.json} and closes; the old file is kept as \texttt{mission\_parameters.json.bak}. The mission folder keeps its name, even if the location changes. \bouton{Reset} puts back the information as it was when the window opened; the window stays open.
 
 \figureIRD[fig:step1_mission_details]{step1_mission_details.png}{The ``Mission details'' window: the images are already in the mission, only this information changes.}{0.55}
 
