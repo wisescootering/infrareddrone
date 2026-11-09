@@ -1060,7 +1060,7 @@ class FlightTimelineDialog(QDialog):
         self.btn_close.setToolTip("Close; once the phases are changed (or never saved), save them first "
                                   "(Step 3 can be run later).")
         self.btn_close.clicked.connect(self.reject)
-        self.btn_confirm = QPushButton("Save and open Step 3  ▶")
+        self.btn_confirm = QPushButton("Continue with synchronisation  ▶")
         self.btn_confirm.setStyleSheet(PRIMARY_STYLE)
         self.btn_confirm.setToolTip("Save the phases and open Step 3 (camera synchronisation); nothing starts until you run it.")
         self.btn_confirm.clicked.connect(lambda: self._confirm("step3"))

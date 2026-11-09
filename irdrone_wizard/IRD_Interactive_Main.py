@@ -315,8 +315,8 @@ class Main_Window(QMainWindow):
     def open_window_load_set_images(self):
         """
         Step 2: flight timeline. The synchronisation and survey phases are
-        detected automatically and confirmed by the user; "Save and open
-        Step 3" opens Step 3 without running it. The classic selection (5 images per
+        detected automatically and confirmed by the user; "Continue with
+        synchronisation" opens Step 3 without running it. The classic selection (5 images per
         camera) stays available from the timeline window.
         """
         if not self.ensure_mission_parameters():
