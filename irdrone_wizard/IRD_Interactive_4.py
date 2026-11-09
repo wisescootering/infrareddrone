@@ -830,14 +830,14 @@ class DialogImageProcessing(QDialog):
         self.review_button.clicked.connect(self._open_review)
         self.review_button.setEnabled(self._has_alignment_output())
         self.settings_button = QPushButton("\u2699")
-        self.settings_button.setFixedWidth(30)
+        self.settings_button.setFixedWidth(36)
         # The gear glyph renders small: enlarge it, keep the button height.
         self.settings_button.setStyleSheet(
             BUTTON_STYLE + "QPushButton { font-size: 16px; padding: 2px; }"
         )
         self.settings_button.clicked.connect(self._open_settings)
         self.help_button = QPushButton("?")
-        self.help_button.setFixedWidth(30)
+        self.help_button.setFixedWidth(36)
         self.help_button.setStyleSheet(BUTTON_STYLE)
         self.help_button.clicked.connect(lambda: Help.show_help("ch:step4", parent=self))
 

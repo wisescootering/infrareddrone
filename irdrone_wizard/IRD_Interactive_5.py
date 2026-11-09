@@ -446,7 +446,7 @@ class DialogGeoRef(QDialog):
         # Footer: the manual (?) on the left, Close always at the bottom right
         close_layout = QHBoxLayout()
         self.btn_help = QPushButton("?")
-        self.btn_help.setFixedWidth(30)
+        self.btn_help.setFixedWidth(36)
         self.btn_help.setStyleSheet(BUTTON_STYLE)
         self.btn_help.clicked.connect(lambda: Help.show_help("ch:step5", parent=self))
         close_layout.addWidget(self.btn_help)
