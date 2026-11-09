@@ -315,8 +315,8 @@ class Main_Window(QMainWindow):
     def open_window_load_set_images(self):
         """
         Step 2: flight timeline. The synchronisation and survey phases are
-        detected automatically and confirmed by the user; "Confirm and
-        synchronize" chains into Step 3. The classic selection (5 images per
+        detected automatically and confirmed by the user; "Save and open
+        Step 3" opens Step 3 without running it. The classic selection (5 images per
         camera) stays available from the timeline window.
         """
         if not self.ensure_mission_parameters():
@@ -335,8 +335,8 @@ class Main_Window(QMainWindow):
         if not accepted:
             return
         Progress.mark_step_done(folderMissionPath, 2)
-        if dialog.action == "synchronize":
-            self.on_pre_process_images(auto_run=True)
+        if dialog.action == "step3":
+            self.on_pre_process_images(auto_run=False)    # the user starts the synchronisation
 
     def open_window_classic_selection(self):
         """
@@ -408,7 +408,7 @@ class Main_Window(QMainWindow):
     def on_pre_process_images(self, auto_run=False):
         """
         Phase 3 – VIS / NIR synchronization.
-        auto_run: start the detection and the time alignment right away (from Step 2).
+        auto_run: start the detection and the time alignment right away ("Continue with Step 3").
         """
         if not self.ensure_mission_parameters():
             return

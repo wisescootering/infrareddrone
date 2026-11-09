@@ -863,7 +863,7 @@ class AnalysisThread(QThread):
 # ---------------------------------------------------------------------------
 class FlightTimelineDialog(QDialog):
     """Step 2. Accepted when the phases are saved; `action` tells what to do next:
-    "synchronize" (open Step 3), "close" (Close or closing the window: saved, nothing else),
+    "step3" (open Step 3, nothing run), "close" (Close or closing the window: saved, nothing else),
     or "classic" (rejected: open the classic selection)."""
 
     def __init__(self, mission: Path, parent=None):
@@ -1060,10 +1060,10 @@ class FlightTimelineDialog(QDialog):
         self.btn_close.setToolTip("Close; once the phases are changed (or never saved), save them first "
                                   "(Step 3 can be run later).")
         self.btn_close.clicked.connect(self.reject)
-        self.btn_confirm = QPushButton("Confirm and synchronize  ▶")
+        self.btn_confirm = QPushButton("Save and open Step 3  ▶")
         self.btn_confirm.setStyleSheet(PRIMARY_STYLE)
-        self.btn_confirm.setToolTip("Save the phases and run Step 3 (camera synchronisation).")
-        self.btn_confirm.clicked.connect(lambda: self._confirm("synchronize"))
+        self.btn_confirm.setToolTip("Save the phases and open Step 3 (camera synchronisation); nothing starts until you run it.")
+        self.btn_confirm.clicked.connect(lambda: self._confirm("step3"))
         self.btn_confirm.setEnabled(False)
         foot.addWidget(self.btn_help)
         foot.addWidget(self.btn_reset)

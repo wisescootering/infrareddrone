@@ -280,6 +280,17 @@ class Step2UsesCurrentMissionTest(_MissionHelpers):
         self.click_step2(window, chooser)
         chooser.assert_not_called()
 
+    def test_save_and_open_step3_does_not_run_it(self):
+        window = self.main.Main_Window()
+        mission = self.make_mission("FLY-C")
+        self.open(window, mission)
+        with mock.patch.object(self.main, "FlightTimelineDialog") as timeline, \
+                mock.patch.object(window, "on_pre_process_images") as step3:
+            timeline.return_value.exec.return_value = self.main.QDialog.DialogCode.Accepted
+            timeline.return_value.action = "step3"
+            window.open_window_load_set_images()
+        step3.assert_called_once_with(auto_run=False)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -437,7 +437,7 @@ La page de la mission (figure~\ref{fig:home_mission}) montre :
 Lance l'étape suivante. Les étapes 1 à 4 s'enchaînent d'elles-mêmes :
 \begin{enumerate}
 	\item à la fin de l'étape~1, \bouton{Flight timeline} ouvre l'étape~2 ;
-	\item \bouton{Confirm and synchronize} de l'étape~2 lance l'étape~3 : détection des mires, décalage des horloges, puis une question, \og Do the two curves overlap? \fg~; \bouton{Yes} apparie les images ;
+	\item \bouton{Save and open Step 3} de l'étape~2 ouvre l'étape~3 sans la lancer ; \bouton{Continue with Step 3} la lance : détection des mires, décalage des horloges, puis une question, \og Do the two curves overlap? \fg~; \bouton{Yes} apparie les images ;
 	\item \bouton{Image processing} ouvre l'étape~4. L'alignement, long, ne démarre jamais tout seul : il se lance avec \bouton{Run alignment} et s'arrête à tout moment avec \bouton{Stop} ;
 	\item à la fin, \bouton{Review images} ouvre la revue des images alignées.
 \end{enumerate}
@@ -701,13 +701,13 @@ La sélection suit les bords de la phase survey quand on les déplace.
 
 \textbf{Comment les images sont choisies.} La position, la hauteur au-dessus du sol et l'orientation de chaque image sont lues dans les fichiers \texttt{.exif} écrits à l'étape~1 ; le champ de vue de la caméra donne la taille de l'empreinte au sol. La première image du survol est gardée. Pour chaque image suivante, IRDrone estime le recouvrement de son empreinte avec celle de la dernière image gardée, d'après le déplacement du drone (dans l'axe de l'image et en travers). Tant qu'il reste au-dessus de la valeur choisie, l'image n'est qu'une candidate ; dès qu'il passe en dessous, la candidate précédente est gardée : deux images gardées successives se recouvrent toujours d'au moins la valeur choisie. La dernière image du survol est gardée aussi. Pour un déplacement dans l'axe de l'image, c'est le critère \texttt{--selection best-mapping} de l'ancienne ligne de commande \texttt{run.py}.
 
-\textbf{Et la synchronisation ?} À l'étape~2 le décalage précis entre les deux caméras n'est pas encore connu : l'aperçu porte sur toutes les images du survol. À l'étape~4, une fois les caméras synchronisées, la même sélection est refaite parmi les seules paires bien synchronisées (§\ref{btn:step4_best_mapping}) ; le nombre final peut donc différer un peu de l'aperçu. Le choix (case et recouvrement) est enregistré par \bouton{Confirm and synchronize} et \bouton{Close} dans \texttt{FlightAnalytics\textbackslash best\_mapping.json}.
+\textbf{Et la synchronisation ?} À l'étape~2 le décalage précis entre les deux caméras n'est pas encore connu : l'aperçu porte sur toutes les images du survol. À l'étape~4, une fois les caméras synchronisées, la même sélection est refaite parmi les seules paires bien synchronisées (§\ref{btn:step4_best_mapping}) ; le nombre final peut donc différer un peu de l'aperçu. Le choix (case et recouvrement) est enregistré par \bouton{Save and open Step 3} et \bouton{Close} dans \texttt{FlightAnalytics\textbackslash best\_mapping.json}.
 
 Si les images n'ont pas de position GPS, la carte n'est pas affichée et toutes les images du survol sont gardées.
 
-\section{Boutons \bouton{Confirm and synchronize} et \bouton{Close}}\label{btn:step2_confirm}
+\section{Boutons \bouton{Save and open Step 3} et \bouton{Close}}\label{btn:step2_confirm}
 Les deux boutons enregistrent les phases dans les fichiers \texttt{transfer\_info\_VIS\_dng.json} et \texttt{transfer\_info\_NIR\_dng.json} (lus par les étapes 3, 4 et le mapping) et dans \texttt{FlightAnalytics/flight\_timeline.json}. Rouvrir l'étape 2 retrouve les phases confirmées.
-\bouton{Confirm and synchronize} ouvre ensuite l'étape 3, qui enchaîne d'elle-même la détection des mires et le calcul du décalage, puis demande si les deux courbes se superposent avant d'apparier les images (§\ref{sec:step3_chained}). \bouton{Close} ferme simplement la fenêtre : l'étape~3 se lancera plus tard depuis la fenêtre principale. Il devient \bouton{Save and close} quand les phases ou le choix best mapping ont changé, ou n'ont jamais été enregistrés : fermer la fenêtre les enregistre alors aussi. S'il manque une phase, fermer demande s'il faut fermer sans enregistrer.
+\bouton{Save and open Step 3} ouvre ensuite l'étape~3 ; rien ne démarre tout seul : la synchronisation se lance depuis sa fenêtre (chapitre~\ref{ch:step3}). \bouton{Close} ferme simplement la fenêtre : l'étape~3 se lancera plus tard depuis la fenêtre principale. Il devient \bouton{Save and close} quand les phases ou le choix best mapping ont changé, ou n'ont jamais été enregistrés : fermer la fenêtre les enregistre alors aussi. S'il manque une phase, fermer demande s'il faut fermer sans enregistrer.
 
 \section{Sélection classique}\label{btn:step2_classic}
 Le bouton \bouton{Classic selection…} ouvre l'ancienne sélection manuelle des cinq images de référence de chaque caméra, décrite ci-dessous.
@@ -766,7 +766,7 @@ Le Step~3 se déroule en trois phases successives, enchaînées automatiquement 
 \end{enumerate}
 
 \subsection{Enchaînement automatique}\label{sec:step3_chained}
-Ouverte depuis l'étape~2 (ou par \bouton{Continue with Step 3} de la fenêtre principale), l'étape~3 enchaîne les trois phases. Une ligne d'avancement montre la phase en cours et son résultat : nombre de mires vues, décalage, nombre de paires (figure~\ref{fig:step3_chained}). Une seule question est posée, après l'alignement des horloges (§\ref{btn:step3_overlap}).
+Ouverte par \bouton{Continue with Step 3} de la fenêtre principale, l'étape~3 enchaîne les trois phases. Une ligne d'avancement montre la phase en cours et son résultat : nombre de mires vues, décalage, nombre de paires (figure~\ref{fig:step3_chained}). Une seule question est posée, après l'alignement des horloges (§\ref{btn:step3_overlap}).
 
 Une fois les images appariées, rien ne démarre seul : \bouton{Image processing} ouvre l'étape~4 quand vous êtes prêt (§\ref{btn:step3_continue}).
 Si le décalage ne peut pas être mesuré, la saisie manuelle est proposée et l'enchaînement s'arrête.
