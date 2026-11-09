@@ -551,13 +551,18 @@ class HomePage(QStackedWidget):
                 return path.stat().st_mtime
             except OSError:
                 return None
+        ortho = stamp(F.orthophoto_path(folder))
         key = (str(folder), stamp(folder / "AerialPhotography" / "shoot_points.json"),
-               stamp(F.orthophoto_path(folder)), stamp(folder / "FlightAnalytics" / "flight_timeline.json"),
+               ortho, stamp(folder / "FlightAnalytics" / "flight_timeline.json"),
                stamp(folder / "AerialPhotography" / "VIS"),
                stamp(folder / "FlightAnalytics" / "best_mapping.json"),
-               stamp(folder / "mapping_MULTI" / "img_best_mappping.json"))
+               stamp(folder / "mapping_MULTI" / "img_best_mappping.json"),
+               stamp(folder / "mapping_MULTI" / "mapping_result" / "ortho_dtm.tif"))
         if key == self._map_key:
             return
+        # the map of Step 5 has just been built (or built again): show it
+        new_map = (ortho is not None and self._map_key is not None
+                   and self._map_key[0] == key[0] and self._map_key[2] != ortho)
         self._map_key = key
         if self.map_view is not None:
             self.map_view.setParent(None)
@@ -574,6 +579,10 @@ class HomePage(QStackedWidget):
             self.map_view.picked.connect(model.set_current)
             self.map_view.hovered.connect(model.set_hover)
             self.map_holder_lay.addWidget(self.map_view)
+            if new_map:
+                self._right = "map"
+                if model.ortho_mode == "hidden":
+                    model.set_ortho_mode("natural")
         self.btn_show_map.setEnabled(self.map_view is not None)
 
     def show_mission(self, folder: Optional[Path]):
@@ -610,6 +619,7 @@ class HomePage(QStackedWidget):
         while self.figures.count():
             w = self.figures.takeAt(0).widget()
             if w is not None:
+                w.hide()          # gone at once, even before Qt deletes it
                 w.deleteLater()
         for text, color in mission_figures(info.folder):
             self.figures.addWidget(Look.chip(color, text))

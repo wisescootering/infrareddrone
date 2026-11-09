@@ -80,7 +80,7 @@ matplotlib.use("Agg")  # Non-interactive backend. Essential here when using PyQt
 #     bib IRD_Interactive
 # ----------------------------------------------------
 import IRD_Interactive_help as Help
-from IRD_Interactive_progress import mark_step_done
+from IRD_Interactive_progress import mark_step_done, notifier
 import best_mapping
 import IRD_Interactive_GeoRef as GeoRef
 from IRD_Interactive_contours import DEFAULT_GRID_STEP_M, generate_ortho_dtm
@@ -920,6 +920,7 @@ class DialogGeoRef(QDialog):
         self._finish_DTM_ui()
         self.progress_label.setText("DTM and contour lines completed.")
         self.stages.set(2, Look.STAGE_DONE, "")
+        notifier.changed.emit(Path(self.folderMissionPath))   # main window: footprints on the terrain model
         self._log(
             "Contour lines (QGIS): "
             f"{result['contours'] or 'skipped (GDAL not installed)'}\nDTM raster: {result['dtm']}\n"

@@ -150,6 +150,37 @@ class HomeMapTest(unittest.TestCase):
         page.btn_show_image.click()
         self.assertIs(page.right_stack.currentWidget(), page.picture)
 
+    def test_the_map_just_built_is_shown(self):
+        """Step 5 ends: the page shows the map with its orthophoto, even if the
+        image was on screen or the orthophoto hidden before."""
+        import IRD_Interactive_map as MapV
+        root = Path(tempfile.mkdtemp())
+        m = make_mission(root, "FLY-20220125-1159-Blassac", done=(1,))
+        vis = m / "AerialPhotography" / "VIS"
+        vis.mkdir(parents=True)
+        for k in range(4):
+            (vis / f"VIS_{k + 1:04d}.exif").write_text(json.dumps(
+                {"DroneLatitude": 45.1695, "DroneLongitude": 3.4 + 0.0002 * k, "DroneAltitudeGround": 50.0,
+                 "GimbalYawDegree": -78.9}))
+        settings = {"ortho": "hidden"}
+        fake = mock.MagicMock()
+        fake.return_value.value.side_effect = lambda key, default=None: next(
+            (v for k, v in settings.items() if key.endswith(k)), default)
+        fake.return_value.setValue.side_effect = lambda key, value: settings.update(
+            {k: value for k in settings if key.endswith(k)})
+        with mock.patch.object(MapV, "QSettings", fake):
+            page = Home.HomePage()
+            page.show_mission(m)
+            page.btn_show_image.click()
+            page.show_mission(m)                 # nothing new: the image stays
+            self.assertIs(page.right_stack.currentWidget(), page.picture)
+            result = m / "mapping_MULTI" / "mapping_result"
+            result.mkdir(parents=True)
+            (result / "odm_orthophoto.tif").write_bytes(b"")
+            page.show_mission(m)                 # Step 5 marked done
+        self.assertIs(page.right_stack.currentWidget(), page.map_holder)
+        self.assertEqual(page.map_view.model.ortho_mode, "natural")
+
     def test_no_position_shows_the_image(self):
         m = make_mission(Path(tempfile.mkdtemp()), "FLY-20220125-1159-Blassac", done=(1,))
         page = Home.HomePage()

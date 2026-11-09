@@ -448,7 +448,7 @@ Il reste donc à vérifier les phases du vol, la superposition des courbes de sy
 La carte est disponible dès l'étape~1 : les positions sont lues dans les EXIF des images visibles. Elle montre :
 \begin{itemize}
 	\item la trajectoire du drone et un point par image, coloré selon les phases confirmées à l'étape~2 (violet : synchronisation, vert : relevé) ;
-	\item l'orthophoto de l'étape~5, une fois le mapping fait ; tant qu'elle est affichée, la trajectoire ne relie que les images retenues pour le mapping (une image sur $n$, voir la section~\ref{btn:step5_selection}), le vol complet restant en pointillés discrets ; masquer l'orthophoto (\bouton{Layers} > \bouton{Hidden}) remontre toutes les images ;
+	\item l'orthophoto de l'étape~5, une fois le mapping fait : dès que l'étape~5 l'a construite, la fenêtre principale l'affiche sur la carte (même si \bouton{Image} ou \bouton{Layers} > \bouton{Hidden} était choisi avant) ; tant qu'elle est affichée, la trajectoire ne relie que les images retenues pour le mapping (une image sur $n$, voir la section~\ref{btn:step5_selection}), le vol complet restant en pointillés discrets ; masquer l'orthophoto (\bouton{Layers} > \bouton{Hidden}) remontre toutes les images ;
 	\item avant le mapping, si le \emph{best mapping} est choisi (étapes~2 et~4, section~\ref{btn:step2_best_mapping}), la trajectoire ne relie que les images retenues, avec leur emprise au sol en vert : on voit le recouvrement qui servira au mapping ; \bouton{Layers} > \bouton{Only the images of the best mapping} remontre toutes les images ;
 	\item en fond, des photos aériennes : IGN pour la France, Esri World Imagery ailleurs, ou OpenStreetMap.
 \end{itemize}
