@@ -91,6 +91,8 @@ from IRD_Interactive_workers import ImagePairingWorker
 import flight_timeline as FT
 import IRD_Interactive_look as Look
 
+STEP_NAME = "Camera synchronisation"
+
 
 class DialogSynchroAruco(QDialog):
     """
@@ -128,7 +130,7 @@ class DialogSynchroAruco(QDialog):
             self.close()
             return
 
-        self.setWindowTitle("Step 3 – VIS / NIR time synchronization")
+        self.setWindowTitle(Look.step_window_title(3, STEP_NAME, self.folderMissionPath))
         self.setStyleSheet(Look.DIALOG_STYLE)
         screen = parent.screen() if parent is not None else QApplication.primaryScreen()
         if screen is None:
@@ -193,9 +195,7 @@ class DialogSynchroAruco(QDialog):
     def _init_gui(self) -> None:
         main_layout = QVBoxLayout(self)
 
-        # Title at the top
-        title = QLabel("<b>Timeline Synchronization</b>")
-        main_layout.addWidget(title)
+        main_layout.addWidget(Look.step_header(3, STEP_NAME, self.folderMissionPath))
 
         # Chained run: the three stages and what comes next, no button to click
         self.stages = Look.StageTracker(["Target detection", "Clock alignment", "Image pairing",

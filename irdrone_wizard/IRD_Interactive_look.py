@@ -88,6 +88,8 @@ def step_header(step: int, name: str, folder) -> QWidget:
     header.subtitle = QLabel(f"Step {step} · {Path(folder).name}")
     header.subtitle.setStyleSheet(SUBTITLE_STYLE)
     header.subtitle.setToolTip(str(folder))
+    for label in (header.title, header.subtitle):    # a long mission name never widens the window
+        label.setWordWrap(True)
     lay.addWidget(header.title)
     lay.addWidget(header.subtitle)
     return header
@@ -97,6 +99,15 @@ def step_window_title(step: int, name: str, folder) -> str:
     """Title bar of a step window, as Step 2: "Step N – Name · mission"."""
     from pathlib import Path
     return f"Step {step} – {name} · {Path(folder).name}"
+
+
+def continue_button(next_step: str, tip: str) -> QPushButton:
+    """"Continue with <next step>  ▶": at the bottom right, after Close. It only
+    opens the next step; nothing starts until the user runs it there."""
+    button = QPushButton(f"Continue with {next_step}  ▶")
+    button.setStyleSheet(PRIMARY_STYLE)
+    button.setToolTip(tip)
+    return button
 
 
 def chip(color, text: str = "", tip: str = "") -> QLabel:

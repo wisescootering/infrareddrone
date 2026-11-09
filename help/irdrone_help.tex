@@ -317,7 +317,7 @@ L'exploitation d'une mission comporte 6 étapes :
 \begin{itemize}
 	\item \textbf{Info-bulles.} Laisser le pointeur de la souris quelques instants sur un bouton (ou une case à cocher) affiche une info-bulle qui résume son action.
 	\item \textbf{Touche \textsf{F1}.} La touche \textsf{F1}, le pointeur de la souris sur un bouton, ouvre ce manuel à la section qui décrit ce bouton. Sur une étape de la page d'accueil, elle ouvre le chapitre de l'étape. Ailleurs dans une fenêtre, elle ouvre le chapitre de la fenêtre, comme le bouton \bouton{?}.
-	\item \textbf{Bouton \bouton{?}.} Chaque fenêtre a un bouton \bouton{?} qui ouvre ce manuel au chapitre de la fenêtre. Dans les fenêtres qui se pilotent au clavier (ligne de temps, revue), son info-bulle rappelle les touches. Il est en bas à gauche ; le bouton \bouton{Close} des fenêtres d'étape et de la revue est en bas à droite ; aux étapes 2 et 3, le bouton qui passe à l'étape suivante (\bouton{Continue with \ldots ▶}) est à sa droite et ne lance jamais un calcul tout seul. Dans la fenêtre principale aussi, en bas à gauche, il ouvre le manuel entier.
+	\item \textbf{Bouton \bouton{?}.} Chaque fenêtre a un bouton \bouton{?} qui ouvre ce manuel au chapitre de la fenêtre. Dans les fenêtres qui se pilotent au clavier (ligne de temps, revue), son info-bulle rappelle les touches. Il est en bas à gauche ; le bouton \bouton{Close} des fenêtres d'étape et de la revue est en bas à droite ; aux étapes 2 à 5, le bouton qui passe à l'étape suivante (\bouton{Continue with \ldots ▶}) est à sa droite et ne lance jamais un calcul tout seul. Les actions d'une étape (\bouton{Run alignment}, \bouton{Build the map\ldots}, \ldots) sont dans la fenêtre, au-dessus de la barre de progression ; la principale est bleu foncé, les autres blanches, et celle qui est irréversible (l'archivage) rouge. Les étapes~3 à~6 affichent en haut le nom de l'étape et, dessous, la mission. Dans la fenêtre principale aussi, en bas à gauche, il ouvre le manuel entier.
 	\item \textbf{Boutons \bouton{↺} et \bouton{Close} des fenêtres qui modifient quelque chose} (détails de la mission, ligne de temps, réglage du décalage, réglages de l'étape~4). Fermer garde ce qui a été changé : dès qu'une valeur change, \bouton{Close} devient \bouton{Save and close} ; fermer la fenêtre par sa barre de titre ou avec \textsf{Échap} fait de même. Le bouton \bouton{↺}, à côté de \bouton{?}, n'apparaît que s'il y a quelque chose à remettre : il remet les valeurs et la fenêtre reste ouverte.
 \end{itemize}
 Le manuel s'ouvre dans le lecteur PDF par défaut (navigateur, Acrobat), à la bonne page quand le lecteur le permet.
@@ -439,7 +439,8 @@ Lance l'étape suivante. Les étapes 1 à 4 s'enchaînent d'elles-mêmes :
 	\item à la fin de l'étape~1, \bouton{Flight timeline} ouvre l'étape~2 ;
 	\item \bouton{Continue with synchronisation} de l'étape~2 ouvre l'étape~3 sans la lancer ; \bouton{Continue with Step 3} la lance : détection des mires, décalage des horloges, puis une question, \og Do the two curves overlap? \fg~; \bouton{Yes} apparie les images ;
 	\item \bouton{Continue with image processing} ouvre l'étape~4. L'alignement, long, ne démarre jamais tout seul : il se lance avec \bouton{Run alignment} et s'arrête à tout moment avec \bouton{Stop} ;
-	\item à la fin, \bouton{Review images} ouvre la revue des images alignées.
+	\item à la fin, \bouton{Review images} ouvre la revue des images alignées ; \bouton{Continue with mapping} ouvre l'étape~5, où \bouton{Build the map\ldots} lance la carte ;
+	\item une fois la carte construite, \bouton{Continue with archiving} ouvre l'étape~6, qui indique l'espace libéré par l'archivage ; rien n'est supprimé avant votre confirmation.
 \end{enumerate}
 Il reste donc à vérifier les phases du vol, la superposition des courbes de synchronisation, puis le résultat. Une fois toutes les étapes faites, le bouton devient \bouton{Archive the mission} (étape~6).
 
@@ -933,7 +934,7 @@ Ce premier alignement (coarse process) est suivi d'un alignement fin (fine proce
 {Couple d'images d'un shoot point. Les deux bandes spectrales enregistrent des informations différentes. Par exemple la surface de la rivière est totalement noire en proche infrarouge. L'eau ne réfléchit pas les longueurs d'onde au-delà de $750\,nm$.}  
 
 \section{Dialogue de l'étape 4}
-La fenêtre de l'étape~4 (figure~\ref{fig:step4_window}) rappelle le nom de la mission (le chemin complet est dans l'info-bulle) et le nombre de paires d'images. Elle comporte, de haut en bas : les options de sortie, le choix des images alignées avec la carte du vol, l'état et la barre de progression du calcul, le journal, puis, en bas, \bouton{?} et \bouton{⚙} (réglages) à gauche, \bouton{Run alignment} (\bouton{Stop} pendant le calcul), \bouton{Review images} et \bouton{Close} à droite. La fenêtre s'adapte à la taille de l'écran.
+La fenêtre de l'étape~4 (figure~\ref{fig:step4_window}) rappelle le nom de la mission (le chemin complet est dans l'info-bulle) et le nombre de paires d'images. Elle comporte, de haut en bas : les options de sortie, le choix des images alignées avec la carte du vol, les boutons \bouton{Run alignment} (\bouton{Stop} pendant le calcul) et \bouton{Review images}, l'état et la barre de progression du calcul, le journal, puis, en bas, \bouton{?} et \bouton{⚙} (réglages) à gauche, \bouton{Close} et, une fois des images alignées, \bouton{Continue with mapping} à droite. La fenêtre s'adapte à la taille de l'écran.
 
 \figureIRD[fig:step4_window]{step4_window.png}{Fen\^etre de traitement des \og shoot points \fg~(paires d'images VIS-NIR), avant le calcul.}{0.7}
 
@@ -999,7 +1000,10 @@ La roue dentée ouvre les réglages du calcul, gardés pour les sessions suivant
 \bouton{Save and close} (\bouton{Close} tant que rien n'a changé) garde les réglages. \bouton{↺}, affiché quand les réglages diffèrent des réglages par défaut, revient à \texttt{Auto} et aux avertissements seulement.
 
 \section{Bouton \bouton{Close}}\label{btn:step4_close}
-Ferme la fenêtre et rend la main au dialogue principal. Le bouton \bouton{?} ouvre cette aide à la page de ce chapitre. Il est toujours actif.
+Ferme la fenêtre et rend la main au dialogue principal. Le bouton \bouton{?} ouvre cette aide à la page de ce chapitre. Il est grisé pendant l'alignement (arrêtez-le d'abord avec \bouton{Stop}).
+
+\section{Bouton \bouton{Continue with mapping}}\label{btn:step4_continue}
+Apparaît en bas à droite, après \bouton{Close}, une fois des images alignées. Il ferme la fenêtre et ouvre l'étape~5. La carte, longue, n'y démarre pas toute seule : elle se lance avec \bouton{Build the map\ldots}.
 
 %==========================================================
 \chapter{Revue des images alignées}\label{ch:review}
@@ -1182,7 +1186,7 @@ Ces traitements s'appuient sur les métadonnées de vol enregistrées dans les f
 
 \figureIRD{step5_window.png}{Fen\^etre de l'étape~5.}{0.6}
 
-La fenêtre est organisée comme celle de l'étape~3. De haut en bas : le nom de l'étape et de la mission ; les étapes de la carte (\texttt{Image selection}, \texttt{Orthophoto (OpenDroneMap)}, \texttt{Terrain model and contours} : $\circ$ à faire, $\bullet$ en cours, \checkmark{} fait, $\times$ échec, avec un détail sous chacune) ; une zone de messages (journal) ; les trois boutons, \bouton{Build the map\ldots} en premier ; une barre de progression précédée d'un intitulé qui indique l'opération en cours ; une zone d'aperçu d'image ; et les boutons \bouton{?} et \bouton{Close}.
+La fenêtre est organisée comme celle de l'étape~3. De haut en bas : le nom de l'étape et de la mission ; les étapes de la carte (\texttt{Image selection}, \texttt{Orthophoto (OpenDroneMap)}, \texttt{Terrain model and contours} : $\circ$ à faire, $\bullet$ en cours, \checkmark{} fait, $\times$ échec, avec un détail sous chacune) ; une zone de messages (journal) ; les trois boutons, \bouton{Build the map\ldots} en premier ; une barre de progression précédée d'un intitulé qui indique l'opération en cours ; une zone d'aperçu d'image ; et les boutons \bouton{?} et \bouton{Close}, puis \bouton{Continue with archiving} une fois la carte construite.
 
 Si la carte a déjà été construite, les étapes sont déjà cochées et l'orthophoto s'affiche dès l'ouverture de la fenêtre. \bouton{Terrain model and contours\ldots} reste grisé tant que la carte n'existe pas.
 
@@ -1352,6 +1356,9 @@ Quelques actions simples avec une orthophotographie à 4 bandes spectrales red,g
 
 \section{Bouton \bouton{Close}}\label{btn:step5_close}
 Ferme la fenêtre et rend la main au dialogue principal. La fermeture est refusée tant qu'un calcul ODM ou MNT est en cours. Le bouton \bouton{?} ouvre cette aide à la page de ce chapitre.
+
+\section{Bouton \bouton{Continue with archiving}}\label{btn:step5_continue}
+Apparaît en bas à droite, après \bouton{Close}, une fois la carte construite. Il ferme la fenêtre et ouvre l'étape~6, qui indique l'espace libéré par l'archivage. Rien n'est supprimé avant votre confirmation.
 
 %==========================================================
 \chapter{Step 6 -- Archivage de la mission}\label{ch:step6}

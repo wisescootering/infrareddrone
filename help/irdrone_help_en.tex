@@ -317,7 +317,7 @@ Processing a mission has 6 steps:
 \begin{itemize}
 	\item \textbf{Tool tips.} Leaving the mouse pointer for a moment on a button (or a check box) shows a tool tip that summarizes what it does.
 	\item \textbf{\textsf{F1} key.} \textsf{F1}, with the mouse pointer over a button, opens this manual at the section that describes this button. On a step of the home page, it opens the chapter of the step. Elsewhere in a window, it opens the chapter of the window, like the \bouton{?} button.
-	\item \textbf{\bouton{?} button.} Each window has a \bouton{?} button that opens this manual at the chapter of the window. In the windows driven from the keyboard (timeline, review), its tool tip recalls the keys. It sits at the bottom left; the \bouton{Close} button of the step windows and of the review is at the bottom right; in Steps 2 and 3, the button that continues with the next step (\bouton{Continue with \ldots ▶}) sits to its right and never starts a computation by itself. In the main window too, at the bottom left, it opens the whole manual.
+	\item \textbf{\bouton{?} button.} Each window has a \bouton{?} button that opens this manual at the chapter of the window. In the windows driven from the keyboard (timeline, review), its tool tip recalls the keys. It sits at the bottom left; the \bouton{Close} button of the step windows and of the review is at the bottom right; in Steps 2 to 5, the button that continues with the next step (\bouton{Continue with \ldots ▶}) sits to its right and never starts a computation by itself. The actions of a step (\bouton{Run alignment}, \bouton{Build the map\ldots}, \ldots) are in the window, above the progress bar; the main one is dark blue, the others white, and the irreversible one (archiving) red. Steps~3 to~6 show at the top the name of the step and, under it, the mission. In the main window too, at the bottom left, it opens the whole manual.
 	\item \textbf{\bouton{↺} and \bouton{Close} buttons of the windows that edit something} (mission details, timeline, offset adjustment, Step~4 settings). Closing keeps what was changed: as soon as something is changed, \bouton{Close} becomes \bouton{Save and close}; closing the window by its title bar or with \textsf{Esc} does the same. The \bouton{↺} button, next to \bouton{?}, appears only when there is something to put back: it puts the values back and the window stays open.
 \end{itemize}
 The manual opens in the default PDF reader (browser, Acrobat), at the right page when the reader allows it.
@@ -439,7 +439,8 @@ Runs the next step. Steps 1 to 4 follow one another by themselves:
 	\item at the end of Step~1, \bouton{Flight timeline} opens Step~2;
 	\item \bouton{Continue with synchronisation} in Step~2 opens Step~3 without running it; \bouton{Continue with Step 3} runs it: target detection, clock offset, then one question, ``Do the two curves overlap?''; \bouton{Yes} pairs the images;
 	\item \bouton{Continue with image processing} opens Step~4. The alignment, which is long, never starts by itself: it is started with \bouton{Run alignment} and can be stopped at any time with \bouton{Stop};
-	\item at the end, \bouton{Review images} opens the review of the aligned images.
+	\item at the end, \bouton{Review images} opens the review of the aligned images; \bouton{Continue with mapping} opens Step~5, where \bouton{Build the map\ldots} starts the map;
+	\item once the map is built, \bouton{Continue with archiving} opens Step~6, which shows how much space archiving frees; nothing is deleted until you confirm.
 \end{enumerate}
 What remains for you is to check the flight phases, the overlap of the synchronization curves, and then the result. Once all the steps are done, the button becomes \bouton{Archive the mission} (Step~6).
 
@@ -933,7 +934,7 @@ This first alignment (coarse process) is followed by a fine alignment (fine proc
 {Pair of images of a shoot point. The two spectral bands record different information. For example, the surface of the river is completely black in near infrared. Water does not reflect wavelengths above $750\,nm$.}
 
 \section{Step 4 dialog}
-The Step~4 window (Figure~\ref{fig:step4_window}) shows the name of the mission (the full path is in the tool tip) and the number of image pairs. From top to bottom it contains: the output options, the choice of the images aligned with the flight map, the status and progress bar of the computation, the log, then, at the bottom, \bouton{?} and \bouton{⚙} (settings) on the left, \bouton{Run alignment} (\bouton{Stop} during the computation), \bouton{Review images} and \bouton{Close} on the right. The window adapts to the screen size.
+The Step~4 window (Figure~\ref{fig:step4_window}) shows the name of the mission (the full path is in the tool tip) and the number of image pairs. From top to bottom it contains: the output options, the choice of the images aligned with the flight map, the buttons \bouton{Run alignment} (\bouton{Stop} during the computation) and \bouton{Review images}, the status and progress bar of the computation, the log, then, at the bottom, \bouton{?} and \bouton{⚙} (settings) on the left, \bouton{Close} and, once images are aligned, \bouton{Continue with mapping} on the right. The window adapts to the screen size.
 
 \figureIRD[fig:step4_window]{step4_window.png}{Window for processing the ``shoot points'' (VIS-NIR image pairs), before the computation.}{0.7}
 
@@ -999,7 +1000,10 @@ The gear wheel opens the computation settings, which are kept for later sessions
 \bouton{Save and close} (\bouton{Close} while nothing is changed) keeps the settings. \bouton{↺}, shown when the settings differ from the default ones, goes back to \texttt{Auto} and warnings only.
 
 \section{\bouton{Close} button}\label{btn:step4_close}
-Closes the window and returns to the main dialog. The \bouton{?} button opens this help at the page of this chapter. It is always enabled.
+Closes the window and returns to the main dialog. The \bouton{?} button opens this help at the page of this chapter. It is greyed out while the alignment runs (stop it first with \bouton{Stop}).
+
+\section{\bouton{Continue with mapping} button}\label{btn:step4_continue}
+Appears at the bottom right, after \bouton{Close}, once images are aligned. It closes the window and opens Step~5. The map, which is long, does not start there by itself: it is started with \bouton{Build the map\ldots}.
 
 %==========================================================
 \chapter{Review of the aligned images}\label{ch:review}
@@ -1183,7 +1187,7 @@ These processes rely on the flight metadata stored in the ``companion'' \texttt{
 
 \figureIRD{step5_window.png}{Step~5 window.}{0.6}
 
-The window is laid out as Step~3. From top to bottom: the name of the step and of the mission; the stages of the map (\texttt{Image selection}, \texttt{Orthophoto (OpenDroneMap)}, \texttt{Terrain model and contours}: $\circ$ to do, $\bullet$ running, \checkmark{} done, $\times$ failed, with a detail under each); a message area (log); the three buttons, \bouton{Build the map\ldots} first; a progress bar preceded by a label showing the operation in progress; an image preview area; and the \bouton{?} and \bouton{Close} buttons.
+The window is laid out as Step~3. From top to bottom: the name of the step and of the mission; the stages of the map (\texttt{Image selection}, \texttt{Orthophoto (OpenDroneMap)}, \texttt{Terrain model and contours}: $\circ$ to do, $\bullet$ running, \checkmark{} done, $\times$ failed, with a detail under each); a message area (log); the three buttons, \bouton{Build the map\ldots} first; a progress bar preceded by a label showing the operation in progress; an image preview area; and the \bouton{?} and \bouton{Close} buttons, then \bouton{Continue with archiving} once the map is built.
 
 When the map was built earlier, the stages are already ticked and the orthophoto is shown as soon as the window opens. \bouton{Terrain model and contours\ldots} stays greyed out until the map exists.
 
@@ -1353,6 +1357,9 @@ A few simple actions with a 4-band orthophoto red, green, blue, nir
 
 \section{\bouton{Close} button}\label{btn:step5_close}
 Closes the window and returns to the main dialog. Closing is refused while an ODM or DTM computation is running. The \bouton{?} button opens this help at the page of this chapter.
+
+\section{\bouton{Continue with archiving} button}\label{btn:step5_continue}
+Appears at the bottom right, after \bouton{Close}, once the map is built. It closes the window and opens Step~6, which shows how much space archiving frees. Nothing is deleted until you confirm there.
 
 %==========================================================
 \chapter{Step 6 -- Mission archiving}\label{ch:step6}

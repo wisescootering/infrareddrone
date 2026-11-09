@@ -11,6 +11,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "irdrone_wizard"))
+sys.path.insert(0, str(ROOT / "tests"))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtWidgets import QApplication, QDialog  # noqa: E402
@@ -72,6 +73,50 @@ class Step5WindowTest(unittest.TestCase):
             d.on_run_ODM()
         start.assert_not_called()
         self.assertEqual(d.stages.states[0], Look.STAGE_PENDING)
+
+
+
+class ContinueButtonsTest(unittest.TestCase):
+    """Steps 4 and 5 end with "Continue with … ▶" after Close, as Steps 2 and 3:
+    it only opens the next step."""
+
+    def test_step5_continue_with_archiving_once_the_map_exists(self):
+        mission = Path(tempfile.mkdtemp()) / "FLY-20220125-1159-Blassac"
+        d = S5.DialogGeoRef({"File path mission": str(mission)})
+        self.assertFalse(d.btn_continue.isVisibleTo(d))
+        d.done(0)
+        result = mission / "mapping_MULTI" / "mapping_result"
+        result.mkdir(parents=True)
+        (result / "odm_orthophoto.tif").write_bytes(b"")
+        with mock.patch.object(S5.DialogGeoRef, "_start_ODM_preview"):
+            d = S5.DialogGeoRef({"File path mission": str(mission)})
+        self.assertTrue(d.btn_continue.isVisibleTo(d))
+        self.assertEqual(d.btn_continue.text(), "Continue with archiving  ▶")
+        emitted = []
+        d.continue_requested.connect(lambda: emitted.append(True))
+        d.show()
+        d.btn_continue.click()
+        self.assertEqual(emitted, [True])
+        self.assertFalse(d.isVisible())
+
+    def test_step4_continue_with_mapping_once_images_are_aligned(self):
+        import IRD_Interactive_4 as S4
+        from test_step4_best_mapping import mission
+        m = mission()
+        d = S4.DialogImageProcessing({"File path mission": str(m)})
+        self.assertFalse(d.continue_button.isVisibleTo(d))
+        d.done(0)
+        (m / "ImgIRdrone").mkdir()
+        (m / "ImgIRdrone" / "shoot_points.json").write_text("{}")
+        d = S4.DialogImageProcessing({"File path mission": str(m)})
+        self.assertTrue(d.continue_button.isVisibleTo(d))
+        self.assertEqual(d.continue_button.text(), "Continue with mapping  ▶")
+        emitted = []
+        d.continue_requested.connect(lambda: emitted.append(True))
+        d.show()
+        d.continue_button.click()
+        self.assertEqual(emitted, [True])
+        self.assertFalse(d.isVisible())
 
 
 if __name__ == "__main__":

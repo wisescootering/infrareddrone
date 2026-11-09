@@ -364,6 +364,7 @@ class DialogGeoRef(QDialog):
     """
 
     data_signal_to_main = pyqtSignal(bool)
+    continue_requested = pyqtSignal()     # "Continue with archiving": the main window opens Step 6
     log_signal = pyqtSignal(str)
     image_signal = pyqtSignal(str)
 
@@ -476,6 +477,12 @@ class DialogGeoRef(QDialog):
         self.btn_close.setFixedWidth(120)
         self.btn_close.setStyleSheet(SECONDARY_STYLE)
         close_layout.addWidget(self.btn_close)
+        self.btn_continue = Look.continue_button(
+            "archiving", "Close this window and open Step 6: it shows what archiving frees; "
+                         "nothing is deleted until you confirm there.")
+        self.btn_continue.clicked.connect(self._continue_now)
+        self.btn_continue.hide()               # once the map is built
+        close_layout.addWidget(self.btn_continue)
 
         for widget, label, tip in (
             (self.btn_run_GeoRef, "btn:step5_georef",
@@ -488,6 +495,7 @@ class DialogGeoRef(QDialog):
              "grid step (IGN altitudes, internet)."),
             (self.btn_close, "btn:step5_close", "Close this window."),
             (self.btn_help, "ch:step5", "Open the manual at Step 5."),
+            (self.btn_continue, "btn:step5_continue", self.btn_continue.toolTip()),
         ):
             Help.attach_help(widget, label, tip, parent=self)
 
@@ -505,6 +513,7 @@ class DialogGeoRef(QDialog):
             return
         self.stages.set(0, Look.STAGE_DONE, "")
         self.stages.set(1, Look.STAGE_DONE, "mapping_result")
+        self.btn_continue.show()
         if (orthophoto.parent / "ortho_dtm.tif").is_file():
             self.stages.set(2, Look.STAGE_DONE, "")
         self.progress_label.setText("Map built earlier: the orthophoto is shown below.")
@@ -525,6 +534,12 @@ class DialogGeoRef(QDialog):
     # ------------------------------------------------------------------
     # Slots (placeholders)
     # ------------------------------------------------------------------
+
+    def _continue_now(self) -> None:
+        """Step 6 opens once this window is closed (it refuses while a Step 5 window is open)."""
+        if self.odm_worker is None and self.dtm_worker is None and self.close():
+            self.data_signal_to_main.emit(True)
+            self.continue_requested.emit()
 
     def on_close(self) -> None:
         """Close the dialog, refused while ODM or the DTM is running."""
@@ -732,6 +747,7 @@ class DialogGeoRef(QDialog):
         self.btn_run_Mapping.setEnabled(False)
         self.btn_run_DTM.setEnabled(False)
         self.btn_close.setEnabled(False)
+        self.btn_continue.setEnabled(False)
         self.progress_bar.setRange(0, 0)
         self.progress_label.setText("ODM – starting")
         self.stages.set(1, Look.STAGE_RUNNING, "starting")
@@ -780,6 +796,7 @@ class DialogGeoRef(QDialog):
         self.btn_run_Mapping.setEnabled(True)
         self.btn_run_DTM.setEnabled(self._orthophoto_path().is_file())
         self.btn_close.setEnabled(True)
+        self.btn_continue.setEnabled(True)
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
 
@@ -791,6 +808,7 @@ class DialogGeoRef(QDialog):
         self._log(f"ODM completed successfully: {orthophoto['path']}")
         mark_step_done(self.folderMissionPath, 5)  # Step 5 is done once the ODM mapping is
         self.stages.set(1, Look.STAGE_DONE, "mapping_result")
+        self.btn_continue.show()
         self.progress_label.setText("ODM completed successfully.")
         self.image_preview_label.setText("Loading orthophoto preview...")
         self.image_preview_label.setPixmap(QPixmap())
@@ -851,6 +869,7 @@ class DialogGeoRef(QDialog):
             self.btn_run_Mapping,
             self.btn_run_DTM,
             self.btn_close,
+            self.btn_continue,
         ):
             button.setEnabled(enabled)
 

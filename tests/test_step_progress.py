@@ -291,6 +291,18 @@ class Step2UsesCurrentMissionTest(_MissionHelpers):
             window.open_window_load_set_images()
         step3.assert_called_once_with(auto_run=False)
 
+    def test_continue_buttons_of_steps_4_and_5_open_the_next_step(self):
+        window = self.main.Main_Window()
+        self.open(window, self.make_mission("FLY-D"))
+        with mock.patch.object(self.main, "DialogImageProcessing") as step4, \
+                mock.patch.object(window, "on_post_process_images") as step5:
+            window.on_process_images()
+            step4.return_value.continue_requested.connect.assert_called_once_with(step5)
+        with mock.patch.object(self.main, "DialogGeoRef") as step5_dialog, \
+                mock.patch.object(window, "on_archive_mission") as step6:
+            window.on_post_process_images()
+            step5_dialog.return_value.continue_requested.connect.assert_called_once_with(step6)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -452,6 +452,8 @@ class Main_Window(QMainWindow):
             self.dialog_image_processing = DialogImageProcessing(
                 self.mission_parameters, self, auto_run=bool(auto_run)
             )
+            # "Continue with mapping": Step 5 opens, the user starts it
+            self.dialog_image_processing.continue_requested.connect(self.on_post_process_images)
             self.dialog_image_processing.show()
         except (FileNotFoundError, ValueError, json.JSONDecodeError) as e:
             QMessageBox.critical(
@@ -477,10 +479,12 @@ class Main_Window(QMainWindow):
 
         try:
 
-            self.dialog_GeoRef = DialogGeoRef(self.mission_parameters)
+            self.dialog_GeoRef = DialogGeoRef(self.mission_parameters, parent=self)
             self.dialog_GeoRef.data_signal_to_main.connect(
                 self.handle_data_from_dialog_GeoRef
             )
+            # "Continue with archiving": Step 6 opens and shows what it frees
+            self.dialog_GeoRef.continue_requested.connect(self.on_archive_mission)
             self.dialog_GeoRef.show()
 
         except Exception as e:

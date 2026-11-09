@@ -36,6 +36,7 @@ from PyQt6.QtWidgets import (
 )
 
 from IRD_Interactive_look import DIALOG_STYLE, PRIMARY_STYLE, SECONDARY_STYLE, close_text, reset_button
+import IRD_Interactive_look as Look
 import IRD_Interactive_help as Help
 from IRD_Interactive_progress import mark_step_done
 import best_mapping
@@ -48,6 +49,7 @@ from alignment_workers import (
 )
 
 
+STEP_NAME = "Image processing"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PROCESSING_SCRIPT = PROJECT_ROOT / "run_after_preprocessing.py"
 VIS_FILENAME_PATTERN = re.compile(r"^VIS_(\d+)\.dng$", re.IGNORECASE)
@@ -601,6 +603,8 @@ class DialogImageProcessing(QDialog):
     survey range of Step 2, and the review of the aligned images opens when
     it is done."""
 
+    continue_requested = pyqtSignal()     # "Continue with mapping": the main window opens Step 5
+
     def __init__(self, mission_parameters: dict, parent=None, auto_run: bool = False):
         super().__init__(parent)
         self.auto_run = auto_run
@@ -662,7 +666,7 @@ class DialogImageProcessing(QDialog):
         self.process.errorOccurred.connect(self._on_process_error)
 
 
-        self.setWindowTitle("Step 4 – Image processing")
+        self.setWindowTitle(Look.step_window_title(4, STEP_NAME, self.mission_folder))
         self.setStyleSheet(DIALOG_STYLE)
         self._init_gui()
         self._fit_to_screen(parent)
@@ -726,10 +730,7 @@ class DialogImageProcessing(QDialog):
         layout = QVBoxLayout(self)
         # The labels wrap and the mission is named, its path in the tool tip:
         # nothing makes the window wider than the screen (long paths, display scaling).
-        mission_label = QLabel(f"<b>Mission:</b> {self.mission_folder.name}")
-        mission_label.setToolTip(str(self.mission_folder))
-        mission_label.setWordWrap(True)
-        layout.addWidget(mission_label)
+        layout.addWidget(Look.step_header(4, STEP_NAME, self.mission_folder))
         intro = QLabel(
             f"{self.pair_count} preprocessed image pairs found. "
             "The inclusive image-number range is pre-filled from Step 2's "
@@ -818,6 +819,10 @@ class DialogImageProcessing(QDialog):
             signal.connect(self._update_best_mapping_count)
         self._update_best_mapping_count()
 
+        # Actions: the alignment, then the review of its result
+        self.action_layout = QHBoxLayout()
+        layout.addLayout(self.action_layout)
+
         self.status_label = QLabel("Ready")
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
@@ -833,7 +838,7 @@ class DialogImageProcessing(QDialog):
         self.log_text.setReadOnly(True)
         layout.addWidget(self.log_text)
 
-        # Footer: the manual (?) and settings on the left, Close always at the bottom right
+        # Footer: the manual (?) and settings on the left; Close, then the next step on the right
         button_layout = QHBoxLayout()
         self.run_button = QPushButton("Run alignment")
         self.run_button.clicked.connect(self._start_processing)
@@ -848,7 +853,7 @@ class DialogImageProcessing(QDialog):
         self.close_button = QPushButton("Close")
         self.close_button.setFixedWidth(120)
         self.close_button.clicked.connect(self.close)
-        self.review_button = QPushButton("Review images  \u25B6")
+        self.review_button = QPushButton("Review images…")
         self.review_button.setToolTip(
             "Check the aligned images on a time line, flag the misaligned ones and realign them by hand."
         )
@@ -865,6 +870,11 @@ class DialogImageProcessing(QDialog):
         self.help_button.setFixedWidth(36)
         self.help_button.setStyleSheet(SECONDARY_STYLE)
         self.help_button.clicked.connect(lambda: Help.show_help("ch:step4", parent=self))
+        self.continue_button = Look.continue_button(
+            "mapping", "Close this window and open Step 5 (the map): nothing starts until you "
+                       "click Build the map.")
+        self.continue_button.clicked.connect(self._continue_now)
+        self.continue_button.setVisible(self._has_alignment_output())
 
         for widget, label, tip in (
             (self.ndvi_checkbox, "btn:step4_options", "Also write the NDVI image of each shoot point."),
@@ -889,23 +899,31 @@ class DialogImageProcessing(QDialog):
             (self.settings_button, "btn:step4_settings", "Processing settings (worker processes / safe mode, log detail)."),
             (self.stop_button, "btn:step4_stop", self.stop_button.toolTip()),
             (self.help_button, "ch:step4", "Open the manual at Step 4."),
+            (self.continue_button, "btn:step4_continue", self.continue_button.toolTip()),
         ):
             Help.attach_help(widget, label, tip, parent=self)
 
         # Apply the common style to the three main buttons
         self.run_button.setStyleSheet(PRIMARY_STYLE)
         self.close_button.setStyleSheet(SECONDARY_STYLE)
-        # Next step: the primary shape, in the green of the survey
-        self.review_button.setStyleSheet(PRIMARY_STYLE.replace("#17365D", "#2E7D32").replace("#244A73", "#276B2B"))
+        self.review_button.setStyleSheet(SECONDARY_STYLE)   # ▶ is for the next step (Continue with mapping)
+
+        self.action_layout.addWidget(self.run_button)
+        self.action_layout.addWidget(self.stop_button)
+        self.action_layout.addWidget(self.review_button)
+        self.action_layout.addStretch()
 
         button_layout.addWidget(self.help_button)
         button_layout.addWidget(self.settings_button)
         button_layout.addStretch()
-        button_layout.addWidget(self.run_button)
-        button_layout.addWidget(self.stop_button)
-        button_layout.addWidget(self.review_button)
         button_layout.addWidget(self.close_button)
+        button_layout.addWidget(self.continue_button)
         layout.addLayout(button_layout)
+
+    def _continue_now(self) -> None:
+        """Step 5 opens (nothing runs there by itself) once this window is closed."""
+        if self.close():
+            self.continue_requested.emit()
 
     def best_mapping_selection(self) -> tuple[int, int]:
         """(shoot points aligned, synchronised shoot points) with the current settings."""
@@ -1177,6 +1195,7 @@ class DialogImageProcessing(QDialog):
         self._last_elapsed_seconds = None
         self.run_button.setEnabled(False)
         self.review_button.setEnabled(False)
+        self.continue_button.setEnabled(False)
         self.close_button.setEnabled(False)
         self.settings_button.setEnabled(False)
         self.start_image_number.setEnabled(False)
@@ -1280,6 +1299,8 @@ class DialogImageProcessing(QDialog):
             self.progress_bar.setValue(self._progress_total)
         self.run_button.setEnabled(True)
         self.review_button.setEnabled(self._has_alignment_output())
+        self.continue_button.setEnabled(True)
+        self.continue_button.setVisible(self._has_alignment_output())
         self.close_button.setEnabled(True)
         self.settings_button.setEnabled(True)
         self.start_image_number.setEnabled(True)
@@ -1313,6 +1334,7 @@ class DialogImageProcessing(QDialog):
             self.log_text.append("\nProcessing completed successfully.")
             mark_step_done(self.mission_folder, 4)
             self.review_button.setEnabled(True)
+            self.continue_button.setVisible(True)
             self.review_button.setDefault(True)
             self.review_button.setFocus()
             if self.auto_run:
@@ -1335,6 +1357,8 @@ class DialogImageProcessing(QDialog):
         self.status_label.setText("Unable to start processing.")
         self.run_button.setEnabled(True)
         self.review_button.setEnabled(self._has_alignment_output())
+        self.continue_button.setEnabled(True)
+        self.continue_button.setVisible(self._has_alignment_output())
         self.close_button.setEnabled(True)
         self.settings_button.setEnabled(True)
         self.start_image_number.setEnabled(True)
