@@ -307,7 +307,7 @@ Processing a mission has 6 steps:
 	\item \textbf{Flight timeline}: the synchronization images (ArUco target at take-off) and those of the survey above the study area are detected automatically; the user checks them.
 	\item \textbf{Synchronization}: the offset between the clocks of the two cameras is measured and the VIS and NIR images are paired.
 	\item \textbf{Alignment}, the core of IRDrone: each image pair is aligned to obtain 4 superimposed spectral layers. The review of the aligned images (Chapter~\ref{ch:review}) is used to check the result and to realign failed images by hand.
-	\item \textbf{Post-processing}: georeferencing, orthorectification, orthophoto mosaic (mapping), terrain model and contour lines.
+	\item \textbf{Mapping and georeferencing}: georeferencing, orthorectification, orthophoto mosaic (mapping), terrain model and contour lines.
 	\item \textbf{Archiving} of the mission.
 \end{enumerate}
 
@@ -1164,7 +1164,7 @@ Do not aim for perfection, because only global linear transformations are applie
 
 
 %==========================================================
-\chapter{Step 5 -- Post-processing}\label{ch:step5}
+\chapter{Step 5 -- Mapping and georeferencing}\label{ch:step5}
 \section{Principle}
 The multispectral images produced in Step~4 are ``flat'' images: they are not positioned on the ground.
 
@@ -1173,26 +1173,28 @@ The multispectral images produced in Step~4 are ``flat'' images: they are not po
 {step5_VIS_ortho.png}{Image orthorectified with a terrain model with a $10\,m$ step.}
 {The effect of orthorectification is clearly visible in this image, where the terrain has a steep slope (see Figure~\ref{fig:step5_topo}).}
 
- Step~5 makes them usable in a geographic information system (GIS) such as QGIS. It offers three independent processes, one per button:
+ Step~5 makes them usable in a geographic information system (GIS) such as QGIS. It offers three processes, one per button:
 \begin{itemize}
-	\item \bouton{Run Geo ref}: \emph{georeferencing} and \emph{orthorectification} of individual images. Each image is projected onto a digital terrain model (DTM) and then saved in GeoTIFF format in UTM coordinates;
-	\item \bouton{Run Mapping}: stitching all the selected images into a single 4-band \emph{orthophoto} (red, green, blue, near infrared) with the free software OpenDroneMap (ODM);
-	\item \bouton{DTM + contours}: building a DTM and \emph{contour lines} from elevations supplied by an online service (IGN).
+	\item \bouton{Build the map\ldots} (the main one): stitching all the selected images into a single 4-band \emph{orthophoto} (red, green, blue, near infrared) with the free software OpenDroneMap (ODM), then the terrain model and the contour lines;
+	\item \bouton{Terrain model and contours\ldots}: building the DTM and the \emph{contour lines} again, for example with another grid step, from elevations supplied by an online service (IGN);
+	\item \bouton{Georeference images\ldots}: \emph{georeferencing} and \emph{orthorectification} of individual images. Each image is projected onto a digital terrain model (DTM) and then saved in GeoTIFF format in UTM coordinates.
 \end{itemize}
 These processes rely on the flight metadata stored in the ``companion'' \texttt{.exif} files (GPS position, altitude, yaw, pitch and roll angles, see Step~1).
 
-\figureIRD{step5_window.png}{Post-processing window.}{0.6}
+\figureIRD{step5_window.png}{Step~5 window.}{0.6}
 
-From top to bottom the window contains: a message area (log), the three buttons, a progress bar preceded by a label showing the operation in progress, an image preview area, and the \bouton{Close} and \bouton{?} buttons.
+The window is laid out as Step~3. From top to bottom: the name of the step and of the mission; the stages of the map (\texttt{Image selection}, \texttt{Orthophoto (OpenDroneMap)}, \texttt{Terrain model and contours}: $\circ$ to do, $\bullet$ running, \checkmark{} done, $\times$ failed, with a detail under each); a message area (log); the three buttons, \bouton{Build the map\ldots} first; a progress bar preceded by a label showing the operation in progress; an image preview area; and the \bouton{?} and \bouton{Close} buttons.
+
+When the map was built earlier, the stages are already ticked and the orthophoto is shown as soon as the window opens. \bouton{Terrain model and contours\ldots} stays greyed out until the map exists.
 
 \textbf{Prerequisites}
 \begin{itemize}
 	\item Step~4 must have been run for the images to process (folder \texttt{ImgIRdrone\textbackslash imgMultispectral});
-	\item for \bouton{Run Mapping}: the \emph{Docker Desktop} software must be installed and running;
-	\item for \bouton{DTM + contours} (and for the ground elevation during georeferencing): an Internet connection is needed to query the elevation service.
+	\item for \bouton{Build the map\ldots}: the \emph{Docker Desktop} software must be installed and running;
+	\item for \bouton{Terrain model and contours\ldots} (and for the ground elevation during georeferencing): an Internet connection is needed to query the elevation service.
 \end{itemize}
 
-\section{\bouton{Run Geo ref} button}\label{btn:step5_georef}
+\section{\bouton{Georeference images\ldots} button}\label{btn:step5_georef}
 This button georeferences and orthorectifies images chosen by the user.
 
 A message recalls the accepted image types, then a file selection window opens. All the chosen files must be of the same type:
@@ -1237,11 +1239,11 @@ The files are created in the \texttt{geo\_ref} subfolder of the folder containin
 \figureIRD{step5_run_Geo_ref.png}{Window during the georeferencing of an image. The original, non-orthorectified image is shown.}{0.6}
 
 
-\section{\bouton{Run Mapping} button}\label{btn:step5_mapping}
+\section{\bouton{Build the map\ldots} button}\label{btn:step5_mapping}
 This button stitches the aligned images from Step~4 into a single orthophoto of the whole surveyed area, using the OpenDroneMap (ODM) software. ODM runs in a \emph{Docker} container: the user has nothing to configure, but Docker Desktop must be running (see below).
 
 \subsection{Choice of images}\label{btn:step5_selection}
-Clicking the button opens a window for choosing the criteria.
+Clicking the button opens a window for choosing the criteria. A note at the bottom recalls that the computation can be long and use several gigabytes of memory and disk space. \bouton{Build the map} starts it at once; \bouton{Cancel} closes the window and starts nothing.
 
 \begin{itemize}
 	\item \texttt{Maximum |dt| (NIR rank 1)}: maximum allowed time difference between the VIS image and the nearest NIR image. This is the same criterion as the \texttt{Maximum VIS/NIR time difference} of Step~4. Default value: $0.5\,s$ (range $0.05$ to $6\,s$).
@@ -1260,7 +1262,7 @@ The selected images (\emph{eligible images}) are the shoot points that satisfy a
 Among them, the best mapping keeps the images the map needs (or, with the other criterion, one eligible image out of $n$).
 
 \subsection{Starting the computation}
-After the criteria are chosen, a confirmation message summarizes the selection and warns that the computation can be long and may need several gigabytes of memory and disk space. If you confirm:
+\bouton{Build the map} starts the computation without another question (the selection is written in the log):
 \begin{enumerate}
 	\item the software checks that Docker Desktop is available. If not, a message asks you to start it and then choose \texttt{Retry};
 	\item the list of selected images is saved in \texttt{mapping\_MULTI\textbackslash img\_best\_mappping.json};
@@ -1281,7 +1283,7 @@ The results are in \texttt{mapping\_MULTI\textbackslash mapping\_result}:
 	\item \texttt{shots.geojson} (and \texttt{shots.qml}): estimated position of each shot, with its shoot point number, to open in QGIS;  \texttt{shots.qml} is a style file.
 	\item technical files (\texttt{ortho.png}, georeferencing information).
 \end{itemize}
-A color preview (red, green, blue bands) of the orthophoto is then shown in the window, then the computation of the DTM and contour lines starts automatically (this is equivalent to running the \texttt{DTM + contours} command, see \ref{btn:step5_dtm}).
+A color preview (red, green, blue bands) of the orthophoto is then shown in the window, then the computation of the DTM and contour lines starts automatically (this is equivalent to the \bouton{Terrain model and contours\ldots} button, see \ref{btn:step5_dtm}).
 
 \figureIRD{step5_orthophoto_preview.png}{Preview of the orthophoto in the Step~5 window.}{0.6}
 
@@ -1292,10 +1294,10 @@ A color preview (red, green, blue bands) of the orthophoto is then shown in the 
 	\item If some selected images are incomplete (missing TIFF quadruplet or different sizes), the computation is refused and the log lists the files concerned.
 \end{itemize}
 
-\section{\bouton{DTM + contours} button}\label{btn:step5_dtm}
+\section{\bouton{Terrain model and contours\ldots} button}\label{btn:step5_dtm}
 This button builds a digital terrain model (DTM) and contour lines over the footprint of the orthophoto. It runs \emph{automatically} at the end of a successful mapping (with a grid step of 10\,m); this button lets you run it again, for example with another step. It needs the orthophoto \texttt{mapping\_MULTI\textbackslash mapping\_result\textbackslash odm\_orthophoto.tif}.
 
-A window asks for the \texttt{Altitude grid step} value, that is, the spacing (in meters) of the points of the regular grid whose elevations are requested from IGN (elevation service of the French National Institute of Geographic and Forest Information); if it is unavailable, the OpenTopoData service is used, with lower accuracy in France. The smaller the step, the larger the number of requests. The default step is 10\,m (range 1 to 100\,m). The number of points is limited to 5000: above that, the software automatically increases the step.
+A window asks for the \texttt{Altitude grid step} value, that is, the spacing (in meters) of the points of the regular grid whose elevations are requested from IGN (elevation service of the French National Institute of Geographic and Forest Information); if it is unavailable, the OpenTopoData service is used, with lower accuracy in France. The smaller the step, the larger the number of requests. The default step is 10\,m (range 1 to 100\,m). The number of points is limited to 5000: above that, the software automatically increases the step. \bouton{Build} starts the computation, \bouton{Cancel} starts nothing.
 
 \subsection*{Computation steps}
 \begin{enumerate}

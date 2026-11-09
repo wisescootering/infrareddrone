@@ -6,7 +6,7 @@ review, home page): colours, button styles, chips and window sizing.
 from __future__ import annotations
 
 from PyQt6.QtGui import QColor, QImage, QPixmap
-from PyQt6.QtWidgets import QApplication, QLabel, QPushButton
+from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QWidget
 
 INK = QColor("#1F2933")
 MUTED = QColor("#6B7785")
@@ -71,6 +71,32 @@ def reset_button(tip: str) -> QPushButton:
 def close_text(changed: bool) -> str:
     """Label of the Close button of a window that saves when it closes."""
     return "Save and close" if changed else "Close"
+
+
+def step_header(step: int, name: str, folder) -> QWidget:
+    """Top of a step window (Steps 3 to 6, as the home page): the step name in
+    the title style, "Step N · mission" under it (the full path in the tool tip).
+    The labels are `header.title` and `header.subtitle`."""
+    from pathlib import Path
+    from PyQt6.QtWidgets import QVBoxLayout
+    header = QWidget()
+    lay = QVBoxLayout(header)
+    lay.setContentsMargins(0, 0, 0, 4)
+    lay.setSpacing(0)
+    header.title = QLabel(name)
+    header.title.setStyleSheet(TITLE_STYLE)
+    header.subtitle = QLabel(f"Step {step} · {Path(folder).name}")
+    header.subtitle.setStyleSheet(SUBTITLE_STYLE)
+    header.subtitle.setToolTip(str(folder))
+    lay.addWidget(header.title)
+    lay.addWidget(header.subtitle)
+    return header
+
+
+def step_window_title(step: int, name: str, folder) -> str:
+    """Title bar of a step window, as Step 2: "Step N – Name · mission"."""
+    from pathlib import Path
+    return f"Step {step} – {name} · {Path(folder).name}"
 
 
 def chip(color, text: str = "", tip: str = "") -> QLabel:

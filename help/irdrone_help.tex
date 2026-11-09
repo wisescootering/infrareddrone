@@ -307,7 +307,7 @@ L'exploitation d'une mission comporte 6 étapes :
 	\item \textbf{Ligne de temps du vol} : les images de synchronisation (mire ArUco au décollage) et celles du relevé au-dessus de la zone d'étude sont détectées automatiquement ; l'utilisateur vérifie.
 	\item \textbf{Synchronisation} : le décalage entre les horloges des deux caméras est mesuré et les images VIS et NIR sont appariées.
 	\item \textbf{Alignement}, c\oe ur d'IRDrone : chaque paire d'images est alignée pour obtenir 4 couches spectrales superposées. La revue des images alignées (chapitre~\ref{ch:review}) permet de vérifier le résultat et de réaligner à la main les images ratées.
-	\item \textbf{Post-traitement} : géoréférencement, orthorectification, assemblage en orthophoto (mapping), modèle de terrain et courbes de niveau.
+	\item \textbf{Cartographie et géoréférencement} : géoréférencement, orthorectification, assemblage en orthophoto (mapping), modèle de terrain et courbes de niveau.
 	\item \textbf{Archivage} de la mission.
 \end{enumerate}
 
@@ -1163,7 +1163,7 @@ Ne cherchez pas la perfection  car on n'applique que des transformations globale
 
 
 %==========================================================
-\chapter{Step 5 -- Post-traitement}\label{ch:step5}
+\chapter{Step 5 -- Cartographie et géoréférencement}\label{ch:step5}
 \section{Principe}
 Les images multispectrales produites à l'étape~4 sont des images \og à plat \fg~: elles ne sont pas positionnées sur le terrain.
 
@@ -1174,24 +1174,26 @@ Les images multispectrales produites à l'étape~4 sont des images \og à plat \
 
  L'étape~5 les rend exploitables dans un système d'information géographique (SIG) comme QGIS. Elle propose trois traitements indépendants, un par bouton :
 \begin{itemize}
-	\item \bouton{Run Geo ref} : \emph{géoréférencement} et \emph{orthorectification} d'images isolées. Chaque image est projetée sur un modèle numérique de terrain (MNT) puis enregistrée au format GeoTIFF en coordonnées UTM ;
-	\item \bouton{Run Mapping} : assemblage de l'ensemble des images retenues en une seule \emph{orthophoto} à 4 bandes (rouge, vert, bleu, proche infrarouge) avec le logiciel libre OpenDroneMap (ODM) ;
-	\item \bouton{DTM + contours} : construction d'un MNT et de \emph{courbes de niveau} à partir d'altitudes fournies par un service en ligne (IGN).
+	\item \bouton{Build the map\ldots} (le bouton principal) : assemblage de l'ensemble des images retenues en une seule \emph{orthophoto} à 4 bandes (rouge, vert, bleu, proche infrarouge) avec le logiciel libre OpenDroneMap (ODM), puis le modèle de terrain et les courbes de niveau ;
+	\item \bouton{Terrain model and contours\ldots} : construction à nouveau du MNT et des \emph{courbes de niveau}, par exemple avec un autre pas de grille, à partir d'altitudes fournies par un service en ligne (IGN) ;
+	\item \bouton{Georeference images\ldots} : \emph{géoréférencement} et \emph{orthorectification} d'images isolées. Chaque image est projetée sur un modèle numérique de terrain (MNT) puis enregistrée au format GeoTIFF en coordonnées UTM.
 \end{itemize}
 Ces traitements s'appuient sur les métadonnées de vol enregistrées dans les fichiers \texttt{.exif} \og compagnons \fg~(position GPS, altitude, angles de lacet, tangage et roulis, voir étape~1).
 
-\figureIRD{step5_window.png}{Fen\^etre de post-traitement.}{0.6}
+\figureIRD{step5_window.png}{Fen\^etre de l'étape~5.}{0.6}
 
-La fenêtre comporte, de haut en bas : une zone de messages (journal), les trois boutons, une barre de progression précédée d'un intitulé qui indique l'opération en cours, une zone d'aperçu d'image, et les boutons \bouton{Close} et \bouton{?}.
+La fenêtre est organisée comme celle de l'étape~3. De haut en bas : le nom de l'étape et de la mission ; les étapes de la carte (\texttt{Image selection}, \texttt{Orthophoto (OpenDroneMap)}, \texttt{Terrain model and contours} : $\circ$ à faire, $\bullet$ en cours, \checkmark{} fait, $\times$ échec, avec un détail sous chacune) ; une zone de messages (journal) ; les trois boutons, \bouton{Build the map\ldots} en premier ; une barre de progression précédée d'un intitulé qui indique l'opération en cours ; une zone d'aperçu d'image ; et les boutons \bouton{?} et \bouton{Close}.
+
+Si la carte a déjà été construite, les étapes sont déjà cochées et l'orthophoto s'affiche dès l'ouverture de la fenêtre. \bouton{Terrain model and contours\ldots} reste grisé tant que la carte n'existe pas.
 
 \textbf{Prérequis}
 \begin{itemize}
 	\item l'étape~4 doit avoir été exécutée pour les images à traiter (dossier \texttt{ImgIRdrone\textbackslash imgMultispectral}) ;
-	\item pour \bouton{Run Mapping} : le logiciel \emph{Docker Desktop} doit être installé et démarré ;
-	\item pour \bouton{DTM + contours} (et pour l'altitude du sol lors du géoréférencement) : une connexion Internet est nécessaire pour interroger le service d'altitudes.
+	\item pour \bouton{Build the map\ldots} : le logiciel \emph{Docker Desktop} doit être installé et démarré ;
+	\item pour \bouton{Terrain model and contours\ldots} (et pour l'altitude du sol lors du géoréférencement) : une connexion Internet est nécessaire pour interroger le service d'altitudes.
 \end{itemize}
 
-\section{Bouton \bouton{Run Geo ref}}\label{btn:step5_georef}
+\section{Bouton \bouton{Georeference images\ldots}}\label{btn:step5_georef}
 Ce bouton géoréférence et orthorectifie des images choisies par l'utilisateur.
 
 Un message rappelle les types d'images acceptés, puis une fenêtre de sélection de fichiers s'ouvre. Tous les fichiers choisis doivent être du même type :
@@ -1236,11 +1238,11 @@ Les fichiers sont créés dans le sous-dossier \texttt{geo\_ref} du dossier cont
 \figureIRD{step5_run_Geo_ref.png}{Fenêtre pendant le géoréférencement d'une image. C'est l'image de départ non orthorectifiée qui est affichée.}{0.6}
 
 
-\section{Bouton \bouton{Run Mapping}}\label{btn:step5_mapping}
+\section{Bouton \bouton{Build the map\ldots}}\label{btn:step5_mapping}
 Ce bouton assemble les images alignées de l'étape~4 en une orthophoto unique de toute la zone survolée, grâce au logiciel OpenDroneMap (ODM). ODM s'exécute dans un conteneur \emph{Docker} : l'utilisateur n'a rien à configurer, mais Docker Desktop doit être démarré (voir plus bas).
 
 \subsection{Choix des images}\label{btn:step5_selection}
-En cliquant sur le bouton, une fenêtre de choix des critères s'ouvre.
+En cliquant sur le bouton, une fenêtre de choix des critères s'ouvre. Une note en bas rappelle que le calcul peut être long et utiliser plusieurs gigaoctets de mémoire et d'espace disque. \bouton{Build the map} le lance aussitôt ; \bouton{Cancel} ferme la fenêtre sans rien lancer.
 
 \begin{itemize}
 	\item \texttt{Maximum |dt| (NIR rank 1)} : écart temporel maximal admis entre l'image VIS et l'image NIR la plus proche. C'est le même critère que le \texttt{Maximum VIS/NIR time difference} de l'étape~4. Valeur par défaut : $0.5\,s$ (plage $0.05$ à $6\,s$).
@@ -1259,7 +1261,7 @@ Les images retenues (\emph{eligible images}) sont les shoot points qui vérifien
 Parmi elles, le best mapping garde les images utiles à la carte (ou, avec l'autre critère, une image éligible sur $n$).
 
 \subsection{Lancement du calcul}
-Après le choix des critères, un message de confirmation résume la sélection et prévient que le calcul peut être long et nécessiter plusieurs gigaoctets de mémoire et d'espace disque. Si l'on confirme :
+\bouton{Build the map} lance le calcul sans autre question (la sélection est écrite dans le journal) :
 \begin{enumerate}
 	\item le logiciel vérifie que Docker Desktop est disponible. Sinon un message invite à le démarrer puis à choisir \texttt{Retry} ;
 	\item la liste des images retenues est enregistrée dans \texttt{mapping\_MULTI\textbackslash img\_best\_mappping.json} ;
@@ -1280,7 +1282,7 @@ Les résultats sont dans \texttt{mapping\_MULTI\textbackslash mapping\_result} :
 	\item \texttt{shots.geojson} (et \texttt{shots.qml}) : position estimée de chaque prise de vue, avec son numéro de shoot point, à ouvrir dans QGIS ;  \texttt{shots.qml} est un fichier de mise en forme.
 	\item des fichiers techniques (\texttt{ortho.png}, informations de géoréférencement).
 \end{itemize}
-Un aperçu en couleurs (bandes rouge, vert, bleu) de l'orthophoto s'affiche ensuite dans la fenêtre, puis le calcul du MNT et des courbes de niveau démarre automatiquement (C'est équivalent à lancer la commande \texttt{DTM + contours}. voir \ref{btn:step5_dtm}).
+Un aperçu en couleurs (bandes rouge, vert, bleu) de l'orthophoto s'affiche ensuite dans la fenêtre, puis le calcul du MNT et des courbes de niveau démarre automatiquement (c'est équivalent au bouton \bouton{Terrain model and contours\ldots}, voir \ref{btn:step5_dtm}).
 
 \figureIRD{step5_orthophoto_preview.png}{Aperçu de l'orthophoto dans la fenêtre du Step~5.}{0.6}
 
@@ -1291,10 +1293,10 @@ Un aperçu en couleurs (bandes rouge, vert, bleu) de l'orthophoto s'affiche ensu
 	\item Si certaines images retenues sont incomplètes (quadruplet TIFF manquant ou de tailles différentes), le calcul est refusé et le journal indique les fichiers en cause.
 \end{itemize}
 
-\section{Bouton \bouton{DTM + contours}}\label{btn:step5_dtm}
+\section{Bouton \bouton{Terrain model and contours\ldots}}\label{btn:step5_dtm}
 Ce bouton construit un modèle numérique de terrain (MNT) et des courbes de niveau sur l'emprise de l'orthophoto. Il est lancé \emph{automatiquement} à la fin d'un mapping réussi (avec un pas de grille de 10\,m) ; ce bouton permet de le refaire, par exemple avec un autre pas. Il nécessite l'orthophoto \texttt{mapping\_MULTI\textbackslash mapping\_result\textbackslash odm\_orthophoto.tif}.
 
-Une fenêtre demande la valeur \texttt{Altitude grid step}, c'est-à-dire l'espacement (en mètres) des points de la grille régulière dont les altitudes sont demandées à l'IGN (service d'altitudes de l'Institut national de l'information géographique et forestière) ; en cas d'indisponibilité, le service OpenTopoData est utilisé avec une moindre précision en France. Plus le pas est petit, plus le nombre de requêtes est grand. Le pas par défaut est de 10\,m (plage 1 à 100\,m). Le nombre de points est limité à 5000 : au-delà, le logiciel augmente automatiquement le pas.
+Une fenêtre demande la valeur \texttt{Altitude grid step}, c'est-à-dire l'espacement (en mètres) des points de la grille régulière dont les altitudes sont demandées à l'IGN (service d'altitudes de l'Institut national de l'information géographique et forestière) ; en cas d'indisponibilité, le service OpenTopoData est utilisé avec une moindre précision en France. Plus le pas est petit, plus le nombre de requêtes est grand. Le pas par défaut est de 10\,m (plage 1 à 100\,m). Le nombre de points est limité à 5000 : au-delà, le logiciel augmente automatiquement le pas. \bouton{Build} lance le calcul, \bouton{Cancel} ne lance rien.
 
 \subsection*{Étapes du calcul}
 \begin{enumerate}

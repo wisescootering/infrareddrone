@@ -67,7 +67,7 @@ from PyQt6.QtWidgets import (
     QButtonGroup,
     QGroupBox,
     QFormLayout,
-    QDialogButtonBox,
+    QSizePolicy,
 )
 
 # ----------------------------------------------------
@@ -84,7 +84,8 @@ from IRD_Interactive_progress import mark_step_done
 import best_mapping
 import IRD_Interactive_GeoRef as GeoRef
 from IRD_Interactive_contours import DEFAULT_GRID_STEP_M, generate_ortho_dtm
-from IRD_Interactive_look import DIALOG_STYLE, PRIMARY_STYLE, SECONDARY_STYLE
+import IRD_Interactive_look as Look
+from IRD_Interactive_look import DIALOG_STYLE, MESSAGE_STYLE, PRIMARY_STYLE, SECONDARY_STYLE
 from IRD_Interactive_ODM import (
     DockerUnavailableError,
     ODMMappingError,
@@ -95,6 +96,7 @@ from IRD_Interactive_ODM import (
 
 # Shown in the preview area when no result is displayed yet.
 PREVIEW_IDLE_TEXT = "The results (orthophoto, georeferenced images, maps) will be displayed here."
+STEP_NAME = "Mapping and georeferencing"
 
 
 class ODMRunSignals(QObject):
@@ -158,8 +160,9 @@ class ODMSelectionDialog(QDialog):
 
     def __init__(self, parent=None, mission_folder: Optional[Path] = None):
         super().__init__(parent)
-        self.setWindowTitle("ODM image selection")
-        self.setMinimumWidth(440)
+        self.setWindowTitle("Build the map – image selection")
+        self.setStyleSheet(DIALOG_STYLE)
+        self.setMinimumWidth(480)
         choice = (best_mapping.load_choice(Path(mission_folder)) if mission_folder
                   else {"enabled": True, "overlap": best_mapping.DEFAULT_OVERLAP})
 
@@ -208,13 +211,16 @@ class ODMSelectionDialog(QDialog):
         density_layout.addLayout(sample_row)
         layout.addWidget(density_group)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok
-            | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        note = QLabel("OpenDroneMap runs in Docker: the map can take a long time and use several "
+                      "gigabytes of memory and disk space. The images are hard-linked, not copied, when "
+                      "the disk allows it. Existing results are never overwritten.")
+        note.setWordWrap(True)
+        note.setStyleSheet(MESSAGE_STYLE)
+        layout.addWidget(note)
+        layout.addLayout(launch_buttons(
+            self, "Build the map",
+            "Start OpenDroneMap with these images; the terrain model and the contour lines follow.",
+            "btn:step5_selection"))
 
         (self.overlap_radio if choice["enabled"] else self.sample_radio).setChecked(True)
         self.sample_radio.toggled.connect(self._update_selection_controls)
@@ -230,12 +236,42 @@ class ODMSelectionDialog(QDialog):
         """Footprint overlap (0..1) of the best mapping, None for one image every n."""
         return None if self.sample_radio.isChecked() else self.overlap.value() / 100.0
 
+    def short_description(self) -> str:
+        """The selection in a few words (under the stage)."""
+        overlap = self.selected_overlap()
+        return f"overlap {overlap:.0%}" if overlap is not None else f"1 image in {self.sample_every.value()}"
+
     def description(self) -> str:
         """The selection in words (confirmation and log)."""
         overlap = self.selected_overlap()
         rule = (f"best mapping, {overlap:.0%} overlap between successive images" if overlap is not None
                 else f"one image every {self.sample_every.value()} eligible images")
         return f"|dt| <= {self.dt_tolerance.value():.2f} s; {rule}"
+
+
+def launch_buttons(dialog: QDialog, action: str, action_tip: str, help_label: str) -> QHBoxLayout:
+    """Footer of a window that starts a computation: ? on the left; Cancel, then
+    the action (primary, default) on the right."""
+    row = QHBoxLayout()
+    dialog.btn_help = QPushButton("?")
+    dialog.btn_help.setFixedWidth(36)
+    dialog.btn_help.setStyleSheet(SECONDARY_STYLE)
+    dialog.btn_help.clicked.connect(lambda: Help.show_help(help_label, parent=dialog))
+    row.addWidget(dialog.btn_help)
+    row.addStretch()
+    dialog.btn_cancel = QPushButton("Cancel")
+    dialog.btn_cancel.setStyleSheet(SECONDARY_STYLE)
+    dialog.btn_cancel.clicked.connect(dialog.reject)
+    row.addWidget(dialog.btn_cancel)
+    dialog.btn_start = QPushButton(action)
+    dialog.btn_start.setStyleSheet(PRIMARY_STYLE)
+    dialog.btn_start.setDefault(True)
+    dialog.btn_start.clicked.connect(dialog.accept)
+    row.addWidget(dialog.btn_start)
+    for widget, tip in ((dialog.btn_help, "Open the manual."), (dialog.btn_cancel, "Close; nothing starts."),
+                        (dialog.btn_start, action_tip)):
+        Help.attach_help(widget, help_label, tip, parent=dialog)
+    return row
 
 
 class ODMPreviewSignals(QObject):
@@ -280,7 +316,8 @@ class DtmStepDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("DTM and contour lines")
+        self.setWindowTitle("Terrain model and contour lines")
+        self.setStyleSheet(DIALOG_STYLE)
         layout = QVBoxLayout(self)
         form = QFormLayout()
         self.grid_step = QDoubleSpinBox()
@@ -291,19 +328,14 @@ class DtmStepDialog(QDialog):
         self.grid_step.setSuffix(" m")
         form.addRow("Altitude grid step:", self.grid_step)
         layout.addLayout(form)
-        layout.addWidget(
-            QLabel(
-                "Altitudes are requested from the IGN API (OpenTopoData as fallback).\n"
-                "A smaller step means many more requests."
-            )
-        )
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok
-            | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        note = QLabel("Altitudes are requested from the IGN API (OpenTopoData as fallback). "
+                      "A smaller step means many more requests.")
+        note.setWordWrap(True)
+        note.setStyleSheet(MESSAGE_STYLE)
+        layout.addWidget(note)
+        layout.addLayout(launch_buttons(
+            self, "Build", "Build the terrain model and the contour lines with this grid step.",
+            "btn:step5_dtm"))
 
 
 class ODMPreviewWorker(QRunnable):
@@ -351,18 +383,16 @@ class DialogGeoRef(QDialog):
             )
             self.close()
             return
-        self.whidth_window = 900
-        self.height_window = 900
-        self.setWindowTitle("Step 5 – Georeferencing")
+        self.setWindowTitle(Look.step_window_title(5, STEP_NAME, self.folderMissionPath))
         self.setStyleSheet(DIALOG_STYLE)
-        self.setMinimumSize(900, 600)  # Minimum window size
-        self.resize(self.height_window, self.whidth_window,)  # Initial window size
+        self.setMinimumSize(600, 480)
+        Look.fit_to_screen(self, parent, max_w=900, max_h=860)
 
-        self._init_gui()
-        self._connect_signals()
         self.odm_worker: Optional[ODMRunWorker] = None
         self.odm_preview_worker: Optional[ODMPreviewWorker] = None
         self.dtm_worker: Optional[DtmWorker] = None
+        self._init_gui()
+        self._connect_signals()
         self.georef_results: List[str] = []
         self.odm_dt_tolerance_s = 0.5
         self.odm_sample_every = 3
@@ -378,50 +408,47 @@ class DialogGeoRef(QDialog):
         self._log_callback = self.log_signal.emit
         GeoRef.logger.log_callback = self._log_callback
 
-        self._log("Dialog initialized.")
+        self._show_previous_result()
 
     # ------------------------------------------------------------------
     # User Interface
     # ------------------------------------------------------------------
     def _init_gui(self) -> None:
+        """Same frame as Step 3: header, stages, log, actions, progress, preview, footer."""
         main_layout = QVBoxLayout(self)
+        main_layout.addWidget(Look.step_header(5, STEP_NAME, self.folderMissionPath))
 
-        # Title at the top
-        title = QLabel("<b>Georeferencing</b>")
-        main_layout.addWidget(title)
+        # The map is built in stages, left to right (Georeference images is a separate tool)
+        self.stages = Look.StageTracker(["Image selection", "Orthophoto (OpenDroneMap)",
+                                         "Terrain model and contours"])
+        main_layout.addWidget(self.stages.widget())
 
-        # Log display area
+        # Log display area (small: the preview is the main view)
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
-        self.log_text.setMinimumHeight(120)
-        self.log_text.setMaximumHeight(200)
+        self.log_text.setMinimumHeight(70)
+        self.log_text.setMaximumHeight(120)
         main_layout.addWidget(self.log_text)
 
-        # GeoRef and ODM preparation buttons
+        # Actions: the map is the main one, the others are secondary
         btn_layout = QHBoxLayout()
-        self.btn_run_GeoRef = QPushButton("Run Geo ref")
-        # Button width: approximately one third of the window
-        self.btn_run_GeoRef.setFixedWidth(int(self.whidth_window/3))
-        # Apply the common style to the three main buttons
-        self.btn_run_GeoRef.setStyleSheet(PRIMARY_STYLE)
-        btn_layout.addWidget(self.btn_run_GeoRef)
-        self.btn_run_Mapping = QPushButton("Run Mapping")
-        self.btn_run_Mapping.setFixedWidth(180)
+        self.btn_run_Mapping = QPushButton("Build the map…")
         self.btn_run_Mapping.setStyleSheet(PRIMARY_STYLE)
         btn_layout.addWidget(self.btn_run_Mapping)
-        self.btn_run_DTM = QPushButton("DTM + contours")
-        self.btn_run_DTM.setFixedWidth(180)
-        self.btn_run_DTM.setStyleSheet(PRIMARY_STYLE)
+        self.btn_run_DTM = QPushButton("Terrain model and contours…")
+        self.btn_run_DTM.setStyleSheet(SECONDARY_STYLE)
         btn_layout.addWidget(self.btn_run_DTM)
+        self.btn_run_GeoRef = QPushButton("Georeference images…")
+        self.btn_run_GeoRef.setStyleSheet(SECONDARY_STYLE)
+        btn_layout.addWidget(self.btn_run_GeoRef)
         btn_layout.addStretch()
         main_layout.addLayout(btn_layout)
 
         # Progress bar label (bold)
-        self.progress_label = QLabel("Geo Ref ")
+        self.progress_label = QLabel("Ready")
         self.progress_label.setStyleSheet("font-weight: bold;")
         main_layout.addWidget(self.progress_label)
 
-        # Progress bar above the Close button
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
@@ -431,18 +458,11 @@ class DialogGeoRef(QDialog):
         self.image_preview_label = QLabel(PREVIEW_IDLE_TEXT)
         self.image_preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_preview_label.setMinimumHeight(250)
+        self.image_preview_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
         self.image_preview_label.setStyleSheet(
-            "QLabel { background-color: #f5f5f5; border: 1px solid #cccccc; }"
+            "QLabel { background-color: #f5f5f5; border: 1px solid #cccccc; color: #6B7785; }"
         )
         main_layout.addWidget(self.image_preview_label, stretch=1)
-
-        # Close button at the bottom
-        self.btn_close = QPushButton("Close")
-        self.btn_close.setFixedWidth(120)
-        self.btn_close.setStyleSheet(SECONDARY_STYLE)
-
-        # Push the Close button to the bottom
-        main_layout.addStretch()
 
         # Footer: the manual (?) on the left, Close always at the bottom right
         close_layout = QHBoxLayout()
@@ -452,21 +472,45 @@ class DialogGeoRef(QDialog):
         self.btn_help.clicked.connect(lambda: Help.show_help("ch:step5", parent=self))
         close_layout.addWidget(self.btn_help)
         close_layout.addStretch()
+        self.btn_close = QPushButton("Close")
+        self.btn_close.setFixedWidth(120)
+        self.btn_close.setStyleSheet(SECONDARY_STYLE)
         close_layout.addWidget(self.btn_close)
 
         for widget, label, tip in (
             (self.btn_run_GeoRef, "btn:step5_georef",
              "Choose images (drone DNG, or IRD_XXXX_1..4.tif groups) and georeference and orthorectify each one."),
             (self.btn_run_Mapping, "btn:step5_mapping",
-             "Choose the images, then assemble them into one 4-band orthophoto with OpenDroneMap (Docker)."),
+             "Choose the images, then assemble them into one 4-band orthophoto with OpenDroneMap (Docker). "
+             "The terrain model and the contour lines follow."),
             (self.btn_run_DTM, "btn:step5_dtm",
-             "Build the terrain model and the contour lines over the orthophoto (IGN altitudes, internet)."),
+             "Build the terrain model and the contour lines over the orthophoto again, with another "
+             "grid step (IGN altitudes, internet)."),
             (self.btn_close, "btn:step5_close", "Close this window."),
             (self.btn_help, "ch:step5", "Open the manual at Step 5."),
         ):
             Help.attach_help(widget, label, tip, parent=self)
 
         main_layout.addLayout(close_layout)
+
+    def _orthophoto_path(self) -> Path:
+        return Path(self.folderMissionPath) / "mapping_MULTI" / "mapping_result" / "odm_orthophoto.tif"
+
+    def _show_previous_result(self) -> None:
+        """Map built earlier: the stages are done and the orthophoto is shown (as Step 3 shows its plot)."""
+        orthophoto = self._orthophoto_path()
+        if not orthophoto.is_file():
+            self.btn_run_DTM.setEnabled(False)      # available once the map is built
+            self.progress_label.setText("Ready: start with Build the map.")
+            return
+        self.stages.set(0, Look.STAGE_DONE, "")
+        self.stages.set(1, Look.STAGE_DONE, "mapping_result")
+        if (orthophoto.parent / "ortho_dtm.tif").is_file():
+            self.stages.set(2, Look.STAGE_DONE, "")
+        self.progress_label.setText("Map built earlier: the orthophoto is shown below.")
+        self._log(f"Orthophoto: {orthophoto}")
+        self._set_preview_text("Loading orthophoto preview...")
+        self._start_ODM_preview(orthophoto)
 
     # ------------------------------------------------------------------
     # Signals
@@ -651,27 +695,9 @@ class DialogGeoRef(QDialog):
         self.odm_dt_tolerance_s = selection_dialog.dt_tolerance.value()
         self.odm_sample_every = selection_dialog.sample_every.value()
         self.odm_overlap = selection_dialog.selected_overlap()
-
-        confirm = QMessageBox.question(
-            self,
-            "Start ODM mapping",
-            "This will hard-link (or copy, if the drive does not support hard "
-            "links) the selected image quartets from "
-            "ImgIRdrone/imgMultispectral into the prepared ODM dataset, then run "
-            "ODM directly in mapping_MULTI using Docker.\n\n"
-            "The orthophoto, report, shots GeoJSON, and 2.5D mesh will also be copied "
-            "to mapping_MULTI/mapping_result.\n\n"
-            "The processing may take a long time and use several gigabytes of memory "
-            "and disk space. Existing ODM output folders or archived mapping results "
-            "will not be overwritten; move or remove them manually before starting "
-            "another run.\n\n"
-            f"Selection: {selection_dialog.description()}.\n\n"
-            f"Mission:\n{mission_folder}\n\nStart ODM now?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if confirm != QMessageBox.StandardButton.Yes:
-            return
+        self._log(f"Image selection: {selection_dialog.description()}.")
+        self.stages.set(0, Look.STAGE_DONE, selection_dialog.short_description())
+        self.stages.set(2, Look.STAGE_PENDING, "")
 
         self._start_ODM_worker(
             mission_folder,
@@ -704,9 +730,11 @@ class DialogGeoRef(QDialog):
         self.odm_worker = worker
         self.btn_run_GeoRef.setEnabled(False)
         self.btn_run_Mapping.setEnabled(False)
+        self.btn_run_DTM.setEnabled(False)
         self.btn_close.setEnabled(False)
         self.progress_bar.setRange(0, 0)
         self.progress_label.setText("ODM – starting")
+        self.stages.set(1, Look.STAGE_RUNNING, "starting")
         self._set_preview_text(
             "Waiting for ODM...\n"
             "The orthophoto will be displayed here when the mapping is finished."
@@ -731,6 +759,7 @@ class DialogGeoRef(QDialog):
         if retry == QMessageBox.StandardButton.Retry:
             self._start_ODM_worker(Path(self.folderMissionPath))
         else:
+            self.stages.set(1, Look.STAGE_FAILED, "Docker unavailable")
             self.progress_label.setText("ODM cancelled: Docker is unavailable.")
             self._set_preview_text(PREVIEW_IDLE_TEXT)
 
@@ -742,12 +771,14 @@ class DialogGeoRef(QDialog):
 
     def _on_ODM_stage(self, stage: str) -> None:
         self.progress_label.setText(f"ODM – {stage}")
+        self.stages.detail(1, stage)
 
     def _finish_ODM_ui(self) -> None:
         """Release the worker and re-enable the buttons and the progress bar."""
         self.odm_worker = None
         self.btn_run_GeoRef.setEnabled(True)
         self.btn_run_Mapping.setEnabled(True)
+        self.btn_run_DTM.setEnabled(self._orthophoto_path().is_file())
         self.btn_close.setEnabled(True)
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
@@ -759,6 +790,7 @@ class DialogGeoRef(QDialog):
         completion_message = f"Orthophoto:\n{orthophoto['path']}"
         self._log(f"ODM completed successfully: {orthophoto['path']}")
         mark_step_done(self.folderMissionPath, 5)  # Step 5 is done once the ODM mapping is
+        self.stages.set(1, Look.STAGE_DONE, "mapping_result")
         self.progress_label.setText("ODM completed successfully.")
         self.image_preview_label.setText("Loading orthophoto preview...")
         self.image_preview_label.setPixmap(QPixmap())
@@ -826,12 +858,7 @@ class DialogGeoRef(QDialog):
         """Rebuild the DTM and contour lines of the archived ODM orthophoto."""
         if self.dtm_worker is not None or self.odm_worker is not None:
             return
-        orthophoto = (
-            Path(self.folderMissionPath)
-            / "mapping_MULTI"
-            / "mapping_result"
-            / "odm_orthophoto.tif"
-        )
+        orthophoto = self._orthophoto_path()
         if not orthophoto.is_file():
             QMessageBox.warning(
                 self,
@@ -859,6 +886,7 @@ class DialogGeoRef(QDialog):
         self._set_busy_buttons(False)
         self.progress_bar.setRange(0, 0)
         self.progress_label.setText("DTM and contour lines – altitude requests")
+        self.stages.set(2, Look.STAGE_RUNNING, f"grid step {step:g} m")
         self._log(f"Building DTM and contour lines (grid step {step:g} m).")
         QThreadPool.globalInstance().start(worker)
 
@@ -872,6 +900,7 @@ class DialogGeoRef(QDialog):
         """Log the generated files; a manual run also shows the 2D map and a message box."""
         self._finish_DTM_ui()
         self.progress_label.setText("DTM and contour lines completed.")
+        self.stages.set(2, Look.STAGE_DONE, "")
         self._log(
             "Contour lines (QGIS): "
             f"{result['contours'] or 'skipped (GDAL not installed)'}\nDTM raster: {result['dtm']}\n"
@@ -890,6 +919,7 @@ class DialogGeoRef(QDialog):
         """Warn the user; the DTM failure never affects the archived ODM result."""
         self._finish_DTM_ui()
         self.progress_label.setText("DTM and contour lines failed.")
+        self.stages.set(2, Look.STAGE_FAILED, "see the log")
         self._log(f"DTM and contour lines failed: {error_message}")
         QMessageBox.warning(
             self,
@@ -908,6 +938,7 @@ class DialogGeoRef(QDialog):
             f"The ODM workflow failed:\n\n{error_message}",
         )
         self.progress_label.setText("ODM failed.")
+        self.stages.set(1, Look.STAGE_FAILED, "see the log")
         self._set_preview_text("ODM failed: see the log above.")
 
     def done(self, result) -> None:
