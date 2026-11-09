@@ -21,9 +21,9 @@ from PyQt6.QtWidgets import (
 import config
 import IRD_Interactive_diskspace as Disk
 from IRD_Interactive_progress import mission_folder
-from IRD_Interactive_styles import BUTTON_STYLE
+from IRD_Interactive_look import SECONDARY_STYLE
 
-GEAR_STYLE = BUTTON_STYLE + "QPushButton { font-size: 16px; padding: 2px; }"
+GEAR_STYLE = SECONDARY_STYLE + "QPushButton { font-size: 16px; padding: 2px; }"
 
 
 class WorkingDirDialog(QDialog):
@@ -56,7 +56,7 @@ class WorkingDirDialog(QDialog):
         self.path_edit.setMinimumWidth(440)  # sets the dialog width, labels wrap to it
         row.addWidget(self.path_edit, 1)
         browse = QPushButton("Browse...")
-        browse.setStyleSheet(BUTTON_STYLE)
+        browse.setStyleSheet(SECONDARY_STYLE)
         browse.setToolTip("Choose the folder that holds the missions.")
         browse.clicked.connect(self._browse)
         row.addWidget(browse)

@@ -88,7 +88,6 @@ import IRD_Interactive_ArUco as Aru
 from IRD_Interactive_workers import ArucoWorker
 from IRD_Interactive_workers import TimeShiftWorker
 from IRD_Interactive_workers import ImagePairingWorker
-from IRD_Interactive_styles import BUTTON_STYLE
 import flight_timeline as FT
 import IRD_Interactive_look as Look
 
@@ -130,6 +129,7 @@ class DialogSynchroAruco(QDialog):
             return
 
         self.setWindowTitle("Step 3 – VIS / NIR time synchronization")
+        self.setStyleSheet(Look.DIALOG_STYLE)
         screen = parent.screen() if parent is not None else QApplication.primaryScreen()
         if screen is None:
             screen = QApplication.primaryScreen()
@@ -290,11 +290,9 @@ class DialogSynchroAruco(QDialog):
         self._substep_buttons = (self.btn_run_aruco, self.btn_compute_time_shift,
                                  self.btn_adjust_time_shift, self.btn_image_pairing)
 
-        # Apply the common style to the three main buttons
-        self.btn_run_aruco.setStyleSheet(BUTTON_STYLE)
-        self.btn_compute_time_shift.setStyleSheet(BUTTON_STYLE)
-        self.btn_adjust_time_shift.setStyleSheet(BUTTON_STYLE)
-        self.btn_image_pairing.setStyleSheet(BUTTON_STYLE)
+        # The stages one by one (manual mode): the chained run stays the main action
+        for button in self._substep_buttons:
+            button.setStyleSheet(Look.SECONDARY_STYLE)
 
         main_layout.addLayout(btn_layout)
 
@@ -347,14 +345,14 @@ class DialogSynchroAruco(QDialog):
         self.btn_before.hide()
         self.btn_close = QPushButton("Close")
         self.btn_close.setFixedWidth(120)
-        self.btn_close.setStyleSheet(BUTTON_STYLE)
+        self.btn_close.setStyleSheet(Look.SECONDARY_STYLE)
 
 
         # Footer: the manual (?) on the left, Close always at the bottom right
         close_layout = QHBoxLayout()
         self.btn_help = QPushButton("?")
         self.btn_help.setFixedWidth(36)
-        self.btn_help.setStyleSheet(BUTTON_STYLE)
+        self.btn_help.setStyleSheet(Look.SECONDARY_STYLE)
         self.btn_help.clicked.connect(lambda: Help.show_help("ch:step3", parent=self))
         close_layout.addWidget(self.btn_help)
         close_layout.addWidget(self.btn_before)
@@ -1621,6 +1619,9 @@ class TimeShiftInputDialog(QDialog):
         btn_ok = QPushButton("OK", self)
         btn_cancel = QPushButton("Cancel", self)
 
+        btn_ok.setStyleSheet(Look.PRIMARY_STYLE)
+        btn_cancel.setStyleSheet(Look.SECONDARY_STYLE)
+        btn_ok.setDefault(True)
         btn_ok.setToolTip("Use this clock offset (seconds added to the infrared times).")
         btn_ok.clicked.connect(self.accept)
         btn_cancel.clicked.connect(self.reject)
@@ -1630,8 +1631,8 @@ class TimeShiftInputDialog(QDialog):
         # ------------------------------------------------------------
         button_layout = QHBoxLayout()
         button_layout.addStretch()
-        button_layout.addWidget(btn_ok)
         button_layout.addWidget(btn_cancel)
+        button_layout.addWidget(btn_ok)
 
         main_layout = QVBoxLayout()
         main_layout.addWidget(label)
@@ -1743,8 +1744,9 @@ class TimeShiftAdjustDialog(QDialog):
         btn_reset.setToolTip("Back to the offset computed from the targets.")
         btn_apply.setToolTip("Keep this offset: the curves after alignment are drawn again with it.")
         btn_cancel.setToolTip("Close without changing the offset.")
-        for button in (btn_reset, btn_apply, btn_cancel):
-            button.setStyleSheet(BUTTON_STYLE)
+        for button in (btn_reset, btn_cancel):
+            button.setStyleSheet(Look.SECONDARY_STYLE)
+        btn_apply.setStyleSheet(Look.PRIMARY_STYLE)
         btn_apply.setDefault(True)
 
         self.slider.valueChanged.connect(self._on_slider)
@@ -1770,8 +1772,8 @@ class TimeShiftAdjustDialog(QDialog):
         button_row = QHBoxLayout()
         button_row.addWidget(btn_reset)
         button_row.addStretch()
-        button_row.addWidget(btn_apply)
         button_row.addWidget(btn_cancel)
+        button_row.addWidget(btn_apply)
 
         layout = QVBoxLayout(self)
         layout.addWidget(help_label)

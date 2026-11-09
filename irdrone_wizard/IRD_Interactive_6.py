@@ -37,7 +37,7 @@ from PyQt6.QtWidgets import (
 import IRD_Interactive_help as Help
 from IRD_Interactive_progress import mark_step_done
 import IRD_Interactive_archive as Archive
-from IRD_Interactive_styles import BUTTON_STYLE
+from IRD_Interactive_look import DANGER_STYLE, DIALOG_STYLE, SECONDARY_STYLE
 
 
 class _WorkerSignals(QObject):
@@ -81,6 +81,7 @@ class DialogArchive(QDialog):
         self._worker = None
 
         self.setWindowTitle("Step 6 – Archive the mission")
+        self.setStyleSheet(DIALOG_STYLE)
         self.setMinimumSize(700, 400)
         self.resize(900, 600)
         self._init_gui()
@@ -104,12 +105,12 @@ class DialogArchive(QDialog):
         btn_layout = QHBoxLayout()
         self.btn_simulate = QPushButton("Simulate (dry run)")
         self.btn_simulate.setFixedWidth(200)
-        self.btn_simulate.setStyleSheet(BUTTON_STYLE)
+        self.btn_simulate.setStyleSheet(SECONDARY_STYLE)
         self.btn_simulate.clicked.connect(self.on_simulate)
         btn_layout.addWidget(self.btn_simulate)
         self.btn_archive = QPushButton("Archive and clean…")
         self.btn_archive.setFixedWidth(200)
-        self.btn_archive.setStyleSheet(BUTTON_STYLE)
+        self.btn_archive.setStyleSheet(DANGER_STYLE)     # irreversible
         self.btn_archive.clicked.connect(self.on_archive)
         btn_layout.addWidget(self.btn_archive)
         btn_layout.addStretch()
@@ -124,13 +125,13 @@ class DialogArchive(QDialog):
         bottom_layout = QHBoxLayout()
         self.btn_help = QPushButton("?")
         self.btn_help.setFixedWidth(36)
-        self.btn_help.setStyleSheet(BUTTON_STYLE)
+        self.btn_help.setStyleSheet(SECONDARY_STYLE)
         self.btn_help.clicked.connect(lambda: Help.show_help("ch:step6", parent=self))
         bottom_layout.addWidget(self.btn_help)
         bottom_layout.addStretch()
         self.btn_close = QPushButton("Close")
         self.btn_close.setFixedWidth(120)
-        self.btn_close.setStyleSheet(BUTTON_STYLE)
+        self.btn_close.setStyleSheet(SECONDARY_STYLE)
         self.btn_close.clicked.connect(self.on_close)
         bottom_layout.addWidget(self.btn_close)
         main_layout.addLayout(bottom_layout)

@@ -84,7 +84,7 @@ from IRD_Interactive_progress import mark_step_done
 import best_mapping
 import IRD_Interactive_GeoRef as GeoRef
 from IRD_Interactive_contours import DEFAULT_GRID_STEP_M, generate_ortho_dtm
-from IRD_Interactive_styles import BUTTON_STYLE
+from IRD_Interactive_look import DIALOG_STYLE, PRIMARY_STYLE, SECONDARY_STYLE
 from IRD_Interactive_ODM import (
     DockerUnavailableError,
     ODMMappingError,
@@ -354,6 +354,7 @@ class DialogGeoRef(QDialog):
         self.whidth_window = 900
         self.height_window = 900
         self.setWindowTitle("Step 5 – Georeferencing")
+        self.setStyleSheet(DIALOG_STYLE)
         self.setMinimumSize(900, 600)  # Minimum window size
         self.resize(self.height_window, self.whidth_window,)  # Initial window size
 
@@ -402,15 +403,15 @@ class DialogGeoRef(QDialog):
         # Button width: approximately one third of the window
         self.btn_run_GeoRef.setFixedWidth(int(self.whidth_window/3))
         # Apply the common style to the three main buttons
-        self.btn_run_GeoRef.setStyleSheet(BUTTON_STYLE)
+        self.btn_run_GeoRef.setStyleSheet(PRIMARY_STYLE)
         btn_layout.addWidget(self.btn_run_GeoRef)
         self.btn_run_Mapping = QPushButton("Run Mapping")
         self.btn_run_Mapping.setFixedWidth(180)
-        self.btn_run_Mapping.setStyleSheet(BUTTON_STYLE)
+        self.btn_run_Mapping.setStyleSheet(PRIMARY_STYLE)
         btn_layout.addWidget(self.btn_run_Mapping)
         self.btn_run_DTM = QPushButton("DTM + contours")
         self.btn_run_DTM.setFixedWidth(180)
-        self.btn_run_DTM.setStyleSheet(BUTTON_STYLE)
+        self.btn_run_DTM.setStyleSheet(PRIMARY_STYLE)
         btn_layout.addWidget(self.btn_run_DTM)
         btn_layout.addStretch()
         main_layout.addLayout(btn_layout)
@@ -438,7 +439,7 @@ class DialogGeoRef(QDialog):
         # Close button at the bottom
         self.btn_close = QPushButton("Close")
         self.btn_close.setFixedWidth(120)
-        self.btn_close.setStyleSheet(BUTTON_STYLE)
+        self.btn_close.setStyleSheet(SECONDARY_STYLE)
 
         # Push the Close button to the bottom
         main_layout.addStretch()
@@ -447,7 +448,7 @@ class DialogGeoRef(QDialog):
         close_layout = QHBoxLayout()
         self.btn_help = QPushButton("?")
         self.btn_help.setFixedWidth(36)
-        self.btn_help.setStyleSheet(BUTTON_STYLE)
+        self.btn_help.setStyleSheet(SECONDARY_STYLE)
         self.btn_help.clicked.connect(lambda: Help.show_help("ch:step5", parent=self))
         close_layout.addWidget(self.btn_help)
         close_layout.addStretch()

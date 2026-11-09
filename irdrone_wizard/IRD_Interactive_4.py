@@ -36,7 +36,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from IRD_Interactive_styles import BUTTON_STYLE, colored_button_style
+from IRD_Interactive_look import DIALOG_STYLE, PRIMARY_STYLE, SECONDARY_STYLE
 import IRD_Interactive_help as Help
 from IRD_Interactive_progress import mark_step_done
 import best_mapping
@@ -154,7 +154,7 @@ class Step4SettingsDialog(QDialog):
         self.workers_spin.setMinimumWidth(110)
         workers_layout.addWidget(self.workers_spin)
         safe_button = QPushButton("Safe mode (1)")
-        safe_button.setStyleSheet(BUTTON_STYLE)
+        safe_button.setStyleSheet(SECONDARY_STYLE)
         safe_button.clicked.connect(lambda: self.workers_spin.setValue(1))
         safe_button.setToolTip("One worker only: slower, but the least memory. "
                                "Use it if the computer freezes or the run is killed.")
@@ -639,6 +639,7 @@ class DialogImageProcessing(QDialog):
 
 
         self.setWindowTitle("Step 4 – Image processing")
+        self.setStyleSheet(DIALOG_STYLE)
         self._init_gui()
         self._fit_to_screen(parent)
         if self.auto_run:
@@ -833,12 +834,12 @@ class DialogImageProcessing(QDialog):
         self.settings_button.setFixedWidth(36)
         # The gear glyph renders small: enlarge it, keep the button height.
         self.settings_button.setStyleSheet(
-            BUTTON_STYLE + "QPushButton { font-size: 16px; padding: 2px; }"
+            SECONDARY_STYLE + "QPushButton { font-size: 16px; padding: 2px; }"
         )
         self.settings_button.clicked.connect(self._open_settings)
         self.help_button = QPushButton("?")
         self.help_button.setFixedWidth(36)
-        self.help_button.setStyleSheet(BUTTON_STYLE)
+        self.help_button.setStyleSheet(SECONDARY_STYLE)
         self.help_button.clicked.connect(lambda: Help.show_help("ch:step4", parent=self))
 
         for widget, label, tip in (
@@ -868,9 +869,10 @@ class DialogImageProcessing(QDialog):
             Help.attach_help(widget, label, tip, parent=self)
 
         # Apply the common style to the three main buttons
-        self.run_button.setStyleSheet(BUTTON_STYLE)
-        self.close_button.setStyleSheet(BUTTON_STYLE)
-        self.review_button.setStyleSheet(colored_button_style("#2E7D32"))
+        self.run_button.setStyleSheet(PRIMARY_STYLE)
+        self.close_button.setStyleSheet(SECONDARY_STYLE)
+        # Next step: the primary shape, in the green of the survey
+        self.review_button.setStyleSheet(PRIMARY_STYLE.replace("#17365D", "#2E7D32").replace("#244A73", "#276B2B"))
 
         button_layout.addWidget(self.help_button)
         button_layout.addWidget(self.settings_button)
