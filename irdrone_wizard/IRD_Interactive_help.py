@@ -20,7 +20,7 @@ always the latest one (in English):
   web manual at the anchor of the label: ``https://wisescootering.github.io/infrareddrone/manual/#btn:step4_stop``.
   The web page is generated from ``help/irdrone_help_en.tex`` by ``website/manual.py``:
   every LaTeX label is an anchor of the page.
-* :func:`show_manual` (``? Manual``) opens the PDF built by the "Build help PDF"
+* :func:`show_manual` (``?`` of the main window) opens the PDF built by the "Build help PDF"
   GitHub Actions workflow (rolling ``help-latest`` release).
 
 Offline (or with ``IRDRONE_HELP_OFFLINE=1``), both open the local PDF as below.

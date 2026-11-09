@@ -88,6 +88,7 @@ from IRD_Interactive_color_style import Style
 import config
 from config import missing_tools_message
 import IRD_Interactive_help as Help
+import IRD_Interactive_look as Look
 from IRD_Interactive_workdir import WorkingDirBar, ensure_working_dir_at_startup
 import IRD_Interactive_progress as Progress
 
@@ -146,9 +147,10 @@ class Main_Window(QMainWindow):
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
 
-        #  Help button (bottom right of the window)
-        self.btn_help = QPushButton("? Manual", self)
-        self.btn_help.setStyleSheet(QUIET_BUTTON)
+        #  Help button: "?" at the bottom left, as in every window
+        self.btn_help = QPushButton("?", self)
+        self.btn_help.setStyleSheet(Look.SECONDARY_STYLE)
+        self.btn_help.setFixedWidth(36)
         self.btn_help.setToolTip("User manual")
         self.btn_help.clicked.connect(self.on_help)
         Progress.notifier.changed.connect(lambda _folder: self._show_current_mission())
@@ -171,7 +173,7 @@ class Main_Window(QMainWindow):
         self.home.set_recent(recent_missions(Path(self.pref_screen.default_user_dir)))
         self.main_layout.addWidget(self.home, 1)
 
-        # Status bar: working folder, free space and its gear (left), manual (right).
+        # Status bar: manual (?), then working folder, free space and its gear (left).
         # The mission itself is on the page (title, open folder, All missions).
         status = QFrame()
         status.setObjectName("statusbar")
@@ -182,10 +184,10 @@ class Main_Window(QMainWindow):
         self.working_dir_bar = WorkingDirBar(self)
         self.working_dir_bar.changed.connect(self._on_working_dir_changed)
         self.working_dir_bar.gear.setStyleSheet(QUIET_BUTTON)
-        bottom_layout.addWidget(self.working_dir_bar)
-        bottom_layout.addSpacing(30)
-        bottom_layout.addStretch()
         bottom_layout.addWidget(self.btn_help)
+        bottom_layout.addSpacing(8)
+        bottom_layout.addWidget(self.working_dir_bar)
+        bottom_layout.addStretch()
         self.main_layout.addWidget(status)
 
         for step, tile in self.home.rail.tiles.items():
