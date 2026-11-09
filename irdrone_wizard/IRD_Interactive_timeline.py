@@ -862,8 +862,9 @@ class AnalysisThread(QThread):
 #  Dialog
 # ---------------------------------------------------------------------------
 class FlightTimelineDialog(QDialog):
-    """Step 2. Accepted when the user confirms; `action` tells what to do next:
-    "synchronize" (open Step 3), "close", or "classic" (rejected: open the classic selection)."""
+    """Step 2. Accepted when the phases are saved; `action` tells what to do next:
+    "synchronize" (open Step 3), "close" (Close or closing the window: saved, nothing else),
+    or "classic" (rejected: open the classic selection)."""
 
     def __init__(self, mission: Path, parent=None):
         super().__init__(parent)
@@ -1050,39 +1051,32 @@ class FlightTimelineDialog(QDialog):
         self.btn_classic.setStyleSheet(SECONDARY_STYLE)
         self.btn_classic.setToolTip("Pick the 5 reference images of each camera by hand (previous Step 2).")
         self.btn_classic.clicked.connect(self._on_classic)
-        self.btn_reset = QPushButton("Back to detection")
+        self.btn_reset = QPushButton("Reset")
         self.btn_reset.setStyleSheet(SECONDARY_STYLE)
-        self.btn_reset.setToolTip("Undo the manual changes.")
+        self.btn_reset.setToolTip("Undo the manual changes: back to the phases found automatically.")
         self.btn_reset.clicked.connect(self._on_reset)
         self.btn_reset.setEnabled(False)
-        self.btn_cancel = QPushButton("Cancel")
-        self.btn_cancel.setStyleSheet(SECONDARY_STYLE)
-        self.btn_cancel.clicked.connect(self.reject)
-        self.btn_save = QPushButton("Save only")
-        self.btn_save.setStyleSheet(SECONDARY_STYLE)
-        self.btn_save.setToolTip("Save the phases and close (Step 3 can be run later).")
-        self.btn_save.clicked.connect(lambda: self._confirm("close"))
+        self.btn_close = QPushButton("Close")
+        self.btn_close.setStyleSheet(SECONDARY_STYLE)
+        self.btn_close.setToolTip("Save the phases and close (Step 3 can be run later).")
+        self.btn_close.clicked.connect(self.reject)
         self.btn_confirm = QPushButton("Confirm and synchronize  ▶")
         self.btn_confirm.setStyleSheet(PRIMARY_STYLE)
         self.btn_confirm.setToolTip("Save the phases and run Step 3 (camera synchronisation).")
         self.btn_confirm.clicked.connect(lambda: self._confirm("synchronize"))
-        for b in (self.btn_save, self.btn_confirm):
-            b.setEnabled(False)
+        self.btn_confirm.setEnabled(False)
         foot.addWidget(self.btn_help)
         foot.addWidget(self.btn_classic)
         foot.addWidget(self.btn_reset)
         foot.addStretch(1)
-        foot.addWidget(self.btn_cancel)
-        foot.addWidget(self.btn_save)
+        foot.addWidget(self.btn_close)
         foot.addWidget(self.btn_confirm)
         outer.addLayout(foot)
 
         try:
             import IRD_Interactive_help as Help
-            self.btn_reset.setToolTip("Undo the manual changes: back to the phases found automatically.")
-            self.btn_cancel.setToolTip("Close without saving the phases.")
-            for widget, label in ((self.btn_confirm, "btn:step2_confirm"), (self.btn_save, "btn:step2_confirm"),
-                                  (self.btn_cancel, "btn:step2_confirm"), (self.btn_reset, "btn:step2_adjust"),
+            for widget, label in ((self.btn_confirm, "btn:step2_confirm"), (self.btn_close, "btn:step2_confirm"),
+                                  (self.btn_reset, "btn:step2_adjust"),
                                   (self.btn_classic, "btn:step2_classic")):
                 Help.attach_help(widget, label, widget.toolTip(), parent=self)
             Help.attach_help(self.bm_check, "btn:step2_best_mapping",
@@ -1155,7 +1149,7 @@ class FlightTimelineDialog(QDialog):
             self.messages.show()
         for c in self.cards:
             c.setEnabled(True)
-        for b in (self.btn_save, self.btn_confirm, self.btn_reset):
+        for b in (self.btn_confirm, self.btn_reset):
             b.setEnabled(True)
         self.bm_check.blockSignals(True)
         self.bm_overlap.blockSignals(True)
@@ -1418,17 +1412,35 @@ class FlightTimelineDialog(QDialog):
             cap.setText("  ·  ".join(bits))
 
     # ---- closing
-    def _confirm(self, action):
+    def _not_ready(self) -> Optional[str]:
+        """Why the phases cannot be saved yet (None: they can)."""
         m = self.model
         missing = [k for k in ("VIS sync", "VIS survey") if m.windows.get(k) is None]
         if m.nir.frames and m.windows.get("NIR sync") is None:
             missing.append("NIR sync")
         if missing:
-            QMessageBox.warning(self, "Flight timeline", "Please define: " + ", ".join(missing))
-            return
+            return "Please define: " + ", ".join(missing)
         if len(m.windows["NIR sync"] or []) < 2 if m.nir.frames else False:
-            QMessageBox.warning(self, "Flight timeline",
-                                "The infrared synchronisation needs at least two images.")
+            return "The infrared synchronisation needs at least two images."
+        return None
+
+    def reject(self):
+        """Close (button, title bar, Esc) saves the phases, once the analysis is done."""
+        if self.action == "classic" or self.model is None:
+            super().reject()
+            return
+        problem = self._not_ready()
+        if problem is None:
+            self._confirm("close")
+        elif QMessageBox.question(self, "Flight timeline", f"{problem}\n\nClose without saving the phases?") \
+                == QMessageBox.StandardButton.Yes:
+            super().reject()
+
+    def _confirm(self, action):
+        m = self.model
+        problem = self._not_ready()
+        if problem:
+            QMessageBox.warning(self, "Flight timeline", problem)
             return
         try:
             FT.write_transfer_info(self.mission, "VIS", m.vis.frames, m.windows["VIS sync"], m.windows["VIS survey"])

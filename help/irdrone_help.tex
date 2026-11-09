@@ -681,7 +681,7 @@ L'étape 2 découpe le vol en phases : \emph{synchronisation} (vol stationnaire 
 	\item Les points de la ligne \og target \fg~indiquent les images analysées : violet, la mire tourne ; gris, la mire est vue mais immobile ; cercle vide, mire non vue.
 	\item Faire glisser un bord de phase pour le déplacer (il se cale sur une image), ou cliquer sur un point clé (colonne de droite) puis utiliser \bouton{◀} \bouton{▶} ou les flèches du clavier.
 	\item Molette : zoom ; glisser le fond : déplacement ; double-clic : tout le vol.
-	\item \bouton{Back to detection} annule les changements faits à la main et revient à la proposition automatique.
+	\item \bouton{Reset} annule les changements faits à la main et revient à la proposition automatique ; la fenêtre reste ouverte.
 	\item L'info-bulle du bouton \bouton{?} rappelle ces commandes.
 \end{itemize}
 Si la mire n'est pas trouvée (mire trop petite, image trop sombre), un bandeau orange l'indique : la fenêtre de synchronisation visible est alors le vol stationnaire, et la fenêtre infrarouge doit être placée à la main.
@@ -699,13 +699,13 @@ La sélection suit les bords de la phase survey quand on les déplace.
 
 \textbf{Comment les images sont choisies.} La position, la hauteur au-dessus du sol et l'orientation de chaque image sont lues dans les fichiers \texttt{.exif} écrits à l'étape~1 ; le champ de vue de la caméra donne la taille de l'empreinte au sol. La première image du survol est gardée. Pour chaque image suivante, IRDrone estime le recouvrement de son empreinte avec celle de la dernière image gardée, d'après le déplacement du drone (dans l'axe de l'image et en travers). Tant qu'il reste au-dessus de la valeur choisie, l'image n'est qu'une candidate ; dès qu'il passe en dessous, la candidate précédente est gardée : deux images gardées successives se recouvrent toujours d'au moins la valeur choisie. La dernière image du survol est gardée aussi. Pour un déplacement dans l'axe de l'image, c'est le critère \texttt{--selection best-mapping} de l'ancienne ligne de commande \texttt{run.py}.
 
-\textbf{Et la synchronisation ?} À l'étape~2 le décalage précis entre les deux caméras n'est pas encore connu : l'aperçu porte sur toutes les images du survol. À l'étape~4, une fois les caméras synchronisées, la même sélection est refaite parmi les seules paires bien synchronisées (§\ref{btn:step4_best_mapping}) ; le nombre final peut donc différer un peu de l'aperçu. Le choix (case et recouvrement) est enregistré par \bouton{Confirm and synchronize} et \bouton{Save only} dans \texttt{FlightAnalytics\textbackslash best\_mapping.json}.
+\textbf{Et la synchronisation ?} À l'étape~2 le décalage précis entre les deux caméras n'est pas encore connu : l'aperçu porte sur toutes les images du survol. À l'étape~4, une fois les caméras synchronisées, la même sélection est refaite parmi les seules paires bien synchronisées (§\ref{btn:step4_best_mapping}) ; le nombre final peut donc différer un peu de l'aperçu. Le choix (case et recouvrement) est enregistré par \bouton{Confirm and synchronize} et \bouton{Close} dans \texttt{FlightAnalytics\textbackslash best\_mapping.json}.
 
 Si les images n'ont pas de position GPS, la carte n'est pas affichée et toutes les images du survol sont gardées.
 
-\section{Boutons \bouton{Confirm and synchronize} et \bouton{Save only}}\label{btn:step2_confirm}
+\section{Boutons \bouton{Confirm and synchronize} et \bouton{Close}}\label{btn:step2_confirm}
 Les deux boutons enregistrent les phases dans les fichiers \texttt{transfer\_info\_VIS\_dng.json} et \texttt{transfer\_info\_NIR\_dng.json} (lus par les étapes 3, 4 et le mapping) et dans \texttt{FlightAnalytics/flight\_timeline.json}. Rouvrir l'étape 2 retrouve les phases confirmées.
-\bouton{Confirm and synchronize} ouvre ensuite l'étape 3, qui enchaîne d'elle-même la détection des mires et le calcul du décalage, puis demande si les deux courbes se superposent avant d'apparier les images (§\ref{sec:step3_chained}). \bouton{Save only} ferme la fenêtre : l'étape~3 se lancera plus tard depuis la fenêtre principale. \bouton{Cancel} ferme sans rien enregistrer.
+\bouton{Confirm and synchronize} ouvre ensuite l'étape 3, qui enchaîne d'elle-même la détection des mires et le calcul du décalage, puis demande si les deux courbes se superposent avant d'apparier les images (§\ref{sec:step3_chained}). \bouton{Close} (comme fermer la fenêtre) ferme simplement : l'étape~3 se lancera plus tard depuis la fenêtre principale. S'il manque une phase, fermer demande s'il faut fermer sans enregistrer.
 
 \section{Sélection classique}\label{btn:step2_classic}
 Le bouton \bouton{Classic selection…} ouvre l'ancienne sélection manuelle des cinq images de référence de chaque caméra, décrite ci-dessous.

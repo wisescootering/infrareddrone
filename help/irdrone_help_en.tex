@@ -681,7 +681,7 @@ Step~2 splits the flight into phases: \emph{synchronization} (hovering above the
 	\item The dots on the ``target'' line show the analyzed images: purple, the target is turning; grey, the target is seen but still; empty circle, target not seen.
 	\item Drag a phase edge to move it (it snaps to an image), or click a key point (right-hand column) then use \bouton{◀} \bouton{▶} or the keyboard arrows.
 	\item Mouse wheel: zoom; drag the background: pan; double-click: the whole flight.
-	\item \bouton{Back to detection} cancels the manual changes and returns to the automatic proposal.
+	\item \bouton{Reset} cancels the manual changes and returns to the automatic proposal; the window stays open.
 	\item The tool tip of the \bouton{?} button recalls these controls.
 \end{itemize}
 If the target is not found (target too small, image too dark), an orange banner says so: the visible synchronization window is then the hover, and the infrared window must be placed by hand.
@@ -699,13 +699,13 @@ The selection follows the edges of the survey phase when they are moved.
 
 \textbf{How the images are chosen.} The position, height above the ground and heading of each image are read from the \texttt{.exif} files written in Step~1; the field of view of the camera gives the size of the ground footprint. The first survey image is kept. For each next image, IRDrone estimates the overlap of its footprint with the footprint of the last image kept, from the displacement of the drone (along the image axis and across it). As long as it stays above the chosen value, the image is only a candidate; as soon as it drops below, the previous candidate is kept: two successive images kept always overlap by at least the chosen value. The last survey image is kept as well. For a displacement along the image axis, this is the \texttt{--selection best-mapping} criterion of the former \texttt{run.py} command line.
 
-\textbf{What about synchronization?} In Step~2 the precise offset between the two cameras is not known yet: the preview covers all the survey images. In Step~4, once the cameras are synchronized, the same selection is made again among the well synchronized pairs only (Section~\ref{btn:step4_best_mapping}); the final count can therefore differ a little from the preview. The choice (check box and overlap) is saved by \bouton{Confirm and synchronize} and \bouton{Save only} in \texttt{FlightAnalytics\textbackslash best\_mapping.json}.
+\textbf{What about synchronization?} In Step~2 the precise offset between the two cameras is not known yet: the preview covers all the survey images. In Step~4, once the cameras are synchronized, the same selection is made again among the well synchronized pairs only (Section~\ref{btn:step4_best_mapping}); the final count can therefore differ a little from the preview. The choice (check box and overlap) is saved by \bouton{Confirm and synchronize} and \bouton{Close} in \texttt{FlightAnalytics\textbackslash best\_mapping.json}.
 
 If the images have no GPS position, the map is not shown and all the survey images are kept.
 
-\section{\bouton{Confirm and synchronize} and \bouton{Save only} buttons}\label{btn:step2_confirm}
+\section{\bouton{Confirm and synchronize} and \bouton{Close} buttons}\label{btn:step2_confirm}
 Both buttons save the phases in the files \texttt{transfer\_info\_VIS\_dng.json} and \texttt{transfer\_info\_NIR\_dng.json} (read by Steps 3, 4 and the mapping) and in \texttt{FlightAnalytics/flight\_timeline.json}. Reopening Step~2 brings back the confirmed phases.
-\bouton{Confirm and synchronize} then opens Step~3, which runs the target detection and the offset computation by itself, then asks whether the two curves overlap before pairing the images (Section~\ref{sec:step3_chained}). \bouton{Save only} closes the window: Step~3 will be run later from the main window. \bouton{Cancel} closes without saving anything.
+\bouton{Confirm and synchronize} then opens Step~3, which runs the target detection and the offset computation by itself, then asks whether the two curves overlap before pairing the images (Section~\ref{sec:step3_chained}). \bouton{Close} (like closing the window) only closes it: Step~3 will be run later from the main window. If a phase is missing, closing asks whether to close without saving.
 
 \section{Classic selection}\label{btn:step2_classic}
 The \bouton{Classic selection…} button opens the old manual selection of the five reference images of each camera, described below.
