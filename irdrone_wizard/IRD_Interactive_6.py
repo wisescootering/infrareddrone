@@ -5,12 +5,10 @@
 # ---------------------------------------------------------------------------------
 """Step 6 dialog: archiving (cleaning) of the mission folder.
 
-``DialogArchive`` offers two commands:
-
-* **Simulate**: analyses the mission folder and lists what would be deleted,
-  without touching the disk;
-* **Archive and clean**: same analysis, then a strong confirmation (the user
-  types the name of the mission folder) and the irreversible deletion.
+When the window opens, the mission folder is analysed (nothing is changed)
+and the window shows what archiving would free: the dry run is implicit.
+**Archive and free …** analyses again, then asks for a strong confirmation
+(the user types the name of the mission folder) before the irreversible deletion.
 
 The rules of what is kept or deleted, the consistency checks and the deletion
 itself are in ``IRD_Interactive_archive`` (no Qt). The analysis and the deletion
@@ -21,9 +19,10 @@ The window cannot be closed while a worker runs.
 from pathlib import Path
 from typing import Callable
 
-from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal
+from PyQt6.QtCore import QObject, QRunnable, QThreadPool, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog,
+    QFrame,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -37,7 +36,10 @@ from PyQt6.QtWidgets import (
 import IRD_Interactive_help as Help
 from IRD_Interactive_progress import mark_step_done
 import IRD_Interactive_archive as Archive
-from IRD_Interactive_look import DANGER_STYLE, DIALOG_STYLE, SECONDARY_STYLE
+import IRD_Interactive_look as Look
+from IRD_Interactive_look import DANGER_STYLE, DIALOG_STYLE, MESSAGE_STYLE, SECONDARY_STYLE
+
+STEP_NAME = "Mission archiving"
 
 
 class _WorkerSignals(QObject):
@@ -79,38 +81,46 @@ class DialogArchive(QDialog):
         self.folderMissionPath = Path(folder)
         self._busy = False
         self._worker = None
+        self.plan = None          # the last analysis (None while it runs)
 
-        self.setWindowTitle("Step 6 – Archive the mission")
+        self.setWindowTitle(Look.step_window_title(6, STEP_NAME, self.folderMissionPath))
         self.setStyleSheet(DIALOG_STYLE)
-        self.setMinimumSize(700, 400)
-        self.resize(900, 600)
+        self.setMinimumSize(600, 420)
+        self.resize(820, 600)
         self._init_gui()
         self._log(f"Mission folder: {self.folderMissionPath}")
-        self._log("Use <b>Simulate</b> to list what would be deleted, without changing anything.")
+        QTimer.singleShot(0, self.analyse)       # the dry run: what archiving would free
 
     def _init_gui(self) -> None:
         main_layout = QVBoxLayout(self)
-        main_layout.addWidget(QLabel("<b>Mission archiving</b>"))
+        main_layout.addWidget(Look.step_header(6, STEP_NAME, self.folderMissionPath))
         warning = QLabel(
             "Archiving deletes the technical files of the mission folder. "
             "<b>This operation is irreversible.</b> Copy anything you want to keep elsewhere first."
         )
         warning.setWordWrap(True)
+        warning.setStyleSheet(MESSAGE_STYLE)
         main_layout.addWidget(warning)
 
-        self.log_text = QTextEdit()
-        self.log_text.setReadOnly(True)
-        main_layout.addWidget(self.log_text, stretch=1)
+        # What archiving would free, computed when the window opens (nothing is changed)
+        card = QFrame()
+        card.setObjectName("card")
+        card.setStyleSheet(Look.CARD_STYLE)
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(16, 12, 16, 12)
+        self.summary_title = QLabel("Analysing the mission folder…")
+        self.summary_title.setStyleSheet(Look.TITLE_STYLE)
+        self.summary_detail = QLabel("Nothing is changed while the folder is analysed.")
+        self.summary_detail.setWordWrap(True)
+        self.summary_detail.setStyleSheet(Look.SUBTITLE_STYLE)
+        card_layout.addWidget(self.summary_title)
+        card_layout.addWidget(self.summary_detail)
+        main_layout.addWidget(card)
 
         btn_layout = QHBoxLayout()
-        self.btn_simulate = QPushButton("Simulate (dry run)")
-        self.btn_simulate.setFixedWidth(200)
-        self.btn_simulate.setStyleSheet(SECONDARY_STYLE)
-        self.btn_simulate.clicked.connect(self.on_simulate)
-        btn_layout.addWidget(self.btn_simulate)
-        self.btn_archive = QPushButton("Archive and clean…")
-        self.btn_archive.setFixedWidth(200)
+        self.btn_archive = QPushButton("Archive and free…")
         self.btn_archive.setStyleSheet(DANGER_STYLE)     # irreversible
+        self.btn_archive.setEnabled(False)               # until the analysis says what it frees
         self.btn_archive.clicked.connect(self.on_archive)
         btn_layout.addWidget(self.btn_archive)
         btn_layout.addStretch()
@@ -120,6 +130,11 @@ class DialogArchive(QDialog):
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         main_layout.addWidget(self.progress_bar)
+
+        # Details, folder by folder
+        self.log_text = QTextEdit()
+        self.log_text.setReadOnly(True)
+        main_layout.addWidget(self.log_text, stretch=1)
 
         # Footer: the manual (?) on the left, Close always at the bottom right
         bottom_layout = QHBoxLayout()
@@ -137,8 +152,9 @@ class DialogArchive(QDialog):
         main_layout.addLayout(bottom_layout)
 
         for widget, label, tip in (
-            (self.btn_simulate, "btn:step6_simulate", "List what would be deleted, without changing anything."),
-            (self.btn_archive, "btn:step6_archive", "Delete the technical files of the mission (irreversible)."),
+            (self.btn_archive, "btn:step6_archive",
+             "Delete the files listed below (irreversible): the folder is analysed again, then you "
+             "confirm by typing the name of the mission folder."),
             (self.btn_close, "btn:step6_close", "Close this window."),
             (self.btn_help, "ch:step6", "Open the manual at Step 6."),
         ):
@@ -152,8 +168,8 @@ class DialogArchive(QDialog):
 
     def _set_busy(self, busy: bool) -> None:
         self._busy = busy
-        for button in (self.btn_simulate, self.btn_archive, self.btn_close):
-            button.setEnabled(not busy)
+        self.btn_close.setEnabled(not busy)
+        self.btn_archive.setEnabled(not busy and self._can_archive())
 
     def _start(self, fn, on_done) -> None:
         self._set_busy(True)
@@ -171,6 +187,9 @@ class DialogArchive(QDialog):
         self.progress_bar.setValue(int(100 * done / max(total, 1)))
 
     def _on_error(self, message: str) -> None:
+        if self.plan is None:
+            self.summary_title.setText("Analysis failed")
+            self.summary_detail.setText(message)
         self._end()
         self.progress_bar.setValue(0)
         self._log(f"<span style='color:red'>ERROR: {message}</span>")
@@ -194,22 +213,55 @@ class DialogArchive(QDialog):
     # ------------------------------------------------------------------
     # Commands
     # ------------------------------------------------------------------
-    def on_simulate(self) -> None:
-        self._log("<b>--- Simulation ---</b>")
-        self._start(lambda sig: Archive.build_plan(self.folderMissionPath), self._simulation_done)
+    def _can_archive(self) -> bool:
+        return self.plan is not None and not self.plan.blockers and bool(self.plan.delete_items)
 
-    def _simulation_done(self, plan: Archive.ArchivePlan) -> None:
+    def analyse(self) -> None:
+        """The dry run: what archiving would delete and free, without changing anything."""
+        if self._busy:
+            return
+        self.plan = None
+        self.summary_title.setText("Analysing the mission folder…")
+        self._start(lambda sig: Archive.build_plan(self.folderMissionPath), self._analysis_done)
+
+    def _analysis_done(self, plan: Archive.ArchivePlan) -> None:
+        self.plan = plan
+        self._log("<b>--- What archiving would delete (nothing is deleted yet) ---</b>")
+        self._show_plan(plan)
+        self._show_summary(plan)
         self._end()
-        if self._show_plan(plan):
-            self._log("Simulation only: nothing was deleted.")
+
+    def _show_summary(self, plan: Archive.ArchivePlan) -> None:
+        """The answer of the dry run, in the card: how much is freed, or why not."""
+        title_style = Look.TITLE_STYLE
+        if plan.already_archived:
+            title, detail = "✓ Mission already archived", plan.blockers[0]
+            title_style += " color: #2E7D32;"
+        elif plan.blockers:
+            title, detail = "Archiving impossible", " ".join(plan.blockers)
+            title_style += " color: #B03A2E;"
+        elif not plan.delete_items:
+            title, detail = "Nothing to delete", "The mission folder holds only what archiving keeps."
+        else:
+            size = Archive.format_size(plan.total_bytes)
+            title = f"{size} can be freed"
+            detail = (f"{plan.total_files} file(s) will be deleted. The original images, the aligned "
+                      f"images, the synchronisation result and the map are kept (details below).")
+        self.summary_title.setText(title)
+        self.summary_title.setStyleSheet(title_style)
+        self.summary_detail.setText(detail)
+        self.btn_archive.setText(f"Archive and free {Archive.format_size(plan.total_bytes)}…"
+                                 if self._can_archive() else "Archive and free…")
 
     def on_archive(self) -> None:
         self._log("<b>--- Archiving ---</b>")
         self._start(lambda sig: Archive.build_plan(self.folderMissionPath), self._archive_plan_ready)
 
     def _archive_plan_ready(self, plan: Archive.ArchivePlan) -> None:
+        self.plan = plan
+        self._show_summary(plan)
         self._end()
-        if not self._show_plan(plan):
+        if plan.blockers:                      # listed in the card
             QMessageBox.warning(self, "Archiving impossible", "\n".join(plan.blockers))
             return
         if not plan.delete_items:
@@ -233,6 +285,7 @@ class DialogArchive(QDialog):
 
     def _archive_done(self, manifest: dict) -> None:
         self._end()
+        QTimer.singleShot(0, self.analyse)     # the card then says what is left (or archived)
         self.progress_bar.setValue(100)
         n_errors = len(manifest["errors"])
         if n_errors:

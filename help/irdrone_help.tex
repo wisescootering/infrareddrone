@@ -1389,14 +1389,20 @@ les images de \texttt{Synchro} ne sont plus utiles. Les fichiers \texttt{VIS\_XX
 rattrapés par la procédure de \og redo \fg{} (étape~4). Pour reprendre la mission, il suffit donc de refaire l'étape~4, sans perdre ces corrections, à partir des images originales conservées.
 Les images \texttt{.jpg} conservées permettent aussi de retrouver rapidement une image pour illustrer un rapport.
 
-\figureIRD[fig:step6]{step6_window.png}{Fenêtre de l'archivage. Deux commandes sont disponibles. \texttt{Simulate (dry run)} et \texttt{Archive and clean}.}{0.6}
+\figureIRD[fig:step6]{step6_window.png}{Fenêtre de l'archivage : l'espace libéré par l'archivage s'affiche dès l'ouverture de la fenêtre.}{0.6}
 
-\section{Bouton \bouton{Simulate (dry run)}}\label{btn:step6_simulate}
-Analyse le dossier et affiche, dossier par dossier, le nombre de fichiers à supprimer, le nombre de fichiers conservés et le volume libéré, \emph{sans rien supprimer}.
-Il est recommandé de toujours lancer la simulation avant l'archivage, et de vérifier que la liste correspond à ce que l'on attend.
+\section{Ce que l'archivage libère (simulation)}\label{btn:step6_simulate}
+Dès l'ouverture de la fenêtre, le dossier est analysé \emph{sans rien supprimer} (une simulation). Le cadre sous l'avertissement donne la réponse :
+\begin{itemize}
+  \item \texttt{12.3 GB can be freed}, avec le nombre de fichiers qui seront supprimés. Le détail, dossier par dossier (fichiers à supprimer, fichiers conservés, dossiers supprimés), est dans la zone en dessous ;
+  \item \texttt{Archiving impossible}, avec les fichiers indispensables qui manquent (voir plus bas) : rien ne peut être supprimé ;
+  \item \texttt{Mission already archived}, avec la date de l'archivage ;
+  \item \texttt{Nothing to delete}, quand le dossier ne contient que ce que l'archivage conserve.
+\end{itemize}
+Vérifiez que la liste correspond à ce que vous attendez avant d'archiver.
 
-\section{Bouton \bouton{Archive and clean\ldots}}\label{btn:step6_archive}
-Un message de confirmation est demandé à l'utilisateur  comme le montre la figure \ref{fig:step6_confirm_archving}. Le message indique aussi l'espace disque qui sera libéré et précise que la suppression sera définitive. Deux boutons \texttt{OK} et \texttt{Cancel} permettent de confirmer ou d'abandonner. Par sécurité et pour éviter un clic trop rapide sur \texttt{Ok} l'utilisateur  doit recopier exactement le même nom du dossier de mission que celui indiqué (en respectant la casse). 
+\section{Bouton \bouton{Archive and free \ldots}}\label{btn:step6_archive}
+Le bouton indique l'espace qui sera libéré (par exemple \bouton{Archive and free 12.3 GB\ldots}). Il est grisé pendant l'analyse du dossier, et quand rien ne peut être supprimé. Le dossier est analysé à nouveau au clic, puis un message de confirmation est demandé à l'utilisateur  comme le montre la figure \ref{fig:step6_confirm_archving}. Le message indique aussi l'espace disque qui sera libéré et précise que la suppression sera définitive. Deux boutons \texttt{OK} et \texttt{Cancel} permettent de confirmer ou d'abandonner. Par sécurité et pour éviter un clic trop rapide sur \texttt{Ok} l'utilisateur  doit recopier exactement le même nom du dossier de mission que celui indiqué (en respectant la casse). 
 
 \figureIRD[fig:step6_confirm_archving]{step6_confirm_archiving.png}{Message de confirmation de la demande d'archivage.}{0.3}
 

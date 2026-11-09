@@ -1390,14 +1390,20 @@ the \texttt{Synchro} images are no longer needed. The \texttt{VIS\_XXXX\_motion\
 recovered by the ``redo'' procedure (Step~4). To resume the mission, you therefore only need to run Step~4 again, without losing these corrections, from the original images that were kept.
 The \texttt{.jpg} images that are kept also make it easy to find an image quickly to illustrate a report.
 
-\figureIRD[fig:step6]{step6_window.png}{Archiving window. Two commands are available: \texttt{Simulate (dry run)} and \texttt{Archive and clean}.}{0.6}
+\figureIRD[fig:step6]{step6_window.png}{Archiving window: the space that archiving frees is shown as soon as the window opens.}{0.6}
 
-\section{\bouton{Simulate (dry run)} button}\label{btn:step6_simulate}
-Analyzes the folder and shows, folder by folder, the number of files to delete, the number of files kept and the space freed, \emph{without deleting anything}.
-It is recommended to always run the simulation before archiving, and to check that the list matches what you expect.
+\section{What archiving frees (dry run)}\label{btn:step6_simulate}
+As soon as the window opens, the folder is analyzed \emph{without deleting anything} (a dry run). The card under the warning gives the answer:
+\begin{itemize}
+  \item \texttt{12.3 GB can be freed}, with the number of files that will be deleted. The details, folder by folder (files to delete, files kept, folders deleted), are in the area below;
+  \item \texttt{Archiving impossible}, with the required files that are missing (see below): nothing can be deleted;
+  \item \texttt{Mission already archived}, with the date of the archiving;
+  \item \texttt{Nothing to delete}, when the folder only holds what archiving keeps.
+\end{itemize}
+Check that the list matches what you expect before archiving.
 
-\section{\bouton{Archive and clean\ldots} button}\label{btn:step6_archive}
-The user is asked to confirm, as shown in Figure~\ref{fig:step6_confirm_archving}. The message also shows the disk space that will be freed and states that the deletion will be permanent. Two buttons, \texttt{OK} and \texttt{Cancel}, confirm or cancel. For safety, and to avoid a hasty click on \texttt{Ok}, the user must type exactly the same mission folder name as the one shown (respecting case).
+\section{\bouton{Archive and free \ldots} button}\label{btn:step6_archive}
+The button shows the space that will be freed (for example \bouton{Archive and free 12.3 GB\ldots}). It is greyed out while the folder is analyzed, and when nothing can be deleted. The folder is analyzed again when you click, then the user is asked to confirm, as shown in Figure~\ref{fig:step6_confirm_archving}. The message also shows the disk space that will be freed and states that the deletion will be permanent. Two buttons, \texttt{OK} and \texttt{Cancel}, confirm or cancel. For safety, and to avoid a hasty click on \texttt{Ok}, the user must type exactly the same mission folder name as the one shown (respecting case).
 
 \figureIRD[fig:step6_confirm_archving]{step6_confirm_archiving.png}{Confirmation message for the archiving request.}{0.3}
 
