@@ -556,14 +556,15 @@ to the take-off point}, not relative to sea level. This is why the ground altitu
 
 
 \paragraph{If the image does not load.} Check the internet connection and that the file is indeed a \texttt{.dng} from the drone.
-The \bouton{next step} button stays disabled as long as no image has been loaded correctly.
+The \bouton{Next ▶} button stays disabled as long as no image has been loaded correctly.
 
 %----------------------------------------------------------
-\section{\bouton{previous step} and \bouton{next step} buttons}\label{btn:step1_navigation}
+\section{\bouton{Cancel}, \bouton{Next ▶} and \bouton{◀ Back} buttons}\label{btn:step1_navigation}
 \begin{description}
-  \item[\bouton{next step}] is only available after the take-off image has been loaded. It opens the ``Create a mission'' window.
-  \item[\bouton{previous step}] closes the current window without saving anything. In the ``Create a mission'' window, it returns
-        to the previous window; the take-off image already loaded is kept.
+  \item[\bouton{Next ▶}] is only available after the take-off image has been loaded. It opens the ``Create a mission'' window.
+  \item[\bouton{Cancel}] closes the take-off image window without saving anything.
+  \item[\bouton{◀ Back}] (``Create a mission'' window) returns to the previous window;
+        the take-off image already loaded is kept.
 \end{description}
 
 %----------------------------------------------------------
@@ -592,7 +593,7 @@ NIR Filter & yes & Filter manufacturer and band, in nm (default 810\,nm). \\ \hl
 Note: the VIS and NIR clock offset parameters are reserved for experienced users. These parameters make it possible to ``recover'' a mission whose synchronization phase in the field turns out to be unusable (ArUco markers cannot be recognized, target rotation not started, etc.).
 
 %----------------------------------------------------------
-\section{\bouton{Validate create mission.} button}\label{btn:step1_validate}
+\section{\bouton{Create the mission} button}\label{btn:step1_validate}
 Starts the creation of the mission. The button is disabled during processing; a label and a progress bar
 show the current phase. The software runs the following, with no user intervention except at step~3:
 \begin{enumerate}
@@ -737,7 +738,7 @@ The user must choose the image at the start of the synchronization cycle. For th
 \section{\bouton{Load first fly image.}, \bouton{Load last fly image.} buttons}\label{btn:step2_Load_mission_image}
 The user must choose the first image taken above the area to study (mission flight or hyperlapse survey). This discards the images of the approach between the take-off/synchronization at very low altitude and the mission flight at ``high altitude'' (hyperlapse survey). Note that in principle the mission flight should be flown at constant drone altitude and over an area whose altitudes vary little compared with the height of the drone above the ground. Looking at Figure \ref{fig:fly_vertical_profil} lets you judge the quality of the flight plan carried out in the field.
 \section{\bouton{Validate mission images} button}\label{btn:step2_validate}
-This button builds the lists of images of the three flight phases relevant to IRDrone: takeoff, synchro and fly. No image is moved. The operation is very fast.
+\bouton{Cancel}, on its left, closes the window (after a confirmation if the images are not validated). This button builds the lists of images of the three flight phases relevant to IRDrone: takeoff, synchro and fly. No image is moved. The operation is very fast.
 \figureIRD[fig:step2_dialog_select_NIR]{step2_dialog_select_phase_images_NIR.png}{Reference image selection window. Near-infrared spectral band (NIR).}{0.95}
 
 %==========================================================

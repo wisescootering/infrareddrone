@@ -556,14 +556,15 @@ au point de d\'ecollage}, et non par rapport \`a la mer. C'est pourquoi l'altitu
 
 
 \paragraph{Si l'image ne se charge pas.} V\'erifiez la connexion Internet et que le fichier est bien un \texttt{.dng} du drone.
-Le bouton \bouton{next step} reste inactif tant qu'aucune image n'a \'et\'e charg\'ee correctement.
+Le bouton \bouton{Next ▶} reste inactif tant qu'aucune image n'a \'et\'e charg\'ee correctement.
 
 %----------------------------------------------------------
-\section{Boutons \bouton{previous step} et \bouton{next step}}\label{btn:step1_navigation}
+\section{Boutons \bouton{Cancel}, \bouton{Next ▶} et \bouton{◀ Back}}\label{btn:step1_navigation}
 \begin{description}
-  \item[\bouton{next step}] n'est disponible qu'apr\`es le chargement de l'image de d\'ecollage. Il ouvre la fen\^etre \og Create a mission \fg.
-  \item[\bouton{previous step}] ferme la fen\^etre en cours sans rien enregistrer. Dans la fen\^etre \og Create a mission \fg, il revient
-        \`a la fen\^etre pr\'ec\'edente ; l'image de d\'ecollage d\'ej\`a charg\'ee est conserv\'ee.
+  \item[\bouton{Next ▶}] n'est disponible qu'apr\`es le chargement de l'image de d\'ecollage. Il ouvre la fen\^etre \og Create a mission \fg.
+  \item[\bouton{Cancel}] ferme la fen\^etre de l'image de d\'ecollage sans rien enregistrer.
+  \item[\bouton{◀ Back}] (fen\^etre \og Create a mission \fg) revient \`a la fen\^etre pr\'ec\'edente ;
+        l'image de d\'ecollage d\'ej\`a charg\'ee est conserv\'ee.
 \end{description}
 
 %----------------------------------------------------------
@@ -592,7 +593,7 @@ NIR Filter & oui & Fabricant du filtre et bande, en nm (par d\'efaut 810\,nm). \
 Remarque: les paramètres de décalage d'horloge VIS et NIR sont réservés à un utilisateur expérimenté. Ce sont des paramètres qui permettent de \og récupérer\fg ~une mission dont la phase de synchronisation  sur le terrain se révèle inexploitable (impossibilité de reconnaître les ArUco, oubli de déclenchement de la mire, etc.).
 
 %----------------------------------------------------------
-\section{Bouton \bouton{Validate create mission.}}\label{btn:step1_validate}
+\section{Bouton \bouton{Create the mission}}\label{btn:step1_validate}
 Lance la cr\'eation de la mission. Le bouton se d\'esactive pendant le traitement ; une \'etiquette et une barre de progression
 indiquent la phase en cours. Le logiciel encha\^ine, sans intervention de l'utilisateur sauf \`a l'\'etape~3 :
 \begin{enumerate}
@@ -737,7 +738,7 @@ L'utilisateur doit choisir l'image de début du cycle de synchronisation. Pour l
 \section{Boutons \bouton{Load first fly image.}, \bouton{Load last fly image.}}\label{btn:step2_Load_mission_image}
 L'utilisateur doit choisir la première image prise au-dessus de la zone à étudier (vol mission ou hyperlapse survey). On élimine ainsi les images de l'approche entre le décollage/synchronisation à très basse altitude et le vol de la mission à \og haute altitude \fg~ (hyperlapse survey). À noter qu'en principe le vol mission devrait s'opérer à altitude constante du drone et au-dessus d'une zone dont les altitudes varient peu par rapport à l'altitude du drone par rapport au sol. L'observation de la figure \ref{fig:fly_vertical_profil} permet de juger de la qualité du plan de vol réalisé sur le terrain.		
 \section{Bouton \bouton{Validate mission images}}\label{btn:step2_validate}
-Ce bouton déclenche la construction des listes des images des trois phases de vol pertinentes pour IRDrone : takeoff, synchro et fly. Aucune image n'est déplacée. L'opération est très rapide.
+\bouton{Cancel}, à sa gauche, ferme la fenêtre (après confirmation si les images ne sont pas validées). Ce bouton déclenche la construction des listes des images des trois phases de vol pertinentes pour IRDrone : takeoff, synchro et fly. Aucune image n'est déplacée. L'opération est très rapide.
 \figureIRD[fig:step2_dialog_select_NIR]{step2_dialog_select_phase_images_NIR.png}{Fen\^etre de s\'election des images de r\'ef\'erence. Bande spectrale proche infrarouge (NIR).}{0.95}
 
 %==========================================================
