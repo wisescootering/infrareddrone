@@ -443,15 +443,15 @@ class DialogGeoRef(QDialog):
         # Push the Close button to the bottom
         main_layout.addStretch()
 
-        # Align the Close button to the right
+        # Footer: the manual (?) on the left, Close always at the bottom right
         close_layout = QHBoxLayout()
-        close_layout.addStretch()
-        close_layout.addWidget(self.btn_close)
         self.btn_help = QPushButton("?")
         self.btn_help.setFixedWidth(30)
         self.btn_help.setStyleSheet(BUTTON_STYLE)
         self.btn_help.clicked.connect(lambda: Help.show_help("ch:step5", parent=self))
         close_layout.addWidget(self.btn_help)
+        close_layout.addStretch()
+        close_layout.addWidget(self.btn_close)
 
         for widget, label, tip in (
             (self.btn_run_GeoRef, "btn:step5_georef",

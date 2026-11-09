@@ -120,18 +120,19 @@ class DialogArchive(QDialog):
         self.progress_bar.setValue(0)
         main_layout.addWidget(self.progress_bar)
 
+        # Footer: the manual (?) on the left, Close always at the bottom right
         bottom_layout = QHBoxLayout()
+        self.btn_help = QPushButton("?")
+        self.btn_help.setFixedWidth(30)
+        self.btn_help.setStyleSheet(BUTTON_STYLE)
+        self.btn_help.clicked.connect(lambda: Help.show_help("ch:step6", parent=self))
+        bottom_layout.addWidget(self.btn_help)
         bottom_layout.addStretch()
         self.btn_close = QPushButton("Close")
         self.btn_close.setFixedWidth(120)
         self.btn_close.setStyleSheet(BUTTON_STYLE)
         self.btn_close.clicked.connect(self.on_close)
         bottom_layout.addWidget(self.btn_close)
-        self.btn_help = QPushButton("?")
-        self.btn_help.setFixedWidth(30)
-        self.btn_help.setStyleSheet(BUTTON_STYLE)
-        self.btn_help.clicked.connect(lambda: Help.show_help("ch:step6", parent=self))
-        bottom_layout.addWidget(self.btn_help)
         main_layout.addLayout(bottom_layout)
 
         for widget, label, tip in (

@@ -350,16 +350,16 @@ class DialogSynchroAruco(QDialog):
         self.btn_close.setStyleSheet(BUTTON_STYLE)
 
 
-        # Align the Close button to the right
+        # Footer: the manual (?) on the left, Close always at the bottom right
         close_layout = QHBoxLayout()
-        close_layout.addWidget(self.btn_before)
-        close_layout.addStretch()
-        close_layout.addWidget(self.btn_close)
         self.btn_help = QPushButton("?")
         self.btn_help.setFixedWidth(30)
         self.btn_help.setStyleSheet(BUTTON_STYLE)
         self.btn_help.clicked.connect(lambda: Help.show_help("ch:step3", parent=self))
         close_layout.addWidget(self.btn_help)
+        close_layout.addWidget(self.btn_before)
+        close_layout.addStretch()
+        close_layout.addWidget(self.btn_close)
 
         for widget, label, tip in (
             (self.btn_run_aruco, "btn:step3_aruco", "Detect the ArUco targets in the synchronisation images of both cameras."),

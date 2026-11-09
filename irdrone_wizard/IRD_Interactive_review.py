@@ -893,8 +893,8 @@ class ReviewDialog(QDialog):
         foot.addWidget(self.btn_help)
         foot.addWidget(self.btn_flag_suspicious)
         foot.addStretch(1)
-        foot.addWidget(self.btn_close)
         foot.addWidget(self.btn_redo)
+        foot.addWidget(self.btn_close)     # Close always at the bottom right
         outer.addLayout(foot)
 
         try:

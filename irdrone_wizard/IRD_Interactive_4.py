@@ -808,11 +808,10 @@ class DialogImageProcessing(QDialog):
         self.log_text.setReadOnly(True)
         layout.addWidget(self.log_text)
 
+        # Footer: the manual (?) and settings on the left, Close always at the bottom right
         button_layout = QHBoxLayout()
-        button_layout.addStretch()
         self.run_button = QPushButton("Run alignment")
         self.run_button.clicked.connect(self._start_processing)
-        button_layout.addWidget(self.run_button)
         self.stop_button = QPushButton("\u25A0  Stop")
         self.stop_button.setStyleSheet(
             "QPushButton { background: white; color: #B03A2E; font-weight: bold; padding: 6px 14px;"
@@ -821,17 +820,15 @@ class DialogImageProcessing(QDialog):
                                     "Run alignment again reuses their motion models.")
         self.stop_button.clicked.connect(self._stop_processing)
         self.stop_button.hide()
-        button_layout.addWidget(self.stop_button)
         self.close_button = QPushButton("Close")
+        self.close_button.setFixedWidth(120)
         self.close_button.clicked.connect(self.close)
-        button_layout.addWidget(self.close_button)
         self.review_button = QPushButton("Review images  \u25B6")
         self.review_button.setToolTip(
             "Check the aligned images on a time line, flag the misaligned ones and realign them by hand."
         )
         self.review_button.clicked.connect(self._open_review)
         self.review_button.setEnabled(self._has_alignment_output())
-        button_layout.addWidget(self.review_button)
         self.settings_button = QPushButton("\u2699")
         self.settings_button.setFixedWidth(30)
         # The gear glyph renders small: enlarge it, keep the button height.
@@ -839,12 +836,10 @@ class DialogImageProcessing(QDialog):
             BUTTON_STYLE + "QPushButton { font-size: 16px; padding: 2px; }"
         )
         self.settings_button.clicked.connect(self._open_settings)
-        button_layout.addWidget(self.settings_button)
         self.help_button = QPushButton("?")
         self.help_button.setFixedWidth(30)
         self.help_button.setStyleSheet(BUTTON_STYLE)
         self.help_button.clicked.connect(lambda: Help.show_help("ch:step4", parent=self))
-        button_layout.addWidget(self.help_button)
 
         for widget, label, tip in (
             (self.ndvi_checkbox, "btn:step4_options", "Also write the NDVI image of each shoot point."),
@@ -877,6 +872,13 @@ class DialogImageProcessing(QDialog):
         self.close_button.setStyleSheet(BUTTON_STYLE)
         self.review_button.setStyleSheet(colored_button_style("#2E7D32"))
 
+        button_layout.addWidget(self.help_button)
+        button_layout.addWidget(self.settings_button)
+        button_layout.addStretch()
+        button_layout.addWidget(self.run_button)
+        button_layout.addWidget(self.stop_button)
+        button_layout.addWidget(self.review_button)
+        button_layout.addWidget(self.close_button)
         layout.addLayout(button_layout)
 
     def best_mapping_selection(self) -> tuple[int, int]:
