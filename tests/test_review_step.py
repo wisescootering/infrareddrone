@@ -181,6 +181,16 @@ class ReviewDialogTests(MissionTests):
         self.assertIn("Realign 1 flagged", d.btn_redo.text())
         d.done(0)
 
+    def test_flag_the_probably_misaligned_only_when_there_are_some(self):
+        d = self.dialog()
+        self.assertTrue(d.btn_flag_suspicious.isVisibleTo(d))
+        self.assertIn("Flag the 1 probably misaligned", d.btn_flag_suspicious.text())
+        d.btn_flag_suspicious.click()                  # 140 flagged: none left to flag
+        self.assertFalse(d.btn_flag_suspicious.isVisibleTo(d))
+        self.assertIn("out of the map", d.btn_flag.text())
+        self.assertIn("out of the map", d.chips[R.STATUS_FLAGGED].text())
+        d.done(0)
+
     def test_looks_good_marks_checked_and_moves_on(self):
         d = self.dialog()
         d.select(0)

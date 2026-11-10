@@ -56,7 +56,7 @@ STATUS_TEXT = {
     R.STATUS_CHECKED: "Checked by you",
     R.STATUS_CHECK: "To check",
     R.STATUS_SUSPICIOUS: "Probably misaligned",
-    R.STATUS_FLAGGED: "Flagged misaligned",
+    R.STATUS_FLAGGED: "Flagged: left out of the map",
     R.STATUS_REALIGNED: "Realigned, to confirm",
     R.STATUS_UNKNOWN: "Not measured",
     R.STATUS_MISSING: "No aligned image",
@@ -751,7 +751,8 @@ class ReviewDialog(QDialog):
                             (R.STATUS_CHECK, "Residual misalignment between "
                                              f"{R.SHIFT_OK:g} and {R.SHIFT_SUSPICIOUS:g} px, or not measurable: have a look."),
                             (R.STATUS_SUSPICIOUS, f"Residual misalignment above {R.SHIFT_SUSPICIOUS:g} px."),
-                            (R.STATUS_FLAGGED, "Flagged misaligned: skipped by Step 5 until realigned."),
+                            (R.STATUS_FLAGGED, "Flagged: left out of the map (Step 5) until realigned and "
+                                               "confirmed."),
                             (R.STATUS_REALIGNED, "Realigned by hand: check the new image and confirm it "
                                                  "(skipped by Step 5 until then)."),
                             (R.STATUS_MISSING, "The alignment wrote no image for these points.")):
@@ -962,10 +963,12 @@ class ReviewDialog(QDialog):
         self.btn_good.setStyleSheet(SECONDARY_STYLE)
         self.btn_good.setToolTip("Mark this point as checked and go to the next point to review.")
         self.btn_good.clicked.connect(self.looks_good)
-        self.btn_flag = QPushButton("⚑ Flag misaligned   (F)")
+        self.btn_flag = QPushButton("⚑ Flag: leave out of the map   (F)")
         self.btn_flag.setCheckable(True)
         self.btn_flag.setStyleSheet(DANGER_STYLE)
-        self.btn_flag.setToolTip("Flag this point as misaligned: Step 5 skips it until it is realigned.")
+        self.btn_flag.setToolTip("Flag this point (misaligned, blurred, black area at the edge…): it is left out "
+                                 "of the map (Step 5) until it is realigned by hand and confirmed. "
+                                 "Leave it flagged if it cannot be recovered.")
         self.btn_flag.clicked.connect(self.toggle_flag)
         lay.addWidget(self.btn_good)
         lay.addWidget(self.btn_flag)
@@ -1233,7 +1236,7 @@ class ReviewDialog(QDialog):
             lines.append("<span style='color:#B03A2E'>No REDO script: cannot be realigned by hand.</span>")
         self.point_info.setText("<br>".join(lines))
         self.btn_flag.setChecked(pt.failed)
-        self.btn_flag.setText("⚑ Flagged misaligned   (F)" if pt.failed else "⚑ Flag misaligned   (F)")
+        self.btn_flag.setText("⚑ Flagged: out of the map   (F)" if pt.failed else "⚑ Flag: leave out of the map   (F)")
         self.btn_good.setEnabled(not pt.failed and pt.status != R.STATUS_MISSING)
         self.btn_open.setEnabled(pt.vir_image is not None)
         for b in (self.btn_flag, self.btn_prev, self.btn_next, self.btn_next_review):
@@ -1252,7 +1255,8 @@ class ReviewDialog(QDialog):
         set_chip(self.chips[R.STATUS_SUSPICIOUS], f"! {sus} probably misaligned" if sus else "",
                  self.chips[R.STATUS_SUSPICIOUS].toolTip())
         fl = counts.get(R.STATUS_FLAGGED, 0)
-        set_chip(self.chips[R.STATUS_FLAGGED], f"⚑ {fl} flagged" if fl else "", self.chips[R.STATUS_FLAGGED].toolTip())
+        set_chip(self.chips[R.STATUS_FLAGGED], f"⚑ {fl} flagged · out of the map" if fl else "",
+                 self.chips[R.STATUS_FLAGGED].toolTip())
         re = counts.get(R.STATUS_REALIGNED, 0)
         set_chip(self.chips[R.STATUS_REALIGNED], f"◆ {re} to confirm" if re else "",
                  self.chips[R.STATUS_REALIGNED].toolTip())
@@ -1272,6 +1276,7 @@ class ReviewDialog(QDialog):
         self.btn_flag_suspicious.setText(f"Flag the {len(sus_points)} probably misaligned" if sus_points
                                          else "Flag the probably misaligned")
         self.btn_flag_suspicious.setEnabled(bool(sus_points))
+        self.btn_flag_suspicious.setVisible(bool(sus_points))   # nothing measured as misaligned: no button
 
     def redo_runner_busy(self):
         runner = getattr(self, "redo_runner", None)
