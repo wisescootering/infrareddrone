@@ -511,21 +511,24 @@ def _process_raw_pairs_serial(
 
         gps_vis = pr.Image(vis_pth).gps
         try:
+            if listPts is None:
+                # No point metadata (e.g. a bare pair): keep the EXIF altitude, nothing to substitute
+                logging.info(f"No point metadata: keep the EXIF altitude {gps_vis['altitude']} m")
             #option_alti = 'sealevel'  #   geo, ground, sealevel, takeoff
 
-            if option_alti == 'geo':
+            elif option_alti == 'geo':
                 # Substitutes of drone altitude to the takeoff by altitude of ground to sea level
                 gps_vis['altitude'] = listPts[index_pair].altGeo
                 logging.info(f"Use altitude of ground to sea level : {gps_vis['altitude']} m")
-            if option_alti == 'ground':
+            elif option_alti == 'ground':
                 #Substitutes of drone altitude to the takeoff by drone altitude to ground.
                 gps_vis['altitude'] = listPts[index_pair].altGround
                 logging.info(f"Use altitude of drone to ground  : {gps_vis['altitude']} m")
-            if option_alti == 'sealevel':
+            elif option_alti == 'sealevel':
                 #Substitutes of drone altitude to the takeoff by drone altitude to ground.
                 gps_vis['altitude'] = listPts[index_pair].altGeo + listPts[index_pair].altGround
                 logging.info(f"Use altitude of drone to sea level  : {gps_vis['altitude']} m")
-            if option_alti == 'takeoff':
+            elif option_alti == 'takeoff':
                 # altitude of droe to the takeoff.
                 logging.info(f"Use altitude of drone to takeoff  : {gps_vis['altitude']} m")
                 gps_vis['altitude'] = listPts[index_pair].altTakeOff
