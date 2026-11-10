@@ -165,6 +165,7 @@ class CompareView(QWidget):
         self.placeholder: Optional[QPixmap] = None
         self.message = ""
         self.caption = ""
+        self.busy_text = ""        # set while the point is being realigned: shown over the image
         self.curtain = 0.5
         self.zoom = 1.0            # 1 = whole image in the view
         self.center = QPointF(0.5, 0.5)   # image point at the view centre (0..1)
@@ -289,6 +290,21 @@ class CompareView(QWidget):
         else:
             self._draw(p, areas[0], "ana")
             self._tag(p, areas[0], "Visible cyan · infrared red · doubled edges = misaligned", TAG_COLOR)
+        if self.busy_text:
+            p.fillRect(self.rect(), QColor(17, 22, 29, 140))
+            f = QFont(self.font())
+            f.setBold(True)
+            f.setPointSize(f.pointSize() + 3)
+            p.setFont(f)
+            w = p.fontMetrics().horizontalAdvance(self.busy_text) + 40
+            r = QRectF(self.rect().center().x() - w / 2, self.rect().center().y() - 20, w, 40)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(255, 255, 255, 235))
+            p.drawRoundedRect(r, 20, 20)
+            p.setPen(QColor("#1F4E79"))
+            p.drawText(r, Qt.AlignmentFlag.AlignCenter, self.busy_text)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setFont(self.font())
         self._paint_status_frame(p)
         if self.caption:
             p.setPen(QColor("#C5CFDA"))
@@ -1164,6 +1180,18 @@ class ReviewDialog(QDialog):
             return "This point is being realigned: its images will appear when it is done."
         return default
 
+    def _sync_busy(self):
+        """Over the image (kept until the new one is written): re-processing in progress."""
+        if not hasattr(self, "view") or not hasattr(self, "_hover_index"):
+            return
+        shown = self._shown_index()
+        pt = self.review.points[shown] if shown is not None and 0 <= shown < len(self.review.points) else None
+        text = ("Re-processing in progress…  the new alignment will replace this image"
+                if pt is not None and pt.number in self.redo_runner.numbers() else "")
+        if text != self.view.busy_text:
+            self.view.busy_text = text
+            self.view.update()
+
     def _shown_index(self):
         return self._hover_index if self._hover_index is not None else self.index
 
@@ -1172,6 +1200,7 @@ class ReviewDialog(QDialog):
         self.view.set_status_color(STATUS_COLORS[pt.status])
         self.view.caption = (f"{pt.stem}  ·  " + STATUS_TEXT[pt.status]
                              + (f"  ·  {pt.vir_image.name}" if pt.vir_image is not None else ""))
+        self._sync_busy()
         if pt.number in self._cache:
             self._cache.move_to_end(pt.number)
             self.view.set_images(self._cache[pt.number], self._unreadable_text(pt.number))
@@ -1433,6 +1462,7 @@ class ReviewDialog(QDialog):
         to confirm (Yes / Still misaligned / All aligned)."""
         if not hasattr(self, "redo_runner"):
             return
+        self._sync_busy()
         import time as _time
         import IRD_Interactive_4 as Step4
         runner = self.redo_runner
