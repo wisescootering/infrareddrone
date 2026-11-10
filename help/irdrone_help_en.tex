@@ -1027,7 +1027,7 @@ For each point, the residual offset between the edges of the visible image and t
 The measurements and the checked points are kept in \texttt{ImgIRdrone/review.json}: reopening the review does not redo the measurements, except for the images that were redone.
 
 \section{Comparing visible and infrared}\label{btn:review_compare}
-Four ways to compare, with the buttons above the image or the keys 1 to 4; the review opens in \bouton{Overlay}. A frame around the image is in the colour of the point's status (green aligned, blue checked, red flagged, purple realigned\ldots), the labels on the image stay neutral (the reds and cyans are those of the images):
+Four ways to compare, with the buttons above the image or the keys 1 to 4; the review opens in \bouton{Overlay}. A frame around the image is in the colour of the point's status (green aligned, blue confirmed, red flagged, purple realigned\ldots), the labels on the image stay neutral (the reds and cyans are those of the images):
 \begin{description}
 	\item[\bouton{Swipe} (1)] a curtain separates the visible (on the left) from the aligned infrared in false colors (on the right); roads, hedges and roofs should continue across the curtain. Drag the curtain to move it.
 	\item[\bouton{Blink} (2)] visible and infrared alternate: a misaligned image ``jumps''.
@@ -1037,24 +1037,23 @@ Four ways to compare, with the buttons above the image or the keys 1 to 4; the r
 Mouse wheel: zoom (an offset of a few pixels is only visible when zoomed in); drag: pan; double-click: zoom $\times 4$ or whole image. \bouton{Open full size} opens the aligned image in the computer's image viewer.
 
 \section{Locating the image on the map}\label{btn:review_map}
-The mini-map (in the point card) shows the flight, the current point and the ground footprint of the image (the thick line is the top of the image), in the colour of its status (green aligned, blue checked, red flagged\ldots); the shoot points Step~4 did not align are small grey dots, full size when zoomed in closely. A click enlarges it (\bouton{Map}, key 5). Under the mini-map, the legend lists only the statuses present, with their number. The large map shows the aligned image in its footprint, over the Step~5 orthophoto when it exists and the aerial photos in the background: the infrared should continue the roads and hedges of the background. Hovering over a point shows its thumbnail, a click selects it; a click outside the points leaves no point selected on the map: the trajectory alone, no footprint and no image (the point card keeps its point; a click on a point, or a move along the strip, selects one again); mouse wheel and drag to zoom and pan, double-click to see the whole flight. The \bouton{Layers} menu, the offline base map and the footprint computation are described in Section~\ref{btn:home_map}. Without a GPS position in the shoot points, the map is not available.
+The mini-map (in the point card) shows the flight, the current point and the ground footprint of the image (the thick line is the top of the image), in the colour of its status (green aligned, blue confirmed, red flagged\ldots); the shoot points Step~4 did not align are small grey dots, full size when zoomed in closely. A click enlarges it (\bouton{Map}, key 5). Under the mini-map, the legend lists only the statuses present, with their number. The large map shows the aligned image in its footprint, over the Step~5 orthophoto when it exists and the aerial photos in the background: the infrared should continue the roads and hedges of the background. Hovering over a point shows its thumbnail, a click selects it; a click outside the points leaves no point selected on the map: the trajectory alone, no footprint and no image (the point card keeps its point; a click on a point, or a move along the strip, selects one again); mouse wheel and drag to zoom and pan, double-click to see the whole flight. The \bouton{Layers} menu, the offline base map and the footprint computation are described in Section~\ref{btn:home_map}. Without a GPS position in the shoot points, the map is not available.
 
 \figureIRD[fig:step4_review_map]{step4_review_map.png}{``Map'' mode of the review: flight, footprint and aligned image of the current point, Step~5 orthophoto over the IGN aerial photos.}{0.9}
 
 \section{Moving around}\label{btn:review_navigation}
 \begin{itemize}
 	\item \bouton{◀} and \bouton{▶} (keyboard arrows): previous point, next point.
-	\item \bouton{Next to review} (key N): next point that needs a look (measured as doubtful, not yet checked).
+	\item \bouton{Next to review} (key N): next point that needs a look (realigned to confirm, measured as doubtful or not measured). A point measured aligned (green) needs nothing: there is nothing to mark as good.
 	\item The timeline at the bottom: hovering shows the image, a click selects the point; mouse wheel to zoom, drag to pan, double-click for the whole survey.
-	\item \bouton{Close} closes the review; what has been checked and flagged is already saved.
+	\item \bouton{Close} closes the review; what has been flagged and confirmed is already saved.
 	\item The tool tip of the \bouton{?} button lists all the keys.
 \end{itemize}
 
-\section{Deciding: checked or misaligned}\label{btn:review_decide}
+\section{Deciding: flagging a point}\label{btn:review_decide}
 \begin{description}
-	\item[\bouton{Looks good} (space bar)] marks the point as checked and moves to the next one to review.
 	\item[\bouton{Flag: leave out of the map} (key F)] flags the point, \textbf{which leaves it out of the map}: misaligned, but also blurred, or with a black area at the edge of the infrared image (the drone tilted by a gust of wind: the infrared camera does not see all of the visible field). Pressing it again removes the flag. The flag is written immediately to \texttt{ImgIRdrone\textbackslash shoot\_points.json}\footnote{This file does not contain the same information as the file \texttt{AerialPhotography\textbackslash shoot\_points.json}.} and Step~5 ignores this point. A flagged point can be realigned by hand (Section~\ref{btn:review_redo}); if that does not recover it, leave it flagged.
-	\item[\bouton{Flag the N probably misaligned}] flags in one go all the points whose measured residual misalignment is above 6~px (red \emph{probably misaligned} points) and that you have not checked. It is shown only when there are some: the measure does not see a blur or a black area, which you flag yourself.
+	\item[\bouton{Flag the N probably misaligned}] flags in one go all the points whose measured residual misalignment is above 6~px (red \emph{probably misaligned} points). It is shown only when there are some: the measure does not see a blur or a black area, which you flag yourself.
 \end{description}
 
 The example below shows the beginning of the file \texttt{ImgIRdrone\textbackslash shoot\_points.json}, which stores this information. All the images were processed with the loose criterion $|dt|<4\,s$ and the ``nearest'' method. This corresponds to 501 VIS images and 350 NIR images. Here the user judged visually that shoot point 120 was misaligned and flagged it, which switched the value of the \texttt{failed} key from \texttt{false} to \texttt{true}.

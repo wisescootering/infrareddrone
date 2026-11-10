@@ -202,12 +202,11 @@ class ReviewDialogTests(MissionTests):
         self.assertIn("out of the map", d.chips[R.STATUS_FLAGGED].text())
         d.done(0)
 
-    def test_looks_good_marks_checked_and_moves_on(self):
+    def test_no_looks_good_button_nor_space_key(self):
+        from PyQt6.QtGui import QShortcut
         d = self.dialog()
-        d.select(0)
-        d.looks_good()
-        self.assertTrue(R.load_review(self.mission).by_number(137).checked)
-        self.assertEqual(d.current().number, 140)
+        self.assertFalse(hasattr(d, "btn_good"))
+        self.assertNotIn("Space", [sc.key().toString() for sc in d.findChildren(QShortcut)])
         d.done(0)
 
     def _realigned(self, d, number=140):

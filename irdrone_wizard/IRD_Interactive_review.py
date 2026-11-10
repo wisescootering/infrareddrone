@@ -7,7 +7,7 @@ Review of the aligned survey images (end of Step 4).
                   point: swipe curtain, blink, red/cyan overlay or side by side;
                   wheel to zoom, drag to pan (misalignments are a few pixels)
     sidebar       the point: time, altitude, infrared match, measured residual,
-                  Flag / Looks good, previous / next
+                  Flag, previous / next
     time line     every shoot point of the survey: residual misalignment chart
                   and a filmstrip coloured by status (hover to preview)
 
@@ -53,7 +53,7 @@ STATUS_COLORS = {
 }
 STATUS_TEXT = {
     R.STATUS_OK: "Aligned",
-    R.STATUS_CHECKED: "Checked by you",
+    R.STATUS_CHECKED: "Confirmed by you",      # a realigned point confirmed (or checked before)
     R.STATUS_CHECK: "To check",
     R.STATUS_SUSPICIOUS: "Probably misaligned",
     R.STATUS_FLAGGED: "Flagged: left out of the map",
@@ -764,7 +764,7 @@ class ReviewDialog(QDialog):
         head.addWidget(self.subtitle, 1)
         self.chips = {}
         for status, tip in ((R.STATUS_OK, "Measured aligned (residual below "
-                                          f"{R.SHIFT_OK:g} px) or checked by you."),
+                                          f"{R.SHIFT_OK:g} px) or realigned and confirmed by you."),
                             (R.STATUS_CHECK, "Residual misalignment between "
                                              f"{R.SHIFT_OK:g} and {R.SHIFT_SUSPICIOUS:g} px, or not measurable: have a look."),
                             (R.STATUS_SUSPICIOUS, f"Residual misalignment above {R.SHIFT_SUSPICIOUS:g} px."),
@@ -896,12 +896,12 @@ class ReviewDialog(QDialog):
         self.btn_help.clicked.connect(self._on_help)
         self.btn_help.setToolTip("← → previous / next point\nN next point to review\nF flag / unflag\n"
                                  "Y realigned point: yes, aligned\n"
-                                 "Space looks good (and go to the next point to review)\n1-4 compare mode\n5 map\n"
+                                 "1-4 compare mode\n5 map\n"
                                  "wheel zoom · double-click fit")
         self.btn_flag_suspicious = QPushButton()
         self.btn_flag_suspicious.setStyleSheet(SECONDARY_STYLE)
         self.btn_flag_suspicious.setToolTip("Flag every point measured as probably misaligned "
-                                            f"(residual above {R.SHIFT_SUSPICIOUS:g} px) that you did not check.")
+                                            f"(residual above {R.SHIFT_SUSPICIOUS:g} px).")
         self.btn_flag_suspicious.clicked.connect(self._flag_suspicious)
         self.btn_close = QPushButton("Close")
         self.btn_close.setStyleSheet(SECONDARY_STYLE)
@@ -921,16 +921,16 @@ class ReviewDialog(QDialog):
 
         try:
             import IRD_Interactive_help as Help
-            self.btn_close.setToolTip("Close the review. What you checked and flagged is already saved.")
+            self.btn_close.setToolTip("Close the review. What you flagged and confirmed is already saved.")
             self.btn_prev.setToolTip("Previous point (key ←)")
             self.btn_next.setToolTip("Next point (key →)")
-            self.btn_next_review.setToolTip("Next point that still needs a look: measured as doubtful, "
-                                            "not checked yet (key N).")
+            self.btn_next_review.setToolTip("Next point that still needs a look: realigned to confirm, "
+                                            "measured as doubtful or not measured (key N).")
             self.btn_accept_redo.setToolTip("The realigned image is right: the point is no longer flagged (key Y).")
             self.btn_reject_redo.setToolTip("Still misaligned: the point stays flagged (it can be realigned again).")
             self.btn_accept_all.setToolTip("Every realigned point is right: none of them is flagged any more.")
             for widget, label in ((self.btn_redo, "btn:review_redo"),
-                                  (self.btn_good, "btn:review_decide"), (self.btn_flag, "btn:review_decide"),
+                                  (self.btn_flag, "btn:review_decide"),
                                   (self.btn_flag_suspicious, "btn:review_decide"),
                                   (self.btn_prev, "btn:review_navigation"), (self.btn_next, "btn:review_navigation"),
                                   (self.btn_next_review, "btn:review_navigation"),
@@ -945,11 +945,11 @@ class ReviewDialog(QDialog):
         except Exception as e:  # help is a convenience
             print(f"Help not attached: {e}")
 
-        # the keys go to the window (Space must not also press the focused button)
+        # the keys go to the window (not also to the focused button)
         for b in self.findChildren(QPushButton):
             b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         for seq, slot in (("Left", lambda: self.step(-1)), ("Right", lambda: self.step(+1)),
-                          ("N", self.next_to_review), ("F", self.toggle_flag), ("Space", self.looks_good),
+                          ("N", self.next_to_review), ("F", self.toggle_flag),
                           ("1", lambda: self.set_mode("swipe")), ("2", lambda: self.set_mode("blink")),
                           ("3", lambda: self.set_mode("overlay")), ("4", lambda: self.set_mode("side")),
                           ("5", lambda: self.set_mode("map")), ("Y", self._confirm_key)):
@@ -977,10 +977,6 @@ class ReviewDialog(QDialog):
         lay.addWidget(self.gauge)
         lay.addWidget(self.point_info)
         lay.addSpacing(6)
-        self.btn_good = QPushButton("✓ Looks good   (Space)")
-        self.btn_good.setStyleSheet(SECONDARY_STYLE)
-        self.btn_good.setToolTip("Mark this point as checked and go to the next point to review.")
-        self.btn_good.clicked.connect(self.looks_good)
         self.btn_flag = QPushButton("⚑ Flag: leave out of the map   (F)")
         self.btn_flag.setCheckable(True)
         self.btn_flag.setStyleSheet(DANGER_STYLE)
@@ -988,7 +984,6 @@ class ReviewDialog(QDialog):
                                  "of the map (Step 5) until it is realigned by hand and confirmed. "
                                  "Leave it flagged if it cannot be recovered.")
         self.btn_flag.clicked.connect(self.toggle_flag)
-        lay.addWidget(self.btn_good)
         lay.addWidget(self.btn_flag)
         nav = QHBoxLayout()
         self.btn_prev = QPushButton("◀")
@@ -1017,7 +1012,7 @@ class ReviewDialog(QDialog):
             lay.addWidget(self.mini_map)
         else:
             keys = QLabel("<b>Keyboard</b><br>← →&nbsp; previous / next<br>N&nbsp; next point to review<br>"
-                          "Space&nbsp; looks good<br>F&nbsp; flag / unflag<br>1 2 3 4&nbsp; swipe, blink, overlay, "
+                          "F&nbsp; flag / unflag<br>1 2 3 4&nbsp; swipe, blink, overlay, "
                           "side by side")
             keys.setTextFormat(Qt.TextFormat.RichText)
             keys.setStyleSheet("color: #6B7785; background: #F5F7FA; border-radius: 6px; padding: 8px;")
@@ -1256,7 +1251,7 @@ class ReviewDialog(QDialog):
         pt = self.current()
         if pt is None:
             self.point_title.setText("No shoot point")
-            for b in (self.btn_good, self.btn_flag, self.btn_prev, self.btn_next, self.btn_next_review):
+            for b in (self.btn_flag, self.btn_prev, self.btn_next, self.btn_next_review):
                 b.setEnabled(False)
             return
         color = STATUS_COLORS[pt.status]
@@ -1283,7 +1278,6 @@ class ReviewDialog(QDialog):
         self.point_info.setText("<br>".join(lines))
         self.btn_flag.setChecked(pt.failed)
         self.btn_flag.setText("⚑ Flagged: out of the map   (F)" if pt.failed else "⚑ Flag: leave out of the map   (F)")
-        self.btn_good.setEnabled(not pt.failed and pt.status != R.STATUS_MISSING)
         self.btn_open.setEnabled(pt.vir_image is not None)
         for b in (self.btn_flag, self.btn_prev, self.btn_next, self.btn_next_review):
             b.setEnabled(True)
@@ -1357,14 +1351,6 @@ class ReviewDialog(QDialog):
             self._refresh_point()
             return
         self._set_failed([pt], not pt.failed)
-
-    def looks_good(self):
-        pt = self.current()
-        if pt is None or pt.failed or pt.status == R.STATUS_MISSING:
-            return
-        pt.checked = True
-        self._after_change()
-        self.next_to_review()
 
     def _flag_suspicious(self):
         points = self.review.suspicious()
