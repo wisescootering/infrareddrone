@@ -7,10 +7,17 @@ input); after a failed redo they are put back. Kept free of heavy imports: the
 wizard restores a point itself when the redo process was killed.
 """
 
+import json
+import os
 import shutil
+import time
 from pathlib import Path
 
 ALIGNED_TRACES = ("vir", "nir", "ndvi")
+# In the trace folder while a redo runs: a redo that never removed it was
+# interrupted (process or computer killed), its point is restored on the next
+# review or redo.
+REDO_MARKER = "REDO_IN_PROGRESS.json"
 
 
 def _manual_redo_result_names(vis_pth):
@@ -101,7 +108,55 @@ def restore_manual_redo_originals(
             restored.append(target)
         elif since is not None and target.is_file() and target.stat().st_mtime >= since - 1.0:
             target.unlink()
+    (original_dir.parent / REDO_MARKER).unlink(missing_ok=True)
     return restored
+
+
+def _redo_alive(pid) -> bool:
+    """A redo process ``pid`` still runs (not a recycled pid)."""
+    try:
+        import psutil
+        if not isinstance(pid, int) or pid == os.getpid() or not psutil.pid_exists(pid):
+            return False
+        return any("automatic_registration" in part for part in psutil.Process(pid).cmdline())
+    except Exception:
+        return False
+
+
+def recover_interrupted_redo(debug_dir):
+    """Restore the point of a redo interrupted in ``debug_dir`` (its marker is
+    there, its process gone). Returns the restored paths ([] if nothing to do)."""
+    debug_dir = Path(debug_dir)
+    marker = debug_dir / REDO_MARKER
+    if not marker.is_file():
+        return []
+    try:
+        info = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        info = None
+    if not isinstance(info, dict) or not isinstance(info.get("vis"), str) \
+            or not isinstance(info.get("out_dir"), str):
+        marker.unlink(missing_ok=True)      # unreadable: nothing reliable to restore from
+        return []
+    if _redo_alive(info.get("pid")):
+        return []
+    started = info.get("started")
+    return restore_manual_redo_originals(
+        info["vis"], info["out_dir"], info.get("multispectral_folder"),
+        debug_dir / "original",
+        since=float(started) if isinstance(started, (int, float)) else None,
+    )
+
+
+def recover_interrupted_redos(out_dir) -> dict:
+    """Every interrupted redo of the output folder restored:
+    ``{trace folder name: restored paths}``."""
+    recovered = {}
+    for marker in sorted(Path(out_dir).glob(f"*_align_traces_manual/{REDO_MARKER}")):
+        restored = recover_interrupted_redo(marker.parent)
+        if not marker.exists():
+            recovered[marker.parent.name] = restored
+    return recovered
 
 
 def prepare_manual_redo_archives(vis_pth, out_dir, multispectral_folder=None):
@@ -114,10 +169,20 @@ def prepare_manual_redo_archives(vis_pth, out_dir, multispectral_folder=None):
     debug_dir.mkdir(parents=True, exist_ok=True)
     tech_dir.mkdir(exist_ok=True)
     original_dir.mkdir(exist_ok=True)
+    # An earlier redo of this point interrupted: back to its state before,
+    # or its cut-short files would be archived as the previous alignment.
+    recover_interrupted_redo(debug_dir)
 
     for existing in debug_dir.iterdir():
         if existing not in (tech_dir, original_dir):
             _move_to_archive(existing, tech_dir)
+    (debug_dir / REDO_MARKER).write_text(json.dumps({
+        "vis": os.fspath(vis_pth),
+        "out_dir": os.fspath(out_dir),
+        "multispectral_folder": None if multispectral_folder is None else os.fspath(multispectral_folder),
+        "started": time.time(),
+        "pid": os.getpid(),
+    }), encoding="utf-8")
 
     image_number = vis_pth.stem.removeprefix("VIS_")
     original_names = _manual_redo_result_names(vis_pth)
@@ -180,8 +245,9 @@ def finalize_manual_redo_archives(
             if not result.is_file():
                 raise FileNotFoundError(f"Expected REDO output was not created: {result}")
             shutil.copy2(result, debug_dir / result.name)
+        (debug_dir / REDO_MARKER).unlink(missing_ok=True)     # the redo is complete
     finally:
         for item in debug_dir.iterdir():
-            if item.name in ("Tech", "original") or item.name in archived_names:
+            if item.name in ("Tech", "original", REDO_MARKER) or item.name in archived_names:
                 continue
             _move_to_archive(item, tech_dir)

@@ -248,5 +248,67 @@ class ManualRedoBatchTests(unittest.TestCase):
             self.assertFalse((multispectral / "IRD_0104_2.tif").exists())
             self.assertEqual((multispectral / "IRD_0104_1.exif").read_bytes(), b"georef")
 
+    def _point_with_outputs(self, root, number):
+        output = root / "ImgIRdrone"
+        multispectral = output / "imgMultispectral"
+        multispectral.mkdir(parents=True, exist_ok=True)
+        vis = root / f"VIS_{number}.dng"
+        for name in _manual_redo_result_names(vis):
+            ((multispectral if name.startswith("IRD_") else output) / name).write_bytes(b"old")
+        return output, multispectral, vis
+
+    def test_a_redo_killed_mid_run_is_undone_later(self):
+        import manual_redo_archives as A
+        with tempfile.TemporaryDirectory() as temporary:
+            output, multispectral, vis = self._point_with_outputs(Path(temporary), "0106")
+            debug_dir, _, _ = prepare_manual_redo_archives(vis, output, multispectral)
+            self.assertTrue((debug_dir / A.REDO_MARKER).is_file())
+            # Killed (out of memory) while writing: no cleanup ran.
+            (multispectral / "IRD_0106_2.tif").write_bytes(b"cut")
+
+            recovered = A.recover_interrupted_redos(output)
+
+            self.assertEqual(list(recovered), ["VIS_0106_align_traces_manual"])
+            self.assertFalse((debug_dir / A.REDO_MARKER).exists())
+            for name in _manual_redo_result_names(vis):
+                folder = multispectral if name.startswith("IRD_") else output
+                self.assertEqual((folder / name).read_bytes(), b"old", name)
+            self.assertEqual(A.recover_interrupted_redos(output), {})
+
+    def test_the_next_redo_first_undoes_an_interrupted_one(self):
+        import manual_redo_archives as A
+        with tempfile.TemporaryDirectory() as temporary:
+            output, multispectral, vis = self._point_with_outputs(Path(temporary), "0107")
+            prepare_manual_redo_archives(vis, output, multispectral)
+            (multispectral / "IRD_0107_2.tif").write_bytes(b"cut")
+            _, original_dir, _ = prepare_manual_redo_archives(vis, output, multispectral)
+            # The cut-short file is not archived as the previous alignment.
+            self.assertEqual(A._archived_versions(original_dir, "IRD_0107_2.tif")[-1].read_bytes(), b"old")
+
+    def test_a_running_redo_is_left_alone(self):
+        from unittest import mock
+        import manual_redo_archives as A
+        with tempfile.TemporaryDirectory() as temporary:
+            output, multispectral, vis = self._point_with_outputs(Path(temporary), "0108")
+            debug_dir, _, _ = prepare_manual_redo_archives(vis, output, multispectral)
+            with mock.patch.object(A, "_redo_alive", return_value=True):
+                self.assertEqual(A.recover_interrupted_redos(output), {})
+            self.assertTrue((debug_dir / A.REDO_MARKER).is_file())
+            self.assertFalse((output / "VIS_0108.jpg").exists())
+
+    def test_a_complete_redo_leaves_no_marker(self):
+        import manual_redo_archives as A
+        with tempfile.TemporaryDirectory() as temporary:
+            output, multispectral, vis = self._point_with_outputs(Path(temporary), "0109")
+            debug_dir, _, archived_exif = prepare_manual_redo_archives(vis, output, multispectral)
+            for name in _manual_redo_result_names(vis):
+                if not name.endswith(".exif"):
+                    ((multispectral if name.startswith("IRD_") else output) / name).write_bytes(b"new")
+            finalize_manual_redo_archives(vis, output, multispectral, debug_dir, archived_exif)
+            self.assertFalse((debug_dir / A.REDO_MARKER).exists())
+            self.assertFalse((debug_dir / "Tech" / A.REDO_MARKER).exists())
+            self.assertEqual(A.recover_interrupted_redos(output), {})
+            self.assertEqual((output / "VIS_0109.jpg").read_bytes(), b"new")
+
 if __name__ == "__main__":
     unittest.main()

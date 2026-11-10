@@ -105,6 +105,19 @@ class MissionTests(unittest.TestCase):
         self.assertIsNotNone(p.redo_script)
         self.assertEqual(review.points[2].status, R.STATUS_MISSING)
 
+    def test_load_undoes_an_interrupted_redo(self):
+        import manual_redo_archives as A
+        out = self.mission / "ImgIRdrone"
+        vis = self.mission / "AerialPhotography" / "VIS" / "VIS_0137.dng"
+        before = (out / "VIR_0137_local.jpg").read_bytes()
+        A.prepare_manual_redo_archives(vis, out, out / "imgMultispectral")
+        (out / "VIR_0137_local.jpg").write_bytes(b"cut")         # killed while writing
+        review = R.load_review(self.mission)
+        self.assertEqual(review.recovered, ["VIS_0137"])
+        self.assertEqual((out / "VIR_0137_local.jpg").read_bytes(), before)
+        self.assertEqual(review.points[0].status, R.STATUS_UNKNOWN)   # an image again, to measure
+        self.assertEqual(R.load_review(self.mission).recovered, [])
+
     def test_no_step4_output_yet(self):
         with self.assertRaises(FileNotFoundError):
             R.load_review(self.mission.parent / "nothing")

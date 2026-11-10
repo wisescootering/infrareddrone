@@ -111,6 +111,7 @@ class ReviewPoint:
 class Review:
     mission: Path
     points: List[ReviewPoint] = field(default_factory=list)
+    recovered: List[str] = field(default_factory=list)   # interrupted redos undone at load
 
     @property
     def output(self) -> Path:
@@ -188,6 +189,7 @@ def load_review(mission: Path) -> Review:
     Raises FileNotFoundError when Step 4 has not written its inventory yet."""
     mission = Path(mission)
     output = mission / OUTPUT_FOLDER
+    recovered = _recover_interrupted_redos(output)
     inventory = _read_json(output / INVENTORY)
     if not isinstance(inventory, dict) or not isinstance(inventory.get("shoot_points"), list):
         raise FileNotFoundError(f"No aligned images yet (run Step 4): {output / INVENTORY}")
@@ -232,7 +234,21 @@ def load_review(mission: Path) -> Review:
         p.realigned = p.failed and p.label in realigned
         points.append(p)
     points.sort(key=lambda q: q.number)
-    return Review(mission=mission, points=points)
+    return Review(mission=mission, points=points, recovered=recovered)
+
+
+def _recover_interrupted_redos(output: Path) -> List[str]:
+    """Stems of the points whose redo was interrupted (process or computer
+    killed), put back to their alignment before the redo."""
+    if not output.is_dir():
+        return []
+    try:
+        from manual_redo_archives import recover_interrupted_redos
+        recovered = recover_interrupted_redos(output)
+    except Exception as error:          # never blocks the review
+        print(f"Interrupted realignments not checked: {error}")
+        return []
+    return [name.removesuffix("_align_traces_manual") for name in recovered]
 
 
 # ---------------------------------------------------------------------------

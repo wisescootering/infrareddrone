@@ -747,6 +747,18 @@ class ReviewDialog(QDialog):
         if self.review.points:
             self.select(self._first_to_review(), by_user=False)
         self._update_banner()
+        if self.review.recovered:
+            QTimer.singleShot(0, self._report_recovered)
+
+    def _report_recovered(self):
+        names = ", ".join(self.review.recovered)
+        print(f"Interrupted realignment undone: {names}")
+        box = QMessageBox(QMessageBox.Icon.Information, "Interrupted realignment",
+                          f"The realignment of {names} was interrupted (computer out of memory, "
+                          "or the wizard closed during the run).\n\nThe previous alignment of "
+                          "these points was put back: realign them again if needed.",
+                          QMessageBox.StandardButton.Ok, self)
+        box.open()
 
     # ---- layout
     def _build(self):
