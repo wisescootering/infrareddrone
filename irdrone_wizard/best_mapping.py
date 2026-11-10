@@ -34,6 +34,9 @@ Where it is used
   choice is saved in FlightAnalytics/best_mapping.json.
 * Step 4: only the selected shoot points are aligned (the VIS/NIR time
   difference is known there: only well synchronised pairs are eligible).
+  When the image the preview would keep is a badly synchronised pair, the
+  nearest well synchronised one is kept, before or just past it
+  (SYNC_TOLERANCE): the count stays close to the preview of Step 2.
 * Step 5: ODM image selection "by image overlap".
 * Main window map: the sparse trajectory of the images kept (planned_numbers).
 """
@@ -50,6 +53,9 @@ import flight_map as F
 DEFAULT_OVERLAP = 0.75          # legacy config.OVERLAP_Y
 MIN_OVERLAP = 0.50
 MAX_OVERLAP = 0.95
+# Step 4: the image just past the target may be kept when the ideal one is a
+# badly synchronised pair (overlap down to target - SYNC_TOLERANCE, 75 % -> 70 %)
+SYNC_TOLERANCE = 0.05
 MIN_HEIGHT = 2.0                # m: below, the footprint is meaningless (take-off, landing)
 CHOICE_FILE = Path("FlightAnalytics") / "best_mapping.json"
 EARTH_RADIUS = F.EARTH_RADIUS
@@ -116,15 +122,24 @@ def overlap(a: Shot, b: Shot, fov: Tuple[float, float]) -> Optional[float]:
 
 
 def select(shots: Sequence[Shot], target: float = DEFAULT_OVERLAP,
-           fov: Optional[Tuple[float, float]] = None) -> List[int]:
+           fov: Optional[Tuple[float, float]] = None,
+           tolerance: float = 0.0) -> List[int]:
     """Indexes (in `shots`) of the images kept for the map, in order.
 
     Only eligible shots are kept. An eligible shot whose overlap cannot be
-    estimated (no position or height) is kept: nothing is dropped blindly."""
+    estimated (no position or height) is kept: nothing is dropped blindly.
+
+    tolerance: when the image just past the target is eligible and its overlap
+    is within `tolerance` below the target, it is kept instead of the previous
+    candidate if its overlap is the closer to the target. Without it, every
+    image that may not be kept (badly synchronised pair) before the ideal one
+    shortens the step to the last eligible one, and far more images are kept
+    than over the same survey with all of them eligible (Step 2 preview)."""
     fov = fov or F.field_of_view()
     kept: List[int] = []
     last: Optional[int] = None          # last kept
     candidate: Optional[int] = None     # last eligible one still overlapping enough
+    candidate_ov: Optional[float] = None
     for i, shot in enumerate(shots):
         if not shot.eligible:
             continue
@@ -134,14 +149,19 @@ def select(shots: Sequence[Shot], target: float = DEFAULT_OVERLAP,
             continue
         ov = overlap(shots[last], shot, fov)
         if ov is not None and ov >= target:
-            candidate = i
+            candidate, candidate_ov = i, ov
+            continue
+        if tolerance > 0 and ov is not None and ov >= target - tolerance and \
+                (candidate_ov is None or target - ov < candidate_ov - target):
+            kept.append(i)              # just past the target, but the closer to it
+            last, candidate, candidate_ov = i, None, None
             continue
         if candidate is not None:
             kept.append(candidate)
-            last, candidate = candidate, None
+            last, candidate, candidate_ov = candidate, None, None
             ov = overlap(shots[last], shot, fov)
             if ov is not None and ov >= target:
-                candidate = i
+                candidate, candidate_ov = i, ov
                 continue
         kept.append(i)
         last = i
@@ -174,15 +194,18 @@ def rank_one_dt(point: Dict[str, Any]) -> Optional[float]:
 
 def select_shoot_points(points: Sequence[Dict[str, Any]], target: float = DEFAULT_OVERLAP,
                         fov: Optional[Tuple[float, float]] = None,
-                        eligible: Optional[Iterable[bool]] = None) -> List[Dict[str, Any]]:
+                        eligible: Optional[Iterable[bool]] = None,
+                        tolerance: float = SYNC_TOLERANCE) -> List[Dict[str, Any]]:
     """Best mapping among paired shoot points (all of the survey, in order).
 
     `eligible[i]` False: point i is part of the flight (it counts for the
-    displacement) but may not be kept, e.g. a badly synchronised pair."""
+    displacement) but may not be kept, e.g. a badly synchronised pair.
+    `tolerance` (see `select`) keeps about as many images as the Step 2
+    preview over the same survey, though only some pairs are eligible."""
     flags = list(eligible) if eligible is not None else [True] * len(points)
     shots = [shot_from_vis(i, (p.get("VIS") if isinstance(p, dict) else None) or {}, ok)
              for i, (p, ok) in enumerate(zip(points, flags))]
-    return [points[i] for i in select(shots, target, fov)]
+    return [points[i] for i in select(shots, target, fov, tolerance)]
 
 
 def mission_fov(mission: Path) -> Tuple[float, float]:
