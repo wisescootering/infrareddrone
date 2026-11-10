@@ -319,6 +319,28 @@ class MapViewTest(unittest.TestCase):
         self.assertEqual(ODM.selection_settings(m)["overlap"], 0.8)
         self.MV.tile_cache().stop()
 
+    def test_the_aligned_image_in_its_footprint_is_not_tinted(self):
+        from PyQt6.QtGui import QColor, QPixmap
+        m = make_mission(Path(tempfile.mkdtemp()))
+        model = self.MV.map_model_for(m, with_ortho=False)
+        pix = QPixmap(40, 30)
+        pix.fill(QColor("#808080"))
+        model.image_of = lambda _n: pix
+        model.cursor_in_point_color = True
+        model.color_of = lambda _i: QColor("#B03A2E")
+        view = self.MV.FlightMapView(model)
+        view.resize(600, 400)
+        view.show()
+        view.fit()
+        view.res /= 4                                          # zoom on the image
+        model.set_current(2)
+        view.center = model.xy[2]
+        x, y = view.to_screen(*model.xy[2])
+        img = view.grab().toImage()
+        c = img.pixelColor(int(x) + 25, int(y) + 12)            # inside the image, off the dot
+        self.assertLessEqual(c.red() - min(c.green(), c.blue()), 2)       # still grey: no red tint
+        self.MV.tile_cache().stop()
+
     def test_images_of_the_mapping_from_the_odm_shots(self):
         m = make_mission(Path(tempfile.mkdtemp()), mapping=True)
         self.assertEqual(F.mapped_numbers(m), {137})

@@ -664,7 +664,8 @@ class FlightMapView(QWidget):
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawPolygon(q)
             p.setPen(QPen(color, 2.2))
-            p.setBrush(fill)
+            # no tint over the aligned image: its colours are what is checked
+            p.setBrush(Qt.BrushStyle.NoBrush if pix is not None else fill)
             p.drawPolygon(q)
             p.setPen(QPen(QColor("white"), 3.5))          # top of the image
             p.drawLine(q[0], q[1])
