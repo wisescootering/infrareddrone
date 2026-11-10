@@ -51,6 +51,9 @@ class Step6WindowTest(unittest.TestCase):
         size = Archive.format_size(plan.total_bytes)
         self.assertEqual(d.summary_title.text(), f"{size} can be freed")
         self.assertIn(str(plan.total_files), d.summary_detail.text())
+        self.assertIn(f"from {Archive.format_size(plan.mission_bytes)} to "
+                      f"{Archive.format_size(plan.final_bytes)}", d.summary_detail.text())
+        self.assertGreater(plan.mission_bytes, plan.final_bytes)
         self.assertEqual(d.btn_archive.text(), f"Archive and free {size}…")
         self.assertTrue(d.btn_archive.isEnabled())
         self.assertFalse(hasattr(d, "btn_simulate"))
@@ -68,6 +71,8 @@ class Step6WindowTest(unittest.TestCase):
         d = self.dialog()
         self.assertIn("already archived", d.summary_title.text())
         self.assertFalse(d.btn_archive.isEnabled())
+        size = Archive.format_size(Archive.mission_size(self.mission))
+        self.assertIn(f"takes {size}", d.summary_detail.text())
 
     def test_wrong_name_deletes_nothing(self):
         d = self.dialog()

@@ -65,6 +65,12 @@ class ArchivePlan:
     blockers: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     already_archived: bool = False
+    mission_bytes: int = 0    # size of the whole mission folder when analysed
+
+    @property
+    def final_bytes(self) -> int:
+        """Size of the mission folder once archived."""
+        return max(self.mission_bytes - self.total_bytes, 0)
 
     @property
     def total_bytes(self) -> int:
@@ -171,6 +177,11 @@ def _tree_size(path: Path) -> Tuple[int, int]:
     return total, count
 
 
+def mission_size(mission) -> int:
+    """Size in bytes of a whole mission folder (links not followed)."""
+    return _tree_size(Path(mission))[0]
+
+
 def _band_patterns(band: str) -> List[re.Pattern]:
     return [
         re.compile(rf"^{band}_\d+\.dng$", _FLAGS),
@@ -233,6 +244,7 @@ def build_plan(mission) -> ArchivePlan:
     if not mission.is_dir():
         plan.blockers.append(f"The mission folder does not exist: {mission}")
         return plan
+    plan.mission_bytes = mission_size(mission)
 
     manifest = read_manifest(mission)
     if manifest is not None and manifest.get("status") == "completed":

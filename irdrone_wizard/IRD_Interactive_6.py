@@ -234,18 +234,23 @@ class DialogArchive(QDialog):
     def _show_summary(self, plan: Archive.ArchivePlan) -> None:
         """The answer of the dry run, in the card: how much is freed, or why not."""
         title_style = Look.TITLE_STYLE
+        current = Archive.format_size(plan.mission_bytes)
         if plan.already_archived:
-            title, detail = "✓ Mission already archived", plan.blockers[0]
+            title = "✓ Mission already archived"
+            detail = f"{plan.blockers[0]} The mission folder takes {current}."
             title_style += " color: #2E7D32;"
         elif plan.blockers:
             title, detail = "Archiving impossible", " ".join(plan.blockers)
             title_style += " color: #B03A2E;"
         elif not plan.delete_items:
-            title, detail = "Nothing to delete", "The mission folder holds only what archiving keeps."
+            title = "Nothing to delete"
+            detail = f"The mission folder ({current}) holds only what archiving keeps."
         else:
             size = Archive.format_size(plan.total_bytes)
             title = f"{size} can be freed"
-            detail = (f"{plan.total_files} file(s) will be deleted. The original images, the aligned "
+            detail = (f"The mission folder goes from {current} to "
+                      f"{Archive.format_size(plan.final_bytes)} once archived. "
+                      f"{plan.total_files} file(s) will be deleted. The original images, the aligned "
                       f"images, the synchronisation result and the map are kept (details below).")
         self.summary_title.setText(title)
         self.summary_title.setStyleSheet(title_style)
