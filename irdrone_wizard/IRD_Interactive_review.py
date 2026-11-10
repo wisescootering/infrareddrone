@@ -844,6 +844,7 @@ class ReviewDialog(QDialog):
             self.big_map = MapV.FlightMapView(self.map_model)
             self.big_map.picked.connect(self._on_map_picked)
             self.big_map.hovered.connect(self._on_map_hovered)
+            self.big_map.clicked_empty.connect(self._clear_map_selection)
             self.view_stack.addWidget(self.big_map)
         else:
             self.mode_group.button(len(MODES) - 1).setEnabled(False)
@@ -1196,6 +1197,12 @@ class ReviewDialog(QDialog):
 
     def _on_map_hovered(self, i):
         self.map_model.set_hover(i)
+
+    def _clear_map_selection(self):
+        """Click on the large map outside any point: no point selected on the
+        map, the trajectory alone (no footprint, no image); a click on a point
+        or a move along the strip selects one again."""
+        self.map_model.set_current(None)
 
     def _map_follow(self):
         if self.map_model is None or self.current() is None:

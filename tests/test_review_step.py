@@ -385,6 +385,19 @@ class ReviewMapTests(ReviewDialogTests):
         self.assertIs(d.view_stack.currentWidget(), d.view)
         d.done(0)
 
+    def test_a_click_outside_the_points_leaves_the_map_without_selection(self):
+        d = self.dialog()
+        d.set_mode("map")
+        d.select(0)
+        self.assertIsNotNone(d.map_model.current)
+        d.big_map.clicked_empty.emit()                    # trajectory alone: no footprint, no image
+        self.assertIsNone(d.map_model.current)
+        d.big_map.grab()                                   # paints without a current point
+        self.assertEqual(d.current().number, 137)          # the review keeps its point
+        d.step(1)                                          # a move selects again
+        self.assertEqual(d.map_model.numbers[d.map_model.current], d.current().number)
+        d.done(0)
+
     def test_without_positions_the_map_is_off(self):
         path = self.mission / "AerialPhotography" / "shoot_points.json"
         data = json.loads(path.read_text())
