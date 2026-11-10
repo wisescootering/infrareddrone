@@ -42,6 +42,9 @@
 \DeclareUnicodeCharacter{2699}{\ensuremath{\circledast}}
 \DeclareUnicodeCharacter{2922}{\ensuremath{\nearrow}}
 \DeclareUnicodeCharacter{21BA}{\ensuremath{\circlearrowleft}}
+\DeclareUnicodeCharacter{21BB}{\ensuremath{\circlearrowright}}
+\DeclareUnicodeCharacter{25B2}{\ensuremath{\blacktriangle}}
+\DeclareUnicodeCharacter{25BC}{\ensuremath{\blacktriangledown}}
 % Software button
 \DeclareRobustCommand{\bouton}[1]{\texorpdfstring{\fbox{\small\textsf{#1}}}{#1}}
 % To be completed
@@ -1125,7 +1128,7 @@ The outputs of the previous alignments are archived in the folder \texttt{VIS\_X
 \begin{itemize}
 	\item On the left, the list of the points: a circle for the points to place, a tick for the placed ones, a dash for the skipped ones. A click goes to a point.
 	\item In the middle, the two images, shown as in the review: \bouton{Overlay} (visible in cyan, infrared in red: doubled edges mean misaligned; the default), \bouton{Swipe}, \bouton{Blink}, \bouton{Side by side} (keys 1 to 4). \bouton{Edges only} (G key) shows the outlines of both images, which helps on fields and forests where the infrared and the visible look different. Wheel to zoom, drag to pan, double-click to see the whole image.
-	\item To move the infrared: \textbf{drag it with the right mouse button} (or Shift + drag) in the image; the \textbf{arrow keys} (0.05\textdegree{} per press, about 2 to 3 pixels of the full image; with Shift, 10 times more); Q and E to rotate it; or the \texttt{Yaw}, \texttt{Pitch} and \texttt{Roll} fields and their buttons. Yaw moves it left and right, pitch up and down, roll rotates it.
+	\item To move the infrared, \textbf{quickly then finely}: first the \textbf{sliders} of \texttt{Yaw}, \texttt{Pitch} and \texttt{Roll} (right panel) for a large move, then the buttons at their ends to refine, in the direction they show: \bouton{◀}~\bouton{▶} left and right (yaw), \bouton{▲}~\bouton{▼} up and down (pitch), \bouton{↺}~\bouton{↻} rotation (roll); held down, they repeat. The \textbf{arrow keys} do the same as these buttons (0.05\textdegree{} per press, about 2 to 3 pixels of the full image; with Shift, 10 times more), wherever the cursor is in the window, even in a value field; Q and E rotate. You can also \textbf{drag the infrared with the right mouse button} (or Shift + drag) in the image, or type a value in a field.
 	\item \bouton{Fit} (F key) measures the offset between the edges of the two images (tile by tile) and moves the infrared by that much (yaw and pitch). It works once the images roughly overlap; if it finds no better position, it says so and changes nothing. \bouton{Reset} goes back to the angles of the previous alignment.
 	\item Under these buttons, the offset measured between the two images, in pixels of the full image: below 10~px the point is \emph{well placed}.
 	\item Roughly is enough: these angles are only the starting point, the coarse alignment and the pyramidal refinement start again from there (Section~\ref{sec:ann_algorithme}).

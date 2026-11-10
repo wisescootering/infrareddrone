@@ -42,6 +42,9 @@
 \DeclareUnicodeCharacter{2699}{\ensuremath{\circledast}}
 \DeclareUnicodeCharacter{2922}{\ensuremath{\nearrow}}
 \DeclareUnicodeCharacter{21BA}{\ensuremath{\circlearrowleft}}
+\DeclareUnicodeCharacter{21BB}{\ensuremath{\circlearrowright}}
+\DeclareUnicodeCharacter{25B2}{\ensuremath{\blacktriangle}}
+\DeclareUnicodeCharacter{25BC}{\ensuremath{\blacktriangledown}}
 % Bouton du logiciel
 \DeclareRobustCommand{\bouton}[1]{\texorpdfstring{\fbox{\small\textsf{#1}}}{#1}}
 % A completer
@@ -1125,7 +1128,7 @@ Les sorties des alignements précédents sont archivées dans le dossier \texttt
 \begin{itemize}
 	\item À gauche, la liste des points : un rond pour les points à placer, une coche pour les points placés, un tiret pour les points laissés de côté. Un clic va sur un point.
 	\item Au centre, les deux images, affichées comme dans la revue : \bouton{Overlay} (visible en cyan, infrarouge en rouge : des contours doublés signalent un mauvais alignement ; affichage par défaut), \bouton{Swipe}, \bouton{Blink}, \bouton{Side by side} (touches 1 à 4). \bouton{Edges only} (touche G) montre les contours des deux images, ce qui aide sur les champs et les forêts où l'infrarouge et le visible se ressemblent peu. Molette pour zoomer, glisser pour se déplacer, double-clic pour voir toute l'image.
-	\item Pour déplacer l'infrarouge : \textbf{le faire glisser avec le bouton droit de la souris} (ou Maj + glisser) dans l'image ; les \textbf{flèches du clavier} (0,05\textdegree{} par appui, environ 2 à 3 pixels de l'image complète ; avec Maj, 10 fois plus) ; Q et E pour le faire tourner ; ou les champs \texttt{Yaw}, \texttt{Pitch} et \texttt{Roll} et leurs boutons. Le lacet (yaw) le déplace à gauche et à droite, le tangage (pitch) en haut et en bas, le roulis (roll) le fait tourner.
+	\item Pour déplacer l'infrarouge, \textbf{vite puis finement} : d'abord les \textbf{curseurs} de \texttt{Yaw}, \texttt{Pitch} et \texttt{Roll} (panneau de droite) pour un grand déplacement, puis les boutons à leurs extrémités pour affiner, dans le sens qu'ils montrent : \bouton{◀}~\bouton{▶} à gauche et à droite (lacet), \bouton{▲}~\bouton{▼} en haut et en bas (tangage), \bouton{↺}~\bouton{↻} rotation (roulis) ; maintenus enfoncés, ils se répètent. Les \textbf{flèches du clavier} font la même chose que ces boutons (0,05\textdegree{} par appui, environ 2 à 3 pixels de l'image complète ; avec Maj, 10 fois plus), où que soit le curseur dans la fenêtre, même dans un champ de valeur ; Q et E le font tourner. On peut aussi \textbf{faire glisser l'infrarouge avec le bouton droit de la souris} (ou Maj + glisser) dans l'image, ou taper une valeur dans un champ.
 	\item \bouton{Fit} (touche F) mesure le décalage entre les contours des deux images (tuile par tuile) et déplace l'infrarouge d'autant (lacet et tangage). Il fonctionne dès que les images se recouvrent à peu près ; s'il ne trouve pas de meilleure position, il le dit et ne change rien. \bouton{Reset} revient aux angles de l'alignement précédent.
 	\item Sous ces boutons, le décalage mesuré entre les deux images, en pixels de l'image complète : sous 10~px le point est \emph{well placed}.
 	\item À peu près suffit : ces angles ne sont qu'un point de départ, l'alignement grossier et l'affinage pyramidal repartent de là (§\ref{sec:ann_algorithme}).

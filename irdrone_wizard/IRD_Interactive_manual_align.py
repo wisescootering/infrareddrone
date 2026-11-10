@@ -37,7 +37,7 @@ from PyQt6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (QApplication, QButtonGroup, QCheckBox, QDialog, QDoubleSpinBox, QFrame, QGridLayout,
                              QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
-                             QSizePolicy, QToolButton, QVBoxLayout)
+                             QSizePolicy, QSlider, QToolButton, QVBoxLayout)
 
 sys.path.append(str(Path(__file__).resolve().parent))
 sys.path.append(str(Path(__file__).resolve().parent.parent))
@@ -48,6 +48,7 @@ from IRD_Interactive_look import (CARD_STYLE, DIALOG_STYLE, NUDGE_STYLE, PRIMARY
 PREVIEW_WIDTH = 1600          # width of the images moved by hand
 ANGLE_RANGE = {"yaw": 30.0, "pitch": 30.0, "roll": 5.0}   # same ranges as the slider window
 STEP = 0.05                   # degrees per arrow key (Shift: x10), ~2-3 px of the full image
+SLIDER_UNITS = 100            # slider positions per degree
 ANGLES = ("yaw", "pitch", "roll")
 MEASURE_WIDTH = 1000          # width of the copy the offset is measured on
 CLOSE_ENOUGH = 10.0           # px of the full image: the automatic alignment does the rest
@@ -472,14 +473,14 @@ class ManualAlignDialog(QDialog):
         lay.addWidget(self.point_state)
         grid = QGridLayout()
         grid.setHorizontalSpacing(4)
-        grid.setVerticalSpacing(6)
-        self.spins = {}
-        names = {"yaw": ("Yaw", "◀", "▶", "Left / right (arrow keys)"),
-                 "pitch": ("Pitch", "▲", "▼", "Up / down (arrow keys)"),
-                 "roll": ("Roll", "↺", "↻", "Rotation (Q / E)")}
-        for row, key in enumerate(ANGLES):
+        grid.setVerticalSpacing(2)
+        self.spins, self.sliders = {}, {}
+        names = {"yaw": ("Yaw", "◀", "▶", "Left / right: slider for a quick move, ◀ ▶ or the arrow keys to refine"),
+                 "pitch": ("Pitch", "▲", "▼", "Up / down: slider for a quick move, ▲ ▼ or the arrow keys to refine"),
+                 "roll": ("Roll", "↺", "↻", "Rotation: slider for a quick move, ↺ ↻ or Q / E to refine")}
+        for k, key in enumerate(ANGLES):
             text, minus, plus, tip = names[key]
-            label = QLabel(text)
+            label = QLabel(f"<b>{text}</b>")
             label.setToolTip(tip)
             spin = QDoubleSpinBox()
             spin.setRange(-ANGLE_RANGE[key], ANGLE_RANGE[key])
@@ -489,6 +490,14 @@ class ManualAlignDialog(QDialog):
             spin.setKeyboardTracking(False)
             spin.setToolTip(tip)
             spin.valueChanged.connect(lambda _v: self._on_spin())
+            spin.installEventFilter(self)       # the arrow keys move the infrared, even from here
+            # The slider: a quick move, the end buttons (and keys) to refine, in the direction they show
+            slider = QSlider(Qt.Orientation.Horizontal)
+            slider.setRange(-round(ANGLE_RANGE[key] * SLIDER_UNITS), round(ANGLE_RANGE[key] * SLIDER_UNITS))
+            slider.setPageStep(round(10 * STEP * SLIDER_UNITS))
+            slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            slider.setToolTip(tip)
+            slider.valueChanged.connect(lambda v, key=key: self._on_slider(key, v))
             b_minus, b_plus = QToolButton(), QToolButton()
             for b, sign, arrow in ((b_minus, -1, minus), (b_plus, 1, plus)):
                 b.setText(arrow)
@@ -496,12 +505,15 @@ class ManualAlignDialog(QDialog):
                 b.setAutoRepeat(True)
                 b.setToolTip(tip)
                 b.clicked.connect(lambda _=False, key=key, sign=sign: self._step_angle(key, sign))
-            grid.addWidget(label, row, 0)
-            grid.addWidget(b_minus, row, 1)
-            grid.addWidget(spin, row, 2)
-            grid.addWidget(b_plus, row, 3)
+            grid.addWidget(label, 2 * k, 0, 1, 2)
+            grid.addWidget(spin, 2 * k, 2, 1, 2)
+            grid.addWidget(b_minus, 2 * k + 1, 0)
+            grid.addWidget(slider, 2 * k + 1, 1, 1, 2)
+            grid.addWidget(b_plus, 2 * k + 1, 3)
+            grid.setRowMinimumHeight(2 * k + 1, 30)
             self.spins[key] = spin
-        grid.setColumnStretch(2, 1)
+            self.sliders[key] = slider
+        grid.setColumnStretch(1, 1)
         lay.addLayout(grid)
         buttons = QHBoxLayout()
         self.btn_fit = QPushButton("Fit  (F)")
@@ -522,7 +534,8 @@ class ManualAlignDialog(QDialog):
         self.offset_label.setToolTip("Measured between the edges of both images, in pixels of the full image.")
         lay.addWidget(self.offset_label)
         tip = QLabel("Roughly is enough: the automatic alignment refines from where you leave the infrared.<br><br>"
-                     "<b>Arrows</b> move it (Shift: ×10) · <b>Q / E</b> rotate · <b>right-drag</b> in the image · "
+                     "<b>Sliders</b> for a quick move, then <b>◀ ▶ ▲ ▼</b> or the <b>arrow keys</b> to refine "
+                     "(Shift: ×10) · <b>Q / E</b> rotate · <b>right-drag</b> in the image · "
                      "<b>F</b> fit · <b>Enter</b> next")
         tip.setTextFormat(Qt.TextFormat.RichText)
         tip.setWordWrap(True)
@@ -530,6 +543,19 @@ class ManualAlignDialog(QDialog):
         lay.addWidget(tip)
         lay.addStretch(1)
         return side
+
+    ARROWS = {Qt.Key.Key_Left: (-1, 0), Qt.Key.Key_Right: (1, 0), Qt.Key.Key_Up: (0, -1), Qt.Key.Key_Down: (0, 1)}
+
+    def eventFilter(self, obj, event):
+        """In a value box too, the arrow keys move the infrared as everywhere in
+        the window (a box would only step its own angle, the pitch upside down)."""
+        from PyQt6.QtCore import QEvent
+        if event.type() == QEvent.Type.KeyPress and obj in self.spins.values() and event.key() in self.ARROWS:
+            dx, dy = self.ARROWS[event.key()]
+            k = 10 if event.modifiers() & Qt.KeyboardModifier.ShiftModifier else 1
+            self.nudge(dx * k, dy * k)
+            return True
+        return super().eventFilter(obj, event)
 
     # ---- state
     def current(self) -> Optional[AlignItem]:
@@ -565,9 +591,10 @@ class ManualAlignDialog(QDialog):
         self._updating = True
         for key, value in zip(ANGLES, item.angles):
             self.spins[key].setValue(value)
+            self.sliders[key].setValue(round(value * SLIDER_UNITS))
         self._updating = False
         ready = item.preview is not None
-        for w in list(self.spins.values()) + [self.btn_fit, self.btn_reset]:
+        for w in list(self.spins.values()) + list(self.sliders.values()) + [self.btn_fit, self.btn_reset]:
             w.setEnabled(ready)
         self.offset_label.setText(describe_offset(item.offset) if ready else "")
 
@@ -691,6 +718,14 @@ class ManualAlignDialog(QDialog):
         if self._updating:
             return
         self.set_angles(tuple(self.spins[k].value() for k in ANGLES))
+
+    def _on_slider(self, key, value):
+        item = self.current()
+        if self._updating or item is None:
+            return
+        angles = list(item.angles)
+        angles[ANGLES.index(key)] = value / SLIDER_UNITS
+        self.set_angles(tuple(angles))
 
     def _step_angle(self, key, sign):
         item = self.current()

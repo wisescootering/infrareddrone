@@ -105,6 +105,27 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(items[0].angles, items[0].initial)
         d.done(0)
 
+    def test_sliders_move_the_infrared_and_follow_the_keys(self):
+        d, items = self.window(1)
+        d.sliders["yaw"].setValue(round(3.0 * M.SLIDER_UNITS))
+        self.assertAlmostEqual(items[0].angles[0], 3.0)
+        self.assertEqual(items[0].state, M.PLACED)
+        d.nudge(0, 1)
+        self.assertEqual(d.sliders["pitch"].value(), round(items[0].angles[1] * M.SLIDER_UNITS))
+        self.assertAlmostEqual(d.spins["yaw"].value(), 3.0)
+        d.done(0)
+
+    def test_arrow_keys_in_a_value_box_move_the_infrared(self):
+        from PyQt6.QtCore import QEvent
+        from PyQt6.QtGui import QKeyEvent
+        from PyQt6.QtCore import Qt
+        d, items = self.window(1)
+        pitch = items[0].angles[1]
+        QApplication.sendEvent(d.spins["pitch"], QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Up,
+                                                            Qt.KeyboardModifier.NoModifier))
+        self.assertAlmostEqual(items[0].angles[1], pitch - M.STEP)    # up, as everywhere
+        d.done(0)
+
     def test_dragging_moves_by_the_pixels_dragged(self):
         d, items = self.window(1)
         d._on_drag_start()
