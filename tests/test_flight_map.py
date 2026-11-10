@@ -287,6 +287,36 @@ class MapViewTest(unittest.TestCase):
         self.assertEqual(self.MV.map_model_for(m, with_ortho=False).flagged, [])
         self.MV.tile_cache().stop()
 
+    def test_map_built_then_a_point_realigned_the_next_map_is_shown(self):
+        """The map built did not use a point realigned since: the main window
+        shows the images of the next run (settings of the last run), says the
+        map built differs; a flag set after the run is left out next time."""
+        import best_mapping as BM
+        import IRD_Interactive_ODM as ODM
+        m = make_mission(Path(tempfile.mkdtemp()), n=7)
+        step4_done(m, range(137, 144), failed={139})
+        BM.save_choice(m, enabled=True)
+        (m / "mapping_MULTI" / "mapping_result").mkdir(parents=True)
+        (m / "mapping_MULTI" / "img_best_mappping.json").write_text(json.dumps({
+            "selection_rules": {"maximum_absolute_dt_seconds": 0.3, "selection": "sample_every",
+                                "sample_every_nth_eligible_pair": 2, "footprint_overlap": None},
+            "image_quartets": [{"VIS_filename": f"VIS_{n:04d}.dng"} for n in (137, 141)]}))
+        os.utime(m / BM.CHOICE_FILE, (1, 1))                        # chosen before the run
+        F.orthophoto_path(m).write_bytes(b"")
+        self.assertEqual(ODM.selection_settings(m), {"dt_tolerance_s": 0.3, "sample_every": 2, "overlap": None})
+        # eligible now: 137 138 140 141 142 143 (139 flagged), one in 2
+        self.assertEqual(ODM.planned_mapping_numbers(m), {137, 140, 142})
+        model = self.MV.map_model_for(m, with_ortho=False, sparse_mapping=True)
+        self.assertEqual((model.mapped_by, model.built), ("next mapping", {137, 141}))
+        self.assertEqual([model.numbers[i] for i in model.mapped], [137, 140, 142])
+        view = self.MV.FlightMapView(model)
+        self.assertEqual(view.selection_summary(), ["3 images for the next map (Step 5 again: the map built has 2)",
+                                                    "⚑ 1 flagged, left out"])
+        # the best mapping chosen again after the run: its overlap wins
+        BM.save_choice(m, enabled=True, overlap=0.8)
+        self.assertEqual(ODM.selection_settings(m)["overlap"], 0.8)
+        self.MV.tile_cache().stop()
+
     def test_images_of_the_mapping_from_the_odm_shots(self):
         m = make_mission(Path(tempfile.mkdtemp()), mapping=True)
         self.assertEqual(F.mapped_numbers(m), {137})

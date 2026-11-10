@@ -710,17 +710,53 @@ def select_mapping_pairs(
     }
 
 
+def selection_settings(mission_folder: Path) -> Dict[str, Any]:
+    """Settings of the image selection the Step 5 window proposes:
+    {"dt_tolerance_s", "sample_every", "overlap" (None: one image every n)}.
+
+    Those of the last run (selection_rules of img_best_mappping.json), else
+    |dt| <= 0.5 s and one image in 3; the best mapping (on/off and overlap) of
+    Steps 2 and 4 when it was chosen after the last run, or without one."""
+    mission_folder = Path(mission_folder)
+    choice = best_mapping.load_choice(mission_folder)
+    settings = {"dt_tolerance_s": 0.5, "sample_every": 3,
+                "overlap": choice["overlap"] if choice["enabled"] else None}
+    manifest_path = mission_folder / ODM_PROJECT_NAME / MANIFEST_NAME
+    try:
+        rules = _load_json(manifest_path).get("selection_rules")
+    except (ODMMappingError, AttributeError):
+        rules = None
+    if not isinstance(rules, dict):
+        return settings
+    dt = rules.get("maximum_absolute_dt_seconds")
+    if isinstance(dt, (int, float)) and not isinstance(dt, bool) and 0.05 <= dt <= 6.0:
+        settings["dt_tolerance_s"] = float(dt)
+    every = rules.get("sample_every_nth_eligible_pair")
+    if isinstance(every, int) and not isinstance(every, bool) and every in (1, 2, 3, 4):
+        settings["sample_every"] = every
+    try:
+        choice_newer = ((mission_folder / best_mapping.CHOICE_FILE).stat().st_mtime
+                        > manifest_path.stat().st_mtime)
+    except OSError:
+        choice_newer = False
+    if not choice_newer:
+        overlap = rules.get("footprint_overlap")
+        if rules.get("selection") == "overlap" and isinstance(overlap, (int, float)):
+            settings["overlap"] = best_mapping.clamp_overlap(overlap)
+        elif rules.get("selection") == "sample_every":
+            settings["overlap"] = None
+    return settings
+
+
 def planned_mapping_numbers(mission_folder: Path) -> Set[int]:
-    """Numbers of the visible images the next run of Step 5 will map, with its
-    default settings (|dt| ≤ 0.5 s, best mapping at the overlap of Steps 2 and
-    4, else one image in 3); empty when it cannot be known (before Step 4)."""
+    """Numbers of the visible images the next run of Step 5 will map with the
+    settings its window proposes (`selection_settings`); empty when it cannot
+    be known (before Step 4)."""
     mission_folder = Path(mission_folder)
     if not (mission_folder / "ImgIRdrone" / "shoot_points.json").is_file():
         return set()
-    choice = best_mapping.load_choice(mission_folder)
     try:
-        selection = select_mapping_pairs(
-            mission_folder, overlap=choice["overlap"] if choice["enabled"] else None)
+        selection = select_mapping_pairs(mission_folder, **selection_settings(mission_folder))
     except ODMMappingError:
         return set()
     out = set()

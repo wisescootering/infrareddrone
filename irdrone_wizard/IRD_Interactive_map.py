@@ -132,7 +132,7 @@ class MapModel(QObject):
 
     def __init__(self, points: List[F.MapPoint], fov=None, ortho: Optional[F.OrthoPreview] = None,
                  color_of: Optional[Callable[[int], QColor]] = None, path: Optional[List[F.MapPoint]] = None,
-                 mapped=None, mapped_by: str = "mapping", flagged=None, parent=None):
+                 mapped=None, mapped_by: str = "mapping", flagged=None, built=None, parent=None):
         super().__init__(parent)
         self.points = points
         # the whole flight (line), the points are the shoot points on it
@@ -145,6 +145,9 @@ class MapModel(QObject):
         # "mapping" (Step 5 done), "next mapping" (Step 4 done: the images the
         # next run of Step 5 will map) or "best mapping" (planned in Steps 2 and 4)
         self.mapped_by = mapped_by
+        # numbers of the images of the map built (Step 5 done), when the points
+        # drawn are the ones of the next run ("next mapping")
+        self.built = set(built or ())
         # indices of the shoot points flagged in the review: left out of the map
         self.flagged = [i for i, n in enumerate(self.numbers) if n in flagged] if flagged else []
         self.show_mapped = True             # Layers ▾ "Only the images of the mapping"
@@ -687,6 +690,30 @@ class FlightMapView(QWidget):
         p.setPen(QColor("#17365D"))
         p.drawText(QRectF(x, y + h, w, 20), Qt.AlignmentFlag.AlignCenter, stem)
 
+    def selection_summary(self) -> List[str]:
+        """Texts of the bottom right about the images of the map drawn."""
+        bits: List[str] = []
+        if not self.model.sparse:
+            return bits
+        n = len(self.model.mapped)
+        built = self.model.built
+        numbers = {self.model.numbers[i] for i in self.model.mapped}
+        if self.model.mapped_by == "next mapping" and built:
+            bits.append(f"{n} images of the map" if numbers == built else
+                        f"{n} images for the next map (Step 5 again: the map built has {len(built)})")
+        else:
+            bits.append(f"{n} images Step 5 will map" if self.model.mapped_by == "next mapping"
+                        else f"{n} images kept by the best mapping" if self.model.planned
+                        else f"{n} images of the mapping")
+        if self.model.flagged:
+            # flagged after Step 5: they are in the map built, not in the next one
+            again = {self.model.numbers[i] for i in self.model.flagged} & (
+                built or ({self.model.numbers[i] for i in self.model.mapped}
+                          if self.model.mapped_by == "mapping" else set()))
+            bits.append(f"⚑ {len(self.model.flagged)} flagged, left out"
+                        + (" when Step 5 runs again" if again else ""))
+        return bits
+
     def _paint_texts(self, p, note):
         src = F.TILE_SOURCES.get(self.model.source)
         bits = []
@@ -696,16 +723,7 @@ class FlightMapView(QWidget):
             bits.append("orthophoto IRDrone")
         if self.model.progress is not None and self.model.selection:
             bits.append(f"{len(self.model.progress[0])} of {len(self.model.selection)} done")
-        if self.model.sparse:
-            n = len(self.model.mapped)
-            bits.append(f"{n} images Step 5 will map" if self.model.mapped_by == "next mapping"
-                        else f"{n} images kept by the best mapping" if self.model.planned
-                        else f"{n} images of the mapping")
-            if self.model.flagged:
-                # flagged after Step 5: they are in this orthophoto, not in the next one
-                again = not self.model.planned and set(self.model.flagged) & set(self.model.mapped)
-                bits.append(f"⚑ {len(self.model.flagged)} flagged, left out"
-                            + (" when Step 5 runs again" if again else ""))
+        bits += self.selection_summary()
         font = p.font()
         font.setPointSizeF(7.5 if self.compact else 8.0)
         p.setFont(font)
@@ -860,23 +878,25 @@ def map_model_for(mission: Path, color_of=None, with_ortho: bool = True, shoot_p
     if color_of is None:
         color_of = phase_colors(mission)
     path = F.image_track(mission)
-    mapped, mapped_by, flagged = None, "mapping", None
+    mapped, mapped_by, flagged, built = None, "mapping", None, None
     if sparse_mapping:
-        # the images of the map: Step 5 done (orthophoto), else the ones the
-        # next run of Step 5 will map (its own selection over the images aligned
-        # by Step 4, flagged ones left out and drawn in red), else the best
-        # mapping planned (Steps 2 and 4)
+        # the images of the map: once Step 4 is done, the ones the next run of
+        # Step 5 will map (its own selection, with the settings of its last run,
+        # over the images aligned now: realigned ones in, flagged ones out and
+        # drawn in red), even when a map is built; else the ones of the map
+        # built; else the best mapping planned (Steps 2 and 4)
         _kept, flagged = F.aligned_selection(mission)
-        mapped = F.mapped_numbers(mission) if F.orthophoto_path(mission).is_file() else set()
+        built = F.mapped_numbers(mission) if F.orthophoto_path(mission).is_file() else set()
+        import IRD_Interactive_ODM as ODM
+        mapped, mapped_by = ODM.planned_mapping_numbers(mission), "next mapping"
         if not mapped:
-            import IRD_Interactive_ODM as ODM
-            mapped, mapped_by = ODM.planned_mapping_numbers(mission), "next mapping"
+            mapped, mapped_by = built, "mapping"
         if not mapped:
             import best_mapping as BM
             mapped, mapped_by = BM.planned_numbers(mission), "best mapping"
     model = MapModel(track, fov=F.field_of_view(F.camera_model(mission)), parent=parent,
                      path=path if len(path) > len(track) else None,
-                     mapped=mapped, mapped_by=mapped_by, flagged=flagged,
+                     mapped=mapped, mapped_by=mapped_by, flagged=flagged, built=built,
                      color_of=lambda i: color_of(track[i].number))
     # in the background: ground under the drone (footprint size), orthophoto
     job = _OrthoJob(Path(mission), track, with_ortho and F.orthophoto_path(mission).is_file())

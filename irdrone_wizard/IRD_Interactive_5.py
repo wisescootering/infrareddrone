@@ -92,6 +92,7 @@ from IRD_Interactive_ODM import (
     read_orthophoto_preview,
     run_odm,
 )
+import IRD_Interactive_ODM as ODM
 
 
 # Shown in the preview area when no result is displayed yet.
@@ -163,8 +164,9 @@ class ODMSelectionDialog(QDialog):
         self.setWindowTitle("Build the map – image selection")
         self.setStyleSheet(DIALOG_STYLE)
         self.setMinimumWidth(480)
-        choice = (best_mapping.load_choice(Path(mission_folder)) if mission_folder
-                  else {"enabled": True, "overlap": best_mapping.DEFAULT_OVERLAP})
+        # the settings of the last run (the main window map previews them)
+        settings = (ODM.selection_settings(Path(mission_folder)) if mission_folder
+                    else {"dt_tolerance_s": 0.5, "sample_every": 3, "overlap": best_mapping.DEFAULT_OVERLAP})
 
         layout = QVBoxLayout(self)
         criteria = QFormLayout()
@@ -172,7 +174,7 @@ class ODMSelectionDialog(QDialog):
         self.dt_tolerance.setRange(0.05, 6.0)
         self.dt_tolerance.setSingleStep(0.05)
         self.dt_tolerance.setDecimals(2)
-        self.dt_tolerance.setValue(0.5)
+        self.dt_tolerance.setValue(settings["dt_tolerance_s"])
         self.dt_tolerance.setSuffix(" s")
         criteria.addRow("Maximum |dt| (NIR rank 1):", self.dt_tolerance)
         layout.addLayout(criteria)
@@ -197,7 +199,9 @@ class ODMSelectionDialog(QDialog):
         self.overlap.setRange(round(best_mapping.MIN_OVERLAP * 100), round(best_mapping.MAX_OVERLAP * 100))
         self.overlap.setSingleStep(5)
         self.overlap.setSuffix(" %")
-        self.overlap.setValue(round(choice["overlap"] * 100))
+        self.overlap.setValue(round((settings["overlap"] if settings["overlap"] is not None
+                                     else best_mapping.load_choice(Path(mission_folder))["overlap"]
+                                     if mission_folder else best_mapping.DEFAULT_OVERLAP) * 100))
         overlap_form = QFormLayout()
         overlap_form.addRow("Overlap between successive images:", self.overlap)
         density_layout.addLayout(overlap_form)
@@ -205,7 +209,7 @@ class ODMSelectionDialog(QDialog):
         density_layout.addWidget(self.sample_radio)
         self.sample_every = QSpinBox()
         self.sample_every.setRange(1, 4)
-        self.sample_every.setValue(3)
+        self.sample_every.setValue(settings["sample_every"])
         sample_row = QFormLayout()
         sample_row.addRow("One image every:", self.sample_every)
         density_layout.addLayout(sample_row)
@@ -222,7 +226,7 @@ class ODMSelectionDialog(QDialog):
             "Start OpenDroneMap with these images; the terrain model and the contour lines follow.",
             "btn:step5_selection"))
 
-        (self.overlap_radio if choice["enabled"] else self.sample_radio).setChecked(True)
+        (self.overlap_radio if settings["overlap"] is not None else self.sample_radio).setChecked(True)
         self.sample_radio.toggled.connect(self._update_selection_controls)
         self._update_selection_controls()
 

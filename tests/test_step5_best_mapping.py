@@ -37,6 +37,20 @@ class ODMSelectionDialogTest(unittest.TestCase):
             self.assertIsNone(d.selected_overlap())
             self.assertIn("one image every 3", d.description())
 
+    def test_settings_of_the_last_run_are_proposed(self):
+        import json
+        with tempfile.TemporaryDirectory() as m:
+            best_mapping.save_choice(Path(m), enabled=True, overlap=0.85)
+            os.utime(Path(m) / best_mapping.CHOICE_FILE, (1, 1))
+            (Path(m) / "mapping_MULTI").mkdir()
+            (Path(m) / "mapping_MULTI" / "img_best_mappping.json").write_text(json.dumps({"selection_rules": {
+                "maximum_absolute_dt_seconds": 0.4, "selection": "sample_every",
+                "sample_every_nth_eligible_pair": 2, "footprint_overlap": None}}))
+            d = S5.ODMSelectionDialog(mission_folder=Path(m))
+            self.assertTrue(d.sample_radio.isChecked())
+            self.assertEqual((d.dt_tolerance.value(), d.sample_every.value()), (0.4, 2))
+            self.assertEqual(d.overlap.value(), 85)
+
     def test_sample_every_can_still_be_chosen(self):
         d = S5.ODMSelectionDialog()
         d.sample_radio.setChecked(True)
