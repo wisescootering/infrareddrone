@@ -398,6 +398,22 @@ class ReviewMapTests(ReviewDialogTests):
         self.assertEqual(d.map_model.numbers[d.map_model.current], d.current().number)
         d.done(0)
 
+    def test_footprint_in_the_status_colour_legend_of_what_is_there(self):
+        d = self.dialog()
+        import IRD_Interactive_review as Rv
+        self.assertTrue(d.map_model.cursor_in_point_color)
+        d.select(0)
+        pt = d.current()
+        i = d.map_model.index_of(pt.number)
+        self.assertEqual(d.map_model.color_of(i).name(), Rv.STATUS_COLORS[pt.status].name())
+        texts = [t for _c, t, _n in d.legend_counts()]
+        counts = d.review.counts()
+        self.assertEqual(texts, [Rv.STATUS_TEXT[s] for s in Rv.LEGEND_ORDER if counts.get(s)])   # present only
+        self.assertTrue(all(n > 0 for _c, _t, n in d.legend_counts()))
+        self.assertIn(f"<b>{counts[pt.status]}</b>", d.legend.text())
+        self.assertFalse(d.map_model.minor(i))                    # an aligned point: normal dot
+        d.done(0)
+
     def test_without_positions_the_map_is_off(self):
         path = self.mission / "AerialPhotography" / "shoot_points.json"
         data = json.loads(path.read_text())

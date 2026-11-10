@@ -169,6 +169,10 @@ class MapModel(QObject):
         self.ortho_mode = str(s.value(SETTINGS_KEY + "ortho", "natural") or "natural")
         self.show_image = str(s.value(SETTINGS_KEY + "image", "true")) != "false"
         self.image_of: Optional[Callable[[int], Optional[QPixmap]]] = None    # number -> image (thumbnail)
+        # the current footprint in the colour of its point (review: its status), not the cursor orange
+        self.cursor_in_point_color = False
+        # minor(index): a secondary point (review: not aligned), a small dot until zoomed in
+        self.minor: Optional[Callable[[int], bool]] = None
         # images kept for the map (best mapping): footprints drawn, bigger dots
         self.selection: List[int] = []
         self._selection_set = set()
@@ -530,8 +534,15 @@ class FlightMapView(QWidget):
         if self.model.sparse:
             r += 0.8
         flagged = set(self.model.flagged)
+        # secondary points: small at the scale of the flight, full size once zoomed in (< 6 cm per pixel)
+        r_minor = max(1.2, r * min(1.0, max(0.4, 0.06 / max(self.res, 1e-6))))
         for i in shown:
             q = pts[i]
+            if self.model.minor is not None and self.model.minor(i) and not self.model.is_selected(i):
+                p.setPen(Qt.PenStyle.NoPen if r_minor < r else QPen(QColor("white"), 1))
+                p.setBrush(self.model.color_of(i) if self.model.color_of else QColor("#A0AAB4"))
+                p.drawEllipse(q, r_minor, r_minor)
+                continue
             if i in flagged:                     # left out of the map: a red dot (footprint on hover)
                 p.setPen(QPen(QColor("white"), 1))
                 p.setBrush(FLAGGED_COLOR)
@@ -643,17 +654,25 @@ class FlightMapView(QWidget):
                 p.setOpacity(0.92)
                 p.drawPixmap(0, 0, pix)
                 p.restore()
+        color = QColor(Look.CURSOR)
+        if self.model.cursor_in_point_color and self.model.color_of is not None:
+            color = QColor(self.model.color_of(cur))
         if q is not None:
-            p.setPen(QPen(Look.CURSOR, 2.2))
-            p.setBrush(QColor(232, 163, 61, 55))
+            fill = QColor(color)
+            fill.setAlpha(55)
+            p.setPen(QPen(QColor(255, 255, 255, 170), 4.0))   # halo: readable on any background
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawPolygon(q)
+            p.setPen(QPen(color, 2.2))
+            p.setBrush(fill)
             p.drawPolygon(q)
             p.setPen(QPen(QColor("white"), 3.5))          # top of the image
             p.drawLine(q[0], q[1])
-            p.setPen(QPen(Look.CURSOR, 2.2))
+            p.setPen(QPen(color, 2.2))
             p.drawLine(q[0], q[1])
         x, y = self.to_screen(*self.model.xy[cur])
         p.setPen(QPen(QColor("white"), 2))
-        p.setBrush(Look.CURSOR)
+        p.setBrush(color)
         p.drawEllipse(QPointF(x, y), 5.5, 5.5)
 
     def _paint_hover_thumb(self, p):

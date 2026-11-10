@@ -61,6 +61,9 @@ STATUS_TEXT = {
     R.STATUS_UNKNOWN: "Not measured",
     R.STATUS_MISSING: "No aligned image",
 }
+NOT_ALIGNED_COLOR = QColor("#A0AAB4")      # map: a shoot point Step 4 did not align
+LEGEND_ORDER = (R.STATUS_OK, R.STATUS_CHECKED, R.STATUS_CHECK, R.STATUS_UNKNOWN, R.STATUS_SUSPICIOUS,
+                R.STATUS_FLAGGED, R.STATUS_REALIGNED, R.STATUS_MISSING)
 # Points worth a look, in this order, for "Next to review"
 TO_REVIEW = (R.STATUS_REALIGNED, R.STATUS_SUSPICIOUS, R.STATUS_CHECK, R.STATUS_UNKNOWN)
 
@@ -1005,14 +1008,26 @@ class ReviewDialog(QDialog):
             keys.setTextFormat(Qt.TextFormat.RichText)
             keys.setStyleSheet("color: #6B7785; background: #F5F7FA; border-radius: 6px; padding: 8px;")
             lay.addWidget(keys)
-        legend = QLabel(" ".join(
-            f"<span style='color:{STATUS_COLORS[s].name()}'>■</span>&nbsp;{STATUS_TEXT[s]}<br>"
-            for s in (R.STATUS_OK, R.STATUS_CHECKED, R.STATUS_CHECK, R.STATUS_SUSPICIOUS, R.STATUS_FLAGGED,
-                      R.STATUS_REALIGNED, R.STATUS_MISSING)))
-        legend.setTextFormat(Qt.TextFormat.RichText)
-        legend.setStyleSheet("color: #6B7785;")
-        lay.addWidget(legend)
+        self.legend = QLabel()
+        self.legend.setTextFormat(Qt.TextFormat.RichText)
+        self.legend.setStyleSheet("color: #6B7785;")
+        lay.addWidget(self.legend)
         return side
+
+    def legend_counts(self):
+        """[(colour, text, count)] of the legend under the mini map: only the
+        kinds of points present."""
+        counts = self.review.counts()
+        out = [(STATUS_COLORS[s], STATUS_TEXT[s], counts.get(s, 0)) for s in LEGEND_ORDER]
+        if self.map_model is not None:
+            outside = sum(1 for n in self.map_model.numbers if self.review.by_number(n) is None)
+            out.append((NOT_ALIGNED_COLOR, "Not aligned (Step 4)", outside))
+        return [row for row in out if row[2]]
+
+    def _refresh_legend(self):
+        self.legend.setText("".join(
+            f"<span style='color:{color.name()}'>■</span>&nbsp;{text}&nbsp;<b>{count}</b><br>"
+            for color, text, count in self.legend_counts()))
 
     # ---- background scan
     def _start_scan(self, numbers=None):
@@ -1182,11 +1197,18 @@ class ReviewDialog(QDialog):
             return None
         if model is not None:
             model.image_of = self.thumbs.get       # aligned image (thumbnail) in its footprint
+            model.cursor_in_point_color = True     # the footprint in the colour of the point's status
+            model.minor = lambda i: self._map_status(model.numbers[i]) in (None, R.STATUS_MISSING)
         return model
 
-    def _map_color(self, number):
+    def _map_status(self, number):
+        """Status of a point of the map (None: not aligned by Step 4)."""
         pt = self.review.by_number(number)
-        return STATUS_COLORS[pt.status] if pt is not None else QColor("#A0AAB4")
+        return pt.status if pt is not None else None
+
+    def _map_color(self, number):
+        status = self._map_status(number)
+        return STATUS_COLORS[status] if status is not None else NOT_ALIGNED_COLOR
 
     def _on_map_picked(self, i):
         number = self.map_model.numbers[i]
@@ -1253,6 +1275,7 @@ class ReviewDialog(QDialog):
         self.view.update()
 
     def _refresh_counts(self):
+        self._refresh_legend()
         counts = self.review.counts()
         ok = counts.get(R.STATUS_OK, 0) + counts.get(R.STATUS_CHECKED, 0)
         check = counts.get(R.STATUS_CHECK, 0) + counts.get(R.STATUS_UNKNOWN, 0)
