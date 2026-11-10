@@ -590,11 +590,11 @@ def select_mapping_pairs(
     overlap: Optional[float] = None,
 ) -> Dict[str, Any]:
     """The image selection of Step 5, nothing written: the eligible pairs
-    (rank-one |dt| within the tolerance, images of the flight, not flagged
+    (rank-one |dt| within the tolerance, anywhere in the flight, not flagged
     failed) thinned by ``overlap`` or one every ``sample_every``.
 
-    Returns {"sampled_pairs", "counters", "shoot_points_path",
-    "transfer_info_path"}; each pair is (shoot point index, VIS, NIR match, dt)."""
+    Returns {"sampled_pairs", "counters", "shoot_points_path"}; each pair is
+    (shoot point index, VIS, NIR match, dt)."""
     mission_folder = Path(mission_folder)
     aerial_photography = mission_folder / "AerialPhotography"
     status_shoot_points_path = mission_folder / "ImgIRdrone" / "shoot_points.json"
@@ -603,28 +603,16 @@ def select_mapping_pairs(
         if status_shoot_points_path.is_file()
         else aerial_photography / "shoot_points.json"
     )
-    transfer_info_path = aerial_photography / "VIS" / "transfer_info_VIS_dng.json"
-
     shoot_points_data = _load_json(shoot_points_path)
     if not isinstance(shoot_points_data, dict) or not isinstance(
         shoot_points_data.get("shoot_points"), list
     ):
         raise ODMMappingError(f"{shoot_points_path} must contain a 'shoot_points' list.")
-    transfer_data = _load_json(transfer_info_path)
-    fly_section = transfer_data.get("fly") if isinstance(transfer_data, dict) else None
-    fly_images = fly_section.get("listCopiedImages") if isinstance(fly_section, dict) else None
-    if not isinstance(fly_images, list) or not all(isinstance(name, str) for name in fly_images):
-        raise ODMMappingError(
-            f"{transfer_info_path} must contain 'fly.listCopiedImages' as a list of filenames."
-        )
-
-    fly_filenames: Set[str] = {Path(filename).name.casefold() for filename in fly_images}
     eligible_pairs: List[Tuple[int, Dict[str, Any], Dict[str, Any], float]] = []
     counters = {
         "rank_one_pairs": 0,
         "rank_one_pairs_with_valid_dt": 0,
         "rank_one_pairs_within_dt_tolerance": 0,
-        "fly_pairs_within_dt_tolerance": 0,
     }
 
     source_shoot_points = shoot_points_data["shoot_points"]
@@ -684,9 +672,6 @@ def select_mapping_pairs(
             if absolute_dt > dt_tolerance_s:
                 continue
             counters["rank_one_pairs_within_dt_tolerance"] += 1
-            if Path(vis_filename).name.casefold() not in fly_filenames:
-                continue
-            counters["fly_pairs_within_dt_tolerance"] += 1
             eligible_pairs.append((shoot_point_index, vis_data, nir_match, float(dt)))
 
     if overlap is None:
@@ -706,7 +691,6 @@ def select_mapping_pairs(
         "sampled_pairs": sampled_pairs,
         "counters": counters,
         "shoot_points_path": shoot_points_path,
-        "transfer_info_path": transfer_info_path,
     }
 
 
@@ -775,7 +759,7 @@ def build_best_mapping(
 ) -> Dict[str, Any]:
     """Build and save the selected shoot points and their matching TIFF quartets.
 
-    The eligible pairs (rank-one |dt| within the tolerance, survey of Step 2, not
+    The eligible pairs (rank-one |dt| within the tolerance, anywhere in the flight, not
     flagged failed) are thinned either by ``overlap`` (best mapping: footprint
     overlap between successive images, 0.5 to 0.95) or, when ``overlap`` is None,
     by keeping one pair every ``sample_every``."""
@@ -811,7 +795,6 @@ def build_best_mapping(
     sampled_pairs = selection["sampled_pairs"]
     counters = selection["counters"]
     shoot_points_path = selection["shoot_points_path"]
-    transfer_info_path = selection["transfer_info_path"]
     mapping_folder = mission_folder / "mapping_MULTI"
     images_folder = mission_folder / "ImgIRdrone" / "imgMultispectral"
     camera_path = mapping_folder / "camera" / "camera_IRdrone.json"
@@ -866,7 +849,6 @@ def build_best_mapping(
         "selection_rules": {
             "nir_rank": 1,
             "maximum_absolute_dt_seconds": dt_tolerance_s,
-            "vis_transfer_section": "fly.listCopiedImages",
             "selection": "overlap" if overlap is not None else "sample_every",
             "sample_every_nth_eligible_pair": sample_every if overlap is None else None,
             "footprint_overlap": overlap,
@@ -875,7 +857,6 @@ def build_best_mapping(
         },
         "source_files": {
             "shoot_points": str(shoot_points_path),
-            "vis_transfer_info": str(transfer_info_path),
             "camera_configuration": str(camera_path),
         },
         "camera_configuration": camera_data,

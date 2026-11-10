@@ -1259,7 +1259,7 @@ The files are created in the \texttt{geo\_ref} subfolder of the folder containin
 This button stitches the aligned images from Step~4 into a single orthophoto of the whole surveyed area, using the OpenDroneMap (ODM) software. ODM runs in a \emph{Docker} container: the user has nothing to configure, but Docker Desktop must be running (see below).
 
 \subsection{Choice of images}\label{btn:step5_selection}
-Clicking the button opens a window for choosing the criteria. A note at the bottom recalls that the computation can be long and use several gigabytes of memory and disk space. \bouton{Build the map} starts it at once; \bouton{Cancel} closes the window and starts nothing. Once the map has been built, the window proposes the settings of the last run (the default values below otherwise; the best mapping chosen again in Step~2 or~4 after that run wins); the main window map shows the images they select (Section~\ref{btn:home_map}).
+Clicking the button opens a window for choosing the criteria. A note at the bottom recalls that the computation can be long and use several gigabytes of memory and disk space. \bouton{Build the map} starts it at once; \bouton{Cancel} closes the window and starts nothing. Once the map has been built, the window proposes the settings of the last run (the default values below otherwise; the best mapping chosen again in Step~2 or~4 after that run wins). The images can come from the whole flight, not only from the survey phase of Step~2.
 
 \begin{itemize}
 	\item \texttt{Maximum |dt| (NIR rank 1)}: maximum allowed time difference between the VIS image and the nearest NIR image. This is the same criterion as the \texttt{Maximum VIS/NIR time difference} of Step~4. Default value: $0.5\,s$ (range $0.05$ to $6\,s$).

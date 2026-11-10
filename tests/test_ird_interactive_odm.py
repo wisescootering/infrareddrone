@@ -237,7 +237,6 @@ class BestMappingTests(unittest.TestCase):
 
             self.assertEqual(manifest["counts"]["rank_one_pairs"], 8)
             self.assertEqual(manifest["counts"]["rank_one_pairs_within_dt_tolerance"], 7)
-            self.assertEqual(manifest["counts"]["fly_pairs_within_dt_tolerance"], 7)
             self.assertEqual(manifest["counts"]["sampled_shoot_points"], 3)
             self.assertEqual(manifest["counts"]["ready_for_odm"], 3)
             resolution = manifest["orthophoto_resolution_estimate"]
@@ -425,6 +424,22 @@ class BestMappingTests(unittest.TestCase):
             self.assertEqual(
                 [point["VIS"]["FileName"] for point in manifest["shoot_points"]],
                 ["VIS_0121.DNG", "VIS_0125.DNG", "VIS_0128.DNG"],
+            )
+
+    def test_images_outside_the_survey_of_step2_are_mapped_too(self):
+        """No survey-phase filter: the aligned images of the whole flight are
+        eligible (and the Step 2 list is not needed any more)."""
+        with tempfile.TemporaryDirectory() as temporary:
+            mission = Path(temporary)
+            self._create_mission(mission)
+            (mission / "AerialPhotography" / "VIS" / "transfer_info_VIS_dng.json").unlink()
+
+            manifest = build_best_mapping(mission, sample_every=1)
+
+            self.assertEqual(
+                [point["VIS"]["FileName"] for point in manifest["shoot_points"]],
+                ["VIS_0120.DNG", "VIS_0121.DNG", "VIS_0124.DNG", "VIS_0125.DNG",
+                 "VIS_0126.DNG", "VIS_0127.DNG", "VIS_0128.DNG"],
             )
 
     def test_required_mission_metadata_is_reported(self):
