@@ -252,7 +252,16 @@ def add_points(review: Review, numbers: Iterable[int]) -> List[ReviewPoint]:
         return []
     added = _inventory_points(review.mission, inventory, numbers)
     review.points = sorted(review.points + added, key=lambda q: q.number)
+    if added:     # asked for by the user: Step 5 maps them whatever its own selection
+        done = {p.number for p in added}
+        for item in inventory["shoot_points"]:
+            if isinstance(item, dict) and vis_number(str(item.get("FileName", ""))) in done:
+                item[ALIGNED_ON_REQUEST] = True
+        _write_json(review.output / INVENTORY, inventory)
     return added
+
+
+ALIGNED_ON_REQUEST = "aligned_on_request"   # inventory key: aligned from the review, always mapped
 
 
 MAX_ALIGN_DT = 6.0     # Step 4 limit of the VIS / NIR time difference (s)
