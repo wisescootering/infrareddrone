@@ -310,5 +310,22 @@ class ManualRedoBatchTests(unittest.TestCase):
             self.assertEqual(A.recover_interrupted_redos(output), {})
             self.assertEqual((output / "VIS_0109.jpg").read_bytes(), b"new")
 
+    def test_a_redo_interrupted_before_markers_existed_gets_its_missing_outputs_back(self):
+        import manual_redo_archives as A
+        with tempfile.TemporaryDirectory() as temporary:
+            output, multispectral, vis = self._point_with_outputs(Path(temporary), "0110")
+            debug_dir, _, _ = prepare_manual_redo_archives(vis, output, multispectral)
+            (debug_dir / A.REDO_MARKER).unlink()                 # as left by the older version
+            (output / "VIR_0110_local.jpg").write_bytes(b"new")  # written by the redo: kept
+
+            recovered = A.recover_interrupted_redos(output)
+
+            self.assertEqual(list(recovered), ["VIS_0110_align_traces_manual"])
+            for name in _manual_redo_result_names(vis):
+                folder = multispectral if name.startswith("IRD_") else output
+                self.assertTrue((folder / name).is_file(), name)
+            self.assertEqual((output / "VIR_0110_local.jpg").read_bytes(), b"new")
+            self.assertEqual(A.recover_interrupted_redos(output), {})
+
 if __name__ == "__main__":
     unittest.main()

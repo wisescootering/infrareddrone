@@ -148,14 +148,48 @@ def recover_interrupted_redo(debug_dir):
     )
 
 
-def recover_interrupted_redos(out_dir) -> dict:
+def _recover_unmarked_redo(debug_dir, out_dir, multispectral_folder):
+    """A redo interrupted before the marker existed (older version): outputs
+    missing in place but archived are put back (existing files are kept:
+    without the marker, a file cut short cannot be told from a new one)."""
+    stem = debug_dir.name.removesuffix("_align_traces_manual")
+    original_dir = debug_dir / "original"
+    restored = []
+    for name in _manual_redo_result_names(stem + ".dng"):
+        folder = multispectral_folder if name.startswith("IRD_") else out_dir
+        if folder is None:
+            continue
+        target = folder / name
+        if target.is_file():
+            continue
+        versions = _archived_versions(original_dir, name)
+        if versions:
+            source = versions[0] if name.endswith(".exif") else versions[-1]
+            shutil.copy2(source, target)
+            restored.append(target)
+    return restored
+
+
+def recover_interrupted_redos(out_dir, multispectral_folder=None) -> dict:
     """Every interrupted redo of the output folder restored:
-    ``{trace folder name: restored paths}``."""
+    ``{trace folder name: restored paths}``. ``multispectral_folder`` (default
+    ``out_dir/imgMultispectral``) is used for the redos without a marker."""
+    out_dir = Path(out_dir)
+    if multispectral_folder is None and (out_dir / "imgMultispectral").is_dir():
+        multispectral_folder = out_dir / "imgMultispectral"
     recovered = {}
-    for marker in sorted(Path(out_dir).glob(f"*_align_traces_manual/{REDO_MARKER}")):
-        restored = recover_interrupted_redo(marker.parent)
-        if not marker.exists():
-            recovered[marker.parent.name] = restored
+    for debug_dir in sorted(out_dir.glob("*_align_traces_manual")):
+        marker = debug_dir / REDO_MARKER
+        if marker.is_file():
+            restored = recover_interrupted_redo(debug_dir)
+            if not marker.exists():
+                recovered[debug_dir.name] = restored
+        elif (debug_dir / "original").is_dir():
+            restored = _recover_unmarked_redo(
+                debug_dir, out_dir,
+                None if multispectral_folder is None else Path(multispectral_folder))
+            if restored:
+                recovered[debug_dir.name] = restored
     return recovered
 
 
