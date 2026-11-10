@@ -5,13 +5,14 @@ Working folder of the wizard: the folder where the missions are stored.
 * WorkingDirDialog: choose the folder. Shown at the first launch (nothing saved
   yet) and from the gear button at the bottom of the main window.
 * WorkingDirBar: bottom bar of the main window, shows the folder + gear button.
+* MissionSizeLabel: size of the current mission folder, bottom bar of the mission page.
 
 The choice is saved in the user settings file (config.SETTINGS_FILE). The
 environment variable IRDRONE_WORKING_DIR, when set, still wins at each launch.
 """
 from pathlib import Path
 
-from PyQt6.QtCore import pyqtSignal, QTimer, QUrl
+from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal, QTimer, QUrl
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
     QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout, QLabel, QLayout, QLineEdit,
@@ -19,6 +20,7 @@ from PyQt6.QtWidgets import (
 )
 
 import config
+import IRD_Interactive_archive as Archive
 import IRD_Interactive_diskspace as Disk
 from IRD_Interactive_progress import mission_folder
 from IRD_Interactive_look import SECONDARY_STYLE
@@ -210,3 +212,58 @@ class MissionLabel(QLabel):
     def _open_folder(self, _link=None):
         if self.folder is not None:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.folder)))
+
+
+class _SizeSignals(QObject):
+    done = pyqtSignal(object, object)   # (request id, bytes): sizes exceed the 32-bit int range
+
+
+class _SizeTask(QRunnable):
+    def __init__(self, request, folder, signals):
+        super().__init__()
+        self.request, self.folder, self.signals = request, folder, signals
+
+    def run(self):
+        try:
+            size = Archive.mission_size(self.folder)
+        except Exception:  # an unreadable folder: no size shown, never an error
+            size = None
+        self.signals.done.emit(self.request, size)
+
+
+class MissionSizeLabel(QLabel):
+    """'Mission size 12.3 GB' in the bottom bar of the mission page. The folder
+    is measured outside the GUI thread (missions hold thousands of files), again
+    when the page is refreshed (a step done) and every minute while shown."""
+
+    REFRESH_MS = 60_000
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.folder = None
+        self._request = 0
+        self._signals = _SizeSignals(self)
+        self._signals.done.connect(self._on_size)
+        self.setToolTip("Size of the mission folder on disk")
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.refresh)
+        self.timer.start(self.REFRESH_MS)
+
+    def set_folder(self, folder):
+        folder = Path(folder) if folder else None
+        if folder != self.folder:
+            self.setText("")
+        self.folder = folder
+        self.refresh()
+
+    def refresh(self):
+        self._request += 1                       # a late answer for another folder is ignored
+        if self.folder is None or (not self.isVisible() and self.text()):
+            return
+        QThreadPool.globalInstance().start(_SizeTask(self._request, self.folder, self._signals))
+
+    def _on_size(self, request, size):
+        if request != self._request:
+            return
+        self.setText("" if size is None else
+                     f'<span style="color:#6B7785">Mission size</span>&nbsp; <b>{Disk.format_bytes(size)}</b>')

@@ -89,7 +89,7 @@ import config
 from config import missing_tools_message
 import IRD_Interactive_help as Help
 import IRD_Interactive_look as Look
-from IRD_Interactive_workdir import WorkingDirBar, ensure_working_dir_at_startup
+from IRD_Interactive_workdir import MissionSizeLabel, WorkingDirBar, ensure_working_dir_at_startup
 import IRD_Interactive_progress as Progress
 
 
@@ -188,9 +188,12 @@ class Main_Window(QMainWindow):
         bottom_layout.addSpacing(8)
         bottom_layout.addWidget(self.working_dir_bar)
         bottom_layout.addStretch()
-        # The working folder is chosen with the list of the missions: on the mission page, only "?"
-        self.home.currentChanged.connect(lambda page: self.working_dir_bar.setVisible(page == 0))
-        self.working_dir_bar.setVisible(self.home.currentIndex() == 0)
+        # Mission page: the size of the mission folder, at the right
+        self.mission_size_label = MissionSizeLabel(self)
+        bottom_layout.addWidget(self.mission_size_label)
+        # The working folder is chosen with the list of the missions: on the mission page, "?" and the size
+        self.home.currentChanged.connect(self._on_home_page_changed)
+        self._on_home_page_changed(self.home.currentIndex())
         self.main_layout.addWidget(status)
 
         for step, tile in self.home.rail.tiles.items():
@@ -222,12 +225,20 @@ class Main_Window(QMainWindow):
         print(f"Working folder: {folder}")
 
     def _show_current_mission(self):
-        """Refresh the mission page (title, steps, map)."""
+        """Refresh the mission page (title, steps, map) and the mission size."""
         folder = Progress.mission_folder(self.mission_parameters, self.folderMissionPath)
         try:
             self.home.show_mission(folder)
         except Exception as e:  # the home page must never block the steps
             print(f"Home page not updated: {e}")
+        self.mission_size_label.set_folder(folder)
+
+    def _on_home_page_changed(self, page):
+        """List of the missions: working folder and free space; mission page: mission size."""
+        self.working_dir_bar.setVisible(page == 0)
+        self.mission_size_label.setVisible(page != 0)
+        if page != 0:
+            self.mission_size_label.refresh()
 
     # ===================================================================================
     #                   Button #1 click handlers
