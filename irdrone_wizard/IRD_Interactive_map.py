@@ -895,11 +895,10 @@ def map_model_for(mission: Path, color_of=None, with_ortho: bool = True, shoot_p
     points (every visible image before Step 3) on the whole flight. The
     orthophoto and the ground are read in the background. `color_of(number)`
     gives the colour of a point (default: phases of Step 2). With
-    `sparse_mapping` (the main window): once the map of Step 5 is built,
-    only the shoot points it used are drawn (the flagged ones in red); else,
-    once Step 4 is done, the points as in the review (status colours, the
-    ones Step 4 did not align as small grey dots); else the ones kept by the
-    best mapping."""
+    `sparse_mapping` (the main window): once Step 4 is done, the points
+    exactly as in the review (status colours, the ones Step 4 did not align
+    as small grey dots), over the orthophoto of Step 5 when it is built;
+    before, the ones kept by the best mapping."""
     track = F.mission_track(mission, shoot_points_only=shoot_points_only)
     if not track:
         return None
@@ -909,19 +908,18 @@ def map_model_for(mission: Path, color_of=None, with_ortho: bool = True, shoot_p
     mapped, mapped_by, flagged, built = None, "mapping", None, None
     minor = None
     if sparse_mapping:
-        built = F.mapped_numbers(mission) if F.orthophoto_path(mission).is_file() else set()
         statuses = review_statuses(mission)
-        if built:          # the viewpoints the map used; flagged since: in red
-            mapped, mapped_by = built, "mapping"
-            flagged = {n for n, status in (statuses or {}).items() if status in ("flagged", "realigned")}
-        elif statuses is not None:      # Step 4 done: as in the review
+        if statuses is not None:      # Step 4 done: the twin of the review map
             import IRD_Interactive_review as Rv
             color_of = lambda n: (Rv.STATUS_COLORS[statuses[n]] if n in statuses  # noqa: E731
                                   else Rv.NOT_ALIGNED_COLOR)
             minor = lambda n: statuses.get(n, "missing") == "missing"  # noqa: E731
-        else:
-            import best_mapping as BM
-            mapped, mapped_by = BM.planned_numbers(mission), "best mapping"
+        else:     # no Step 4 inventory: the images of a map built (older missions), else the plan
+            built = F.mapped_numbers(mission) if F.orthophoto_path(mission).is_file() else set()
+            mapped, mapped_by = built, "mapping"
+            if not mapped:
+                import best_mapping as BM
+                mapped, mapped_by = BM.planned_numbers(mission), "best mapping"
     model = MapModel(track, fov=F.field_of_view(F.camera_model(mission)), parent=parent,
                      path=path if len(path) > len(track) else None,
                      mapped=mapped, mapped_by=mapped_by, flagged=flagged, built=built,

@@ -287,22 +287,21 @@ class MapViewTest(unittest.TestCase):
         self.assertIsNone(R.statuses(m.parent / "nothing"))              # before Step 4
         self.MV.tile_cache().stop()
 
-    def test_main_map_once_the_map_is_built_shows_the_viewpoints_used(self):
-        """The map of Step 5 built: the main window shows the shoot points it
-        used (not what a next run would pick), a point flagged since in red."""
-        import best_mapping as BM
+    def test_main_map_once_the_map_is_built_is_still_the_twin_of_the_review(self):
+        """The map of Step 5 built from some of the points: the main window
+        still shows every point of the review (its orthophoto underneath)."""
+        import shoot_review as R
         m = make_mission(Path(tempfile.mkdtemp()), n=7)
         step4_done(m, range(137, 144), failed={141})
-        BM.save_choice(m, enabled=True)
         (m / "mapping_MULTI" / "mapping_result").mkdir(parents=True)
         (m / "mapping_MULTI" / "img_best_mappping.json").write_text(json.dumps({
-            "image_quartets": [{"VIS_filename": f"VIS_{n:04d}.dng"} for n in (137, 141, 143)]}))
+            "image_quartets": [{"VIS_filename": f"VIS_{n:04d}.dng"} for n in (137, 143)]}))
         F.orthophoto_path(m).write_bytes(b"")
         model = self.MV.map_model_for(m, with_ortho=False, sparse_mapping=True)
-        self.assertEqual((model.mapped_by, model.planned, model.sparse), ("mapping", False, True))
-        self.assertEqual([model.numbers[i] for i in model.mapped], [137, 141, 143])
-        self.assertEqual([model.numbers[i] for i in model.flagged], [141])     # flagged after the run
-        self.assertEqual(model.visible(), [0, 4, 6])
+        self.assertFalse(model.sparse)
+        self.assertEqual(model.visible(), list(range(7)))
+        self.assertEqual({n for i, n in enumerate(model.numbers) if not model.minor(i)},
+                         {n for n, s in R.statuses(m).items() if s != "missing"})
         self.MV.tile_cache().stop()
 
     def test_the_aligned_image_in_its_footprint_is_not_tinted(self):
