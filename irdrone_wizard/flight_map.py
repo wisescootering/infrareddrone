@@ -192,6 +192,26 @@ def odm_yaws(mission: Path) -> Dict[int, float]:
     return out
 
 
+def aligned_selection(mission: Path) -> Tuple[Set[int], Set[int]]:
+    """(kept, flagged): numbers of the shoot points aligned by Step 4
+    (ImgIRdrone/shoot_points.json), the ones Step 5 maps and the ones flagged
+    ("failed": left out of the map). Both empty before Step 4."""
+    kept: Set[int] = set()
+    flagged: Set[int] = set()
+    try:
+        with open(Path(mission) / "ImgIRdrone" / "shoot_points.json", encoding="utf-8") as f:
+            points = json.load(f).get("shoot_points", [])
+    except (OSError, ValueError, AttributeError):
+        return kept, flagged
+    for item in points if isinstance(points, list) else []:
+        if not isinstance(item, dict) or not isinstance(item.get("FileName"), str):
+            continue
+        digits = re.search(r"(\d+)", Path(item["FileName"]).stem)
+        if digits:
+            (flagged if item.get("failed") else kept).add(int(digits.group(1)))
+    return kept, flagged
+
+
 def mapped_numbers(mission: Path) -> Set[int]:
     """Numbers of the shoot points used by the mapping of Step 5 (the
     "best mapping" selection, one image every n): the images solved by ODM

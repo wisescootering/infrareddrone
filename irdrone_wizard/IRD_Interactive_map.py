@@ -32,6 +32,7 @@ import flight_map as F
 import IRD_Interactive_look as Look
 
 SETTINGS_KEY = "flight_map/"
+FLAGGED_COLOR = QColor("#B03A2E")       # flagged in the review: left out of the map (as in the review)
 
 
 # ---------------------------------------------------------------------------
@@ -131,7 +132,7 @@ class MapModel(QObject):
 
     def __init__(self, points: List[F.MapPoint], fov=None, ortho: Optional[F.OrthoPreview] = None,
                  color_of: Optional[Callable[[int], QColor]] = None, path: Optional[List[F.MapPoint]] = None,
-                 mapped=None, mapped_by: str = "mapping", parent=None):
+                 mapped=None, mapped_by: str = "mapping", flagged=None, parent=None):
         super().__init__(parent)
         self.points = points
         # the whole flight (line), the points are the shoot points on it
@@ -141,8 +142,11 @@ class MapModel(QObject):
         self.xy = [p.xy for p in points]
         # indices of the shoot points used by the mapping of Step 5
         self.mapped = [i for i, n in enumerate(self.numbers) if n in mapped] if mapped else []
-        # "mapping" (Step 5 done) or "best mapping" (planned in Steps 2 and 4)
+        # "mapping" (Step 5 done), "aligned" (Step 4 done: the images Step 5
+        # will map) or "best mapping" (planned in Steps 2 and 4)
         self.mapped_by = mapped_by
+        # indices of the shoot points flagged in the review: left out of the map
+        self.flagged = [i for i, n in enumerate(self.numbers) if n in flagged] if flagged else []
         self.show_mapped = True             # Layers ▾ "Only the images of the mapping"
         self.fov = fov or F.field_of_view()
         self.color_of = color_of
@@ -204,13 +208,13 @@ class MapModel(QObject):
     @property
     def planned(self) -> bool:
         """The mapped points are the best mapping planned (no mapping yet)."""
-        return self.mapped_by == "best mapping"
+        return self.mapped_by in ("best mapping", "aligned")
 
     @property
     def sparse(self) -> bool:
         """Only the shoot points of the mapping: while the orthophoto is shown,
         or before the mapping when the best mapping is chosen."""
-        if not (self.mapped and self.show_mapped):
+        if not ((self.mapped or self.flagged) and self.show_mapped):
             return False
         return self.planned or (bool(self.ortho_images) and self.ortho_mode in self.ortho_images)
 
@@ -225,9 +229,14 @@ class MapModel(QObject):
             return self.selection
         return self.mapped if self.sparse and self.planned else []
 
+    def footprints_flagged(self) -> List[int]:
+        """Indices whose footprints are drawn in red: flagged, left out of the
+        map planned (holes in the coverage)."""
+        return self.flagged if self.sparse and self.planned and not self.selection else []
+
     def visible(self) -> List[int]:
-        """Indices of the points drawn (and picked)."""
-        return self.mapped if self.sparse else list(range(len(self.xy)))
+        """Indices of the points drawn (and picked): the flagged ones too."""
+        return sorted(set(self.mapped) | set(self.flagged)) if self.sparse else list(range(len(self.xy)))
 
     def footprint(self, index: int) -> Optional[List[Tuple[float, float]]]:
         """Footprint corners in mercator metres (None without height or yaw)."""
@@ -363,7 +372,9 @@ class FlightMapView(QWidget):
             menu.addAction(act)
         if self.model.mapped:
             menu.addSection("Trajectory")
-            self.act_mapped = QAction("Only the images of the best mapping" if self.model.planned
+            self.act_mapped = QAction("Only the images for the map (and the flagged ones)"
+                                      if self.model.mapped_by == "aligned"
+                                      else "Only the images of the best mapping" if self.model.planned
                                       else "Only the images of the mapping (orthophoto shown)",
                                       menu, checkable=True)
             self.act_mapped.setChecked(self.model.show_mapped)
@@ -508,7 +519,7 @@ class FlightMapView(QWidget):
             # the whole flight, faint; the trajectory of the mapping on top
             p.setPen(QPen(QColor(255, 255, 255, 150), 1.2, Qt.PenStyle.DashLine))
             p.drawPath(self._polyline(line))
-            line_main = [pts[i] for i in shown]
+            line_main = [pts[i] for i in self.model.mapped] or [pts[i] for i in shown]
         else:
             line_main = line
         path = self._polyline(line_main)
@@ -519,8 +530,14 @@ class FlightMapView(QWidget):
         r = 3.2 if not self.compact else 2.2
         if self.model.sparse:
             r += 0.8
+        flagged = set(self.model.flagged)
         for i in shown:
             q = pts[i]
+            if i in flagged:                     # left out of the map: red, a little bigger
+                p.setPen(QPen(QColor("white"), 1.5))
+                p.setBrush(FLAGGED_COLOR)
+                p.drawEllipse(q, r + 1.5, r + 1.5)
+                continue
             color = self.model.color_of(i) if self.model.color_of else QColor("#17365D")
             if self.model.is_selected(i):
                 p.setPen(QPen(QColor("#17365D"), 1.4))
@@ -546,6 +563,7 @@ class FlightMapView(QWidget):
         """Footprints of the images kept for the map: their overlap shows."""
         kept = self.model.footprints_kept()
         if not kept:
+            self._paint_flagged(p)
             return
         if self.model.progress is not None:
             self._paint_progress(p, kept)
@@ -563,6 +581,21 @@ class FlightMapView(QWidget):
             p.setPen(pen)
             for q in quads:
                 p.drawPolygon(q)
+        self._paint_flagged(p)              # on top: the red outlines stay readable
+
+    def _paint_flagged(self, p):
+        """Footprints of the flagged images, in red: what the map will miss."""
+        quads = [q for q in (self._quad(i) for i in self.model.footprints_flagged()) if q is not None]
+        if not quads:
+            return
+        fill = QColor(FLAGGED_COLOR)
+        fill.setAlpha(25)
+        p.setBrush(fill)
+        for pen in (QPen(QColor(255, 255, 255, 170), 2.8), QPen(FLAGGED_COLOR, 1.6, Qt.PenStyle.DashLine)):
+            p.setPen(pen)
+            for q in quads:
+                p.drawPolygon(q)
+        p.setBrush(Qt.BrushStyle.NoBrush)
 
     def _paint_progress(self, p, indices):
         """Footprints still to do (dashed), done (green) and in progress
@@ -663,8 +696,15 @@ class FlightMapView(QWidget):
         if self.model.progress is not None and self.model.selection:
             bits.append(f"{len(self.model.progress[0])} of {len(self.model.selection)} done")
         if self.model.sparse:
-            bits.append(f"{len(self.model.mapped)} images kept by the best mapping" if self.model.planned
-                        else f"{len(self.model.mapped)} images of the mapping")
+            n = len(self.model.mapped)
+            bits.append(f"{n} images for the map" if self.model.mapped_by == "aligned"
+                        else f"{n} images kept by the best mapping" if self.model.planned
+                        else f"{n} images of the mapping")
+            if self.model.flagged:
+                # flagged after Step 5: they are in this orthophoto, not in the next one
+                again = not self.model.planned and set(self.model.flagged) & set(self.model.mapped)
+                bits.append(f"⚑ {len(self.model.flagged)} flagged, left out"
+                            + (" when Step 5 runs again" if again else ""))
         font = p.font()
         font.setPointSizeF(7.5 if self.compact else 8.0)
         p.setFont(font)
@@ -819,15 +859,20 @@ def map_model_for(mission: Path, color_of=None, with_ortho: bool = True, shoot_p
     if color_of is None:
         color_of = phase_colors(mission)
     path = F.image_track(mission)
-    mapped, mapped_by = None, "mapping"
+    mapped, mapped_by, flagged = None, "mapping", None
     if sparse_mapping:
+        # the images of the map: Step 5 done, else the ones aligned by Step 4
+        # (flagged ones left out, drawn in red), else the best mapping planned
+        kept, flagged = F.aligned_selection(mission)
         mapped = F.mapped_numbers(mission)
-        if not mapped:
+        if not mapped and (kept or flagged):
+            mapped, mapped_by = kept, "aligned"
+        elif not mapped:
             import best_mapping as BM
             mapped, mapped_by = BM.planned_numbers(mission), "best mapping"
     model = MapModel(track, fov=F.field_of_view(F.camera_model(mission)), parent=parent,
                      path=path if len(path) > len(track) else None,
-                     mapped=mapped, mapped_by=mapped_by,
+                     mapped=mapped, mapped_by=mapped_by, flagged=flagged,
                      color_of=lambda i: color_of(track[i].number))
     # in the background: ground under the drone (footprint size), orthophoto
     job = _OrthoJob(Path(mission), track, with_ortho and F.orthophoto_path(mission).is_file())
