@@ -637,6 +637,130 @@ class RedoRunner(QObject):
             self.all_done.emit()
 
 
+def align_points_arguments(mission_folder: Path, numbers) -> list:
+    """Step 4 command aligning only the shoot points ``numbers`` (left out of the
+    first run): the outputs of the first run (local / global, NIR, NDVI) are
+    read from ImgIRdrone, the time filter is the widest of Step 4 (the user
+    asked for these points), no best mapping."""
+    output = Path(mission_folder) / "ImgIRdrone"
+    modes = [mode for mode in ("local", "global") if next(output.glob(f"VIR_*_{mode}.jpg"), None)]
+    arguments = [
+        str(PROCESSING_SCRIPT), "-i", str(mission_folder),
+        "--image-numbers", *(str(n) for n in sorted(numbers)),
+        "--alignment-modes", *(modes or ["local"]),
+        "--max-time-difference", "6.0",
+        "--workers", str(load_worker_setting()),
+        "--log-level", load_log_level_setting(),
+        "--progress",
+    ]
+    if next(output.glob("NDVI_*.jpg"), None):
+        arguments.append("--ndvi")
+    if next(output.glob("NIR_*_*.jpg"), None):
+        arguments.append("--nir")
+    return arguments
+
+
+class AlignPointsRunner(QObject):
+    """Step 4 alignment of shoot points it left out (best mapping, time filter),
+    asked from the review: one run_after_preprocessing.py process at a time;
+    the points asked meanwhile wait and run together next. ``run_done`` gives
+    the points of the run and an error (empty when the process succeeded; the
+    points actually aligned are the ones now in ImgIRdrone/shoot_points.json)."""
+
+    output = pyqtSignal(str)
+    point_done = pyqtSignal(int)          # its alignment ended (written at the end of the run)
+    run_done = pyqtSignal(object, str)    # set of numbers, error
+
+    def __init__(self, mission_folder: Path, parent=None):
+        super().__init__(parent)
+        self.mission_folder = Path(mission_folder)
+        self.process = None
+        self.running = set()      # numbers of the process running
+        self.done = set()         # of these, the ones whose alignment ended
+        self.waiting = set()
+        self.started = 0.0
+        self._partial = ""
+        self._tail = []
+
+    def busy(self) -> bool:
+        return self.process is not None or bool(self.waiting)
+
+    def numbers(self) -> set:
+        return self.running | self.waiting
+
+    def add(self, numbers) -> None:
+        self.waiting |= set(numbers) - self.running
+        if self.process is None:
+            self._start()
+
+    def stop(self) -> None:
+        """Nothing waits any more; the running process is ended (its points stay
+        out of the review: a next run reuses what was computed)."""
+        self.waiting = set()
+        if self.process is not None:
+            kill_process_tree(self.process.processId())
+            if not self.process.waitForFinished(5000):
+                self.process.kill()
+
+    def _start(self) -> None:
+        if not self.waiting:
+            return
+        self.running, self.waiting, self.done = self.waiting, set(), set()
+        self.started, self._partial, self._tail = time.time(), "", []
+        process = QProcess(self)
+        process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        process.setProcessEnvironment(redo_environment())
+        process.setWorkingDirectory(str(PROJECT_ROOT))
+        process.readyReadStandardOutput.connect(self._read)
+        process.finished.connect(self._on_finished)
+        process.errorOccurred.connect(self._on_error)
+        self.process = process
+        arguments = align_points_arguments(self.mission_folder, self.running)
+        self.output.emit(f"\nAlign {len(self.running)} point(s): {sys.executable} {' '.join(arguments)}")
+        process.start(sys.executable, arguments)
+
+    def _read(self, final: bool = False) -> None:
+        if self.process is None:
+            return
+        text = self._partial + bytes(self.process.readAllStandardOutput()).decode("utf-8", errors="replace")
+        lines = text.split("\n")
+        self._partial = "" if final else lines.pop()
+        for line in (line.rstrip("\r") for line in lines):
+            match = PROGRESS_LINE_PATTERN.fullmatch(line)
+            if match is not None:
+                try:
+                    number = _vis_image_number(match.group(3) or "")
+                except ValueError:
+                    continue
+                self.done.add(number)
+                self.point_done.emit(number)
+            elif line.strip():
+                self._tail = (self._tail + [line])[-12:]
+                self.output.emit(line)
+
+    def _on_error(self, error) -> None:
+        if error == QProcess.ProcessError.FailedToStart and self.process is not None:
+            self._finish(f"Unable to start the alignment: {self.process.errorString()}")
+
+    def _on_finished(self, exit_code: int, exit_status) -> None:
+        self._read(final=True)
+        error = ""
+        if exit_status != QProcess.ExitStatus.NormalExit:
+            error = "The alignment was stopped (by you, or by the system: out of memory?)."
+        elif exit_code != 0:
+            error = f"The alignment failed (exit code {exit_code}).\n\n" + "\n".join(self._tail[-6:])
+        self._finish(error)
+
+    def _finish(self, error: str) -> None:
+        if self.process is None:
+            return
+        self.process.deleteLater()
+        self.process = None
+        numbers, self.running, self.done = self.running, set(), set()
+        self.run_done.emit(numbers, error)
+        self._start()
+
+
 class DialogImageProcessing(QDialog):
     """Run the post-preprocessing image pipeline for a mission.
 

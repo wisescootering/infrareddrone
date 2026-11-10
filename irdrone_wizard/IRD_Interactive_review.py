@@ -60,6 +60,7 @@ STATUS_TEXT = {
     R.STATUS_MISSING: "No aligned image",
 }
 NOT_ALIGNED_COLOR = QColor("#A0AAB4")      # map: a shoot point Step 4 did not align
+ALIGNING_COLOR = QColor("#E8A33D")         # map: such a point being aligned (asked by a right-click)
 LEGEND_ORDER = (R.STATUS_OK, R.STATUS_CHECK, R.STATUS_UNKNOWN, R.STATUS_SUSPICIOUS,
                 R.STATUS_FLAGGED, R.STATUS_REALIGNED, R.STATUS_MISSING)
 # Points worth a look, in this order, for "Next to review"
@@ -752,6 +753,12 @@ class ReviewDialog(QDialog):
         self.redo_runner.stage.connect(lambda *_: self._update_banner())
         self.redo_runner.point_done.connect(self._on_redo_done)
         self.redo_runner.all_done.connect(self._on_redo_all_done)
+        # shoot points Step 4 left out (grey on the map), aligned on request
+        self.point_aligner = Step4.AlignPointsRunner(self.mission, self)
+        self.point_aligner.output.connect(lambda text: print(text))
+        self.point_aligner.point_done.connect(lambda *_: self._on_align_progress())
+        self.point_aligner.run_done.connect(self._on_points_aligned)
+        self._align_from: Optional[int] = None    # point shown when the alignment was asked
         self._hover_timer = QTimer(self)
         self._hover_timer.setSingleShot(True)
         self._hover_timer.timeout.connect(self._show_hovered)
@@ -832,7 +839,14 @@ class ReviewDialog(QDialog):
         self.btn_stop_redo.setStyleSheet(SECONDARY_STYLE)
         self.btn_stop_redo.setToolTip("Start no other alignment: the ones running finish, the others stay flagged.")
         self.btn_stop_redo.clicked.connect(self._stop_redo)
+        self.btn_stop_align = QPushButton("Stop aligning")
+        self.btn_stop_align.setStyleSheet(SECONDARY_STYLE)
+        self.btn_stop_align.setToolTip("Stop aligning the points left out by Step 4: they stay grey on the map "
+                                       "(asked again later, they reuse what was computed).")
+        self.btn_stop_align.clicked.connect(self._stop_align)
+        self.btn_stop_align.hide()
         bl.addWidget(self.banner_text, 1)
+        bl.addWidget(self.btn_stop_align)
         bl.addWidget(self.btn_stop_redo)
         bl.addWidget(self.btn_accept_all)
         bl.addWidget(self.btn_reject_redo)
@@ -888,6 +902,7 @@ class ReviewDialog(QDialog):
             self.big_map.picked.connect(self._on_map_picked)
             self.big_map.hovered.connect(self._on_map_hovered)
             self.big_map.clicked_empty.connect(self._clear_map_selection)
+            self.big_map.menu_requested.connect(self._map_menu)
             self.view_stack.addWidget(self.big_map)
         else:
             self.mode_group.button(len(MODES) - 1).setEnabled(False)
@@ -1032,9 +1047,10 @@ class ReviewDialog(QDialog):
         if self.map_model is not None:
             self.mini_map = MapV.FlightMapView(self.map_model, compact=True)
             self.mini_map.setFixedHeight(200)
-            self.mini_map.setToolTip("Where the image was taken. Click: large map (key 5)")
+            self.mini_map.setToolTip("Where the image was taken. Click: large map (key 5)\nRight-click a grey point (not aligned by Step 4): align it")
             self.mini_map.picked.connect(self._on_map_picked)
             self.mini_map.clicked_empty.connect(lambda: self.set_mode("map"))
+            self.mini_map.menu_requested.connect(self._map_menu)
             lay.addWidget(self.mini_map)
         else:
             keys = QLabel("<b>Keyboard</b><br>← →&nbsp; previous / next<br>N&nbsp; next point to review<br>"
@@ -1055,8 +1071,12 @@ class ReviewDialog(QDialog):
         counts = self.review.counts()
         out = [(STATUS_COLORS[s], STATUS_TEXT[s], counts.get(s, 0)) for s in LEGEND_ORDER]
         if self.map_model is not None:
-            outside = sum(1 for n in self.map_model.numbers if self.review.by_number(n) is None)
-            out.append((NOT_ALIGNED_COLOR, "Not aligned (Step 4)", outside))
+            aligning = self._aligning()
+            reviewed = {p.number for p in self.review.points}
+            outside = [n for n in self.map_model.numbers if n not in reviewed]
+            out.append((ALIGNING_COLOR, "Being aligned", sum(1 for n in outside if n in aligning)))
+            out.append((NOT_ALIGNED_COLOR, "Not aligned (Step 4): right-click to align",
+                        sum(1 for n in outside if n not in aligning)))
         return [row for row in out if row[2]]
 
     def _refresh_legend(self):
@@ -1253,8 +1273,14 @@ class ReviewDialog(QDialog):
         if model is not None:
             model.image_of = self.thumbs.get       # aligned image (thumbnail) in its footprint
             model.cursor_in_point_color = True     # the footprint in the colour of the point's status
-            model.minor = lambda i: self._map_status(model.numbers[i]) in (None, R.STATUS_MISSING)
+            model.minor = lambda i: (self._map_status(model.numbers[i]) in (None, R.STATUS_MISSING)
+                                     and model.numbers[i] not in self._aligning())
         return model
+
+    def _aligning(self) -> set:
+        """Points left out by Step 4 being aligned (or waiting to be)."""
+        aligner = getattr(self, "point_aligner", None)
+        return aligner.numbers() if aligner is not None else set()
 
     def _map_status(self, number):
         """Status of a point of the map (None: not aligned by Step 4)."""
@@ -1263,6 +1289,8 @@ class ReviewDialog(QDialog):
 
     def _map_color(self, number):
         status = self._map_status(number)
+        if status is None and number in self._aligning():
+            return ALIGNING_COLOR
         return STATUS_COLORS[status] if status is not None else NOT_ALIGNED_COLOR
 
     def _on_map_picked(self, i):
@@ -1280,6 +1308,126 @@ class ReviewDialog(QDialog):
         map, the trajectory alone (no footprint, no image); a click on a point
         or a move along the strip selects one again."""
         self.map_model.set_current(None)
+
+    # ---- points left out by Step 4: right-click on the map, aligned in the background
+    def not_aligned_around(self, number, not_aligned=None) -> List[int]:
+        """The grey points next to ``number`` along the flight, up to the aligned
+        point on each side (``number`` itself included when it is grey)."""
+        if self.map_model is None:
+            return []
+        if not_aligned is None:
+            not_aligned = R.not_aligned_pairs(self.review)
+        numbers = self.map_model.numbers
+        i = self.map_model.index_of(number)
+        if i is None:
+            return []
+        out = [number] if number in not_aligned else []
+        for step in (-1, 1):
+            j = i + step
+            while 0 <= j < len(numbers) and numbers[j] in not_aligned:
+                out.append(numbers[j])
+                j += step
+        return sorted(out)
+
+    def map_menu_actions(self, number):
+        """[(text, numbers to align or None for a disabled line, tool tip)] of the
+        right-click menu of a map point."""
+        not_aligned = R.not_aligned_pairs(self.review)
+        aligning = self._aligning()
+        actions = []
+        here = not_aligned.get(number)
+        if here is not None:
+            dt = here["dt"]
+            dt_text = f"infrared {dt:+.2f} s apart" if dt is not None else "no infrared image"
+            if number in aligning:
+                actions.append((f"{here['stem']}: being aligned…", None, ""))
+            elif here["alignable"]:
+                actions.append((f"Align {here['stem']}  ({dt_text})", [number],
+                                "Left out by Step 4 (best mapping or time filter). Aligned in the background "
+                                "like Step 4 does, then it appears in the time line."))
+            else:
+                actions.append((f"{here['stem']} cannot be aligned ({dt_text})", None,
+                                f"Step 4 aligns an image only with an infrared taken less than "
+                                f"{R.MAX_ALIGN_DT:g} s apart."))
+        around = [n for n in self.not_aligned_around(number, not_aligned)
+                  if not_aligned[n]["alignable"] and n not in aligning]
+        if len(around) > (1 if here is not None else 0):
+            first, last = not_aligned[around[0]]["stem"], not_aligned[around[-1]]["stem"]
+            where = f"from {first} to {last}" if len(around) > 1 else first
+            stem = here["stem"] if here is not None else self.review.by_number(number).stem
+            actions.append((f"Align the {len(around)} point(s) not aligned around {stem} ({where})", around,
+                            "The grey points on both sides along the flight, up to the next aligned point: "
+                            "useful when an image cannot be recovered, a neighbour may be fine."))
+        if not actions:
+            stem = self.review.by_number(number).stem if self.review.by_number(number) else str(number)
+            actions.append((f"No point left out by Step 4 around {stem}", None, ""))
+        return actions
+
+    def _map_menu(self, index, global_pos):
+        from PyQt6.QtWidgets import QMenu
+        number = self.map_model.numbers[index]
+        menu = QMenu(self)
+        menu.setToolTipsVisible(True)
+        for text, numbers, tip in self.map_menu_actions(number):
+            action = menu.addAction(text)
+            action.setToolTip(tip)
+            action.setEnabled(numbers is not None)
+            if numbers is not None:
+                action.triggered.connect(lambda _=False, numbers=numbers: self.align_points(numbers))
+        menu.exec(global_pos)
+
+    def align_points(self, numbers):
+        """Align the points ``numbers`` left out by Step 4, in the background."""
+        numbers = set(numbers) - {p.number for p in self.review.points} - self._aligning()
+        if not numbers:
+            return
+        if not self.point_aligner.busy():
+            self._align_from = self.current().number if self.current() is not None else None
+        self.point_aligner.add(numbers)
+        self._redo_clock.start()
+        self.subtitle.setText(f"Aligning {len(numbers)} point(s) left out by Step 4 in the background: "
+                              "they appear in the time line when done.")
+        self._on_align_progress()
+
+    def _on_align_progress(self):
+        if self.map_model is not None:
+            self.map_model.changed.emit()
+        self._refresh_legend()
+        self._update_banner()
+
+    def _stop_align(self):
+        self._align_stopped = True
+        self.point_aligner.stop()
+        self._on_align_progress()
+
+    def _on_points_aligned(self, numbers, error):
+        shown = self.current()
+        added = R.add_points(self.review, numbers)
+        if shown is not None:
+            self.index = self.review.points.index(shown)
+            self.strip.selected = self.index
+        self._hover_index = None
+        if added:
+            self._start_scan({p.number for p in added})
+        missing = sorted(set(numbers) - {p.number for p in added})
+        self._after_change()
+        self._on_align_progress()
+        if added and (shown is None or shown.number == self._align_from):
+            self.select(self.review.points.index(added[0]), by_user=False)
+        if not self.point_aligner.busy():
+            self._align_from = None
+            if not self.redo_runner_busy():
+                self._redo_clock.stop()
+        names = ", ".join(p.stem for p in added)
+        self.subtitle.setText(f"{len(added)} point(s) aligned and added to the time line: {names}." if added
+                              else "No point aligned.")
+        stopped, self._align_stopped = getattr(self, "_align_stopped", False), False
+        if missing and not stopped:
+            stems = ", ".join(f"VIS_{n:04d}" for n in missing)
+            QMessageBox.warning(self, "Align the points left out",
+                                f"Not aligned: {stems}." + (f"\n\n{error}" if error else
+                                                             "\n\nThe alignment wrote no image for them "
+                                                             "(see the console)."))
 
     def _map_follow(self):
         if self.map_model is None or self.current() is None:
@@ -1481,6 +1629,16 @@ class ReviewDialog(QDialog):
             steps = len(stage_rank) or 1
             self.redo_bar.setRange(0, total * steps)
             self.redo_bar.setValue(done * steps + sum(stage_rank.get(job["stage"], 0) for job in running))
+        aligner = getattr(self, "point_aligner", None)
+        aligning = aligner is not None and aligner.busy()
+        if aligning:
+            running, waiting = aligner.running, aligner.waiting
+            stems = ", ".join(f"VIS_{n:04d}" for n in sorted(running)[:4]) + (" …" if len(running) > 4 else "")
+            lines.append(f"Aligning {len(running)} point(s) left out by Step 4 ({stems}): "
+                         f"{len(aligner.done)} of {len(running)} done, "
+                         f"{fmt_time(_time.time() - aligner.started)[:-2]}"
+                         + (f" · {len(waiting)} waiting" if waiting else "")
+                         + " <span style='color:#6B7785'>— they appear in the time line when done.</span>")
         to_confirm = [p for p in self.review.points if p.status == R.STATUS_REALIGNED]
         pt = self.current()
         confirm = pt is not None and pt.status == R.STATUS_REALIGNED
@@ -1493,6 +1651,7 @@ class ReviewDialog(QDialog):
         self.banner_text.setText("<br>".join(lines))
         self.redo_box.setVisible(computing)
         self.btn_stop_redo.setVisible(computing and bool(runner.numbers() - {j["number"] for j in runner.running()}))
+        self.btn_stop_align.setVisible(aligning)
         self.btn_accept_redo.setVisible(confirm)
         self.btn_reject_redo.setVisible(confirm)
         self.btn_accept_all.setText(f"✓ All {len(to_confirm)} aligned")
@@ -1605,6 +1764,15 @@ class ReviewDialog(QDialog):
                 self, "Review", "Alignments are still being computed: wait for them before closing "
                 "(Stop starts no new one).")
             return
+        if self.point_aligner.busy():
+            answer = QMessageBox.question(
+                self, "Review", "Points left out by Step 4 are still being aligned.\n\n"
+                "Stop them and close? They stay out of the review (asked again later, they reuse "
+                "what was computed).")
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            self._align_stopped = True
+            self.point_aligner.stop()
         for scan in list(self._scans):
             scan.stop()
         for scan in list(self._scans):

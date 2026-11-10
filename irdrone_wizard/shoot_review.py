@@ -192,6 +192,13 @@ def load_review(mission: Path) -> Review:
     inventory = _read_json(output / INVENTORY)
     if not isinstance(inventory, dict) or not isinstance(inventory.get("shoot_points"), list):
         raise FileNotFoundError(f"No aligned images yet (run Step 4): {output / INVENTORY}")
+    points = _inventory_points(mission, inventory)
+    return Review(mission=mission, points=points, recovered=recovered)
+
+
+def _inventory_points(mission: Path, inventory: dict, numbers=None) -> List[ReviewPoint]:
+    """Review points of the Step 4 inventory (only ``numbers`` if given), sorted."""
+    output = mission / OUTPUT_FOLDER
     pairs = _pairs_by_name(mission)
     state = load_state(mission)
     scores = state.get("scores", {})
@@ -202,7 +209,7 @@ def load_review(mission: Path) -> Review:
         if not isinstance(item, dict) or not isinstance(item.get("FileName"), str):
             continue
         number = vis_number(item["FileName"])
-        if number is None:
+        if number is None or (numbers is not None and number not in numbers):
             continue
         stem = Path(item["FileName"]).stem
         p = ReviewPoint(number=number, stem=stem, failed=bool(item.get("failed", False)))
@@ -233,7 +240,40 @@ def load_review(mission: Path) -> Review:
         p.realigned = p.failed and p.label in realigned
         points.append(p)
     points.sort(key=lambda q: q.number)
-    return Review(mission=mission, points=points, recovered=recovered)
+    return points
+
+
+def add_points(review: Review, numbers: Iterable[int]) -> List[ReviewPoint]:
+    """Points of ``numbers`` that Step 4 has just aligned (now in its inventory,
+    not in the review yet), added to the review in order; the others stay out."""
+    numbers = {int(n) for n in numbers} - {p.number for p in review.points}
+    inventory = _read_json(review.output / INVENTORY)
+    if not numbers or not isinstance(inventory, dict) or not isinstance(inventory.get("shoot_points"), list):
+        return []
+    added = _inventory_points(review.mission, inventory, numbers)
+    review.points = sorted(review.points + added, key=lambda q: q.number)
+    return added
+
+
+MAX_ALIGN_DT = 6.0     # Step 4 limit of the VIS / NIR time difference (s)
+
+
+def not_aligned_pairs(review: Review) -> Dict[int, dict]:
+    """Shoot points of Step 3 that Step 4 did not align (left out by the best
+    mapping, the time filter or the image range): number -> {"stem", "dt"
+    (rank-one VIS / NIR time difference, None without infrared), "alignable"}."""
+    aligned = {p.number for p in review.points}
+    out = {}
+    for name, pair in _pairs_by_name(review.mission).items():
+        number = vis_number(name)
+        if number is None or number in aligned:
+            continue
+        nir = next((n for n in pair.get("NIR", []) or [] if isinstance(n, dict) and n.get("rank") == 1), None)
+        dt = nir.get("dt") if isinstance(nir, dict) else None
+        dt = float(dt) if isinstance(dt, (int, float)) and not isinstance(dt, bool) else None
+        out[number] = {"stem": Path(pair["VIS"]["FileName"]).stem, "dt": dt,
+                       "alignable": dt is not None and abs(dt) < MAX_ALIGN_DT}
+    return out
 
 
 def _recover_interrupted_redos(output: Path) -> List[str]:

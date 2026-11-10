@@ -313,6 +313,7 @@ class FlightMapView(QWidget):
     picked = pyqtSignal(int)
     hovered = pyqtSignal(object)          # index or None
     clicked_empty = pyqtSignal()          # click outside any point (the mini map expands)
+    menu_requested = pyqtSignal(int, object)   # right-click on a point: index, global position (QPoint)
 
     def __init__(self, model: MapModel, compact: bool = False, parent=None):
         super().__init__(parent)
@@ -828,6 +829,14 @@ class FlightMapView(QWidget):
             self.picked.emit(i)
         else:
             self.clicked_empty.emit()
+
+    def contextMenuEvent(self, e):
+        i = self.nearest(e.pos().x(), e.pos().y())
+        if i is not None and self.receivers(self.menu_requested) > 0:
+            self.menu_requested.emit(i, e.globalPos())
+            e.accept()
+            return
+        super().contextMenuEvent(e)
 
     def leaveEvent(self, e):
         self.hovered.emit(None)

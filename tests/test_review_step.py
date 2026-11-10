@@ -596,3 +596,114 @@ class RedoRunnerTests(unittest.TestCase):
                 r._done(process, "", "")
             self.assertEqual(ended, [True])
             self.assertFalse(r.busy())
+
+
+FAKE_STEP4 = '''
+import json, shutil, sys
+from pathlib import Path
+mission, numbers = Path(sys.argv[1]), [int(n) for n in sys.argv[2:]]
+out = mission / "ImgIRdrone"
+inv = json.loads((out / "shoot_points.json").read_text())
+for n in numbers:
+    if n == 139:
+        continue                                   # the alignment of 139 fails
+    shutil.copy(out / "VIS_0137.jpg", out / f"VIS_{n:04d}.jpg")
+    shutil.copy(out / "VIR_0137_local.jpg", out / f"VIR_{n:04d}_local.jpg")
+    print(f"STEP4_PROGRESS 1 1 VIS_{n:04d}.dng 1.0 0.0", flush=True)
+    inv["shoot_points"].append({"FileName": f"VIS_{n:04d}.dng", "dt": 0.2, "failed": False})
+(out / "shoot_points.json").write_text(json.dumps(inv))
+'''
+
+
+class NotAlignedPointsTests(ReviewMapTests):
+    """Grey points of the map (left out by Step 4): right-click, aligned in the
+    background, then in the time line."""
+
+    def setUp(self):
+        super().setUp()
+        path = self.mission / "AerialPhotography" / "shoot_points.json"
+        data = json.loads(path.read_text())
+        by_number = {int(sp["VIS"]["FileName"][4:8]): sp for sp in data["shoot_points"]}
+        for number, dt in ((138, 0.3), (139, 0.4), (141, 8.0)):   # 141: no infrared close in time
+            by_number[number] = {"VIS": {"FileName": f"VIS_{number:04d}.dng", "RelativeTimeLine": 2.0 * number,
+                                         "DroneAltitudeGround": 115.0, "DroneLatitude": 45.1695,
+                                         "DroneLongitude": 3.4 + 0.0001 * (number - 137),
+                                         "GimbalYawDegree": "-78.9"},
+                                 "NIR": [{"rank": 1, "FileName": f"NIR_{number:04d}.dng", "dt": dt}]}
+        data["shoot_points"] = [by_number[n] for n in sorted(by_number)]
+        path.write_text(json.dumps(data))
+
+    def test_menu_of_an_aligned_point_offers_its_grey_neighbours(self):
+        d = self.dialog()
+        self.assertEqual(sorted(R.not_aligned_pairs(d.review)), [138, 139, 141])
+        actions = d.map_menu_actions(137)
+        self.assertEqual(len(actions), 1)
+        self.assertIn("2 point(s) not aligned around VIS_0137", actions[0][0])
+        self.assertEqual(actions[0][1], [138, 139])
+        d.done(0)
+
+    def test_menu_of_a_grey_point(self):
+        d = self.dialog()
+        texts = [(t, n) for t, n, _tip in d.map_menu_actions(138)]
+        self.assertEqual(texts[0], ("Align VIS_0138  (infrared +0.30 s apart)", [138]))
+        self.assertEqual(texts[1][1], [138, 139])                  # the grey run, from 138 to 139
+        t, n, _ = d.map_menu_actions(141)[0]                       # too far in time: disabled
+        self.assertIsNone(n)
+        self.assertIn("cannot be aligned", t)
+        d.done(0)
+
+    def test_aligned_points_appear_in_the_time_line(self):
+        from unittest import mock
+        import IRD_Interactive_4 as Step4
+        script = Path(tempfile.mkdtemp()) / "fake_step4.py"
+        script.write_text(FAKE_STEP4)
+        d = self.dialog()
+        d.select(1)                                               # VIS_0140
+        warnings = []
+        with mock.patch.object(Step4, "align_points_arguments",
+                               lambda mission, numbers: [str(script), str(mission), *map(str, sorted(numbers))]), \
+                mock.patch.object(Rv_QMessageBox(), "warning", lambda *a: warnings.append(a[2])):
+            d.align_points([138, 139])
+            self.assertEqual(d._aligning(), {138, 139})
+            i = d.map_model.index_of(138)
+            self.assertEqual(d.map_model.color_of(i).name(), "#e8a33d")      # being aligned
+            self.assertFalse(d.map_model.minor(i))
+            self.assertTrue(d.banner.isVisibleTo(d))
+            d.align_points([138])                                 # already asked: ignored
+            ended = []
+            d.point_aligner.run_done.connect(lambda *a: ended.append(a))
+            for _ in range(200):
+                if ended:
+                    break
+                d.point_aligner.process and d.point_aligner.process.waitForFinished(100)
+                self.app.processEvents()
+        self.assertEqual(ended[0][0], {138, 139})
+        self.assertEqual([p.number for p in d.review.points], [137, 138, 140, 143])
+        self.assertEqual(d.current().number, 138)                # shown at once (the user had not moved)
+        self.assertFalse(d.point_aligner.busy())
+        self.assertIn("VIS_0139", warnings[0])                    # its alignment failed: said
+        self.assertEqual(d.map_model.color_of(i).name(), d._map_color(138).name())
+        d.scan.wait(10000)
+        d.done(0)
+
+    def test_the_command_aligns_only_the_points_asked_like_the_first_run(self):
+        import IRD_Interactive_4 as Step4
+        out = self.mission / "ImgIRdrone"
+        (out / "NDVI_0137_local.jpg").write_bytes(b"x")
+        args = Step4.align_points_arguments(self.mission, {139, 138})
+        k = args.index("--image-numbers")
+        self.assertEqual(args[k + 1:k + 3], ["138", "139"])
+        self.assertEqual(args[args.index("--alignment-modes") + 1], "local")
+        self.assertIn("--ndvi", args)
+        self.assertNotIn("--nir", args)
+        self.assertNotIn("--best-mapping-overlap", args)
+
+
+def Rv_QMessageBox():
+    import IRD_Interactive_review as Rv
+    return Rv.QMessageBox
+
+
+for _name in [n for n in dir(ReviewMapTests) if n.startswith("test_")]:
+    if _name not in NotAlignedPointsTests.__dict__:
+        setattr(NotAlignedPointsTests, _name, None)    # run once, in ReviewMapTests
