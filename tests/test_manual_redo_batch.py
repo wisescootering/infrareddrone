@@ -8,6 +8,7 @@ from automatic_registration import (
     _manual_redo_result_names,
     finalize_manual_redo_archives,
     prepare_manual_redo_archives,
+    restore_manual_redo_originals,
     write_manual_bat_redo,
 )
 
@@ -172,6 +173,59 @@ class ManualRedoBatchTests(unittest.TestCase):
                 (debug_dir / "Tech" / "alignment_diagnostic.png").is_file()
             )
 
+
+    def test_redo_puts_back_a_sidecar_left_in_the_archive_by_a_failed_redo(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "ImgIRdrone"
+            multispectral = output / "imgMultispectral"
+            multispectral.mkdir(parents=True)
+            vis = root / "VIS_0102.dng"
+            original = output / "VIS_0102_align_traces_manual" / "original"
+            original.mkdir(parents=True)
+            (original / "IRD_0102_1.exif").write_bytes(b"georef")
+
+            debug_dir, _, archived_exif = prepare_manual_redo_archives(
+                vis, output, multispectral
+            )
+
+            self.assertEqual((multispectral / "IRD_0102_1.exif").read_bytes(), b"georef")
+            self.assertIsNotNone(archived_exif)
+            for name in _manual_redo_result_names(vis):
+                if name.endswith(".exif"):
+                    continue
+                folder = multispectral if name.startswith("IRD_") else output
+                (folder / name).write_bytes(b"new")
+            finalize_manual_redo_archives(
+                vis, output, multispectral, debug_dir, archived_exif
+            )
+            self.assertEqual((multispectral / "IRD_0102_1.exif").read_bytes(), b"georef")
+
+    def test_failed_redo_puts_back_the_previous_outputs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "ImgIRdrone"
+            multispectral = output / "imgMultispectral"
+            multispectral.mkdir(parents=True)
+            vis = root / "VIS_0103.dng"
+            for name in _manual_redo_result_names(vis):
+                folder = multispectral if name.startswith("IRD_") else output
+                (folder / name).write_bytes(b"old")
+
+            _, original_dir, _ = prepare_manual_redo_archives(vis, output, multispectral)
+            # The sidecar stays in place, the regenerated outputs are moved away.
+            self.assertTrue((multispectral / "IRD_0103_1.exif").is_file())
+            self.assertFalse((multispectral / "IRD_0103_1.tif").exists())
+            (multispectral / "IRD_0103_1.tif").write_bytes(b"new")   # written before the failure
+
+            restored = restore_manual_redo_originals(vis, output, multispectral, original_dir)
+
+            self.assertNotIn(multispectral / "IRD_0103_1.tif", restored)
+            self.assertEqual((multispectral / "IRD_0103_1.tif").read_bytes(), b"new")
+            for name in _manual_redo_result_names(vis):
+                folder = multispectral if name.startswith("IRD_") else output
+                self.assertTrue((folder / name).is_file(), name)
+            self.assertEqual((multispectral / "IRD_0103_2.tif").read_bytes(), b"old")
 
 if __name__ == "__main__":
     unittest.main()

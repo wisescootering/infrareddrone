@@ -386,15 +386,64 @@ def _manual_redo_result_names(vis_pth):
     return names
 
 
-def _move_to_archive(source, archive_dir):
-    source = Path(source)
+def _archive_destination(source, archive_dir):
     destination = archive_dir / source.name
     index = 1
     while destination.exists():
         destination = archive_dir / f"{source.stem}_{index}{source.suffix}"
         index += 1
+    return destination
+
+
+def _move_to_archive(source, archive_dir):
+    source = Path(source)
+    destination = _archive_destination(source, archive_dir)
     shutil.move(str(source), str(destination))
     return destination
+
+
+def _copy_to_archive(source, archive_dir):
+    source = Path(source)
+    destination = _archive_destination(source, archive_dir)
+    shutil.copy2(source, destination)
+    return destination
+
+
+def _archived_versions(archive_dir, name):
+    """Archived copies of ``name``, oldest first (``name``, ``stem_1``, ...)."""
+    name = Path(name)
+    versions = []
+    candidate = Path(archive_dir) / name.name
+    index = 1
+    while candidate.is_file():
+        versions.append(candidate)
+        candidate = Path(archive_dir) / f"{name.stem}_{index}{name.suffix}"
+        index += 1
+    return versions
+
+
+def restore_manual_redo_originals(vis_pth, out_dir, multispectral_folder, original_dir):
+    """After a failed redo: put back, from the archive, every deliverable the
+    redo did not write (the point keeps its previous alignment, a new redo
+    can start from a complete point). Returns the restored paths."""
+    out_dir = Path(out_dir)
+    restored = []
+    for name in _manual_redo_result_names(vis_pth):
+        if name.startswith("IRD_"):
+            if multispectral_folder is None:
+                continue
+            target = Path(multispectral_folder) / name
+        else:
+            target = out_dir / name
+        if target.is_file():
+            continue
+        versions = _archived_versions(original_dir, name)
+        if versions:
+            # The sidecar never changes: the first copy; otherwise the last archived.
+            source = versions[0] if name.endswith(".exif") else versions[-1]
+            shutil.copy2(source, target)
+            restored.append(target)
+    return restored
 
 
 def prepare_manual_redo_archives(vis_pth, out_dir, multispectral_folder=None):
@@ -415,7 +464,20 @@ def prepare_manual_redo_archives(vis_pth, out_dir, multispectral_folder=None):
     image_number = vis_pth.stem.removeprefix("VIS_")
     original_names = _manual_redo_result_names(vis_pth)
     original_names.remove(f"VIS_{image_number}_motion_model.npy")
+    exif_name = f"IRD_{image_number}_1.exif"
+    original_names.remove(exif_name)
     archived_exif = None
+    if multispectral_folder is not None:
+        # The sidecar is an input of the redo (georeferencing), not regenerated:
+        # it stays in place, a copy is kept. A redo that died earlier may have
+        # left it only in the archive: put it back.
+        sidecar = Path(multispectral_folder) / exif_name
+        if not sidecar.is_file():
+            previous = _archived_versions(original_dir, exif_name)
+            if previous:
+                shutil.copy2(previous[0], sidecar)
+        if sidecar.is_file():
+            archived_exif = _copy_to_archive(sidecar, original_dir)
     for name in original_names:
         if name.startswith("IRD_"):
             if multispectral_folder is None:
@@ -425,9 +487,7 @@ def prepare_manual_redo_archives(vis_pth, out_dir, multispectral_folder=None):
             source_dir = out_dir
         source = source_dir / name
         if source.is_file():
-            archived = _move_to_archive(source, original_dir)
-            if name.endswith("_1.exif"):
-                archived_exif = archived
+            _move_to_archive(source, original_dir)
 
     motion_model = out_dir / f"VIS_{image_number}_motion_model.npy"
     if motion_model.is_file():
@@ -963,30 +1023,38 @@ if __name__ == "__main__":
     else:
         out_dir = osp.dirname(im_pairs[0][0])
     if args.redo:
-        debug_dir, _, archived_exif = prepare_manual_redo_archives(
+        debug_dir, original_dir, archived_exif = prepare_manual_redo_archives(
             im_pairs[0][0],
             out_dir,
             multispectral_folder=args.multispectral_folder,
         )
-    process_raw_pairs(
-        im_pairs,
-        debug_folder=out_dir,
-        out_dir=out_dir,
-        manual=args.manual,
-        debug=args.debug,
-        extension=extension,
-        crop=CROP,
-        multispectral_folder=args.multispectral_folder,
-        angles=args.angles,
-        traces=args.traces,
-        alignment_modes=tuple(args.alignment_modes),
-        manual_window=args.manual_angles is None,
-    )
-    if args.redo:
-        finalize_manual_redo_archives(
-            im_pairs[0][0],
-            out_dir,
-            args.multispectral_folder,
-            debug_dir,
-            archived_exif,
+    try:
+        process_raw_pairs(
+            im_pairs,
+            debug_folder=out_dir,
+            out_dir=out_dir,
+            manual=args.manual,
+            debug=args.debug,
+            extension=extension,
+            crop=CROP,
+            multispectral_folder=args.multispectral_folder,
+            angles=args.angles,
+            traces=args.traces,
+            alignment_modes=tuple(args.alignment_modes),
+            manual_window=args.manual_angles is None,
         )
+        if args.redo:
+            finalize_manual_redo_archives(
+                im_pairs[0][0],
+                out_dir,
+                args.multispectral_folder,
+                debug_dir,
+                archived_exif,
+            )
+    except BaseException:
+        if args.redo:
+            for path in restore_manual_redo_originals(
+                im_pairs[0][0], out_dir, args.multispectral_folder, original_dir
+            ):
+                print(f"Redo failed: previous {path.name} put back")
+        raise
