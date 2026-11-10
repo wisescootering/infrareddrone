@@ -183,12 +183,15 @@ class DialogSynchroAruco(QDialog):
 
         self._log("Dialog initialized.")
         start_now = self.auto_run
+        self._start_timer = QTimer(self)
+        self._start_timer.setSingleShot(True)
+        self._start_timer.timeout.connect(self._start_synchronisation)
         # The stages follow each other once started; nothing starts before the
         # user clicks "Synchronise the cameras" (unless auto_run is asked).
         self._set_manual_mode(False)
         if start_now:
             self._log("Detection, time alignment and pairing run automatically.")
-            QTimer.singleShot(400, self._start_synchronisation)
+            self._start_timer.start(400)
         else:
             self._show_previous_result()
 

@@ -26,8 +26,13 @@ class ChainedStep3Test(unittest.TestCase):
         (self.mission / "FlightAnalytics").mkdir(parents=True)
 
     def dialog(self, auto_run):
-        with mock.patch.object(S3.DialogSynchroAruco, "on_run_aruco"):
-            return S3.DialogSynchroAruco({"folderMissionPath": str(self.mission)}, auto_run=auto_run)
+        # patched for the whole test: auto_run starts the detection a moment later
+        patcher = mock.patch.object(S3.DialogSynchroAruco, "on_run_aruco")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        d = S3.DialogSynchroAruco({"folderMissionPath": str(self.mission)}, auto_run=auto_run)
+        self.addCleanup(d._start_timer.stop)         # never started after the test
+        return d
 
     def test_chained_run_hides_the_stage_buttons(self):
         d = self.dialog(True)
