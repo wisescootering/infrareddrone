@@ -465,6 +465,23 @@ class BestMappingTests(unittest.TestCase):
                 ["VIS_0120.DNG", "VIS_0122.DNG", "VIS_0123.DNG", "VIS_0125.DNG", "VIS_0128.DNG"],
             )
 
+    def test_all_the_aligned_images_maps_every_point_not_flagged(self):
+        """Step 5 "All the aligned images" (|dt| up to 6 s, one image in 1)."""
+        with tempfile.TemporaryDirectory() as temporary:
+            mission = Path(temporary)
+            self._create_mission(mission)
+            (mission / "ImgIRdrone" / "shoot_points.json").write_text(json.dumps({"shoot_points": [
+                {"FileName": f"VIS_{index:04d}.DNG", "dt": dt, "failed": index == 125}
+                for index, dt in ((120, 0.5), (121, -2.2), (122, 0.1), (123, 5.9), (125, 0.2), (128, 0.1))]}),
+                encoding="utf-8")
+
+            manifest = build_best_mapping(mission, dt_tolerance_s=6.0, sample_every=1)
+
+            self.assertEqual(
+                [point["VIS"]["FileName"] for point in manifest["shoot_points"]],
+                ["VIS_0120.DNG", "VIS_0121.DNG", "VIS_0122.DNG", "VIS_0123.DNG", "VIS_0128.DNG"],
+            )
+
     def test_required_mission_metadata_is_reported(self):
         with tempfile.TemporaryDirectory() as temporary:
             with self.assertRaises(ODMMappingError):
