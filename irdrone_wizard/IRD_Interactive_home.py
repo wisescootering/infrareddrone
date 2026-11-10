@@ -157,9 +157,15 @@ def _points(path: Path):
         return None
 
 
-def mission_picture(folder: Path) -> Optional[Path]:
-    """An aligned image (false colours) if there is one, else the vertical profile."""
+def mission_picture(folder: Path, number: Optional[int] = None) -> Optional[Path]:
+    """The aligned image (false colours) of shoot point `number` if it has one,
+    else one in the middle of the flight (None before Step 4)."""
     out = Path(folder) / "ImgIRdrone"
+    if number is not None:
+        for mode in ("local", "global"):
+            path = out / f"VIR_{number:04d}_{mode}.jpg"
+            if path.is_file():
+                return path
     try:
         vir = sorted(out.glob("VIR_*_local.jpg")) or sorted(out.glob("VIR_*.jpg"))
     except OSError:
@@ -504,6 +510,9 @@ class HomePage(QStackedWidget):
         right.setSpacing(6)
         switch = QHBoxLayout()
         switch.setSpacing(4)
+        self.picture_caption = QLabel()
+        self.picture_caption.setStyleSheet("color: #6B7785;")
+        switch.addWidget(self.picture_caption)
         switch.addStretch(1)
         self.btn_show_map = QPushButton("Map")
         self.btn_show_image = QPushButton("Image")
@@ -514,7 +523,8 @@ class HomePage(QStackedWidget):
             switch.addWidget(b)
         self.btn_show_map.setToolTip("The flight on the map: phases of Step 2, orthophoto of Step 5, aerial photos "
                                      "(online). Click a point to see the ground covered by its image.")
-        self.btn_show_image.setToolTip("Show an aligned image of the mission instead of the map.")
+        self.btn_show_image.setToolTip("Show large the aligned image (false colours, VIR) of the point clicked on "
+                                       "the map; without a point clicked, one in the middle of the flight.")
         self.btn_show_map.clicked.connect(lambda: self._show_right("map"))
         self.btn_show_image.clicked.connect(lambda: self._show_right("image"))
         right.addLayout(switch)
@@ -538,9 +548,38 @@ class HomePage(QStackedWidget):
             which = "image"
         else:
             self._right = which
+        if which == "image":
+            self._show_picture()
+        self.picture_caption.setVisible(which == "image")
         self.right_stack.setCurrentWidget(self.map_holder if which == "map" else self.picture)
         self.btn_show_map.setChecked(which == "map")
         self.btn_show_image.setChecked(which == "image")
+
+    def _selected_number(self) -> Optional[int]:
+        """Image number of the point clicked on the map (None: none)."""
+        model = self.map_view.model if self.map_view is not None else None
+        if model is None or model.current is None or not (0 <= model.current < len(model.points)):
+            return None
+        return model.points[model.current].number
+
+    def _show_picture(self):
+        """The aligned image of the point clicked on the map, else one of the mission."""
+        if self.info is None:
+            return
+        number = self._selected_number()
+        pic = mission_picture(self.info.folder, number)
+        self.picture.set_picture(QPixmap(str(pic)) if pic is not None else (
+            QPixmap(str(self.hero_image)) if self.hero_image and Path(self.hero_image).is_file() else None))
+        self.picture.setToolTip(pic.name if pic is not None else "")
+        if pic is None:
+            caption = "No aligned image yet (Step 4)"
+        elif number is not None and pic.name.startswith(f"VIR_{number:04d}_"):
+            caption = f"{pic.stem} · the point clicked on the map"
+        elif number is not None:
+            caption = f"{pic.stem} · point {number:04d} has no aligned image"
+        else:
+            caption = f"{pic.stem} · click a point on the map to see its image"
+        self.picture_caption.setText(caption)
 
     def _update_map(self, folder: Path):
         """Flight map of the mission (built again only when its files changed)."""
@@ -624,10 +663,6 @@ class HomePage(QStackedWidget):
         for text, color in mission_figures(info.folder):
             self.figures.addWidget(Look.chip(color, text))
         self.figures.addStretch(1)
-        pic = mission_picture(info.folder)
-        self.picture.set_picture(QPixmap(str(pic)) if pic is not None else (
-            QPixmap(str(self.hero_image)) if self.hero_image and Path(self.hero_image).is_file() else None))
-        self.picture.setToolTip(pic.name if pic is not None else "")
         self._update_map(info.folder)
         self._show_right(self._right)
         self.setCurrentIndex(1)

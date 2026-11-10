@@ -150,6 +150,38 @@ class HomeMapTest(unittest.TestCase):
         page.btn_show_image.click()
         self.assertIs(page.right_stack.currentWidget(), page.picture)
 
+    def test_image_shows_the_point_clicked_on_the_map(self):
+        from PyQt6.QtGui import QPixmap
+        root = Path(tempfile.mkdtemp())
+        m = make_mission(root, "FLY-20220125-1159-Blassac", done=(1,))
+        vis = m / "AerialPhotography" / "VIS"
+        vis.mkdir(parents=True)
+        for k in range(4):
+            (vis / f"VIS_{k + 1:04d}.exif").write_text(json.dumps(
+                {"DroneLatitude": 45.1695, "DroneLongitude": 3.4 + 0.0002 * k, "DroneAltitudeGround": 50.0,
+                 "GimbalYawDegree": -78.9}))
+        out = m / "ImgIRdrone"
+        out.mkdir()
+        for n in (1, 2, 3):
+            pix = QPixmap(8, 6)
+            pix.fill()
+            pix.save(str(out / f"VIR_{n:04d}_local.jpg"))
+        page = Home.HomePage()
+        page.show_mission(m)
+        page.btn_show_image.click()                       # nothing clicked: one of the flight
+        self.assertIn("click a point", page.picture_caption.text())
+        model = page.map_view.model
+        number = lambda i: model.points[i].number
+        i = next(k for k in range(len(model.points)) if number(k) == 1)
+        model.set_current(i)
+        page.btn_show_map.click()
+        page.btn_show_image.click()
+        self.assertEqual(page.picture.toolTip(), "VIR_0001_local.jpg")
+        self.assertIn("clicked on the map", page.picture_caption.text())
+        model.set_current(next(k for k in range(len(model.points)) if number(k) == 4))
+        page.btn_show_image.click()
+        self.assertIn("0004 has no aligned image", page.picture_caption.text())
+
     def test_the_map_just_built_is_shown(self):
         """Step 5 ends: the page shows the map with its orthophoto, even if the
         image was on screen or the orthophoto hidden before."""
