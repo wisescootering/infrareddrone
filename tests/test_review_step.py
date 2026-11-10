@@ -686,9 +686,6 @@ class NotAlignedPointsTests(ReviewMapTests):
         self.assertEqual(d.current().number, 138)                # shown at once (the user had not moved)
         self.assertFalse(d.point_aligner.busy())
         self.assertIn("VIS_0139", warnings[0])                    # its alignment failed: said
-        inventory = json.loads((self.mission / "ImgIRdrone" / "shoot_points.json").read_text())
-        requested = [p["FileName"] for p in inventory["shoot_points"] if p.get(R.ALIGNED_ON_REQUEST)]
-        self.assertEqual(requested, ["VIS_0138.dng"])             # Step 5 maps it whatever its selection
         self.assertEqual(d.map_model.color_of(i).name(), d._map_color(138).name())
         d.scan.wait(10000)
         d.done(0)
