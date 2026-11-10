@@ -113,7 +113,11 @@ class DialogArchive(QDialog):
         self.summary_detail = QLabel("Nothing is changed while the folder is analysed.")
         self.summary_detail.setWordWrap(True)
         self.summary_detail.setStyleSheet(Look.SUBTITLE_STYLE)
+        # The size of the mission folder now and once archived, in big
+        self.summary_sizes = QLabel()
+        self.summary_sizes.setVisible(False)
         card_layout.addWidget(self.summary_title)
+        card_layout.addWidget(self.summary_sizes)
         card_layout.addWidget(self.summary_detail)
         main_layout.addWidget(card)
 
@@ -235,28 +239,44 @@ class DialogArchive(QDialog):
         """The answer of the dry run, in the card: how much is freed, or why not."""
         title_style = Look.TITLE_STYLE
         current = Archive.format_size(plan.mission_bytes)
+        sizes = None                     # (size, caption) pairs shown in big
         if plan.already_archived:
             title = "✓ Mission already archived"
-            detail = f"{plan.blockers[0]} The mission folder takes {current}."
+            detail = plan.blockers[0]
+            sizes = [(current, "mission folder")]
             title_style += " color: #2E7D32;"
         elif plan.blockers:
             title, detail = "Archiving impossible", " ".join(plan.blockers)
             title_style += " color: #B03A2E;"
         elif not plan.delete_items:
             title = "Nothing to delete"
-            detail = f"The mission folder ({current}) holds only what archiving keeps."
+            detail = "The mission folder holds only what archiving keeps."
+            sizes = [(current, "mission folder")]
         else:
             size = Archive.format_size(plan.total_bytes)
             title = f"{size} can be freed"
-            detail = (f"The mission folder goes from {current} to "
-                      f"{Archive.format_size(plan.final_bytes)} once archived. "
-                      f"{plan.total_files} file(s) will be deleted. The original images, the aligned "
+            detail = (f"{plan.total_files} file(s) will be deleted. The original images, the aligned "
                       f"images, the synchronisation result and the map are kept (details below).")
+            sizes = [(current, "now"), (Archive.format_size(plan.final_bytes), "once archived")]
+        self._show_sizes(sizes)
         self.summary_title.setText(title)
         self.summary_title.setStyleSheet(title_style)
         self.summary_detail.setText(detail)
         self.btn_archive.setText(f"Archive and free {Archive.format_size(plan.total_bytes)}…"
                                  if self._can_archive() else "Archive and free…")
+
+    def _show_sizes(self, sizes) -> None:
+        """The mission folder size(s) in big: '15.1 GB → 2.8 GB', a caption under each."""
+        if not sizes:
+            self.summary_sizes.setVisible(False)
+            return
+        cells = [f'<td align="center"><span style="font-size:24pt; font-weight:bold; color:#17365D;">'
+                 f'{size}</span><br><span style="color:#6B7785;">{caption}</span></td>'
+                 for size, caption in sizes]
+        arrow = ('<td valign="top" style="padding: 0 18px;"><span style="font-size:24pt; '
+                 'color:#6B7785;">→</span></td>')
+        self.summary_sizes.setText(f"<table><tr>{arrow.join(cells)}</tr></table>")
+        self.summary_sizes.setVisible(True)
 
     def on_archive(self) -> None:
         self._log("<b>--- Archiving ---</b>")
