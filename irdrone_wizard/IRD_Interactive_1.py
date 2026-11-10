@@ -1348,7 +1348,7 @@ class Window_create_file_structure(QDialog):
         """Create the editable 'Pilot' fields (name and pilot identification number)."""
         try:
             self.pilot_Name: str = "Florine"
-            self.pilot_ID: str = "FRA-RP-0000001957"
+            self.pilot_ID: str = ""
 
             self.pilot_label = QLabel("Pilot:")
             self.pilot_Name_field = QLineEdit(self)
