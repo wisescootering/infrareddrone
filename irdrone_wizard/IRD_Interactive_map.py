@@ -96,8 +96,16 @@ class TileCache(QObject):
         self.changed.emit()
 
     def stop(self):
+        """Drop the queued requests, wait for the running ones, free the pixmaps.
+        Called while the application still exists: a QPixmap destroyed after it (module
+        globals are freed at interpreter exit) crashes the process when it closes."""
+        global _TILES
         self.pool.clear()
         self.pool.waitForDone(2000)
+        self.tiles.clear()
+        self.pending.clear()
+        if _TILES is self:
+            _TILES = None
 
 
 _TILES: Optional[TileCache] = None
@@ -110,7 +118,7 @@ def tile_cache() -> TileCache:
         from PyQt6.QtWidgets import QApplication
         app = QApplication.instance()
         if app is not None:       # pending requests are dropped when the application quits
-            app.aboutToQuit.connect(_TILES.pool.clear)
+            app.aboutToQuit.connect(_TILES.stop)
     return _TILES
 
 
