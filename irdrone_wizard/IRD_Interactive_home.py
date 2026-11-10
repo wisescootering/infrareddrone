@@ -5,7 +5,7 @@ Home page of the main window.
     welcome   no mission loaded: New mission / Open a mission, and the recent
               missions of the working folder with their progress
     mission   the current mission: what is done, what comes next ("Continue"),
-              a few figures (images, pairs, aligned, flagged) and the review
+              a few figures (images, pairs, aligned, flagged) and the flight map
 """
 from __future__ import annotations
 
@@ -26,27 +26,31 @@ STEP_TITLES = {
     1: ("Mission", "Copy the images from the SD cards"),
     2: ("Flight timeline", "Check the synchronisation and survey phases"),
     3: ("Synchronise", "Measure the clock offset and pair the images"),
-    4: ("Align", "Align the infrared on the visible images, then review them"),
-    5: ("Map", "Georeference, orthophoto and terrain model"),
-    6: ("Archive", "Keep the results, clean the mission folder"),
+    4: ("Align", "Align the infrared on the visible images"),
+    5: ("Review", "Check the aligned images, realign the wrong ones"),
+    6: ("Map", "Georeference, orthophoto and terrain model"),
+    7: ("Archive", "Keep the results, clean the mission folder"),
 }
 WHAT_NEXT = {
     1: "Insert the SD cards: the images are found and copied.",
     2: "The phases are detected automatically: check them, then the synchronisation, the pairing and "
        "the alignment run on their own.",
     3: "Detection of the rotating target, clock alignment and pairing run on their own, then the alignment.",
-    4: "Align the image pairs of the survey, then review the result.",
-    5: "Build the orthophoto and the terrain model with OpenDroneMap.",
-    6: "Archive the mission to free disk space.",
+    4: "Align the image pairs of the survey.",
+    5: "Check every aligned image on a time line, flag the misaligned ones and realign them by hand.",
+    6: "Build the orthophoto and the terrain model with OpenDroneMap.",
+    7: "Archive the mission to free disk space.",
 }
 STEP_TIPS = {
     1: "Create a new mission: find the images on the SD cards and copy them.",
     2: "Check the automatically detected flight phases (synchronisation, survey).",
     3: "Synchronise the visible and infrared cameras and pair the images.",
-    4: "Align the infrared on the visible images, then review them.",
-    5: "Georeference, orthophoto and terrain model (OpenDroneMap).",
-    6: "Archive the mission (cleans the mission folder).",
+    4: "Align the infrared on the visible images.",
+    5: "Review the aligned images: flag the misaligned ones, realign them by hand.",
+    6: "Georeference, orthophoto and terrain model (OpenDroneMap).",
+    7: "Archive the mission (cleans the mission folder).",
 }
+LAST_STEP = 7           # archiving, optional
 
 
 # ---------------------------------------------------------------------------
@@ -63,8 +67,8 @@ class MissionInfo:
         return self.folder.name
 
     def next_step(self) -> Optional[int]:
-        """First step not done (Step 6, archiving, is optional: None once 1-5 are done)."""
-        return next((s for s in range(1, 6) if s not in self.done), None)
+        """First step not done (Step 7, archiving, is optional: None once 1-6 are done)."""
+        return next((s for s in range(1, LAST_STEP) if s not in self.done), None)
 
     def subtitle(self) -> str:
         bits = []
@@ -222,8 +226,8 @@ class RecentRow(QPushButton):
 
 def progress_dots(done) -> str:
     return "".join(f"<span style='color:{'#2E7D32' if s in done else '#C5CFDA'}; font-size: 12pt'>●</span>"
-                   for s in range(1, 7)) + "&nbsp;<span style='color:#6B7785'>" + \
-        (f"{len([s for s in done if s <= 6])}/6" if done else "new") + "</span>"
+                   for s in range(1, LAST_STEP + 1)) + "&nbsp;<span style='color:#6B7785'>" + \
+        (f"{len([s for s in done if s <= LAST_STEP])}/{LAST_STEP}" if done else "new") + "</span>"
 
 
 TILE_DONE, TILE_NEXT, TILE_TODO = "done", "next", "todo"
@@ -289,7 +293,7 @@ class StepTile(QPushButton):
 
 
 class StepRail(QWidget):
-    """The six steps of a mission, left to right; a click on a step emits clicked(step)."""
+    """The seven steps of a mission, left to right; a click on a step emits clicked(step)."""
     clicked = pyqtSignal(int)
 
     def __init__(self, parent=None):
@@ -298,7 +302,7 @@ class StepRail(QWidget):
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(0)
         self.tiles: Dict[int, StepTile] = {}
-        for s in range(1, 7):
+        for s in range(1, LAST_STEP + 1):
             if s > 1:
                 arrow = QLabel("›")
                 arrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -361,7 +365,6 @@ class HomePage(QStackedWidget):
     open_recent = pyqtSignal(object)      # Path
     run_step = pyqtSignal(int)          # "Continue": the next step, chained
     step_clicked = pyqtSignal(int)      # a step of the rail
-    review = pyqtSignal()
 
     def __init__(self, hero_image: Optional[Path] = None, parent=None):
         super().__init__(parent)
@@ -478,11 +481,6 @@ class HomePage(QStackedWidget):
         nl.addSpacing(6)
         nl.addWidget(self.btn_continue, 0, Qt.AlignmentFlag.AlignLeft)
         left.addWidget(self.next_card)
-        self.btn_review = ActionCard("🔍", "Review the aligned images",
-                                     "Check every survey image on a time line, flag the misaligned ones and "
-                                     "realign them by hand.")
-        self.btn_review.clicked.connect(self.review.emit)
-        left.addWidget(self.btn_review)
         self.figures = QHBoxLayout()
         self.figures.setSpacing(8)
         left.addLayout(self.figures)
@@ -531,7 +529,7 @@ class HomePage(QStackedWidget):
                stamp(folder / "mapping_MULTI" / "mapping_result" / "ortho_dtm.tif"))
         if key == self._map_key:
             return
-        # the map of Step 5 has just been built (or built again): show it
+        # the map of Step 6 has just been built (or built again): show it
         new_map = (ortho is not None and self._map_key is not None
                    and self._map_key[0] == key[0] and self._map_key[2] != ortho)
         self._map_key = key
@@ -571,9 +569,9 @@ class HomePage(QStackedWidget):
             self.next_text.setText("The orthophoto and the terrain model are in mapping_MULTI. "
                                    "Archive the mission to free disk space, or click a step above to run it again.")
             self.btn_continue.setText("Archive the mission  ▶")
-            self.btn_continue.setToolTip("Open Step 6: delete the working files, keep what is needed to "
-                                         "process the mission again.\n(F1: help on this button)")
-            self._next = 6
+            self.btn_continue.setToolTip(f"Open Step {LAST_STEP}: delete the working files, keep what is "
+                                         "needed to process the mission again.\n(F1: help on this button)")
+            self._next = LAST_STEP
         else:
             name, what = STEP_TITLES[nxt]
             self.next_title.setText(f"Next: Step {nxt} · {what}")
@@ -582,8 +580,6 @@ class HomePage(QStackedWidget):
             self.btn_continue.setToolTip(f"Open Step {nxt}: {what}."
                                          "\n(F1: help on this button)")
             self._next = nxt
-        has_review = (info.folder / "ImgIRdrone" / "shoot_points.json").is_file()
-        self.btn_review.setVisible(has_review)
         while self.figures.count():
             w = self.figures.takeAt(0).widget()
             if w is not None:

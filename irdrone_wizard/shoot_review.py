@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Review of the aligned survey images (end of Step 4).
+Review of the aligned survey images (Step 5).
 
 No Qt here: this module reads the mission folder and computes; the review
 window (IRD_Interactive_review.py) shows the result.
@@ -24,7 +24,7 @@ weak correlation and are ignored.
 
 Review state
 ------------
-"failed" lives in ImgIRdrone/shoot_points.json (read by Step 5, which skips
+"failed" lives in ImgIRdrone/shoot_points.json (read by Step 6, which skips
 those points). The scores and the points the user looked at and accepted
 ("checked") are kept apart, in ImgIRdrone/review.json, so the Step 4 inventory
 keeps its format.
@@ -262,7 +262,7 @@ def add_points(review: Review, numbers: Iterable[int]) -> List[ReviewPoint]:
         return []
     added = _inventory_points(review.mission, inventory, numbers)
     review.points = sorted(review.points + added, key=lambda q: q.number)
-    if added:     # asked for by the user: Step 5 maps them whatever its own selection
+    if added:     # asked for by the user: Step 6 maps them whatever its own selection
         done = {p.number for p in added}
         for item in inventory["shoot_points"]:
             if isinstance(item, dict) and vis_number(str(item.get("FileName", ""))) in done:

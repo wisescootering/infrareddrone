@@ -34,7 +34,7 @@ class Step5WindowTest(unittest.TestCase):
 
     def test_header_and_main_action(self):
         d = self.dialog()
-        self.assertIn("Step 5", d.windowTitle())
+        self.assertIn("Step 6", d.windowTitle())
         self.assertIn(self.mission.name, d.windowTitle())
         self.assertIn("Build the map", d.btn_run_Mapping.text())
         self.assertIn(Look.PRIMARY_STYLE, d.btn_run_Mapping.styleSheet())
@@ -99,7 +99,7 @@ class ContinueButtonsTest(unittest.TestCase):
         self.assertEqual(emitted, [True])
         self.assertFalse(d.isVisible())
 
-    def test_step4_continue_with_mapping_once_images_are_aligned(self):
+    def test_step4_continue_with_the_review_once_images_are_aligned(self):
         import IRD_Interactive_4 as S4
         from test_step4_best_mapping import mission
         m = mission()
@@ -110,7 +110,7 @@ class ContinueButtonsTest(unittest.TestCase):
         (m / "ImgIRdrone" / "shoot_points.json").write_text("{}")
         d = S4.DialogImageProcessing({"File path mission": str(m)})
         self.assertTrue(d.continue_button.isVisibleTo(d))
-        self.assertEqual(d.continue_button.text(), "Continue with mapping  ▶")
+        self.assertEqual(d.continue_button.text(), "Continue with the review  ▶")
         emitted = []
         d.continue_requested.connect(lambda: emitted.append(True))
         d.show()

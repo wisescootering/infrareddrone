@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Step 6 logic: archiving (cleaning) of a mission folder.
+"""Step 7 logic: archiving (cleaning) of a mission folder.
 
 The mission folder is cleaned in place and the operation is irreversible
 (files are deleted, not sent to the recycle bin). Only the essential elements
@@ -11,7 +11,7 @@ that would allow the mission to be processed again are kept:
 * ``AerialPhotography/VIS`` and ``NIR``: ``<BAND>_XXXX.dng`` and ``.exif``,
   ``time_line.json``, ``transfer_info_<BAND>_dng.json``;
 * ``cameras``, ``FlightAnalytics``, ``mapping_MULTI`` and the previous maps
-  (``mapping_MULTI_<date>``, set aside by Step 5): untouched;
+  (``mapping_MULTI_<date>``, set aside by Step 6): untouched;
 * ``ImgIRdrone``: ``VIS_XXXX.jpg``, ``VIR_XXXX_local.jpg``,
   ``VIS_XXXX_motion_model.npy``, ``NDVI_XXXX_local.jpg``, ``NIR_XXXX_local.jpg``,
   ``shoot_points.json``, ``shoot_points_failed_summary.json``;
@@ -292,7 +292,7 @@ def build_plan(mission) -> ArchivePlan:
     for name, path, is_dir in _children(mission):
         lower = name.lower()
         if is_dir and (lower in UNTOUCHED_DIRS or lower in CLEANED_DIRS
-                       or lower.startswith("mapping_multi_")):     # previous maps of Step 5
+                       or lower.startswith("mapping_multi_")):     # previous maps of Step 6
             root_kept += 1
         elif not is_dir and (_DESKTOP.match(name) or lower in (MANIFEST_NAME, LOG_NAME, ICON_NAME.lower())):
             root_kept += 1

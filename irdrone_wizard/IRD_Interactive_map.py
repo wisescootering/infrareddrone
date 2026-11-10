@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Flight map widget: background map (aerial photos, optional, online), the
-orthophoto of Step 5 when it is built, the flight and the ground footprint of
+orthophoto of Step 6 when it is built, the flight and the ground footprint of
 the current image.
 
     wheel        zoom around the mouse
@@ -11,7 +11,7 @@ the current image.
 
 A model built with `mapped` (the main window) draws the sparse trajectory
 of the map: only the shoot points it uses (the mapping done, else the ones
-the next run of Step 5 will map), the whole flight faint behind, the flagged
+the next run of Step 6 will map), the whole flight faint behind, the flagged
 ones in red; with their ground footprints while no orthophoto is shown.
 Layers ▾ shows every image again.
 
@@ -140,12 +140,12 @@ class MapModel(QObject):
         self.numbers = [p.number for p in points]
         self._index = {n: i for i, n in enumerate(self.numbers)}
         self.xy = [p.xy for p in points]
-        # indices of the shoot points used by the mapping of Step 5
+        # indices of the shoot points used by the mapping of Step 6
         self.mapped = [i for i, n in enumerate(self.numbers) if n in mapped] if mapped else []
-        # "mapping" (Step 5 done), "next mapping" (Step 4 done: the images the
-        # next run of Step 5 will map) or "best mapping" (planned in Steps 2 and 4)
+        # "mapping" (Step 6 done), "next mapping" (Step 4 done: the images the
+        # next run of Step 6 will map) or "best mapping" (planned in Steps 2 and 4)
         self.mapped_by = mapped_by
-        # numbers of the images of the map built (Step 5 done), when the points
+        # numbers of the images of the map built (Step 6 done), when the points
         # drawn are the ones of the next run ("next mapping")
         self.built = set(built or ())
         # indices of the shoot points flagged in the review: left out of the map
@@ -347,7 +347,7 @@ class FlightMapView(QWidget):
             import IRD_Interactive_help as Help
             Help.attach_help(self.btn_layers, "btn:home_map",
                              "Background (IGN aerial photos, Esri, OpenStreetMap or none, from the internet) "
-                             "and orthophoto of Step 5 (natural or false colours).", parent=self)
+                             "and orthophoto of Step 6 (natural or false colours).", parent=self)
             Help.attach_help(self.btn_fit, "btn:home_map", "Show the whole flight (or double-click the map).",
                              parent=self)
         except Exception as e:
@@ -364,7 +364,7 @@ class FlightMapView(QWidget):
             act.triggered.connect(lambda _=False, k=key: self.model.set_source(k))
             group.addAction(act)
             menu.addAction(act)
-        menu.addSection("Orthophoto (Step 5)")
+        menu.addSection("Orthophoto (Step 6)")
         group2 = QActionGroup(menu)
         for key, name in (("natural", "Natural colours"), ("infrared", "Infrared false colours"),
                           ("hidden", "Hidden")):
@@ -707,18 +707,18 @@ class FlightMapView(QWidget):
         numbers = {self.model.numbers[i] for i in self.model.mapped}
         if self.model.mapped_by == "next mapping" and built:
             bits.append(f"{n} images of the map" if numbers == built else
-                        f"{n} images for the next map (Step 5 again: the map built has {len(built)})")
+                        f"{n} images for the next map (Step 6 again: the map built has {len(built)})")
         else:
-            bits.append(f"{n} images Step 5 will map" if self.model.mapped_by == "next mapping"
+            bits.append(f"{n} images Step 6 will map" if self.model.mapped_by == "next mapping"
                         else f"{n} images kept by the best mapping" if self.model.planned
                         else f"{n} images of the mapping")
         if self.model.flagged:
-            # flagged after Step 5: they are in the map built, not in the next one
+            # flagged after Step 6: they are in the map built, not in the next one
             again = {self.model.numbers[i] for i in self.model.flagged} & (
                 built or ({self.model.numbers[i] for i in self.model.mapped}
                           if self.model.mapped_by == "mapping" else set()))
             bits.append(f"⚑ {len(self.model.flagged)} flagged, left out"
-                        + (" when Step 5 runs again" if again else ""))
+                        + (" when Step 6 runs again" if again else ""))
         return bits
 
     def _paint_texts(self, p, note):
@@ -911,7 +911,7 @@ def map_model_for(mission: Path, color_of=None, with_ortho: bool = True, shoot_p
     gives the colour of a point (default: phases of Step 2). With
     `sparse_mapping` (the main window): once Step 4 is done, the points
     exactly as in the review (status colours, the ones Step 4 did not align
-    as small grey dots), over the orthophoto of Step 5 when it is built;
+    as small grey dots), over the orthophoto of Step 6 when it is built;
     before, the ones kept by the best mapping."""
     track = F.mission_track(mission, shoot_points_only=shoot_points_only)
     if not track:

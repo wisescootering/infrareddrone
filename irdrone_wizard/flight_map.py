@@ -155,7 +155,7 @@ def map_point(number: int, stem: str, vis: dict) -> Optional[MapPoint]:
 
 def odm_yaws(mission: Path) -> Dict[int, float]:
     """Image yaw (top of the image, degrees from the true north) of the shoot
-    points solved by the mapping (Step 5): more exact than the drone compass.
+    points solved by the mapping (Step 6): more exact than the drone compass.
     {} when the mapping is not done."""
     path = Path(mission) / "mapping_MULTI" / "mapping_result" / "shots.geojson"
     try:
@@ -194,7 +194,7 @@ def odm_yaws(mission: Path) -> Dict[int, float]:
 
 def aligned_selection(mission: Path) -> Tuple[Set[int], Set[int]]:
     """(kept, flagged): numbers of the shoot points aligned by Step 4
-    (ImgIRdrone/shoot_points.json), the ones Step 5 maps and the ones flagged
+    (ImgIRdrone/shoot_points.json), the ones Step 6 maps and the ones flagged
     ("failed": left out of the map). Both empty before Step 4."""
     kept: Set[int] = set()
     flagged: Set[int] = set()
@@ -213,7 +213,7 @@ def aligned_selection(mission: Path) -> Tuple[Set[int], Set[int]]:
 
 
 def mapped_numbers(mission: Path) -> Set[int]:
-    """Numbers of the shoot points used by the mapping of Step 5 (the
+    """Numbers of the shoot points used by the mapping of Step 6 (the
     "best mapping" selection, one image every n): the images solved by ODM
     (shots.geojson), else the selection written before running it
     (img_best_mappping.json). Empty when there is no mapping."""
@@ -342,7 +342,7 @@ def dtm_grid_path(mission: Path) -> Path:
 
 
 def dtm_ground(mission: Path):
-    """f(lat, lon) -> ground altitude from the terrain model of Step 5 (None
+    """f(lat, lon) -> ground altitude from the terrain model of Step 6 (None
     outside it), or None when there is no terrain model."""
     try:
         with open(dtm_grid_path(mission), encoding="utf-8") as f:
@@ -395,7 +395,7 @@ def ground_cache_file(mission: Path) -> Path:
 
 
 def find_ground(mission: Path, points: List[MapPoint], online: bool = True) -> str:
-    """Fill `ground` of the points: terrain model of Step 5, else cached or
+    """Fill `ground` of the points: terrain model of Step 6, else cached or
     online IGN altitudes (France). Returns the source used ("" if none)."""
     dtm = dtm_ground(mission)
     if dtm is not None:
@@ -424,7 +424,7 @@ def find_ground(mission: Path, points: List[MapPoint], online: bool = True) -> s
 
 
 # ---------------------------------------------------------------------------
-#  Orthophoto (Step 5)
+#  Orthophoto (Step 6)
 # ---------------------------------------------------------------------------
 def orthophoto_path(mission: Path) -> Path:
     return Path(mission) / "mapping_MULTI" / "mapping_result" / "odm_orthophoto.tif"

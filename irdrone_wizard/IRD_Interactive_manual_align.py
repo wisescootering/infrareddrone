@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Align by hand (Step 4 review): every flagged point, one after the other, then
+Align by hand (Step 5, review): every flagged point, one after the other, then
 the alignments are computed together.
 
     list          the points to realign: ○ to place, ✓ placed, ⚙ computing, – skipped
@@ -419,7 +419,7 @@ class ManualAlignDialog(QDialog):
         self.btn_skip = QPushButton("Skip this point  (S)")
         self.btn_skip.setStyleSheet(SECONDARY_STYLE)
         self.btn_skip.setToolTip("Leave this point out: it stays flagged misaligned and is left out of the map "
-                                 "(Step 5 skips it).")
+                                 "(Step 6 skips it).")
         self.btn_skip.clicked.connect(self.skip)
         self.btn_cancel = QPushButton("Cancel")
         self.btn_cancel.setStyleSheet(SECONDARY_STYLE)

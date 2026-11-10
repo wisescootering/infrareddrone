@@ -765,10 +765,10 @@ class DialogImageProcessing(QDialog):
     """Run the post-preprocessing image pipeline for a mission.
 
     auto_run (chained from Step 3): the alignment starts at once with the
-    survey range of Step 2, and the review of the aligned images opens when
-    it is done."""
+    survey range of Step 2, and the review of the aligned images (Step 5)
+    opens when it is done."""
 
-    continue_requested = pyqtSignal()     # "Continue with mapping": the main window opens Step 5
+    continue_requested = pyqtSignal()     # "Continue with the review": the main window opens Step 5
 
     def __init__(self, mission_parameters: dict, parent=None, auto_run: bool = False):
         super().__init__(parent)
@@ -1018,12 +1018,6 @@ class DialogImageProcessing(QDialog):
         self.close_button = QPushButton("Close")
         self.close_button.setFixedWidth(120)
         self.close_button.clicked.connect(self.close)
-        self.review_button = QPushButton("Review images…")
-        self.review_button.setToolTip(
-            "Check the aligned images on a time line, flag the misaligned ones and realign them by hand."
-        )
-        self.review_button.clicked.connect(self._open_review)
-        self.review_button.setEnabled(self._has_alignment_output())
         self.settings_button = QPushButton("\u2699")
         self.settings_button.setFixedWidth(36)
         # The gear glyph renders small: enlarge it, keep the button height.
@@ -1036,8 +1030,8 @@ class DialogImageProcessing(QDialog):
         self.help_button.setStyleSheet(SECONDARY_STYLE)
         self.help_button.clicked.connect(lambda: Help.show_help("ch:step4", parent=self))
         self.continue_button = Look.continue_button(
-            "mapping", "Close this window and open Step 5 (the map): nothing starts until you "
-                       "click Build the map.")
+            "the review", "Close this window and open Step 5: check the aligned images, flag the "
+                          "misaligned ones and realign them by hand.")
         self.continue_button.clicked.connect(self._continue_now)
         self.continue_button.setVisible(self._has_alignment_output())
 
@@ -1053,14 +1047,13 @@ class DialogImageProcessing(QDialog):
              "Align only the synchronised images whose footprints overlap by the chosen amount: "
              "much less computing, and a better map (choice made in Step 2)."),
             (self.all_images_radio, "btn:step4_best_mapping",
-             "Align every synchronised image of the range (more computing; Step 5 can still "
+             "Align every synchronised image of the range (more computing; Step 6 can still "
              "select the images of the map)."),
             (self.best_mapping_overlap, "btn:step4_best_mapping",
              "Overlap between the ground footprints of two successive images kept for the map "
              "(75 % recommended)."),
             (self.run_button, "btn:step4_run_alignment", "Align the VIS and NIR images of the selected shoot points (can take a long time)."),
             (self.close_button, "btn:step4_close", "Close this window."),
-            (self.review_button, "ch:review", self.review_button.toolTip()),
             (self.settings_button, "btn:step4_settings", "Processing settings (worker processes / safe mode, log detail)."),
             (self.stop_button, "btn:step4_stop", self.stop_button.toolTip()),
             (self.help_button, "ch:step4", "Open the manual at Step 4."),
@@ -1071,11 +1064,9 @@ class DialogImageProcessing(QDialog):
         # Apply the common style to the three main buttons
         self.run_button.setStyleSheet(PRIMARY_STYLE)
         self.close_button.setStyleSheet(SECONDARY_STYLE)
-        self.review_button.setStyleSheet(SECONDARY_STYLE)   # ▶ is for the next step (Continue with mapping)
 
         self.action_layout.addWidget(self.run_button)
         self.action_layout.addWidget(self.stop_button)
-        self.action_layout.addWidget(self.review_button)
         self.action_layout.addStretch()
 
         button_layout.addWidget(self.help_button)
@@ -1086,7 +1077,7 @@ class DialogImageProcessing(QDialog):
         layout.addLayout(button_layout)
 
     def _continue_now(self) -> None:
-        """Step 5 opens (nothing runs there by itself) once this window is closed."""
+        """Step 5, the review, opens once this window is closed."""
         if self.close():
             self.continue_requested.emit()
 
@@ -1258,18 +1249,6 @@ class DialogImageProcessing(QDialog):
     def _has_alignment_output(self) -> bool:
         return (self.mission_folder / "ImgIRdrone" / "shoot_points.json").is_file()
 
-    def _open_review(self) -> None:
-        """Review window (modal): flags and redo are done there."""
-        if self.process.state() != QProcess.ProcessState.NotRunning:
-            return
-        try:
-            from IRD_Interactive_review import ReviewDialog
-            dialog = ReviewDialog(self.mission_folder, parent=self)
-        except (FileNotFoundError, ValueError) as error:
-            QMessageBox.warning(self, "Review unavailable", str(error))
-            return
-        dialog.exec()
-
     def _open_settings(self) -> None:
         dialog = Step4SettingsDialog(
             load_worker_setting(), load_log_level_setting(), parent=self
@@ -1359,7 +1338,6 @@ class DialogImageProcessing(QDialog):
         self._progress_total = 0
         self._last_elapsed_seconds = None
         self.run_button.setEnabled(False)
-        self.review_button.setEnabled(False)
         self.continue_button.setEnabled(False)
         self.close_button.setEnabled(False)
         self.settings_button.setEnabled(False)
@@ -1463,7 +1441,6 @@ class DialogImageProcessing(QDialog):
         elif exit_code == 0 and exit_status == QProcess.ExitStatus.NormalExit:
             self.progress_bar.setValue(self._progress_total)
         self.run_button.setEnabled(True)
-        self.review_button.setEnabled(self._has_alignment_output())
         self.continue_button.setEnabled(True)
         self.continue_button.setVisible(self._has_alignment_output())
         self.close_button.setEnabled(True)
@@ -1498,13 +1475,12 @@ class DialogImageProcessing(QDialog):
                 self.status_label.setText("Processing completed successfully.")
             self.log_text.append("\nProcessing completed successfully.")
             mark_step_done(self.mission_folder, 4)
-            self.review_button.setEnabled(True)
             self.continue_button.setVisible(True)
-            self.review_button.setDefault(True)
-            self.review_button.setFocus()
-            if self.auto_run:
+            self.continue_button.setDefault(True)
+            self.continue_button.setFocus()
+            if self.auto_run:           # chained from Step 3: on to the review
                 self.auto_run = False
-                QTimer.singleShot(400, self._open_review)
+                QTimer.singleShot(400, self._continue_now)
         else:
             self.status_label.setText(f"Processing failed (exit code {exit_code}).")
             self.log_text.append(f"\nProcessing failed (exit code {exit_code}).")
@@ -1521,7 +1497,6 @@ class DialogImageProcessing(QDialog):
         self._processing_controls_idle()
         self.status_label.setText("Unable to start processing.")
         self.run_button.setEnabled(True)
-        self.review_button.setEnabled(self._has_alignment_output())
         self.continue_button.setEnabled(True)
         self.continue_button.setVisible(self._has_alignment_output())
         self.close_button.setEnabled(True)

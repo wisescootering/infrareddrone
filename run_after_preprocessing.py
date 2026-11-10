@@ -203,7 +203,7 @@ def compute_theoretical_ir2vi_angles(
 
 
 def write_multispectral_exif(image_path: Path, vis_data: dict) -> Path:
-    """Write the Phase 5 companion metadata beside a multispectral band TIFF."""
+    """Write the Phase 6 companion metadata beside a multispectral band TIFF."""
     metadata = read_exiftool_json(EXIFTOOLPATH, image_path)
     for key in GEOREF_METADATA_KEYS:
         if key in vis_data:
@@ -332,7 +332,7 @@ def build_available_shoot_points(
 def write_available_shoot_points(
     pairing_data: dict, multispectral_folder: Path, output_path: Path
 ) -> Path:
-    """Write the Step 4 output inventory used by Step 5."""
+    """Write the Step 4 output inventory used by Step 6."""
     output_path = Path(output_path)
     previous_inventory = None
     if output_path.is_file():

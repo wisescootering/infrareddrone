@@ -1,6 +1,6 @@
-# ODM mapping from Phase 5
+# ODM mapping from Phase 6
 
-The **ODM** button in the Phase 5 dialog now runs the complete OpenDroneMap
+The **ODM** button in the Phase 6 dialog now runs the complete OpenDroneMap
 workflow through Docker Desktop. The long-running Docker process runs on a
 background worker, so the dialog remains responsive. The dialog asks for
 confirmation before starting and prevents closing while ODM is running.

@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 # --------------------------------------------------------------------------------
-#   IR_drone interactive Phase 6
+#   IR_drone interactive Phase 7
 #   Mission archiving.  User interface
 # ---------------------------------------------------------------------------------
-"""Step 6 dialog: archiving (cleaning) of the mission folder.
+"""Step 7 dialog: archiving (cleaning) of the mission folder.
 
 When the window opens, the mission folder is analysed (nothing is changed)
 and the window shows what archiving would free: the dry run is implicit.
@@ -67,7 +67,7 @@ class _Worker(QRunnable):
 
 
 class DialogArchive(QDialog):
-    """Dialog of step 6: archiving of the mission."""
+    """Dialog of step 7: archiving of the mission."""
 
     data_signal_to_main = pyqtSignal(bool)
 
@@ -83,7 +83,7 @@ class DialogArchive(QDialog):
         self._worker = None
         self.plan = None          # the last analysis (None while it runs)
 
-        self.setWindowTitle(Look.step_window_title(6, STEP_NAME, self.folderMissionPath))
+        self.setWindowTitle(Look.step_window_title(7, STEP_NAME, self.folderMissionPath))
         self.setStyleSheet(DIALOG_STYLE)
         self.setMinimumSize(600, 420)
         self.resize(820, 600)
@@ -93,7 +93,7 @@ class DialogArchive(QDialog):
 
     def _init_gui(self) -> None:
         main_layout = QVBoxLayout(self)
-        main_layout.addWidget(Look.step_header(6, STEP_NAME, self.folderMissionPath))
+        main_layout.addWidget(Look.step_header(7, STEP_NAME, self.folderMissionPath))
         warning = QLabel(
             "Archiving deletes the technical files of the mission folder. "
             "<b>This operation is irreversible.</b> Copy anything you want to keep elsewhere first."
@@ -145,7 +145,7 @@ class DialogArchive(QDialog):
         self.btn_help = QPushButton("?")
         self.btn_help.setFixedWidth(36)
         self.btn_help.setStyleSheet(SECONDARY_STYLE)
-        self.btn_help.clicked.connect(lambda: Help.show_help("ch:step6", parent=self))
+        self.btn_help.clicked.connect(lambda: Help.show_help("ch:step7", parent=self))
         bottom_layout.addWidget(self.btn_help)
         bottom_layout.addStretch()
         self.btn_close = QPushButton("Close")
@@ -156,11 +156,11 @@ class DialogArchive(QDialog):
         main_layout.addLayout(bottom_layout)
 
         for widget, label, tip in (
-            (self.btn_archive, "btn:step6_archive",
+            (self.btn_archive, "btn:step7_archive",
              "Delete the files listed below (irreversible): the folder is analysed again, then you "
              "confirm by typing the name of the mission folder."),
-            (self.btn_close, "btn:step6_close", "Close this window."),
-            (self.btn_help, "ch:step6", "Open the manual at Step 6."),
+            (self.btn_close, "btn:step7_close", "Close this window."),
+            (self.btn_help, "ch:step7", "Open the manual at Step 7."),
         ):
             Help.attach_help(widget, label, tip, parent=self)
 
@@ -320,7 +320,7 @@ class DialogArchive(QDialog):
                                 f"{n_errors} item(s) could not be deleted. See the log.")
         else:
             self._log("<span style='color:green'>Archiving completed.</span>")
-            mark_step_done(self.folderMissionPath, 6)
+            mark_step_done(self.folderMissionPath, 7)
             QMessageBox.information(self, "Archiving completed",
                                     f"{Archive.format_size(manifest['deleted_bytes'])} freed.")
 

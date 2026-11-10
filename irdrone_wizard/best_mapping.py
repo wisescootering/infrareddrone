@@ -4,7 +4,7 @@ Best mapping: keep only the images the map needs (no Qt here).
 
 A survey flown with a short interval between pictures gives far more overlap
 than the mapping needs. Aligning every image costs time (Step 4) and feeding
-too many near-identical images to ODM (Step 5) is slow and often makes the
+too many near-identical images to ODM (Step 6) is slow and often makes the
 map worse. The best mapping keeps a subset of the survey whose successive
 ground footprints still overlap by a chosen fraction (75 % by default, the
 `OVERLAP_Y` of the legacy command line `run.py --selection best-mapping`).
@@ -37,7 +37,7 @@ Where it is used
   When the image the preview would keep is a badly synchronised pair, the
   nearest well synchronised one is kept, before or just past it
   (SYNC_TOLERANCE): the count stays close to the preview of Step 2.
-* Step 5: ODM image selection "by image overlap".
+* Step 6: ODM image selection "by image overlap".
 * Main window map: the sparse trajectory of the images kept (planned_numbers).
 """
 from __future__ import annotations
@@ -217,7 +217,7 @@ def mission_fov(mission: Path) -> Tuple[float, float]:
 # ---------------------------------------------------------------------------
 def load_choice(mission: Path) -> Dict[str, Any]:
     """{"enabled": bool, "overlap": 0..1}. Default: enabled at 75 %.
-    Selecting again among images already selected keeps them: Step 5 can apply
+    Selecting again among images already selected keeps them: Step 6 can apply
     the same overlap to the images aligned by Step 4."""
     choice = {"enabled": True, "overlap": DEFAULT_OVERLAP}
     try:
@@ -264,7 +264,7 @@ def _image_number(name: Any) -> Optional[int]:
 
 def planned_numbers(mission: Path) -> Set[int]:
     """Numbers of the visible images kept by the best mapping, before the
-    mapping of Step 5 (empty when the best mapping is off or unknown).
+    mapping of Step 6 (empty when the best mapping is off or unknown).
 
     The images Step 4 aligns (saved when it starts), else the preview of
     Step 2, else the selection made now over the survey of Step 2."""

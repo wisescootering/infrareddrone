@@ -1,4 +1,4 @@
-"""Review of the aligned survey images (end of Step 4): loading the shoot
+"""Review of the aligned survey images (Step 5): loading the shoot
 points, measuring the residual misalignment, flagging and the saved state."""
 import json
 import sys
@@ -162,6 +162,11 @@ if __name__ == "__main__":
     unittest.main()
 
 
+def RVbox():
+    import IRD_Interactive_review as RV
+    return RV.QMessageBox
+
+
 class ReviewDialogTests(MissionTests):
     """The window, offscreen (no slider window is started: the runner is mocked)."""
 
@@ -195,6 +200,30 @@ class ReviewDialogTests(MissionTests):
         self.assertEqual(d.current().number, 140)          # probably misaligned first
         self.assertEqual(d.current().status, R.STATUS_SUSPICIOUS)
         self.assertTrue((self.mission / "ImgIRdrone" / "review.json").is_file())
+        d.done(0)
+
+    def test_is_step5_and_continues_with_mapping(self):
+        import IRD_Interactive_progress as Progress
+        d = self.dialog()
+        self.assertTrue(d.windowTitle().startswith("Step 5 – Review the aligned images"))
+        self.assertEqual(d.btn_continue.text(), "Continue with mapping  ▶")
+        self.assertFalse(d.continue_chosen)
+        d.show()
+        d.btn_continue.click()
+        self.assertFalse(d.isVisible())
+        self.assertTrue(d.continue_chosen)
+        self.assertIn(5, Progress.done_steps(self.mission))
+
+    def test_continue_refused_while_realignments_run(self):
+        from unittest import mock
+        d = self.dialog()
+        d.show()
+        with mock.patch.object(d, "redo_runner_busy", return_value=True), \
+                mock.patch.object(RVbox(), "information") as told:
+            d.btn_continue.click()
+        told.assert_called_once()
+        self.assertTrue(d.isVisible())
+        self.assertFalse(d.continue_chosen)
         d.done(0)
 
     def test_flag_key_writes_the_inventory(self):
@@ -236,7 +265,7 @@ class ReviewDialogTests(MissionTests):
         self.assertTrue(d.btn_accept_redo.isVisibleTo(d))
         self.assertIn("◆ 1 to confirm", d.chips[R.STATUS_REALIGNED].text())
         self.assertFalse(d.btn_redo.isEnabled())          # its verdict first
-        # still flagged on disk (Step 5 skips it) and remembered as realigned
+        # still flagged on disk (Step 6 skips it) and remembered as realigned
         self.assertEqual(R.load_review(self.mission).by_number(140).status, R.STATUS_REALIGNED)
         d._verdict(True)
         point = R.load_review(self.mission).by_number(140)
@@ -688,7 +717,7 @@ class NotAlignedPointsTests(ReviewMapTests):
         self.assertIn("VIS_0139", warnings[0])                    # its alignment failed: said
         inventory = json.loads((self.mission / "ImgIRdrone" / "shoot_points.json").read_text())
         requested = [p["FileName"] for p in inventory["shoot_points"] if p.get(R.ALIGNED_ON_REQUEST)]
-        self.assertEqual(requested, ["VIS_0138.dng"])             # Step 5 maps it whatever its selection
+        self.assertEqual(requested, ["VIS_0138.dng"])             # Step 6 maps it whatever its selection
         self.assertEqual(d.map_model.color_of(i).name(), d._map_color(138).name())
         d.scan.wait(10000)
         d.done(0)

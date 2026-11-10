@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 # --------------------------------------------------------------------------------
-#   IR_drone interactive Phase 5
+#   IR_drone interactive Phase 6
 #   Georeferencing images.  User interface
 #   17/10/2026   V004
 # ---------------------------------------------------------------------------------
-"""Step 5 dialog: georeferencing, ODM mapping, DTM and contour lines.
+"""Step 6 dialog: georeferencing, ODM mapping, DTM and contour lines.
 
 ``DialogGeoRef`` offers three buttons:
 
@@ -111,7 +111,7 @@ class ODMRunSignals(QObject):
 
 
 class ODMRunWorker(QRunnable):
-    """Run the complete ODM workflow without blocking the Phase 5 dialog."""
+    """Run the complete ODM workflow without blocking the Phase 6 dialog."""
 
     def __init__(
         self,
@@ -195,7 +195,7 @@ class ODMSelectionDialog(QDialog):
             "needs. On images already selected in Step 4, all of them are kept.")
         self.sample_radio.setToolTip("Keep one eligible image every n: less overlap, faster mapping.")
         for radio in (self.sample_radio, self.overlap_radio, self.all_radio):
-            Help.attach_help(radio, "btn:step5_selection", radio.toolTip(), parent=self)
+            Help.attach_help(radio, "btn:step6_selection", radio.toolTip(), parent=self)
         self.selection_group = QButtonGroup(self)
         self.selection_group.setExclusive(True)
         self.selection_group.addButton(self.overlap_radio)
@@ -241,7 +241,7 @@ class ODMSelectionDialog(QDialog):
         layout.addLayout(launch_buttons(
             self, "Build the map",
             "Start OpenDroneMap with these images; the terrain model and the contour lines follow.",
-            "btn:step5_selection"))
+            "btn:step6_selection"))
 
         every_image = (settings["overlap"] is None and settings["sample_every"] == 1
                        and settings["dt_tolerance_s"] >= ALL_IMAGES_DT)
@@ -374,7 +374,7 @@ class DtmStepDialog(QDialog):
         layout.addWidget(note)
         layout.addLayout(launch_buttons(
             self, "Build", "Build the terrain model and the contour lines with this grid step.",
-            "btn:step5_dtm"))
+            "btn:step6_dtm"))
 
 
 class ODMPreviewWorker(QRunnable):
@@ -398,12 +398,12 @@ class DialogGeoRef(QDialog):
     """
     Dialog for georeferncing image.
 
-    Phase 5 of the processing pipeline:
+    Phase 6 of the processing pipeline:
           - Post-processing
     """
 
     data_signal_to_main = pyqtSignal(bool)
-    continue_requested = pyqtSignal()     # "Continue with archiving": the main window opens Step 6
+    continue_requested = pyqtSignal()     # "Continue with archiving": the main window opens Step 7
     log_signal = pyqtSignal(str)
     image_signal = pyqtSignal(str)
 
@@ -423,7 +423,7 @@ class DialogGeoRef(QDialog):
             )
             self.close()
             return
-        self.setWindowTitle(Look.step_window_title(5, STEP_NAME, self.folderMissionPath))
+        self.setWindowTitle(Look.step_window_title(6, STEP_NAME, self.folderMissionPath))
         self.setStyleSheet(DIALOG_STYLE)
         self.setMinimumSize(600, 480)
         Look.fit_to_screen(self, parent, max_w=900, max_h=860)
@@ -456,7 +456,7 @@ class DialogGeoRef(QDialog):
     def _init_gui(self) -> None:
         """Same frame as Step 3: header, stages, log, actions, progress, preview, footer."""
         main_layout = QVBoxLayout(self)
-        main_layout.addWidget(Look.step_header(5, STEP_NAME, self.folderMissionPath))
+        main_layout.addWidget(Look.step_header(6, STEP_NAME, self.folderMissionPath))
 
         # The map is built in stages, left to right (Georeference images is a separate tool)
         self.stages = Look.StageTracker(["Image selection", "Orthophoto (OpenDroneMap)",
@@ -509,7 +509,7 @@ class DialogGeoRef(QDialog):
         self.btn_help = QPushButton("?")
         self.btn_help.setFixedWidth(36)
         self.btn_help.setStyleSheet(SECONDARY_STYLE)
-        self.btn_help.clicked.connect(lambda: Help.show_help("ch:step5", parent=self))
+        self.btn_help.clicked.connect(lambda: Help.show_help("ch:step6", parent=self))
         close_layout.addWidget(self.btn_help)
         close_layout.addStretch()
         self.btn_close = QPushButton("Close")
@@ -517,24 +517,24 @@ class DialogGeoRef(QDialog):
         self.btn_close.setStyleSheet(SECONDARY_STYLE)
         close_layout.addWidget(self.btn_close)
         self.btn_continue = Look.continue_button(
-            "archiving", "Close this window and open Step 6: it shows what archiving frees; "
+            "archiving", "Close this window and open Step 7: it shows what archiving frees; "
                          "nothing is deleted until you confirm there.")
         self.btn_continue.clicked.connect(self._continue_now)
         self.btn_continue.hide()               # once the map is built
         close_layout.addWidget(self.btn_continue)
 
         for widget, label, tip in (
-            (self.btn_run_GeoRef, "btn:step5_georef",
+            (self.btn_run_GeoRef, "btn:step6_georef",
              "Choose images (drone DNG, or IRD_XXXX_1..4.tif groups) and georeference and orthorectify each one."),
-            (self.btn_run_Mapping, "btn:step5_mapping",
+            (self.btn_run_Mapping, "btn:step6_mapping",
              "Choose the images, then assemble them into one 4-band orthophoto with OpenDroneMap (Docker). "
              "The terrain model and the contour lines follow."),
-            (self.btn_run_DTM, "btn:step5_dtm",
+            (self.btn_run_DTM, "btn:step6_dtm",
              "Build the terrain model and the contour lines over the orthophoto again, with another "
              "grid step (IGN altitudes, internet)."),
-            (self.btn_close, "btn:step5_close", "Close this window."),
-            (self.btn_help, "ch:step5", "Open the manual at Step 5."),
-            (self.btn_continue, "btn:step5_continue", self.btn_continue.toolTip()),
+            (self.btn_close, "btn:step6_close", "Close this window."),
+            (self.btn_help, "ch:step6", "Open the manual at Step 6."),
+            (self.btn_continue, "btn:step6_continue", self.btn_continue.toolTip()),
         ):
             Help.attach_help(widget, label, tip, parent=self)
 
@@ -575,7 +575,7 @@ class DialogGeoRef(QDialog):
     # ------------------------------------------------------------------
 
     def _continue_now(self) -> None:
-        """Step 6 opens once this window is closed (it refuses while a Step 5 window is open)."""
+        """Step 7 opens once this window is closed (it refuses while a Step 6 window is open)."""
         if self.odm_worker is None and self.dtm_worker is None and self.close():
             self.data_signal_to_main.emit(True)
             self.continue_requested.emit()
@@ -658,7 +658,7 @@ class DialogGeoRef(QDialog):
 
     def on_run_GeoRef(self) -> None:
         """
-        Step 5.1 – Run Georeferencing.
+        Step 6.1 – Run Georeferencing.
         """
         try:
             self.progress_bar.setValue(0)
@@ -845,7 +845,7 @@ class DialogGeoRef(QDialog):
         orthophoto = result["orthophoto"]
         completion_message = f"Orthophoto:\n{orthophoto['path']}"
         self._log(f"ODM completed successfully: {orthophoto['path']}")
-        mark_step_done(self.folderMissionPath, 5)  # Step 5 is done once the ODM mapping is
+        mark_step_done(self.folderMissionPath, 6)  # Step 6 is done once the ODM mapping is
         self.stages.set(1, Look.STAGE_DONE, "mapping_result")
         self.btn_continue.show()
         self.progress_label.setText("ODM completed successfully.")

@@ -52,7 +52,7 @@ class MissionsOnDiskTest(unittest.TestCase):
     def test_next_step(self):
         info = Home.read_mission(make_mission(self.root, "FLY-x", done=(1, 2)))
         self.assertEqual(info.next_step(), 3)
-        info = Home.read_mission(make_mission(self.root, "FLY-y", done=(1, 2, 3, 4, 5)))
+        info = Home.read_mission(make_mission(self.root, "FLY-y", done=(1, 2, 3, 4, 5, 6)))
         self.assertIsNone(info.next_step())
         self.assertIn("25/01/2022 11:59 · Blassac", info.subtitle())
 

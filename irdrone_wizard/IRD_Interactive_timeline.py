@@ -1081,7 +1081,7 @@ class FlightTimelineDialog(QDialog):
                 Help.attach_help(widget, label, widget.toolTip(), parent=self)
             Help.attach_help(self.bm_check, "btn:step2_best_mapping",
                              "Keep only the survey images whose ground footprints overlap by the chosen amount: "
-                             "far less to align in Step 4, less data, a better map in Step 5.\n"
+                             "far less to align in Step 4, less data, a better map in Step 6.\n"
                              "Green dots on the altitude, marks on the filmstrip and footprints on the map: "
                              "the images kept.", parent=self)
             Help.attach_help(self.bm_overlap, "btn:step2_best_mapping",

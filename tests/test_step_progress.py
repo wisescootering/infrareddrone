@@ -76,12 +76,39 @@ class ProgressRecordTest(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
 
-    def test_steps_3_to_6_found_from_their_final_outputs(self):
+    def test_steps_3_to_7_found_from_their_final_outputs(self):
         self.write("AerialPhotography/shoot_points.json", '{"time_shift": 1.2, "shoot_points": [{}]}')
         self.write("ImgIRdrone/shoot_points.json", '{"shoot_points": [{}]}')
+        self.assertEqual(list(Progress.done_steps(self.mission)), [3, 4])
+        self.write("ImgIRdrone/review.json", '{"points": {}}')            # review closed
+        self.assertEqual(list(Progress.done_steps(self.mission)), [3, 4, 5])
         self.write("mapping_MULTI/mapping_result/odm_orthophoto.tif", "tif")
         self.write("archive_manifest.json", "{}")
-        self.assertEqual(list(Progress.done_steps(self.mission)), [3, 4, 5, 6])
+        self.assertEqual(list(Progress.done_steps(self.mission)), [3, 4, 5, 6, 7])
+
+    def test_a_mapped_mission_went_through_the_review(self):
+        self.write("ImgIRdrone/shoot_points.json", '{"shoot_points": [{}]}')
+        self.write("mapping_MULTI/mapping_result/odm_orthophoto.tif", "tif")
+        self.assertEqual(list(Progress.done_steps(self.mission)), [4, 5, 6])
+
+    def test_six_step_record_read_in_the_seven_step_numbering(self):
+        # before the review was a step of its own: 5 was the map, 6 the archive
+        self.write(str(Progress.PROGRESS_FILE), json.dumps({"done": {
+            "1": "2026-01-01T10:00:00", "4": "2026-01-02T10:00:00",
+            "5": "2026-01-03T10:00:00", "6": "2026-01-04T10:00:00"}}))
+        done = Progress.done_steps(self.mission)
+        self.assertEqual(done, {1: "2026-01-01T10:00:00", 4: "2026-01-02T10:00:00",
+                                5: "2026-01-03T10:00:00",     # reviewed before mapping
+                                6: "2026-01-03T10:00:00", 7: "2026-01-04T10:00:00"})
+        Progress.mark_step_done(self.mission, 2)       # saved in the new numbering
+        saved = json.loads((self.mission / Progress.PROGRESS_FILE).read_text())
+        self.assertEqual(saved["version"], 2)
+        self.assertEqual(sorted(saved["done"], key=int), ["1", "2", "4", "5", "6", "7"])
+        self.assertEqual(sorted(Progress.done_steps(self.mission)), [1, 2, 4, 5, 6, 7])
+
+    def test_six_step_record_aligned_only_still_has_the_review_to_do(self):
+        self.write(str(Progress.PROGRESS_FILE), json.dumps({"done": {"4": "2026-01-02T10:00:00"}}))
+        self.assertEqual(list(Progress.done_steps(self.mission)), [4])
 
     def test_step3_needs_the_pairing_not_only_aruco_and_delay(self):
         self.write("Synchro/check_time_alignment.png", "png")       # time shift computed
@@ -212,7 +239,7 @@ class OpenMissionButtonTest(_MissionHelpers):
         self.assertEqual(window.folderMissionPath, mission)
         self.assertEqual(window.home.m_title.text(), "FLY-20220125-1159-Blassac")
         states = [window.home.rail.tiles[s].state for s in Progress.STEPS]
-        self.assertEqual(states, ["done", "done", "done", "next", "todo", "todo"])
+        self.assertEqual(states, ["done", "done", "done", "next", "todo", "todo", "todo"])
         # a step opened afterwards uses this mission without asking again
         self.assertTrue(window.ensure_mission_parameters())
 
@@ -291,17 +318,35 @@ class Step2UsesCurrentMissionTest(_MissionHelpers):
             window.open_window_load_set_images()
         step3.assert_called_once_with()
 
-    def test_continue_buttons_of_steps_4_and_5_open_the_next_step(self):
+    def test_continue_buttons_of_steps_4_to_6_open_the_next_step(self):
         window = self.main.Main_Window()
         self.open(window, self.make_mission("FLY-D"))
         with mock.patch.object(self.main, "DialogImageProcessing") as step4, \
-                mock.patch.object(window, "on_post_process_images") as step5:
+                mock.patch.object(window, "on_review") as step5:
             window.on_process_images()
             step4.return_value.continue_requested.connect.assert_called_once_with(step5)
-        with mock.patch.object(self.main, "DialogGeoRef") as step5_dialog, \
-                mock.patch.object(window, "on_archive_mission") as step6:
+        window.dialog_image_processing = None          # the mock would count as an open window
+        for chosen, opened in ((True, 1), (False, 0)):
+            with mock.patch.object(self.main, "ReviewDialog") as review, \
+                    mock.patch.object(window, "on_post_process_images") as step6:
+                review.return_value.continue_chosen = chosen
+                window.on_review()
+                review.return_value.exec.assert_called_once()
+                self.assertEqual(step6.call_count, opened)
+        with mock.patch.object(self.main, "DialogGeoRef") as step6_dialog, \
+                mock.patch.object(window, "on_archive_mission") as step7:
             window.on_post_process_images()
-            step5_dialog.return_value.continue_requested.connect.assert_called_once_with(step6)
+            step6_dialog.return_value.continue_requested.connect.assert_called_once_with(step7)
+
+    def test_rail_runs_the_review_as_step5(self):
+        window = self.main.Main_Window()
+        self.open(window, self.make_mission("FLY-E", done=(1, 2, 3, 4)))
+        self.assertEqual(window.home.rail.tiles[5].state, "next")
+        self.assertEqual(window.home.rail.tiles[5].name.text(), "Review")
+        for step, slot in ((5, "on_review"), (6, "on_post_process_images"), (7, "on_archive_mission")):
+            with mock.patch.object(window, slot) as opened:
+                window.home.rail.tiles[step].click()
+                opened.assert_called_once()
 
 
 if __name__ == "__main__":

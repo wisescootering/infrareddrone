@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # --------------------------------------------------------------------------------
-#   IR_drone interactive Phase 5
+#   IR_drone interactive Phase 6
 #   Digital terrain model (DTM) and contour lines over the ODM orthophoto.
 #
 #   1. Read the orthophoto footprint (UTM).
@@ -11,7 +11,7 @@
 #   4. Build a spline DTM and export: elevation GeoTIFF, QGIS contour lines
 #      (1 m equidistance), shaded 2D map and 3D surface.
 # ---------------------------------------------------------------------------------
-"""DTM and contour lines of the ODM orthophoto (Step 5, "DTM + contours").
+"""DTM and contour lines of the ODM orthophoto (Step 6, "DTM + contours").
 
 Entry point: ``generate_ortho_dtm``. Output files are written next to the
 orthophoto (``mapping_MULTI/mapping_result``); an existing file is never

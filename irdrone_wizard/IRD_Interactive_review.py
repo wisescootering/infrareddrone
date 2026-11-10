@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Review of the aligned survey images (end of Step 4).
+Step 5: review of the aligned survey images.
 
     header        counts: aligned / to check / flagged / no image
     compare view  the visible image and the aligned infrared of the selected
@@ -38,8 +38,8 @@ import shoot_review as R  # noqa: E402
 import IRD_Interactive_map as MapV  # noqa: E402
 from IRD_Interactive_look import (BLUE, CURSOR, DANGER_STYLE, DIALOG_STYLE, GRID, MESSAGE_STYLE,  # noqa: E402
                                   MUTED, PANEL, PRIMARY_STYLE, PROGRESS_STYLE, SECONDARY_STYLE,
-                                  SUBTITLE_STYLE, TITLE_STYLE, bgr_to_qimage, chip, fit_to_screen, fmt_time,
-                                  set_chip)
+                                  SUBTITLE_STYLE, TITLE_STYLE, bgr_to_qimage, chip, continue_button,
+                                  fit_to_screen, fmt_time, set_chip, step_window_title)
 
 STATUS_COLORS = {
     R.STATUS_OK: QColor("#2E7D32"),
@@ -77,7 +77,7 @@ MODES = [  # (key, button text, tooltip)
                            "cyan on the other."),
     ("side", "Side by side", "Visible and aligned infrared next to each other."),
     ("map", "Map", "Where the image was taken: the flight, the ground covered by the image, the orthophoto "
-                   "of Step 5 when it is built and aerial photos (online, optional)."),
+                   "of Step 6 when it is built and aerial photos (online, optional)."),
 ]
 MAX_VIEW_WIDTH = 3000     # the compare view works on copies at most this wide
 
@@ -739,7 +739,8 @@ class ReviewDialog(QDialog):
         self.index = 0
         self._hover_index: Optional[int] = None
         self._redo_errors: List[str] = []
-        self.setWindowTitle(f"Step 4 – Review the aligned images · {self.mission.name}")
+        self.setWindowTitle(step_window_title(5, "Review the aligned images", self.mission))
+        self.continue_chosen = False          # "Continue with mapping": the main window opens Step 6
         self.setStyleSheet(DIALOG_STYLE)
         fit_to_screen(self, parent)
         self._build()
@@ -801,10 +802,10 @@ class ReviewDialog(QDialog):
                             (R.STATUS_CHECK, "Residual misalignment between "
                                              f"{R.SHIFT_OK:g} and {R.SHIFT_SUSPICIOUS:g} px, or not measurable: have a look."),
                             (R.STATUS_SUSPICIOUS, f"Residual misalignment above {R.SHIFT_SUSPICIOUS:g} px."),
-                            (R.STATUS_FLAGGED, "Flagged: left out of the map (Step 5) until realigned and "
+                            (R.STATUS_FLAGGED, "Flagged: left out of the map (Step 6) until realigned and "
                                                "confirmed."),
                             (R.STATUS_REALIGNED, "Realigned by hand: check the new image and confirm it "
-                                                 "(skipped by Step 5 until then)."),
+                                                 "(skipped by Step 6 until then)."),
                             (R.STATUS_MISSING, "The alignment wrote no image for these points.")):
             c = chip(STATUS_COLORS[status], "", tip)
             self.chips[status] = c
@@ -956,8 +957,13 @@ class ReviewDialog(QDialog):
         foot.addWidget(self.btn_help)
         foot.addWidget(self.btn_flag_suspicious)
         foot.addStretch(1)
+        self.btn_continue = continue_button(
+            "mapping", "Close the review and open Step 6 (the map): nothing starts until you click "
+                       "Build the map. The flagged points are left out of it.")
+        self.btn_continue.clicked.connect(self._continue_now)
         foot.addWidget(self.btn_redo)
-        foot.addWidget(self.btn_close)     # Close always at the bottom right
+        foot.addWidget(self.btn_close)     # Close, then the next step at the bottom right
+        foot.addWidget(self.btn_continue)
         outer.addLayout(foot)
 
         try:
@@ -976,6 +982,7 @@ class ReviewDialog(QDialog):
                                   (self.btn_prev, "btn:review_navigation"), (self.btn_next, "btn:review_navigation"),
                                   (self.btn_next_review, "btn:review_navigation"),
                                   (self.btn_open, "btn:review_compare"), (self.btn_close, "btn:review_navigation"),
+                                  (self.btn_continue, "btn:review_continue"),
                                   (self.btn_accept_redo, "btn:review_redo"), (self.btn_reject_redo, "btn:review_redo"),
                                   (self.btn_accept_all, "btn:review_redo"), (self.btn_stop_redo, "btn:review_redo")):
                 Help.attach_help(widget, label, widget.toolTip(), parent=self)
@@ -1022,7 +1029,7 @@ class ReviewDialog(QDialog):
         self.btn_flag.setCheckable(True)
         self.btn_flag.setStyleSheet(DANGER_STYLE)
         self.btn_flag.setToolTip("Flag this point (misaligned, blurred, black area at the edge…): it is left out "
-                                 "of the map (Step 5) until it is realigned by hand and confirmed. "
+                                 "of the map (Step 6) until it is realigned by hand and confirmed. "
                                  "Leave it flagged if it cannot be recovered.")
         self.btn_flag.clicked.connect(self.toggle_flag)
         lay.addWidget(self.btn_flag)
@@ -1778,7 +1785,17 @@ class ReviewDialog(QDialog):
             R.save_state(self.review)
         except OSError:
             pass
+        from IRD_Interactive_progress import mark_step_done
+        mark_step_done(self.mission, 5)       # no end of its own: done once looked at
         super().done(r)
+
+    def _continue_now(self):
+        """Close the review; the main window then opens Step 6 (refused while
+        alignments run: the window stays open)."""
+        self.continue_chosen = True
+        self.accept()
+        if self.isVisible():
+            self.continue_chosen = False
 
 
 class ShiftGauge(QWidget):

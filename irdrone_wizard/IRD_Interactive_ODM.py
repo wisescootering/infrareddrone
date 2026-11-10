@@ -589,7 +589,7 @@ def select_mapping_pairs(
     sample_every: int = 3,
     overlap: Optional[float] = None,
 ) -> Dict[str, Any]:
-    """The image selection of Step 5, nothing written: the eligible pairs
+    """The image selection of Step 6, nothing written: the eligible pairs
     (rank-one |dt| within the tolerance, anywhere in the flight, not flagged
     failed) thinned by ``overlap`` or one every ``sample_every``.
 
@@ -705,7 +705,7 @@ def select_mapping_pairs(
 
 
 def selection_settings(mission_folder: Path) -> Dict[str, Any]:
-    """Settings of the image selection the Step 5 window proposes:
+    """Settings of the image selection the Step 6 window proposes:
     {"dt_tolerance_s", "sample_every", "overlap" (None: one image every n)}.
 
     Those of the last run (selection_rules of img_best_mappping.json), else
@@ -743,7 +743,7 @@ def selection_settings(mission_folder: Path) -> Dict[str, Any]:
 
 
 def planned_mapping_numbers(mission_folder: Path) -> Set[int]:
-    """Numbers of the visible images the next run of Step 5 will map with the
+    """Numbers of the visible images the next run of Step 6 will map with the
     settings its window proposes (`selection_settings`); empty when it cannot
     be known (before Step 4)."""
     mission_folder = Path(mission_folder)
