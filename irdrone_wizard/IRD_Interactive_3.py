@@ -182,12 +182,15 @@ class DialogSynchroAruco(QDialog):
         self._plot_after = None
 
         self._log("Dialog initialized.")
-        self._set_manual_mode(not self.auto_run)
-        if not self.auto_run:
+        start_now = self.auto_run
+        # The stages follow each other once started; nothing starts before the
+        # user clicks "Synchronise the cameras" (unless auto_run is asked).
+        self._set_manual_mode(False)
+        if start_now:
+            self._log("Detection, time alignment and pairing run automatically.")
+            QTimer.singleShot(400, self._start_synchronisation)
+        else:
             self._show_previous_result()
-        if self.auto_run:
-            self._log("Started from the flight timeline: detection, time alignment and pairing run automatically.")
-            QTimer.singleShot(400, self.on_run_aruco)
 
     # ------------------------------------------------------------------
     # Graphical User Interface
@@ -210,6 +213,12 @@ class DialogSynchroAruco(QDialog):
         self.btn_manual.setToolTip("Stop the automatic chaining and run each stage yourself "
                                    "(check or adjust the time alignment before pairing).")
         self.btn_manual.clicked.connect(lambda: self._set_manual_mode(True))
+        # The main action: detection, clock alignment and pairing, one after the other
+        self.btn_sync_run = QPushButton("Synchronise the cameras")
+        self.btn_sync_run.setStyleSheet(Look.PRIMARY_STYLE)
+        self.btn_sync_run.setToolTip("Detect the targets, align the clocks (you check the curves) and pair "
+                                     "the visible and infrared images.")
+        self.btn_sync_run.clicked.connect(self._start_synchronisation)
         self.btn_continue = QPushButton("Continue with image processing  ▶")
         self.btn_continue.setStyleSheet(Look.PRIMARY_STYLE)
         self.btn_continue.setToolTip("Close this window and open Step 4 (alignment of the image pairs): "
@@ -251,6 +260,7 @@ class DialogSynchroAruco(QDialog):
         QShortcut(QKeySequence("N"), self, activated=lambda: self._awaiting_sync and self.on_adjust_time_shift())
         auto_bar.addWidget(self.auto_label, 1)
         auto_bar.addWidget(self.btn_manual)
+        auto_bar.addWidget(self.btn_sync_run)
         main_layout.addLayout(auto_bar)
 
         # Log display area
@@ -369,6 +379,7 @@ class DialogSynchroAruco(QDialog):
             (self.btn_sync_ok, "btn:step3_overlap", self.btn_sync_ok.toolTip()),
             (self.btn_sync_adjust, "btn:step3_overlap", self.btn_sync_adjust.toolTip()),
             (self.btn_manual, "btn:step3_manual", self.btn_manual.toolTip()),
+            (self.btn_sync_run, "btn:step3_run", self.btn_sync_run.toolTip()),
             (self.btn_continue, "btn:step3_continue", self.btn_continue.toolTip()),
             (self.btn_before, "btn:step3_before", self.btn_before.toolTip()),
         ):
@@ -979,11 +990,22 @@ class DialogSynchroAruco(QDialog):
         for b in self._substep_buttons:
             b.setVisible(manual)
         self.btn_manual.setVisible(not manual)
+        self.btn_sync_run.setVisible(not manual)
         if manual:
             self._hide_sync_confirmation()
             self.auto_label.setText("")
         else:
-            self.auto_label.setText("Automatic: detection, clock alignment and pairing follow each other.")
+            self.auto_label.setText("Detection, clock alignment and pairing follow each other; "
+                                    "you check the curves before the pairing.")
+
+    def _start_synchronisation(self) -> None:
+        """The main action: the three stages chained, from the detection."""
+        self._set_manual_mode(False)
+        self.image_pairing_done = False
+        self.btn_sync_run.hide()
+        self.btn_continue.hide()
+        self.auto_label.setText("Synchronising: detection, clock alignment, then you check the curves.")
+        self.on_run_aruco()
 
     def previous_result(self) -> Optional[dict]:
         """What an earlier run of Step 3 left: offset, pairs, plots (None if not run)."""
@@ -1013,7 +1035,9 @@ class DialogSynchroAruco(QDialog):
         y, m, d = (prev["date"].split("-") + ["", "", ""])[:3]
         when = f" on {d}/{m}/{y}" if d else ""
         self.auto_label.setText(f"Synchronised{when}: infrared clock offset {prev['time_shift']:+.2f} s, "
-                                f"{prev['pairs']} pairs. Run the stages again below to redo it.")
+                                f"{prev['pairs']} pairs.")
+        self.btn_sync_run.setText("Synchronise again")
+        self.btn_sync_run.setStyleSheet(Look.SECONDARY_STYLE)   # Continue is the main action now
         self.progress_label.setText("Step 3 already done: clock alignment checked on the curves below.")
         self.progress_bar.setValue(100)
         if prev["after"] is not None:

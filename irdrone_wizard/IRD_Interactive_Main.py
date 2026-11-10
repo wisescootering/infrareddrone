@@ -347,7 +347,7 @@ class Main_Window(QMainWindow):
             return
         Progress.mark_step_done(folderMissionPath, 2)
         if dialog.action == "step3":
-            self.on_pre_process_images(auto_run=False)    # the user starts the synchronisation
+            self.on_pre_process_images()    # the user starts the synchronisation
 
     def open_window_classic_selection(self):
         """
@@ -611,7 +611,7 @@ class Main_Window(QMainWindow):
         elif step == 2:
             self.open_window_load_set_images()
         elif step == 3:
-            self.on_pre_process_images(auto_run=True)
+            self.on_pre_process_images()       # started by "Synchronise the cameras"
         elif step == 4:
             self.on_process_images()
         elif step == 5:
@@ -620,18 +620,14 @@ class Main_Window(QMainWindow):
             self.on_archive_mission()
 
     def open_step(self, step: int):
-        """A step of the rail: the next ones are chained as with "Continue";
-        a step already done is opened as is (Step 3 without running on its own).
+        """A step of the rail: opened as with "Continue" (Step 3 never runs on its own).
         Step 1 created the loaded mission: its details are edited instead
         (no new mission, the SD cards are not read again)."""
         folder = Progress.mission_folder(self.mission_parameters, self.folderMissionPath)
         if step == 1 and folder is not None and 1 in Progress.done_steps(folder):
             self.edit_mission_details()
             return
-        if step == 3 and folder is not None and 3 in Progress.done_steps(folder):
-            self.on_pre_process_images(auto_run=False)
-        else:
-            self.run_step(step)
+        self.run_step(step)
 
     def edit_mission_details(self):
         """Description, pilot, cameras of the loaded mission (Step 1 done)."""

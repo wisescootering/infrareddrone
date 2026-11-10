@@ -437,7 +437,7 @@ La page de la mission (figure~\ref{fig:home_mission}) montre :
 Lance l'étape suivante. Les étapes 1 à 4 s'enchaînent d'elles-mêmes :
 \begin{enumerate}
 	\item à la fin de l'étape~1, \bouton{Flight timeline} ouvre l'étape~2 ;
-	\item \bouton{Continue with synchronisation} de l'étape~2 ouvre l'étape~3 sans la lancer ; \bouton{Continue with Step 3} la lance : détection des mires, décalage des horloges, puis une question, \og Do the two curves overlap? \fg~; \bouton{Yes} apparie les images ;
+	\item \bouton{Continue with synchronisation} de l'étape~2 (ou \bouton{Continue with Step 3}) ouvre l'étape~3 ; \bouton{Synchronise the cameras} la lance : détection des mires, décalage des horloges, puis une question, \og Do the two curves overlap? \fg~; \bouton{Yes} apparie les images ;
 	\item \bouton{Continue with image processing} ouvre l'étape~4. L'alignement, long, ne démarre jamais tout seul : il se lance avec \bouton{Run alignment} et s'arrête à tout moment avec \bouton{Stop} ;
 	\item à la fin, \bouton{Review images} ouvre la revue des images alignées ; \bouton{Continue with mapping} ouvre l'étape~5, où \bouton{Build the map\ldots} lance la carte ;
 	\item une fois la carte construite, \bouton{Continue with archiving} ouvre l'étape~6, qui indique l'espace libéré par l'archivage ; rien n'est supprimé avant votre confirmation.
@@ -767,14 +767,14 @@ Le Step~3 se déroule en trois phases successives, enchaînées automatiquement 
 \end{enumerate}
 
 \subsection{Enchaînement automatique}\label{sec:step3_chained}
-Ouverte par \bouton{Continue with Step 3} de la fenêtre principale, l'étape~3 enchaîne les trois phases. Une ligne d'avancement montre la phase en cours et son résultat : nombre de mires vues, décalage, nombre de paires (figure~\ref{fig:step3_chained}). Une seule question est posée, après l'alignement des horloges (§\ref{btn:step3_overlap}).
+L'étape~3 ne démarre jamais seule : qu'elle soit ouverte depuis l'étape~2 (\bouton{Continue with synchronisation}) ou depuis la fenêtre principale, le bouton \bouton{Synchronise the cameras} (bleu foncé, au-dessus de la barre de progression) enchaîne les trois phases (§\ref{btn:step3_run}). Une ligne d'avancement montre la phase en cours et son résultat : nombre de mires vues, décalage, nombre de paires (figure~\ref{fig:step3_chained}). Une seule question est posée, après l'alignement des horloges (§\ref{btn:step3_overlap}).
 
 Une fois les images appariées, rien ne démarre seul : \bouton{Continue with image processing} ouvre l'étape~4 quand vous êtes prêt (§\ref{btn:step3_continue}).
 Si le décalage ne peut pas être mesuré, la saisie manuelle est proposée et l'enchaînement s'arrête.
 
 \figureIRD[fig:step3_chained]{step3_chained.png}{Étape 3 enchaînée : mires détectées, horloges alignées ; la question \og Do the two curves overlap? \fg~attend la réponse avant l'appariement.}{0.7}
 
-Rouverte une fois l'étape faite (clic sur l'étape~3 de la fenêtre principale), la fenêtre ne recalcule rien : elle montre le résultat enregistré, c'est-à-dire le décalage des horloges, le nombre de paires et les courbes alignées (§\ref{btn:step3_before}). Les boutons des trois phases permettent de la refaire.
+Rouverte une fois l'étape faite (clic sur l'étape~3 de la fenêtre principale), la fenêtre ne recalcule rien : elle montre le résultat enregistré, c'est-à-dire le décalage des horloges, le nombre de paires et les courbes alignées (§\ref{btn:step3_before}). \bouton{Synchronise again} la refait ; \bouton{Manual mode…} montre les boutons des trois phases.
 
 \section{La question \og Do the two curves overlap? \fg}\label{btn:step3_overlap}
 Après l'alignement des horloges, la fenêtre montre l'angle de la mire en fonction du temps : courbe verte pour le visible, rouge pour l'infrarouge, la courbe infrarouge étant décalée du décalage calculé.
@@ -783,6 +783,9 @@ Après l'alignement des horloges, la fenêtre montre l'angle de la mire en fonct
 	\item[\bouton{No} (touche N)] ouvre le réglage à la main (§\ref{btn:step3_adjust}) pour glisser la courbe infrarouge sur la courbe visible ; la question est ensuite reposée avec le nouveau décalage.
 \end{description}
 Des courbes bien superposées ont des points verts sur la ligne rouge, dents de scie comprises. Les exemples du §\ref{sec:step3_examples} montrent un bon et un mauvais cas.
+
+\section{Bouton \bouton{Synchronise the cameras}}\label{btn:step3_run}
+L'action principale de l'étape~3 : elle lance la détection des mires, l'alignement des horloges puis, une fois répondu à la question sur les courbes, l'appariement. Elle devient \bouton{Synchronise again} quand l'étape a déjà été faite.
 
 \section{Bouton \bouton{Manual mode…}}\label{btn:step3_manual}
 Arrête l'enchaînement et fait apparaître les boutons des trois phases (§\ref{btn:step3_aruco} à \ref{btn:step3_pairing}), à lancer un par un, par exemple pour corriger le décalage avec \bouton{Adjust alignment...} avant l'appariement.
@@ -966,7 +969,7 @@ Cette case permet de restreindre la liste des shoot points à aligner à ceux do
 
 
 \section{Best mapping : n'aligner que les images utiles à la carte}\label{btn:step4_best_mapping}
-Le cadre \bouton{Images aligned} propose deux choix, qui reprennent celui de l'étape~2 (§\ref{btn:step2_best_mapping}) : \bouton{Best mapping: only the images the map needs} (par défaut, avec un recouvrement de $75\,\%$) ou \bouton{All the synchronised images}. Parmi les shoot points bien synchronisés (case \texttt{Maximum VIS/NIR time difference}), IRDrone ne garde que ceux dont les empreintes au sol se recouvrent de la valeur choisie (case \bouton{Overlap between kept images}) : la première image du survol, puis, à chaque fois, la dernière image qui recouvre encore assez la précédente gardée, et la dernière image du survol. Toutes les images du survol servent à suivre le déplacement du drone ; seules les images bien synchronisées peuvent être gardées. La ligne sous les choix indique le nombre de shoot points qui seront alignés, par exemple \og 18 of 39 synchronised shoot points will be aligned \fg.
+Le cadre \bouton{Images aligned} propose deux choix, qui reprennent celui de l'étape~2 (§\ref{btn:step2_best_mapping}) : \bouton{Best mapping: only the images the map needs} (par défaut, avec un recouvrement de $75\,\%$) ou \bouton{All the synchronised images}. Parmi les shoot points bien synchronisés (case \texttt{Maximum VIS/NIR time difference}), IRDrone ne garde que ceux dont les empreintes au sol se recouvrent de la valeur choisie (case \bouton{Overlap between kept images}) : la première image du survol, puis, à chaque fois, la dernière image qui recouvre encore assez la précédente gardée, et la dernière image du survol. Toutes les images du survol servent à suivre le déplacement du drone ; seules les images bien synchronisées peuvent être gardées.
 
 À droite, la carte du vol montre les shoot points : en vert ceux qui sont bien synchronisés et dans la plage d'images, en gris les autres ; les images gardées par le best mapping sont plus grosses, avec leur empreinte au sol en vert, ce qui montre le recouvrement. Elle se met à jour dès qu'un réglage change (plage, écart de temps, recouvrement, choix). Molette pour zoomer, glisser pour se déplacer, double-clic pour revoir tout le vol. Pendant l'alignement, la carte suit le calcul le long du vol : les empreintes des images alignées se remplissent de vert, celles en cours d'alignement (une par processus de calcul) sont entourées d'orange, celles qui restent à faire sont en pointillés ; le compte \og 7 of 18 done \fg{} s'affiche en bas de la carte. Le résultat reste affiché à la fin, jusqu'au prochain changement de réglage.
 

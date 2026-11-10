@@ -162,15 +162,15 @@ class MainWindowStepsTest(unittest.TestCase):
         details.assert_called_once()
         self.assertEqual(details.call_args.args[0], self.mission)
 
-    def test_step3_done_opens_without_running_on_its_own(self):
+    def test_step3_never_runs_on_its_own(self):
         Progress.mark_step_done(self.mission, 2)
         self.show()
         with mock.patch.object(self.window, "on_pre_process_images") as step3:
-            self.window.home.rail.tiles[3].click()           # next: chained
-            step3.assert_called_with(auto_run=True)
+            self.window.home.rail.tiles[3].click()           # next step
+            step3.assert_called_with()
             with mock.patch.object(self.main.Progress, "done_steps", return_value={3: "x"}):
                 self.window.home.rail.tiles[3].click()       # done: opened as is
-            step3.assert_called_with(auto_run=False)
+            step3.assert_called_with()
 
 
 class _MissionHelpers(unittest.TestCase):
@@ -289,7 +289,7 @@ class Step2UsesCurrentMissionTest(_MissionHelpers):
             timeline.return_value.exec.return_value = self.main.QDialog.DialogCode.Accepted
             timeline.return_value.action = "step3"
             window.open_window_load_set_images()
-        step3.assert_called_once_with(auto_run=False)
+        step3.assert_called_once_with()
 
     def test_continue_buttons_of_steps_4_and_5_open_the_next_step(self):
         window = self.main.Main_Window()

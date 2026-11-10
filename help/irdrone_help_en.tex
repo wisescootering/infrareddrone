@@ -437,7 +437,7 @@ The mission page (Figure~\ref{fig:home_mission}) shows:
 Runs the next step. Steps 1 to 4 follow one another by themselves:
 \begin{enumerate}
 	\item at the end of Step~1, \bouton{Flight timeline} opens Step~2;
-	\item \bouton{Continue with synchronisation} in Step~2 opens Step~3 without running it; \bouton{Continue with Step 3} runs it: target detection, clock offset, then one question, ``Do the two curves overlap?''; \bouton{Yes} pairs the images;
+	\item \bouton{Continue with synchronisation} in Step~2 (or \bouton{Continue with Step 3}) opens Step~3; \bouton{Synchronise the cameras} runs it: target detection, clock offset, then one question, ``Do the two curves overlap?''; \bouton{Yes} pairs the images;
 	\item \bouton{Continue with image processing} opens Step~4. The alignment, which is long, never starts by itself: it is started with \bouton{Run alignment} and can be stopped at any time with \bouton{Stop};
 	\item at the end, \bouton{Review images} opens the review of the aligned images; \bouton{Continue with mapping} opens Step~5, where \bouton{Build the map\ldots} starts the map;
 	\item once the map is built, \bouton{Continue with archiving} opens Step~6, which shows how much space archiving frees; nothing is deleted until you confirm.
@@ -767,14 +767,14 @@ Step~3 runs in three successive phases, chained automatically (Section~\ref{sec:
 \end{enumerate}
 
 \subsection{Automatic chaining}\label{sec:step3_chained}
-When opened with \bouton{Continue with Step 3} in the main window, Step~3 runs the three phases in a row. A progress line shows the current phase and its result: number of targets seen, offset, number of pairs (Figure~\ref{fig:step3_chained}). A single question is asked, after the clock alignment (Section~\ref{btn:step3_overlap}).
+Step~3 never starts by itself: whether it is opened from Step~2 (\bouton{Continue with synchronisation}) or from the main window, the \bouton{Synchronise the cameras} button (dark blue, above the progress bar) runs the three phases in a row (Section~\ref{btn:step3_run}). A progress line shows the current phase and its result: number of targets seen, offset, number of pairs (Figure~\ref{fig:step3_chained}). A single question is asked, after the clock alignment (Section~\ref{btn:step3_overlap}).
 
 Once the images are paired, nothing starts by itself: \bouton{Continue with image processing} opens Step~4 when you are ready (Section~\ref{btn:step3_continue}).
 If the offset cannot be measured, manual entry is offered and the chaining stops.
 
 \figureIRD[fig:step3_chained]{step3_chained.png}{Chained Step 3: targets detected, clocks aligned; the question ``Do the two curves overlap?'' waits for the answer before pairing.}{0.7}
 
-When reopened once the step is done (click on Step~3 in the main window), the window recomputes nothing: it shows the saved result, that is the clock offset, the number of pairs and the aligned curves (Section~\ref{btn:step3_before}). The buttons of the three phases let you redo it.
+When reopened once the step is done (click on Step~3 in the main window), the window recomputes nothing: it shows the saved result, that is the clock offset, the number of pairs and the aligned curves (Section~\ref{btn:step3_before}). \bouton{Synchronise again} redoes it; \bouton{Manual mode…} shows the buttons of the three phases.
 
 \section{The question ``Do the two curves overlap?''}\label{btn:step3_overlap}
 After the clock alignment, the window shows the target angle as a function of time: green curve for the visible, red for the infrared, the infrared curve being shifted by the computed offset.
@@ -783,6 +783,9 @@ After the clock alignment, the window shows the target angle as a function of ti
 	\item[\bouton{No} (N key)] opens the manual adjustment (Section~\ref{btn:step3_adjust}) to slide the infrared curve onto the visible curve; the question is then asked again with the new offset.
 \end{description}
 Well-overlapping curves have green dots on the red line, sawtooth included. The examples in Section~\ref{sec:step3_examples} show a good and a bad case.
+
+\section{\bouton{Synchronise the cameras} button}\label{btn:step3_run}
+The main action of Step~3: it runs the target detection, the clock alignment and, once you have answered the question on the curves, the pairing. It becomes \bouton{Synchronise again} when the step was done earlier.
 
 \section{\bouton{Manual mode…} button}\label{btn:step3_manual}
 Stops the chaining and shows the buttons of the three phases (Sections~\ref{btn:step3_aruco} to \ref{btn:step3_pairing}), to be run one by one, for example to correct the offset with \bouton{Adjust alignment...} before pairing.
@@ -966,7 +969,7 @@ This field restricts the list of shoot points to align to those whose rank~1 tim
 
 
 \section{Best mapping: align only the images the map needs}\label{btn:step4_best_mapping}
-The \bouton{Images aligned} frame offers two choices, which follow the one made in Step~2 (Section~\ref{btn:step2_best_mapping}): \bouton{Best mapping: only the images the map needs} (the default, with a $75\,\%$ overlap) or \bouton{All the synchronised images}. Among the well synchronized shoot points (\texttt{Maximum VIS/NIR time difference} box), IRDrone keeps only those whose ground footprints overlap by the chosen value (\bouton{Overlap between kept images} box): the first survey image, then each time the last image that still overlaps the previous one kept enough, and the last survey image. All the survey images are used to follow the motion of the drone; only well synchronized images can be kept. The line below the choices gives the number of shoot points that will be aligned, for example ``18 of 39 synchronised shoot points will be aligned''.
+The \bouton{Images aligned} frame offers two choices, which follow the one made in Step~2 (Section~\ref{btn:step2_best_mapping}): \bouton{Best mapping: only the images the map needs} (the default, with a $75\,\%$ overlap) or \bouton{All the synchronised images}. Among the well synchronized shoot points (\texttt{Maximum VIS/NIR time difference} box), IRDrone keeps only those whose ground footprints overlap by the chosen value (\bouton{Overlap between kept images} box): the first survey image, then each time the last image that still overlaps the previous one kept enough, and the last survey image. All the survey images are used to follow the motion of the drone; only well synchronized images can be kept.
 
 On the right, the flight map shows the shoot points: in green those well synchronized and in the image range, in grey the others; the images kept by the best mapping are bigger, with their ground footprints in green, which shows the overlap. It is updated as soon as a setting changes (range, time difference, overlap, choice). Wheel to zoom, drag to pan, double-click to see the whole flight again. During the alignment, the map follows the computation along the flight: the footprints of the aligned images fill with green, those being aligned (one per worker process) are outlined in orange, those still to do are dashed; the count ``7 of 18 done'' is shown at the bottom of the map. The result stays shown at the end, until a setting changes.
 

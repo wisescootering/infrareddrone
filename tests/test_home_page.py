@@ -90,7 +90,7 @@ class MainWindowHomeTest(unittest.TestCase):
         self.window.load_mission(m)
         with mock.patch.object(self.window, "on_pre_process_images") as step3:
             self.window.home.btn_continue.click()
-        step3.assert_called_once_with(auto_run=True)
+        step3.assert_called_once_with()
 
     def test_created_mission_becomes_current(self):
         m = make_mission(self.root, "FLY-20220125-1159-Blassac", done=(1,))
