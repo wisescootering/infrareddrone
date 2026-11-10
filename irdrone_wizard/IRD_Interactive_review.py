@@ -1,20 +1,22 @@
 # -*- coding: utf-8 -*-
 """
-Review of the aligned survey images (end of Step 4).
+Step 5: review of the aligned survey images.
 
     header        counts: aligned / to check / flagged / no image
     compare view  the visible image and the aligned infrared of the selected
                   point: swipe curtain, blink, red/cyan overlay or side by side;
                   wheel to zoom, drag to pan (misalignments are a few pixels)
     sidebar       the point: time, altitude, infrared match, measured residual,
-                  Flag / Looks good, previous / next
+                  Flag, previous / next
     time line     every shoot point of the survey: residual misalignment chart
                   and a filmstrip coloured by status (hover to preview)
 
 The doubtful points (residual misalignment measured automatically, see
 shoot_review.py) stand out in orange; the user flags the bad ones (F) and
-realigns them by hand without leaving the window: the slider window of each
-flagged point opens in turn, the new image is shown here to be accepted.
+realigns them by hand: the alignment window (IRD_Interactive_manual_align.py)
+takes every flagged point in turn, then their alignments are computed together
+in the background (the review stays usable) and each new image is confirmed
+here ("realigned, to confirm" in purple).
 """
 from __future__ import annotations
 
@@ -35,33 +37,39 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 import shoot_review as R  # noqa: E402
 import IRD_Interactive_map as MapV  # noqa: E402
 from IRD_Interactive_look import (BLUE, CURSOR, DANGER_STYLE, DIALOG_STYLE, GRID, MESSAGE_STYLE,  # noqa: E402
-                                  MUTED, NIR_ACCENT, PANEL, PRIMARY_STYLE, PROGRESS_STYLE, SECONDARY_STYLE,
-                                  SUBTITLE_STYLE, TITLE_STYLE, bgr_to_qimage, chip, fit_to_screen, fmt_time,
-                                  set_chip, StageTracker, STAGE_DONE, STAGE_PENDING, STAGE_RUNNING)
+                                  MUTED, PANEL, PRIMARY_STYLE, PROGRESS_STYLE, SECONDARY_STYLE,
+                                  SUBTITLE_STYLE, TITLE_STYLE, bgr_to_qimage, chip, continue_button,
+                                  fit_to_screen, fmt_time, set_chip, step_window_title)
 
 STATUS_COLORS = {
     R.STATUS_OK: QColor("#2E7D32"),
-    R.STATUS_CHECKED: QColor("#1565C0"),
     R.STATUS_CHECK: QColor("#E0A030"),
     R.STATUS_SUSPICIOUS: QColor("#D35400"),
     R.STATUS_FLAGGED: QColor("#B03A2E"),
+    R.STATUS_REALIGNED: QColor("#7B3FA0"),
     R.STATUS_UNKNOWN: QColor("#9AA5B1"),
     R.STATUS_MISSING: QColor("#C5CFDA"),
 }
 STATUS_TEXT = {
     R.STATUS_OK: "Aligned",
-    R.STATUS_CHECKED: "Checked by you",
     R.STATUS_CHECK: "To check",
     R.STATUS_SUSPICIOUS: "Probably misaligned",
-    R.STATUS_FLAGGED: "Flagged misaligned",
+    R.STATUS_FLAGGED: "Flagged: left out of the map",
+    R.STATUS_REALIGNED: "Realigned, to confirm",
     R.STATUS_UNKNOWN: "Not measured",
     R.STATUS_MISSING: "No aligned image",
 }
+NOT_ALIGNED_COLOR = QColor("#A0AAB4")      # map: a shoot point Step 4 did not align
+ALIGNING_COLOR = QColor("#E8A33D")         # map: such a point being aligned (asked by a right-click)
+LEGEND_ORDER = (R.STATUS_OK, R.STATUS_CHECK, R.STATUS_UNKNOWN, R.STATUS_SUSPICIOUS,
+                R.STATUS_FLAGGED, R.STATUS_REALIGNED, R.STATUS_MISSING)
 # Points worth a look, in this order, for "Next to review"
-TO_REVIEW = (R.STATUS_SUSPICIOUS, R.STATUS_CHECK, R.STATUS_UNKNOWN)
+TO_REVIEW = (R.STATUS_REALIGNED, R.STATUS_SUSPICIOUS, R.STATUS_CHECK, R.STATUS_UNKNOWN)
 
+TAG_COLOR = QColor("#1F2933")      # labels on the images: neutral, the colours are the images'
+DEFAULT_MODE = "overlay"           # doubled edges show a misalignment at a glance
 MODES = [  # (key, button text, tooltip)
-    ("swipe", "Swipe", "Visible on the left of the curtain, aligned infrared (false colours) on the right. "
+    ("swipe", "Swipe", "Visible on the left of the curtain, aligned infrared (grey values) on the right. "
                        "Drag the curtain: roads, hedges and buildings must continue across it."),
     ("blink", "Blink", "Visible and infrared shown in turn: a misaligned image jumps."),
     ("overlay", "Overlay", "Visible in cyan, infrared in red (vegetation is naturally red). Aligned: "
@@ -69,7 +77,7 @@ MODES = [  # (key, button text, tooltip)
                            "cyan on the other."),
     ("side", "Side by side", "Visible and aligned infrared next to each other."),
     ("map", "Map", "Where the image was taken: the flight, the ground covered by the image, the orthophoto "
-                   "of Step 5 when it is built and aerial photos (online, optional)."),
+                   "of Step 6 when it is built and aerial photos (online, optional)."),
 ]
 MAX_VIEW_WIDTH = 3000     # the compare view works on copies at most this wide
 
@@ -144,18 +152,21 @@ class CompareView(QWidget):
 
     Images: "vis" (visible), "vir" (false colours), "nir" (infrared, grey),
     "ana" (red/cyan overlay), made on demand from the two loaded arrays."""
+    hint = "wheel to zoom, drag to pan, double-click to fit"
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMouseTracking(True)
         self.setMinimumSize(320, 220)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.mode = "swipe"
+        self.mode = DEFAULT_MODE
+        self.status_color: Optional[QColor] = None    # frame in the colour of the point's status
         self.arrays: Dict[str, np.ndarray] = {}
         self.pix: Dict[str, QPixmap] = {}
         self.placeholder: Optional[QPixmap] = None
         self.message = ""
         self.caption = ""
+        self.busy_text = ""        # set while the point is being realigned: shown over the image
         self.curtain = 0.5
         self.zoom = 1.0            # 1 = whole image in the view
         self.center = QPointF(0.5, 0.5)   # image point at the view centre (0..1)
@@ -172,11 +183,11 @@ class CompareView(QWidget):
         self.message = message
         self.update()
 
-    def set_images(self, arrays: dict):
+    def set_images(self, arrays: dict, unreadable="The images of this point cannot be read."):
         self.arrays = {k: v for k, v in arrays.items() if v is not None}
         self.pix = {}
         self.placeholder = None
-        self.message = "" if self.arrays else "The images of this point cannot be read."
+        self.message = "" if self.arrays else unreadable
         self.update()
 
     def has_images(self):
@@ -252,10 +263,10 @@ class CompareView(QWidget):
         if self.mode == "side":
             for area, key, cap in ((areas[0], "vis", "Visible"), (areas[1], "vir", "Aligned infrared")):
                 self._draw(p, area, key)
-                self._tag(p, area, cap, BLUE if key == "vis" else NIR_ACCENT)
+                self._tag(p, area, cap, TAG_COLOR)
         elif self.mode == "swipe":
             area = areas[0]
-            self._draw(p, area, "vir")
+            self._draw(p, area, "nir")
             rect = self._image_rect(area)
             x = rect.left() + self.curtain * rect.width()
             p.save()
@@ -271,16 +282,31 @@ class CompareView(QWidget):
                 p.setPen(QPen(BLUE, 2))
                 for dx in (-3, 3):
                     p.drawLine(QPointF(x + dx, grip.top() + 12), QPointF(x + dx, grip.bottom() - 12))
-            self._tag(p, area, "◀ Visible", BLUE)
-            self._tag(p, area, "Aligned infrared ▶", NIR_ACCENT, right=True)
+            self._tag(p, area, "◀ Visible", TAG_COLOR)
+            self._tag(p, area, "Aligned infrared ▶", TAG_COLOR, right=True)
         elif self.mode == "blink":
             key = "nir" if self._blink_on else "vis"
             self._draw(p, areas[0], key)
-            self._tag(p, areas[0], "Infrared" if self._blink_on else "Visible",
-                      NIR_ACCENT if self._blink_on else BLUE)
+            self._tag(p, areas[0], "Infrared" if self._blink_on else "Visible", TAG_COLOR)
         else:
             self._draw(p, areas[0], "ana")
-            self._tag(p, areas[0], "Visible cyan · infrared red · doubled edges = misaligned", NIR_ACCENT)
+            self._tag(p, areas[0], "Visible cyan · infrared red · doubled edges = misaligned", TAG_COLOR)
+        if self.busy_text:
+            p.fillRect(self.rect(), QColor(17, 22, 29, 140))
+            f = QFont(self.font())
+            f.setBold(True)
+            f.setPointSize(f.pointSize() + 3)
+            p.setFont(f)
+            w = p.fontMetrics().horizontalAdvance(self.busy_text) + 40
+            r = QRectF(self.rect().center().x() - w / 2, self.rect().center().y() - 20, w, 40)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(255, 255, 255, 235))
+            p.drawRoundedRect(r, 20, 20)
+            p.setPen(QColor("#1F4E79"))
+            p.drawText(r, Qt.AlignmentFlag.AlignCenter, self.busy_text)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setFont(self.font())
+        self._paint_status_frame(p)
         if self.caption:
             p.setPen(QColor("#C5CFDA"))
             p.drawText(QRectF(8, self.height() - 22, self.width() - 16, 20),
@@ -289,7 +315,18 @@ class CompareView(QWidget):
         p.setPen(QColor("#8A96A3"))
         p.drawText(QRectF(8, self.height() - 22, self.width() - 16, 20),
                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                   f"zoom {zoom}  ·  wheel to zoom, drag to pan, double-click to fit")
+                   f"zoom {zoom}  ·  {self.hint}")
+
+    def _paint_status_frame(self, p):
+        if self.status_color is None:
+            return
+        p.setPen(QPen(self.status_color, 6))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRect(QRectF(self.rect()).adjusted(3, 3, -3, -3))
+
+    def set_status_color(self, color: Optional[QColor]):
+        self.status_color = color
+        self.update()
 
     def _fit_scale(self):
         area, size = self._areas()[0], self._ref_size()
@@ -497,7 +534,7 @@ class ReviewStrip(QWidget):
         fb = QFont(f)
         fb.setBold(True)
         p.setFont(fb)
-        p.setPen(NIR_ACCENT)
+        p.setPen(TAG_COLOR)
         p.drawText(QRectF(0, lane.top(), self.GUTTER - 10, lane.height()), al, "Aligned\nimages")
         p.setFont(self.font())
 
@@ -577,7 +614,7 @@ class ReviewStrip(QWidget):
             p.setBrush(Qt.BrushStyle.NoBrush)
         elif pt.checked:
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(STATUS_COLORS[R.STATUS_CHECKED])
+            p.setBrush(STATUS_COLORS[R.STATUS_OK])
             p.drawEllipse(QRectF(target.left() + 3, target.top() + 3, 15, 15))
             p.setPen(QColor("white"))
             p.drawText(QRectF(target.left() + 3, target.top() + 3, 15, 15), Qt.AlignmentFlag.AlignCenter, "✓")
@@ -701,19 +738,28 @@ class ReviewDialog(QDialog):
         self._loading = set()
         self.index = 0
         self._hover_index: Optional[int] = None
-        self.pending_verdict: Optional[int] = None     # point waiting for "aligned?" after a redo
-        self._redo_stats = {"validated": 0, "rejected": 0, "errors": 0}
-        self.setWindowTitle(f"Step 4 – Review the aligned images · {self.mission.name}")
+        self._redo_errors: List[str] = []
+        self.setWindowTitle(step_window_title(5, "Review the aligned images", self.mission))
+        self.continue_chosen = False          # "Continue with mapping": the main window opens Step 6
         self.setStyleSheet(DIALOG_STYLE)
         fit_to_screen(self, parent)
         self._build()
         import IRD_Interactive_4 as Step4
-        self.redo_runner = Step4.RedoRunner(self.review.output, self, pause_between=True)
+        self._aligning_by_hand = False        # the alignment window is open
+        self._redo_report_pending = False     # alignments finished meanwhile, not reported yet
+        self._redo_errors = []
+        self.redo_runner = Step4.RedoRunner(self.review.output, self, workers=Step4.redo_workers())
         self.redo_runner.output.connect(lambda text: print(text))
-        self.redo_runner.point_started.connect(self._on_redo_started)
+        self.redo_runner.point_started.connect(lambda *_: self._update_banner())
+        self.redo_runner.stage.connect(lambda *_: self._update_banner())
         self.redo_runner.point_done.connect(self._on_redo_done)
-        self.redo_runner.stage.connect(self._on_redo_stage)
         self.redo_runner.all_done.connect(self._on_redo_all_done)
+        # shoot points Step 4 left out (grey on the map), aligned on request
+        self.point_aligner = Step4.AlignPointsRunner(self.mission, self)
+        self.point_aligner.output.connect(lambda text: print(text))
+        self.point_aligner.point_done.connect(lambda *_: self._on_align_progress())
+        self.point_aligner.run_done.connect(self._on_points_aligned)
+        self._align_from: Optional[int] = None    # point shown when the alignment was asked
         self._hover_timer = QTimer(self)
         self._hover_timer.setSingleShot(True)
         self._hover_timer.timeout.connect(self._show_hovered)
@@ -722,6 +768,19 @@ class ReviewDialog(QDialog):
         self._start_scan()
         if self.review.points:
             self.select(self._first_to_review(), by_user=False)
+        self._update_banner()
+        if self.review.recovered:
+            QTimer.singleShot(0, self._report_recovered)
+
+    def _report_recovered(self):
+        names = ", ".join(self.review.recovered)
+        print(f"Interrupted realignment undone: {names}")
+        box = QMessageBox(QMessageBox.Icon.Information, "Interrupted realignment",
+                          f"The realignment of {names} was interrupted (computer out of memory, "
+                          "or the wizard closed during the run).\n\nThe previous alignment of "
+                          "these points was put back: realign them again if needed.",
+                          QMessageBox.StandardButton.Ok, self)
+        box.open()
 
     # ---- layout
     def _build(self):
@@ -739,11 +798,14 @@ class ReviewDialog(QDialog):
         head.addWidget(self.subtitle, 1)
         self.chips = {}
         for status, tip in ((R.STATUS_OK, "Measured aligned (residual below "
-                                          f"{R.SHIFT_OK:g} px) or checked by you."),
+                                          f"{R.SHIFT_OK:g} px) or realigned and confirmed by you."),
                             (R.STATUS_CHECK, "Residual misalignment between "
                                              f"{R.SHIFT_OK:g} and {R.SHIFT_SUSPICIOUS:g} px, or not measurable: have a look."),
                             (R.STATUS_SUSPICIOUS, f"Residual misalignment above {R.SHIFT_SUSPICIOUS:g} px."),
-                            (R.STATUS_FLAGGED, "Flagged misaligned: skipped by Step 5 until realigned."),
+                            (R.STATUS_FLAGGED, "Flagged: left out of the map (Step 6) until realigned and "
+                                               "confirmed."),
+                            (R.STATUS_REALIGNED, "Realigned by hand: check the new image and confirm it "
+                                                 "(skipped by Step 6 until then)."),
                             (R.STATUS_MISSING, "The alignment wrote no image for these points.")):
             c = chip(STATUS_COLORS[status], "", tip)
             self.chips[status] = c
@@ -771,30 +833,40 @@ class ReviewDialog(QDialog):
         self.btn_reject_redo = QPushButton("✗ Still misaligned")
         self.btn_reject_redo.setStyleSheet(DANGER_STYLE)
         self.btn_reject_redo.clicked.connect(lambda: self._verdict(False))
+        self.btn_accept_all = QPushButton()
+        self.btn_accept_all.setStyleSheet(SECONDARY_STYLE)
+        self.btn_accept_all.clicked.connect(self._accept_all)
+        self.btn_stop_redo = QPushButton("Stop")
+        self.btn_stop_redo.setStyleSheet(SECONDARY_STYLE)
+        self.btn_stop_redo.setToolTip("Start no other alignment: the ones running finish, the others stay flagged.")
+        self.btn_stop_redo.clicked.connect(self._stop_redo)
+        self.btn_stop_align = QPushButton("Stop aligning")
+        self.btn_stop_align.setStyleSheet(SECONDARY_STYLE)
+        self.btn_stop_align.setToolTip("Stop aligning the points left out by Step 4: they stay grey on the map "
+                                       "(asked again later, they reuse what was computed).")
+        self.btn_stop_align.clicked.connect(self._stop_align)
+        self.btn_stop_align.hide()
         bl.addWidget(self.banner_text, 1)
+        bl.addWidget(self.btn_stop_align)
+        bl.addWidget(self.btn_stop_redo)
+        bl.addWidget(self.btn_accept_all)
         bl.addWidget(self.btn_reject_redo)
         bl.addWidget(self.btn_accept_redo)
-        # progress of the redo running (stages printed by the redo process)
-        import IRD_Interactive_4 as Step4
+        # progress of the alignments computing in the background
         self.redo_box = QWidget()
         rl = QVBoxLayout(self.redo_box)
         rl.setContentsMargins(0, 0, 0, 0)
         rl.setSpacing(4)
-        self.redo_stages = StageTracker([title for _key, title in Step4.REDO_STAGES])
-        self.redo_stage_keys = [key for key, _title in Step4.REDO_STAGES]
-        rl.addWidget(self.redo_stages.widget())
         self.redo_bar = QProgressBar()
         self.redo_bar.setTextVisible(False)
         self.redo_bar.setFixedHeight(5)
-        self.redo_bar.setRange(0, 0)                     # busy
         self.redo_bar.setStyleSheet(PROGRESS_STYLE)
         rl.addWidget(self.redo_bar)
         banner_col.addWidget(self.redo_box)
         self.redo_box.hide()
         self._redo_clock = QTimer(self)
         self._redo_clock.setInterval(1000)
-        self._redo_clock.timeout.connect(self._show_redo_progress)
-        self._redo_point = None              # (stem, started at, stage key)
+        self._redo_clock.timeout.connect(self._update_banner)
         self.banner.hide()
         outer.addWidget(self.banner)
 
@@ -813,7 +885,7 @@ class ReviewDialog(QDialog):
             b.clicked.connect(lambda _=False, key=key: self.set_mode(key))
             self.mode_group.addButton(b, k)
             modes.addWidget(b)
-        self.mode_group.button(0).setChecked(True)
+        self.mode_group.button([m[0] for m in MODES].index(DEFAULT_MODE)).setChecked(True)
         modes.addStretch(1)
         self.btn_open = QPushButton("Open full size")
         self.btn_open.setStyleSheet(SECONDARY_STYLE)
@@ -830,6 +902,8 @@ class ReviewDialog(QDialog):
             self.big_map = MapV.FlightMapView(self.map_model)
             self.big_map.picked.connect(self._on_map_picked)
             self.big_map.hovered.connect(self._on_map_hovered)
+            self.big_map.clicked_empty.connect(self._clear_map_selection)
+            self.big_map.menu_requested.connect(self._map_menu)
             self.view_stack.addWidget(self.big_map)
         else:
             self.mode_group.button(len(MODES) - 1).setEnabled(False)
@@ -863,44 +937,54 @@ class ReviewDialog(QDialog):
         self.btn_help.setFixedWidth(36)
         self.btn_help.clicked.connect(self._on_help)
         self.btn_help.setToolTip("← → previous / next point\nN next point to review\nF flag / unflag\n"
-                                 "Space looks good (and go to the next point to review)\n1-4 compare mode\n5 map\n"
+                                 "Y realigned point: yes, aligned\n"
+                                 "1-4 compare mode\n5 map\n"
                                  "wheel zoom · double-click fit")
         self.btn_flag_suspicious = QPushButton()
         self.btn_flag_suspicious.setStyleSheet(SECONDARY_STYLE)
         self.btn_flag_suspicious.setToolTip("Flag every point measured as probably misaligned "
-                                            f"(residual above {R.SHIFT_SUSPICIOUS:g} px) that you did not check.")
+                                            f"(residual above {R.SHIFT_SUSPICIOUS:g} px).")
         self.btn_flag_suspicious.clicked.connect(self._flag_suspicious)
         self.btn_close = QPushButton("Close")
         self.btn_close.setStyleSheet(SECONDARY_STYLE)
         self.btn_close.clicked.connect(self.accept)
         self.btn_redo = QPushButton()
         self.btn_redo.setStyleSheet(PRIMARY_STYLE)
-        self.btn_redo.setToolTip("A slider window opens for each flagged point: move yaw, pitch and roll until "
-                                 "the images overlap, then close it. The new alignment is shown here.")
+        self.btn_redo.setToolTip("Place the infrared of every flagged point by hand, one after the other, then "
+                                 "their alignments are computed together in the background. You confirm the "
+                                 "new images here.")
         self.btn_redo.clicked.connect(self._redo_flagged)
         foot.addWidget(self.btn_help)
         foot.addWidget(self.btn_flag_suspicious)
         foot.addStretch(1)
-        foot.addWidget(self.btn_close)
+        self.btn_continue = continue_button(
+            "mapping", "Close the review and open Step 6 (the map): nothing starts until you click "
+                       "Build the map. The flagged points are left out of it.")
+        self.btn_continue.clicked.connect(self._continue_now)
         foot.addWidget(self.btn_redo)
+        foot.addWidget(self.btn_close)     # Close, then the next step at the bottom right
+        foot.addWidget(self.btn_continue)
         outer.addLayout(foot)
 
         try:
             import IRD_Interactive_help as Help
-            self.btn_close.setToolTip("Close the review. What you checked and flagged is already saved.")
+            self.btn_close.setToolTip("Close the review. What you flagged and confirmed is already saved.")
             self.btn_prev.setToolTip("Previous point (key ←)")
             self.btn_next.setToolTip("Next point (key →)")
-            self.btn_next_review.setToolTip("Next point that still needs a look: measured as doubtful, "
-                                            "not checked yet (key N).")
-            self.btn_accept_redo.setToolTip("The realigned image is right: the point is no longer flagged.")
+            self.btn_next_review.setToolTip("Next point that still needs a look: realigned to confirm, "
+                                            "measured as doubtful or not measured (key N).")
+            self.btn_accept_redo.setToolTip("The realigned image is right: the point is no longer flagged (key Y).")
             self.btn_reject_redo.setToolTip("Still misaligned: the point stays flagged (it can be realigned again).")
+            self.btn_accept_all.setToolTip("Every realigned point is right: none of them is flagged any more.")
             for widget, label in ((self.btn_redo, "btn:review_redo"),
-                                  (self.btn_good, "btn:review_decide"), (self.btn_flag, "btn:review_decide"),
+                                  (self.btn_flag, "btn:review_decide"),
                                   (self.btn_flag_suspicious, "btn:review_decide"),
                                   (self.btn_prev, "btn:review_navigation"), (self.btn_next, "btn:review_navigation"),
                                   (self.btn_next_review, "btn:review_navigation"),
                                   (self.btn_open, "btn:review_compare"), (self.btn_close, "btn:review_navigation"),
-                                  (self.btn_accept_redo, "btn:review_redo"), (self.btn_reject_redo, "btn:review_redo")):
+                                  (self.btn_continue, "btn:review_continue"),
+                                  (self.btn_accept_redo, "btn:review_redo"), (self.btn_reject_redo, "btn:review_redo"),
+                                  (self.btn_accept_all, "btn:review_redo"), (self.btn_stop_redo, "btn:review_redo")):
                 Help.attach_help(widget, label, widget.toolTip(), parent=self)
             for b in self.mode_group.buttons():
                 label = "btn:review_map" if b is self.mode_group.button(len(MODES) - 1) else "btn:review_compare"
@@ -909,14 +993,14 @@ class ReviewDialog(QDialog):
         except Exception as e:  # help is a convenience
             print(f"Help not attached: {e}")
 
-        # the keys go to the window (Space must not also press the focused button)
+        # the keys go to the window (not also to the focused button)
         for b in self.findChildren(QPushButton):
             b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         for seq, slot in (("Left", lambda: self.step(-1)), ("Right", lambda: self.step(+1)),
-                          ("N", self.next_to_review), ("F", self.toggle_flag), ("Space", self.looks_good),
+                          ("N", self.next_to_review), ("F", self.toggle_flag),
                           ("1", lambda: self.set_mode("swipe")), ("2", lambda: self.set_mode("blink")),
                           ("3", lambda: self.set_mode("overlay")), ("4", lambda: self.set_mode("side")),
-                          ("5", lambda: self.set_mode("map"))):
+                          ("5", lambda: self.set_mode("map")), ("Y", self._confirm_key)):
             QShortcut(QKeySequence(seq), self, activated=slot)
 
     def _build_sidebar(self):
@@ -941,16 +1025,13 @@ class ReviewDialog(QDialog):
         lay.addWidget(self.gauge)
         lay.addWidget(self.point_info)
         lay.addSpacing(6)
-        self.btn_good = QPushButton("✓ Looks good   (Space)")
-        self.btn_good.setStyleSheet(SECONDARY_STYLE)
-        self.btn_good.setToolTip("Mark this point as checked and go to the next point to review.")
-        self.btn_good.clicked.connect(self.looks_good)
-        self.btn_flag = QPushButton("⚑ Flag misaligned   (F)")
+        self.btn_flag = QPushButton("⚑ Flag: leave out of the map   (F)")
         self.btn_flag.setCheckable(True)
         self.btn_flag.setStyleSheet(DANGER_STYLE)
-        self.btn_flag.setToolTip("Flag this point as misaligned: Step 5 skips it until it is realigned.")
+        self.btn_flag.setToolTip("Flag this point (misaligned, blurred, black area at the edge…): it is left out "
+                                 "of the map (Step 6) until it is realigned by hand and confirmed. "
+                                 "Leave it flagged if it cannot be recovered.")
         self.btn_flag.clicked.connect(self.toggle_flag)
-        lay.addWidget(self.btn_good)
         lay.addWidget(self.btn_flag)
         nav = QHBoxLayout()
         self.btn_prev = QPushButton("◀")
@@ -973,25 +1054,42 @@ class ReviewDialog(QDialog):
         if self.map_model is not None:
             self.mini_map = MapV.FlightMapView(self.map_model, compact=True)
             self.mini_map.setFixedHeight(200)
-            self.mini_map.setToolTip("Where the image was taken. Click: large map (key 5)")
+            self.mini_map.setToolTip("Where the image was taken. Click: large map (key 5)\nRight-click a grey point (not aligned by Step 4): align it")
             self.mini_map.picked.connect(self._on_map_picked)
             self.mini_map.clicked_empty.connect(lambda: self.set_mode("map"))
+            self.mini_map.menu_requested.connect(self._map_menu)
             lay.addWidget(self.mini_map)
         else:
             keys = QLabel("<b>Keyboard</b><br>← →&nbsp; previous / next<br>N&nbsp; next point to review<br>"
-                          "Space&nbsp; looks good<br>F&nbsp; flag / unflag<br>1 2 3 4&nbsp; swipe, blink, overlay, "
+                          "F&nbsp; flag / unflag<br>1 2 3 4&nbsp; swipe, blink, overlay, "
                           "side by side")
             keys.setTextFormat(Qt.TextFormat.RichText)
             keys.setStyleSheet("color: #6B7785; background: #F5F7FA; border-radius: 6px; padding: 8px;")
             lay.addWidget(keys)
-        legend = QLabel(" ".join(
-            f"<span style='color:{STATUS_COLORS[s].name()}'>■</span>&nbsp;{STATUS_TEXT[s]}<br>"
-            for s in (R.STATUS_OK, R.STATUS_CHECKED, R.STATUS_CHECK, R.STATUS_SUSPICIOUS, R.STATUS_FLAGGED,
-                      R.STATUS_MISSING)))
-        legend.setTextFormat(Qt.TextFormat.RichText)
-        legend.setStyleSheet("color: #6B7785;")
-        lay.addWidget(legend)
+        self.legend = QLabel()
+        self.legend.setTextFormat(Qt.TextFormat.RichText)
+        self.legend.setStyleSheet("color: #6B7785;")
+        lay.addWidget(self.legend)
         return side
+
+    def legend_counts(self):
+        """[(colour, text, count)] of the legend under the mini map: only the
+        kinds of points present."""
+        counts = self.review.counts()
+        out = [(STATUS_COLORS[s], STATUS_TEXT[s], counts.get(s, 0)) for s in LEGEND_ORDER]
+        if self.map_model is not None:
+            aligning = self._aligning()
+            reviewed = {p.number for p in self.review.points}
+            outside = [n for n in self.map_model.numbers if n not in reviewed]
+            out.append((ALIGNING_COLOR, "Being aligned", sum(1 for n in outside if n in aligning)))
+            out.append((NOT_ALIGNED_COLOR, "Not aligned (Step 4): right-click to align",
+                        sum(1 for n in outside if n not in aligning)))
+        return [row for row in out if row[2]]
+
+    def _refresh_legend(self):
+        self.legend.setText("".join(
+            f"<span style='color:{color.name()}'>■</span>&nbsp;{text}&nbsp;<b>{count}</b><br>"
+            for color, text, count in self.legend_counts()))
 
     # ---- background scan
     def _start_scan(self, numbers=None):
@@ -1048,7 +1146,7 @@ class ReviewDialog(QDialog):
         return None
 
     def _first_to_review(self) -> int:
-        for status in (R.STATUS_FLAGGED,) + TO_REVIEW:
+        for status in (R.STATUS_REALIGNED, R.STATUS_FLAGGED) + TO_REVIEW:
             for i, p in enumerate(self.review.points):
                 if p.status == status:
                     return i
@@ -1064,6 +1162,7 @@ class ReviewDialog(QDialog):
         self.strip.update()
         self._show_point(self.index)
         self._refresh_point()
+        self._update_banner()
         self._map_follow()
         # prefetch the neighbours
         for j in (self.index + 1, self.index - 1):
@@ -1100,20 +1199,40 @@ class ReviewDialog(QDialog):
             self._cache.popitem(last=False)
         shown = self._shown_index()
         if shown is not None and self.review.points[shown].number == number:
-            self.view.set_images(arrays)
+            self.view.set_images(arrays, self._unreadable_text(number))
+
+    def _unreadable_text(self, number, default="The images of this point cannot be read."):
+        """Message when a point's images cannot be read: calm while its realignment is running."""
+        if number in self.redo_runner.numbers():
+            return "This point is being realigned: its images will appear when it is done."
+        return default
+
+    def _sync_busy(self):
+        """Over the image (kept until the new one is written): re-processing in progress."""
+        if not hasattr(self, "view") or not hasattr(self, "_hover_index"):
+            return
+        shown = self._shown_index()
+        pt = self.review.points[shown] if shown is not None and 0 <= shown < len(self.review.points) else None
+        text = ("Re-processing in progress…  the new alignment will replace this image"
+                if pt is not None and pt.number in self.redo_runner.numbers() else "")
+        if text != self.view.busy_text:
+            self.view.busy_text = text
+            self.view.update()
 
     def _shown_index(self):
         return self._hover_index if self._hover_index is not None else self.index
 
     def _show_point(self, index):
         pt = self.review.points[index]
+        self.view.set_status_color(STATUS_COLORS[pt.status])
         self.view.caption = (f"{pt.stem}  ·  " + STATUS_TEXT[pt.status]
                              + (f"  ·  {pt.vir_image.name}" if pt.vir_image is not None else ""))
+        self._sync_busy()
         if pt.number in self._cache:
             self._cache.move_to_end(pt.number)
-            self.view.set_images(self._cache[pt.number])
+            self.view.set_images(self._cache[pt.number], self._unreadable_text(pt.number))
         elif pt.vir_image is None and pt.vis_image is None:
-            self.view.set_placeholder(None, "The alignment wrote no image for this point.")
+            self.view.set_placeholder(None, self._unreadable_text(pt.number, "The alignment wrote no image for this point."))
         else:
             self.view.set_placeholder(self.thumbs.get(pt.number), "Loading…")
             self._load(pt)
@@ -1160,11 +1279,26 @@ class ReviewDialog(QDialog):
             return None
         if model is not None:
             model.image_of = self.thumbs.get       # aligned image (thumbnail) in its footprint
+            model.cursor_in_point_color = True     # the footprint in the colour of the point's status
+            model.minor = lambda i: (self._map_status(model.numbers[i]) in (None, R.STATUS_MISSING)
+                                     and model.numbers[i] not in self._aligning())
         return model
 
-    def _map_color(self, number):
+    def _aligning(self) -> set:
+        """Points left out by Step 4 being aligned (or waiting to be)."""
+        aligner = getattr(self, "point_aligner", None)
+        return aligner.numbers() if aligner is not None else set()
+
+    def _map_status(self, number):
+        """Status of a point of the map (None: not aligned by Step 4)."""
         pt = self.review.by_number(number)
-        return STATUS_COLORS[pt.status] if pt is not None else QColor("#A0AAB4")
+        return pt.status if pt is not None else None
+
+    def _map_color(self, number):
+        status = self._map_status(number)
+        if status is None and number in self._aligning():
+            return ALIGNING_COLOR
+        return STATUS_COLORS[status] if status is not None else NOT_ALIGNED_COLOR
 
     def _on_map_picked(self, i):
         number = self.map_model.numbers[i]
@@ -1175,6 +1309,124 @@ class ReviewDialog(QDialog):
 
     def _on_map_hovered(self, i):
         self.map_model.set_hover(i)
+
+    def _clear_map_selection(self):
+        """Click on the large map outside any point: no point selected on the
+        map, the trajectory alone (no footprint, no image); a click on a point
+        or a move along the strip selects one again."""
+        self.map_model.set_current(None)
+
+    # ---- points left out by Step 4: right-click on the map, aligned in the background
+    MENU_STYLE = ("QMenu { background: white; border: 1px solid #C5CFDA; border-radius: 8px; padding: 6px; }"
+                  "QMenu::item { color: #17365D; font-weight: bold; padding: 7px 18px; border-radius: 6px; }"
+                  "QMenu::item:selected { background: #EAF2FB; }"
+                  "QMenu::item:disabled { color: #8A96A3; font-weight: normal; }")
+
+    def map_menu_content(self, number):
+        """(title, detail, action text, can align) of the right-click menu of a
+        map point; None for a point Step 4 aligned (no menu)."""
+        here = R.not_aligned_pairs(self.review).get(number)
+        if here is None:
+            return None
+        dt = here["dt"]
+        detail = ("Not aligned by Step 4 · " +
+                  (f"infrared {dt:+.2f} s apart" if dt is not None else "no infrared image"))
+        if number in self.point_aligner.running:
+            return here["stem"], detail, "Being aligned…", False
+        if number in self.point_aligner.waiting:
+            return here["stem"], detail, "Queued: aligned after the current one", False
+        if not here["alignable"]:
+            return here["stem"], detail, f"Cannot be aligned (no infrared within {R.MAX_ALIGN_DT:g} s)", False
+        return here["stem"], detail, "Align this point", True
+
+    def map_menu(self, number):
+        """The right-click menu of a map point (None: nothing to offer)."""
+        from PyQt6.QtGui import QAction
+        from PyQt6.QtWidgets import QMenu, QWidgetAction
+        content = self.map_menu_content(number)
+        if content is None:
+            return None
+        title, detail, text, enabled = content
+        menu = QMenu(self)
+        menu.setStyleSheet(self.MENU_STYLE)
+        menu.setWindowFlags(menu.windowFlags() | Qt.WindowType.FramelessWindowHint)
+        menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)   # rounded corners
+        header = QLabel(f"<span style='font-size:11pt; font-weight:bold; color:#1F2933'>{title}</span><br>"
+                        f"<span style='color:#6B7785'>{detail}</span>")
+        header.setTextFormat(Qt.TextFormat.RichText)
+        header.setStyleSheet("padding: 4px 18px 8px 18px; border-bottom: 1px solid #E4E8EE;")
+        head = QWidgetAction(menu)
+        head.setDefaultWidget(header)
+        head.setEnabled(False)
+        menu.addAction(head)
+        action = QAction(text, menu)
+        action.setEnabled(enabled)
+        if enabled:
+            action.setToolTip("Aligned in the background like Step 4 does, then it appears in the time line.")
+            action.triggered.connect(lambda _=False, n=number: self.align_points([n]))
+        menu.addAction(action)
+        return menu
+
+    def _map_menu(self, index, global_pos):
+        menu = self.map_menu(self.map_model.numbers[index])
+        if menu is not None:
+            menu.exec(global_pos)
+
+    def align_points(self, numbers):
+        """Align the points ``numbers`` left out by Step 4, in the background."""
+        numbers = set(numbers) - {p.number for p in self.review.points} - self._aligning()
+        if not numbers:
+            return
+        if not self.point_aligner.busy():
+            self._align_from = self.current().number if self.current() is not None else None
+        self._redo_clock.start()
+        queued = self.point_aligner.busy()
+        stems = ", ".join(f"VIS_{n:04d}" for n in sorted(numbers))
+        self.point_aligner.add(numbers)
+        self.subtitle.setText(f"{stems} queued: aligned after the current one, one Step 4 run at a time "
+                              "(each needs several GB of memory)." if queued else
+                              f"Aligning {stems} in the background: it appears in the time line when done.")
+        self._on_align_progress()
+
+    def _on_align_progress(self):
+        if self.map_model is not None:
+            self.map_model.changed.emit()
+        self._refresh_legend()
+        self._update_banner()
+
+    def _stop_align(self):
+        self._align_stopped = True
+        self.point_aligner.stop()
+        self._on_align_progress()
+
+    def _on_points_aligned(self, numbers, error):
+        shown = self.current()
+        added = R.add_points(self.review, numbers)
+        if shown is not None:
+            self.index = self.review.points.index(shown)
+            self.strip.selected = self.index
+        self._hover_index = None
+        if added:
+            self._start_scan({p.number for p in added})
+        missing = sorted(set(numbers) - {p.number for p in added})
+        self._after_change()
+        self._on_align_progress()
+        if added and (shown is None or shown.number == self._align_from):
+            self.select(self.review.points.index(added[0]), by_user=False)
+        if not self.point_aligner.busy():
+            self._align_from = None
+            if not self.redo_runner_busy():
+                self._redo_clock.stop()
+        names = ", ".join(p.stem for p in added)
+        self.subtitle.setText(f"{len(added)} point(s) aligned and added to the time line: {names}." if added
+                              else "No point aligned.")
+        stopped, self._align_stopped = getattr(self, "_align_stopped", False), False
+        if missing and not stopped:
+            stems = ", ".join(f"VIS_{n:04d}" for n in missing)
+            QMessageBox.warning(self, "Align the points left out",
+                                f"Not aligned: {stems}." + (f"\n\n{error}" if error else
+                                                             "\n\nThe alignment wrote no image for them "
+                                                             "(see the console)."))
 
     def _map_follow(self):
         if self.map_model is None or self.current() is None:
@@ -1191,10 +1443,12 @@ class ReviewDialog(QDialog):
         pt = self.current()
         if pt is None:
             self.point_title.setText("No shoot point")
-            for b in (self.btn_good, self.btn_flag, self.btn_prev, self.btn_next, self.btn_next_review):
+            for b in (self.btn_flag, self.btn_prev, self.btn_next, self.btn_next_review):
                 b.setEnabled(False)
             return
         color = STATUS_COLORS[pt.status]
+        if self._hover_index is None:
+            self.view.set_status_color(color)          # flagged / checked: the frame follows at once
         self.point_title.setText(pt.stem)
         self.point_status.setText(f"<span style='background:{color.name()}; color:white; border-radius:8px;'>"
                                   f"&nbsp;{STATUS_TEXT[pt.status]}&nbsp;</span>"
@@ -1215,8 +1469,7 @@ class ReviewDialog(QDialog):
             lines.append("<span style='color:#B03A2E'>No REDO script: cannot be realigned by hand.</span>")
         self.point_info.setText("<br>".join(lines))
         self.btn_flag.setChecked(pt.failed)
-        self.btn_flag.setText("⚑ Flagged misaligned   (F)" if pt.failed else "⚑ Flag misaligned   (F)")
-        self.btn_good.setEnabled(not pt.failed and pt.status != R.STATUS_MISSING)
+        self.btn_flag.setText("⚑ Flagged: out of the map   (F)" if pt.failed else "⚑ Flag: leave out of the map   (F)")
         self.btn_open.setEnabled(pt.vir_image is not None)
         for b in (self.btn_flag, self.btn_prev, self.btn_next, self.btn_next_review):
             b.setEnabled(True)
@@ -1225,8 +1478,9 @@ class ReviewDialog(QDialog):
         self.view.update()
 
     def _refresh_counts(self):
+        self._refresh_legend()
         counts = self.review.counts()
-        ok = counts.get(R.STATUS_OK, 0) + counts.get(R.STATUS_CHECKED, 0)
+        ok = counts.get(R.STATUS_OK, 0)
         check = counts.get(R.STATUS_CHECK, 0) + counts.get(R.STATUS_UNKNOWN, 0)
         set_chip(self.chips[R.STATUS_OK], f"✓ {ok} aligned" if ok else "", self.chips[R.STATUS_OK].toolTip())
         set_chip(self.chips[R.STATUS_CHECK], f"? {check} to check" if check else "", self.chips[R.STATUS_CHECK].toolTip())
@@ -1234,7 +1488,11 @@ class ReviewDialog(QDialog):
         set_chip(self.chips[R.STATUS_SUSPICIOUS], f"! {sus} probably misaligned" if sus else "",
                  self.chips[R.STATUS_SUSPICIOUS].toolTip())
         fl = counts.get(R.STATUS_FLAGGED, 0)
-        set_chip(self.chips[R.STATUS_FLAGGED], f"⚑ {fl} flagged" if fl else "", self.chips[R.STATUS_FLAGGED].toolTip())
+        set_chip(self.chips[R.STATUS_FLAGGED], f"⚑ {fl} flagged · out of the map" if fl else "",
+                 self.chips[R.STATUS_FLAGGED].toolTip())
+        re = counts.get(R.STATUS_REALIGNED, 0)
+        set_chip(self.chips[R.STATUS_REALIGNED], f"◆ {re} to confirm" if re else "",
+                 self.chips[R.STATUS_REALIGNED].toolTip())
         miss = counts.get(R.STATUS_MISSING, 0)
         set_chip(self.chips[R.STATUS_MISSING], f"— {miss} no image" if miss else "",
                  self.chips[R.STATUS_MISSING].toolTip())
@@ -1244,18 +1502,30 @@ class ReviewDialog(QDialog):
                 f"{n} shoot points. Check that the visible and infrared images overlap; "
                 "flag the misaligned ones, then realign them by hand." if n else
                 "No shoot point was aligned: run Step 4 first.")
-        flagged = self.review.flagged()
-        redoable = [p for p in flagged if p.redo_script is not None]
+        redoable = self._redoable()
         self.btn_redo.setText(f"Realign {len(redoable)} flagged by hand  ▶" if redoable else "Realign flagged by hand  ▶")
-        self.btn_redo.setEnabled(bool(redoable) and not self.redo_runner_busy())
+        self.btn_redo.setEnabled(bool(redoable))
         sus_points = [p for p in self.review.suspicious()]
         self.btn_flag_suspicious.setText(f"Flag the {len(sus_points)} probably misaligned" if sus_points
                                          else "Flag the probably misaligned")
         self.btn_flag_suspicious.setEnabled(bool(sus_points))
+        self.btn_flag_suspicious.setVisible(bool(sus_points))   # nothing measured as misaligned: no button
 
     def redo_runner_busy(self):
         runner = getattr(self, "redo_runner", None)
         return runner is not None and runner.busy()
+
+    def _computing(self) -> set:
+        """Points whose alignment is waiting or running."""
+        runner = getattr(self, "redo_runner", None)
+        return runner.numbers() if runner is not None else set()
+
+    def _redoable(self) -> List[R.ReviewPoint]:
+        """Flagged points that can be realigned by hand now (not computing, not
+        waiting for the user's verdict on a new alignment)."""
+        computing = self._computing()
+        return [p for p in self.review.flagged() if p.status == R.STATUS_FLAGGED and p.redo_script is not None
+                and p.number not in computing]
 
     # ---- decisions
     def _set_failed(self, points, failed):
@@ -1269,18 +1539,10 @@ class ReviewDialog(QDialog):
 
     def toggle_flag(self):
         pt = self.current()
-        if pt is None or self.redo_runner_busy():
+        if pt is None or pt.number in self._computing():
             self._refresh_point()
             return
         self._set_failed([pt], not pt.failed)
-
-    def looks_good(self):
-        pt = self.current()
-        if pt is None or pt.failed or pt.status == R.STATUS_MISSING:
-            return
-        pt.checked = True
-        self._after_change()
-        self.next_to_review()
 
     def _flag_suspicious(self):
         points = self.review.suspicious()
@@ -1298,118 +1560,188 @@ class ReviewDialog(QDialog):
         self._refresh_point()
         self.strip.update()
 
-    # ---- redo by hand
+    # ---- redo by hand: place every point, compute them together, confirm
     def _redo_flagged(self):
         import IRD_Interactive_4 as Step4
-        points = [p for p in self.review.flagged() if p.redo_script is not None]
+        import IRD_Interactive_manual_align as M
+        points = self._redoable()
         queue = Step4.redo_queue(self.review.output, [(p.number, p.stem) for p in points],
                                  log=lambda m: print(m))
-        if not queue:
+        items = M.items_from_queue(queue)
+        if not items:
             QMessageBox.warning(self, "Review", "No flagged point can be realigned (no REDO script).")
             return
-        if QMessageBox.question(
-                self, "Realign by hand",
-                f"{len(queue)} point(s) to realign.\n\nA slider window opens for each of them: move yaw, "
-                "pitch and roll until the visible and infrared images overlap, then close that window. "
-                "The new alignment is computed and shown here to be accepted.",
-                QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel) != QMessageBox.StandardButton.Ok:
-            return
-        self._redo_stats = {"validated": 0, "rejected": 0, "errors": 0}
-        self.btn_redo.setEnabled(False)
-        self.btn_flag_suspicious.setEnabled(False)
-        self.redo_runner.start(queue)
+        # Each point computes as soon as it is placed, while the next one is placed
+        dialog = M.ManualAlignDialog(items, self.mission.name, self,
+                                     send_now=lambda item: self._compute_realigned([item]))
+        self._aligning_by_hand = True
+        try:
+            accepted = dialog.exec() == QDialog.DialogCode.Accepted
+        finally:
+            self._aligning_by_hand = False
+        if accepted:
+            self._compute_realigned(dialog.placed())
+        if self._redo_report_pending and not self.redo_runner.busy():
+            self._on_redo_all_done()          # finished while the window was open
 
-    def _on_redo_started(self, number, stem):
-        pt = self.review.by_number(number)
-        if pt is not None:
-            self.select(self.review.points.index(pt), by_user=False)
-        import time as _time
-        self._redo_point = [stem, _time.time(), "load"]
-        for k in range(len(self.redo_stage_keys)):
-            self.redo_stages.set(k, STAGE_PENDING, "")
-        self.redo_stages.set(0, STAGE_RUNNING, "")
-        self.btn_accept_redo.hide()
-        self.btn_reject_redo.hide()
-        self.redo_box.show()
-        self.redo_bar.setRange(0, 0)
-        self.banner.show()
+    def _compute_realigned(self, items):
+        """Realign the points placed by hand (angles in ``items``), in the background."""
+        import IRD_Interactive_4 as Step4
+        if not items:
+            return
+        for item in items:
+            pt = self.review.by_number(item.number)
+            if pt is not None:
+                pt.realigned = False          # a new result is coming
+        if not self.redo_runner.busy() and not self._redo_report_pending:
+            self._redo_errors = []
+        self.redo_runner.add([(i.number, i.stem, Step4.manual_redo_arguments(i.arguments, i.angles))
+                              for i in items])
         self._redo_clock.start()
-        self._show_redo_progress()
+        self._after_change()
+
+    def _stop_redo(self):
+        self.redo_runner.stop()
+        self._update_banner()
+
+    def _update_banner(self):
+        """Alignments computing (progress, Stop) and / or the realigned point shown
+        to confirm (Yes / Still misaligned / All aligned)."""
+        if not hasattr(self, "redo_runner"):
+            return
+        self._sync_busy()
+        import time as _time
+        import IRD_Interactive_4 as Step4
+        runner = self.redo_runner
+        lines = []
+        computing = runner.busy()
+        if computing:
+            running = runner.running()
+            done, total = runner.finished, max(runner.total, 1)
+            now = ", ".join(f"<b>{job['stem']}</b> ({self.REDO_HINTS.get(job['stage'], job['stage'])} "
+                            f"{fmt_time(_time.time() - job['started'])[:-2]})" for job in running)
+            waiting = len(runner.numbers()) - len(running)
+            lines.append(f"Computing the alignments: {done} of {runner.total} done"
+                         + (f" · {now}" if now else "") + (f" · {waiting} waiting" if waiting else "")
+                         + " <span style='color:#6B7785'>— keep reviewing meanwhile.</span>")
+            stage_rank = {key: k for k, (key, _title) in enumerate(Step4.REDO_STAGES)}
+            steps = len(stage_rank) or 1
+            self.redo_bar.setRange(0, total * steps)
+            self.redo_bar.setValue(done * steps + sum(stage_rank.get(job["stage"], 0) for job in running))
+        aligner = getattr(self, "point_aligner", None)
+        aligning = aligner is not None and aligner.busy()
+        if aligning:
+            running, waiting = aligner.running, aligner.waiting
+
+            def names(numbers, at_most=4):
+                numbers = sorted(numbers)
+                return (", ".join(f"<b>VIS_{n:04d}</b>" for n in numbers[:at_most])
+                        + (f" and {len(numbers) - at_most} more" if len(numbers) > at_most else ""))
+            todo = sorted(running - aligner.done)
+            lines.append(f"Aligning {names(todo or running)} "
+                         f"({fmt_time(_time.time() - aligner.started)[:-2]})"
+                         + (f" · {len(aligner.done)} of {len(running)} done" if len(running) > 1 else "")
+                         + (f" · queued, aligned next: {names(waiting)}" if waiting else "")
+                         + " <span style='color:#6B7785'>— each appears in the time line when done.</span>")
+        to_confirm = [p for p in self.review.points if p.status == R.STATUS_REALIGNED]
+        pt = self.current()
+        confirm = pt is not None and pt.status == R.STATUS_REALIGNED
+        if confirm:
+            lines.append(f"<b>{pt.stem}</b> realigned. Is it right now? Check it with the curtain, blink or "
+                         "overlay.")
+        elif to_confirm:
+            lines.append(f"{len(to_confirm)} realigned point(s) to confirm (◆ purple): "
+                         "N goes to the next one.")
+        self.banner_text.setText("<br>".join(lines))
+        self.redo_box.setVisible(computing)
+        self.btn_stop_redo.setVisible(computing and bool(runner.numbers() - {j["number"] for j in runner.running()}))
+        self.btn_stop_align.setVisible(aligning)
+        self.btn_accept_redo.setVisible(confirm)
+        self.btn_reject_redo.setVisible(confirm)
+        self.btn_accept_all.setText(f"✓ All {len(to_confirm)} aligned")
+        self.btn_accept_all.setVisible(len(to_confirm) > 1)
+        self.banner.setVisible(bool(lines))
 
     REDO_HINTS = {
-        "load": "loading the full resolution images…",
-        "manual": "align the images in the slider window, then close it",
-        "compute": "computing the new alignment (about a minute)…",
-        "write": "saving the aligned images…",
+        "load": "loading",
+        "compute": "computing",
+        "write": "saving",
     }
 
-    def _on_redo_stage(self, number, stem, key):
-        if self._redo_point is None or key not in self.redo_stage_keys:
-            return
-        self._redo_point[2] = key
-        k = self.redo_stage_keys.index(key)
-        for j in range(len(self.redo_stage_keys)):
-            self.redo_stages.set(j, STAGE_DONE if j < k else STAGE_RUNNING if j == k else STAGE_PENDING)
-        self._show_redo_progress()
-
-    def _show_redo_progress(self):
-        if self._redo_point is None:
-            return
-        import time as _time
-        stem, started, key = self._redo_point
-        runner = self.redo_runner
-        rank = f"Point {runner.rank} of {runner.total} · " if runner.total > 1 else ""
-        self.banner_text.setText(f"{rank}<b>{stem}</b>: {self.REDO_HINTS.get(key, '')} "
-                                 f"<span style='color:#6B7785'>{fmt_time(_time.time() - started)[:-2]}</span>")
-
-    def _end_redo_progress(self):
-        self._redo_clock.stop()
-        self._redo_point = None
-        self.redo_box.hide()
-
     def _on_redo_done(self, number, stem, image, error):
-        self._end_redo_progress()
         pt = self.review.by_number(number)
         if error or pt is None:
-            self._redo_stats["errors"] += 1
-            QMessageBox.warning(self, "Realign by hand", error or f"{stem}: unknown point")
-            self.redo_runner.resume()
-            return
-        R.refresh_point(self.review, pt)
-        self._cache.pop(number, None)
-        self.thumbs.pop(number, None)
-        self._start_scan({number})
-        self.select(self.review.points.index(pt))
-        self.pending_verdict = number
-        self.banner_text.setText(f"<b>{stem}</b> realigned. Is it right now? Check it with the curtain, "
-                                 "blink or overlay.")
-        self.btn_accept_redo.show()
-        self.btn_reject_redo.show()
-        self.banner.show()
-        self._refresh_counts()
-
-    def _verdict(self, aligned: bool):
-        number = self.pending_verdict
-        self.pending_verdict = None
-        pt = self.review.by_number(number) if number is not None else None
-        if pt is not None:
-            if aligned:
-                self._set_failed([pt], False)
-                pt.checked = True
-                self._redo_stats["validated"] += 1
-            else:
-                self._redo_stats["rejected"] += 1
-            self._after_change()
-        self.banner.hide()
-        self.redo_runner.resume()
+            self._redo_errors.append(error or f"{stem}: unknown point")
+            print(error)
+            if pt is not None:          # back to its images before the redo: shown again from disk
+                R.refresh_point(self.review, pt)
+                self._cache.pop(number, None)
+                self.thumbs.pop(number, None)
+                self._start_scan({number})
+                if self.current() is pt:
+                    self._show_point(self.index)
+        else:
+            R.refresh_point(self.review, pt)
+            pt.realigned = pt.failed
+            self._cache.pop(number, None)
+            self.thumbs.pop(number, None)
+            self._start_scan({number})
+            if self.current() is pt:
+                self._show_point(self.index)
+        self._after_change()
+        self._update_banner()
 
     def _on_redo_all_done(self):
-        self._end_redo_progress()
-        s = self._redo_stats
-        self.banner.hide()
+        if self._aligning_by_hand:            # reported once the alignment window is closed
+            self._redo_report_pending = True
+            self._refresh_counts()
+            self._update_banner()
+            return
+        self._redo_report_pending = False
+        self._redo_clock.stop()
+        to_confirm = [p for p in self.review.points if p.status == R.STATUS_REALIGNED]
+        errors = self._redo_errors
         self._refresh_counts()
-        self.subtitle.setText(f"Realignment finished: {s['validated']} aligned, {s['rejected']} still misaligned"
-                              + (f", {s['errors']} error(s)." if s["errors"] else "."))
+        self.subtitle.setText(f"Alignments computed: {len(to_confirm)} realigned point(s) to confirm"
+                              + (f", {len(errors)} error(s)." if errors else "."))
+        cur = self.current()
+        if to_confirm and (cur is None or cur.status != R.STATUS_REALIGNED):
+            self.select(self.review.points.index(to_confirm[0]), by_user=False)
+        self._update_banner()
+        if errors:
+            QMessageBox.warning(self, "Realign by hand", "\n".join(errors))
+
+    def _confirm_key(self):
+        pt = self.current()
+        if pt is not None and pt.status == R.STATUS_REALIGNED:
+            self._verdict(True)
+
+    def _verdict(self, aligned: bool):
+        pt = self.current()
+        if pt is None or pt.status != R.STATUS_REALIGNED:
+            return
+        if aligned:
+            if not self._set_failed([pt], False):
+                return
+            pt.checked = True
+        pt.realigned = False                  # rejected: flagged again, to realign
+        self._after_change()
+        nxt = next((j for j in list(range(self.index + 1, len(self.review.points))) + list(range(self.index))
+                    if self.review.points[j].status == R.STATUS_REALIGNED), None)
+        if nxt is not None:
+            self.select(nxt)
+        else:
+            self._update_banner()
+
+    def _accept_all(self):
+        points = [p for p in self.review.points if p.status == R.STATUS_REALIGNED]
+        if not points or not self._set_failed(points, False):
+            return
+        for p in points:
+            p.checked = True
+        self._after_change()
+        self._update_banner()
+        self.subtitle.setText(f"{len(points)} realigned point(s) confirmed.")
 
     # ---- misc
     def _open_full_size(self):
@@ -1432,8 +1764,19 @@ class ReviewDialog(QDialog):
 
     def done(self, r):
         if self.redo_runner_busy():
-            QMessageBox.information(self, "Review", "Finish the realignment in progress before closing.")
+            QMessageBox.information(
+                self, "Review", "Alignments are still being computed: wait for them before closing "
+                "(Stop starts no new one).")
             return
+        if self.point_aligner.busy():
+            answer = QMessageBox.question(
+                self, "Review", "Points left out by Step 4 are still being aligned.\n\n"
+                "Stop them and close? They stay out of the review (asked again later, they reuse "
+                "what was computed).")
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            self._align_stopped = True
+            self.point_aligner.stop()
         for scan in list(self._scans):
             scan.stop()
         for scan in list(self._scans):
@@ -1442,7 +1785,17 @@ class ReviewDialog(QDialog):
             R.save_state(self.review)
         except OSError:
             pass
+        from IRD_Interactive_progress import mark_step_done
+        mark_step_done(self.mission, 5)       # no end of its own: done once looked at
         super().done(r)
+
+    def _continue_now(self):
+        """Close the review; the main window then opens Step 6 (refused while
+        alignments run: the window stays open)."""
+        self.continue_chosen = True
+        self.accept()
+        if self.isVisible():
+            self.continue_chosen = False
 
 
 class ShiftGauge(QWidget):

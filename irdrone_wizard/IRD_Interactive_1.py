@@ -30,7 +30,7 @@ from IRD_Interactive_utils import Prefrence_Screen
 import IRD_Interactive_workers as Worker
 from IRD_Interactive_color_style import Style
 import IRD_Interactive_diskspace as Disk
-from IRD_Interactive_styles import BUTTON_STYLE
+from IRD_Interactive_look import DIALOG_STYLE, PRIMARY_STYLE, SECONDARY_STYLE
 import config
 
 # Geocoding results (keys of Geo.extract_geoTag) saved in mission_parameters.json.
@@ -273,6 +273,7 @@ class Window_create_file_structure(QDialog):
 
             # Set window title
             self.setWindowTitle("Create a mission")
+            self.setStyleSheet(DIALOG_STYLE)
 
             # Main vertical layout
             self.layout: QVBoxLayout = QVBoxLayout(self)
@@ -295,10 +296,10 @@ class Window_create_file_structure(QDialog):
             self.layout.addWidget(self.zone_122)
 
             # Action buttons
-            self.btn_1221: QPushButton = QPushButton("Validate create mission.")
-            self.btn_1221.setStyleSheet(BUTTON_STYLE)
-            self.btn_1222: QPushButton = QPushButton("previous step")
-            self.btn_1222.setStyleSheet(BUTTON_STYLE)
+            self.btn_1221: QPushButton = QPushButton("Create the mission")
+            self.btn_1221.setStyleSheet(PRIMARY_STYLE)
+            self.btn_1222: QPushButton = QPushButton("◀  Back")
+            self.btn_1222.setStyleSheet(SECONDARY_STYLE)
 
             # ---- Nouveau layout vertical principal ----
             zone_122_vlayout = QVBoxLayout()
@@ -316,20 +317,21 @@ class Window_create_file_structure(QDialog):
             self.progress_bar.setValue(0)
             zone_122_vlayout.addWidget(self.progress_bar)
 
-            # Layout horizontal for  buttons
+            # Footer: the manual (?) on the left, Back then the main action on the right
             self.zone_122_layout = QHBoxLayout()
-            self.zone_122_layout.addWidget(self.btn_1222)
-            self.zone_122_layout.addWidget(self.btn_1221)
             self.btn_help = QPushButton("?")
-            self.btn_help.setFixedWidth(30)
-            self.btn_help.setStyleSheet(BUTTON_STYLE)
+            self.btn_help.setFixedWidth(36)
+            self.btn_help.setStyleSheet(SECONDARY_STYLE)
             self.btn_help.clicked.connect(lambda: Help.show_help("btn:step1_form", parent=self))
             self.btn_help.setToolTip("Open the manual at this window.")
             self.zone_122_layout.addWidget(self.btn_help)
+            self.zone_122_layout.addStretch()
+            self.zone_122_layout.addWidget(self.btn_1222)
+            self.zone_122_layout.addWidget(self.btn_1221)
             Help.attach_help(self.btn_1221, "btn:step1_validate",
                              "Create the mission folders and files from the form.", parent=self)
             Help.attach_help(self.btn_1222, "btn:step1_navigation",
-                             "Go back to the previous step.", parent=self)
+                             "Back to the take-off image window (the image stays loaded).", parent=self)
             zone_122_vlayout.addLayout(self.zone_122_layout)
 
             # Connect buttons to slots
@@ -353,7 +355,7 @@ class Window_create_file_structure(QDialog):
 
         Pressing Enter in a field moves the focus to the next one (date, time,
         location, GPS, description, pilot, VIS camera, NIR camera, NIR filter)
-        and finally to the 'Validate create mission.' button.
+        and finally to the 'Create the mission' button.
         """
         try:
             self.date_field.returnPressed.connect(self.time_field.setFocus)
@@ -1346,7 +1348,7 @@ class Window_create_file_structure(QDialog):
         """Create the editable 'Pilot' fields (name and pilot identification number)."""
         try:
             self.pilot_Name: str = "Florine"
-            self.pilot_ID: str = "FRA-RP-0000001957"
+            self.pilot_ID: str = ""
 
             self.pilot_label = QLabel("Pilot:")
             self.pilot_Name_field = QLineEdit(self)
@@ -1797,7 +1799,7 @@ class Window_Load_TakeOff_Image(QDialog):
     extracts from it the date, the GPS position, the ground altitude (IGN or
     OpenTopoData) and the address (OpenStreetMap). These data are stored in
     ``mission_parameters_light`` and used by ``Window_create_file_structure``
-    (button 'next step').
+    (button 'Next').
     """
 
     def __init__(self, parent):
@@ -1861,14 +1863,15 @@ class Window_Load_TakeOff_Image(QDialog):
                          The geographical altitude is obtained by querying the IGN database (France)
                          The map location data (road, place, village, postal code, etc.) are obtained by interrogating the Open Street Map database.
 
-            > Area N° 4: "Previous step" and "Next step" control buttons and a progress bar.
-                         The "Previous step" command button is only available if an image has been loaded
+            > Area N° 4: "Cancel" and "Next" control buttons and a progress bar.
+                         The "Next" command button is only available if an image has been loaded
         """
         try:
             #   Setting the top command bar and window dimensions
 
             self.setStyleSheet("background-color: white; color: black;")
             self.setWindowTitle("Choose the image taken by the drone during takeoff.")
+            self.setStyleSheet(DIALOG_STYLE)
             icon_path = os.path.join(self.prefScreen.default_app_dir, "Icon", "IRDrone.ico")
             if os.path.exists(icon_path):
                 icon = QIcon(icon_path)
@@ -1897,7 +1900,7 @@ class Window_Load_TakeOff_Image(QDialog):
 
         self.btn_load_image = QPushButton("Load take-off image")
         self.btn_load_image.setFixedWidth(300)
-        self.btn_load_image.setStyleSheet(BUTTON_STYLE)
+        self.btn_load_image.setStyleSheet(PRIMARY_STYLE)
         zone1_layout.addWidget(self.btn_load_image)
 
         # Area 2  Image area.
@@ -1938,35 +1941,34 @@ class Window_Load_TakeOff_Image(QDialog):
         self.info_Geo_label.setText(default_geo_data)
         self.info_Geo_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
 
-        #  Area 4    Previous Step an Next Step button
-        self.btnPreviousStep = QPushButton("previous step")
-        self.btnPreviousStep.setFixedWidth(100)
-        self.btnPreviousStep.setStyleSheet(BUTTON_STYLE)
-        self.btn_NextStep = QPushButton("next step")
-        self.btn_NextStep.setFixedWidth(100)
-        self.btn_NextStep.setStyleSheet(BUTTON_STYLE)
+        #  Area 4    Cancel and Next buttons
+        self.btnPreviousStep = QPushButton("Cancel")
+        self.btnPreviousStep.setStyleSheet(SECONDARY_STYLE)
+        self.btn_NextStep = QPushButton("Next  ▶")
+        self.btn_NextStep.setStyleSheet(PRIMARY_STYLE)
         # Disable Next Step  button
         self.btn_NextStep.setAutoDefault(False)
         self.btn_NextStep.setEnabled(False)
 
-        zone4_layout.addWidget(self.btnPreviousStep)
-        zone4_layout.addWidget(self.btn_NextStep)
+        # Footer: the manual (?) on the left, the progress bar, Cancel then Next on the right
         self.btn_help = QPushButton("?")
-        self.btn_help.setFixedWidth(30)
-        self.btn_help.setStyleSheet(BUTTON_STYLE)
+        self.btn_help.setFixedWidth(36)
+        self.btn_help.setStyleSheet(SECONDARY_STYLE)
         self.btn_help.clicked.connect(lambda: Help.show_help("btn:step1_load_takeoff", parent=self))
         self.btn_help.setToolTip("Open the manual at this window.")
         zone4_layout.addWidget(self.btn_help)
         Help.attach_help(self.btn_load_image, "btn:step1_load_takeoff",
                          "Choose the image taken at take-off to define the mission location.", parent=self)
-        Help.attach_help(self.btnPreviousStep, "btn:step1_navigation", "Go back to the previous step.", parent=self)
+        Help.attach_help(self.btnPreviousStep, "btn:step1_navigation", "Close this window without saving anything.", parent=self)
         Help.attach_help(self.btn_NextStep, "btn:step1_navigation",
-                         "Go to the next step (available once the mission is created).", parent=self)
+                         "Open the Create a mission form (available once the take-off image is loaded).", parent=self)
 
         # Progress bar
         self.progress_bar = QProgressBar(self)
         self.progress_bar.setStyleSheet("QProgressBar { color: white; }")
-        zone4_layout.addWidget(self.progress_bar)
+        zone4_layout.addWidget(self.progress_bar, 1)
+        zone4_layout.addWidget(self.btnPreviousStep)
+        zone4_layout.addWidget(self.btn_NextStep)
         self.progress_bar.setValue(0)
 
         self.btn_load_image.clicked.connect(self.load_takeoff_image)
@@ -2054,7 +2056,7 @@ class Window_Load_TakeOff_Image(QDialog):
         The method displays the image, reads its EXIF data (date, GPS, camera),
         queries the IGN API (or OpenTopoData outside France) for the ground
         altitude and OpenStreetMap for the address, then fills
-        ``mission_parameters_light`` and enables the 'next step' button.
+        ``mission_parameters_light`` and enables the 'Next' button.
         The decoding of the DNG file is slow: the progress bar shows the progress.
         """
 

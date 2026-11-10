@@ -88,9 +88,10 @@ import IRD_Interactive_ArUco as Aru
 from IRD_Interactive_workers import ArucoWorker
 from IRD_Interactive_workers import TimeShiftWorker
 from IRD_Interactive_workers import ImagePairingWorker
-from IRD_Interactive_styles import BUTTON_STYLE
 import flight_timeline as FT
 import IRD_Interactive_look as Look
+
+STEP_NAME = "Camera synchronisation"
 
 
 class DialogSynchroAruco(QDialog):
@@ -129,7 +130,8 @@ class DialogSynchroAruco(QDialog):
             self.close()
             return
 
-        self.setWindowTitle("Step 3 – VIS / NIR time synchronization")
+        self.setWindowTitle(Look.step_window_title(3, STEP_NAME, self.folderMissionPath))
+        self.setStyleSheet(Look.DIALOG_STYLE)
         screen = parent.screen() if parent is not None else QApplication.primaryScreen()
         if screen is None:
             screen = QApplication.primaryScreen()
@@ -180,12 +182,18 @@ class DialogSynchroAruco(QDialog):
         self._plot_after = None
 
         self._log("Dialog initialized.")
-        self._set_manual_mode(not self.auto_run)
-        if not self.auto_run:
+        start_now = self.auto_run
+        self._start_timer = QTimer(self)
+        self._start_timer.setSingleShot(True)
+        self._start_timer.timeout.connect(self._start_synchronisation)
+        # The stages follow each other once started; nothing starts before the
+        # user clicks "Synchronise the cameras" (unless auto_run is asked).
+        self._set_manual_mode(False)
+        if start_now:
+            self._log("Detection, time alignment and pairing run automatically.")
+            self._start_timer.start(400)
+        else:
             self._show_previous_result()
-        if self.auto_run:
-            self._log("Started from the flight timeline: detection, time alignment and pairing run automatically.")
-            QTimer.singleShot(400, self.on_run_aruco)
 
     # ------------------------------------------------------------------
     # Graphical User Interface
@@ -193,9 +201,7 @@ class DialogSynchroAruco(QDialog):
     def _init_gui(self) -> None:
         main_layout = QVBoxLayout(self)
 
-        # Title at the top
-        title = QLabel("<b>Timeline Synchronization</b>")
-        main_layout.addWidget(title)
+        main_layout.addWidget(Look.step_header(3, STEP_NAME, self.folderMissionPath))
 
         # Chained run: the three stages and what comes next, no button to click
         self.stages = Look.StageTracker(["Target detection", "Clock alignment", "Image pairing",
@@ -210,7 +216,13 @@ class DialogSynchroAruco(QDialog):
         self.btn_manual.setToolTip("Stop the automatic chaining and run each stage yourself "
                                    "(check or adjust the time alignment before pairing).")
         self.btn_manual.clicked.connect(lambda: self._set_manual_mode(True))
-        self.btn_continue = QPushButton("Image processing  ▶")
+        # The main action: detection, clock alignment and pairing, one after the other
+        self.btn_sync_run = QPushButton("Synchronise the cameras")
+        self.btn_sync_run.setStyleSheet(Look.PRIMARY_STYLE)
+        self.btn_sync_run.setToolTip("Detect the targets, align the clocks (you check the curves) and pair "
+                                     "the visible and infrared images.")
+        self.btn_sync_run.clicked.connect(self._start_synchronisation)
+        self.btn_continue = QPushButton("Continue with image processing  ▶")
         self.btn_continue.setStyleSheet(Look.PRIMARY_STYLE)
         self.btn_continue.setToolTip("Close this window and open Step 4 (alignment of the image pairs): "
                                      "it starts when you click Run alignment.")
@@ -251,7 +263,7 @@ class DialogSynchroAruco(QDialog):
         QShortcut(QKeySequence("N"), self, activated=lambda: self._awaiting_sync and self.on_adjust_time_shift())
         auto_bar.addWidget(self.auto_label, 1)
         auto_bar.addWidget(self.btn_manual)
-        auto_bar.addWidget(self.btn_continue)
+        auto_bar.addWidget(self.btn_sync_run)
         main_layout.addLayout(auto_bar)
 
         # Log display area
@@ -290,11 +302,9 @@ class DialogSynchroAruco(QDialog):
         self._substep_buttons = (self.btn_run_aruco, self.btn_compute_time_shift,
                                  self.btn_adjust_time_shift, self.btn_image_pairing)
 
-        # Apply the common style to the three main buttons
-        self.btn_run_aruco.setStyleSheet(BUTTON_STYLE)
-        self.btn_compute_time_shift.setStyleSheet(BUTTON_STYLE)
-        self.btn_adjust_time_shift.setStyleSheet(BUTTON_STYLE)
-        self.btn_image_pairing.setStyleSheet(BUTTON_STYLE)
+        # The stages one by one (manual mode): the chained run stays the main action
+        for button in self._substep_buttons:
+            button.setStyleSheet(Look.SECONDARY_STYLE)
 
         main_layout.addLayout(btn_layout)
 
@@ -347,19 +357,20 @@ class DialogSynchroAruco(QDialog):
         self.btn_before.hide()
         self.btn_close = QPushButton("Close")
         self.btn_close.setFixedWidth(120)
-        self.btn_close.setStyleSheet(BUTTON_STYLE)
+        self.btn_close.setStyleSheet(Look.SECONDARY_STYLE)
 
 
-        # Align the Close button to the right
+        # Footer: the manual (?) on the left, Close then the next step on the right (as in Step 2)
         close_layout = QHBoxLayout()
+        self.btn_help = QPushButton("?")
+        self.btn_help.setFixedWidth(36)
+        self.btn_help.setStyleSheet(Look.SECONDARY_STYLE)
+        self.btn_help.clicked.connect(lambda: Help.show_help("ch:step3", parent=self))
+        close_layout.addWidget(self.btn_help)
         close_layout.addWidget(self.btn_before)
         close_layout.addStretch()
         close_layout.addWidget(self.btn_close)
-        self.btn_help = QPushButton("?")
-        self.btn_help.setFixedWidth(30)
-        self.btn_help.setStyleSheet(BUTTON_STYLE)
-        self.btn_help.clicked.connect(lambda: Help.show_help("ch:step3", parent=self))
-        close_layout.addWidget(self.btn_help)
+        close_layout.addWidget(self.btn_continue)
 
         for widget, label, tip in (
             (self.btn_run_aruco, "btn:step3_aruco", "Detect the ArUco targets in the synchronisation images of both cameras."),
@@ -371,6 +382,7 @@ class DialogSynchroAruco(QDialog):
             (self.btn_sync_ok, "btn:step3_overlap", self.btn_sync_ok.toolTip()),
             (self.btn_sync_adjust, "btn:step3_overlap", self.btn_sync_adjust.toolTip()),
             (self.btn_manual, "btn:step3_manual", self.btn_manual.toolTip()),
+            (self.btn_sync_run, "btn:step3_run", self.btn_sync_run.toolTip()),
             (self.btn_continue, "btn:step3_continue", self.btn_continue.toolTip()),
             (self.btn_before, "btn:step3_before", self.btn_before.toolTip()),
         ):
@@ -981,11 +993,22 @@ class DialogSynchroAruco(QDialog):
         for b in self._substep_buttons:
             b.setVisible(manual)
         self.btn_manual.setVisible(not manual)
+        self.btn_sync_run.setVisible(not manual)
         if manual:
             self._hide_sync_confirmation()
             self.auto_label.setText("")
         else:
-            self.auto_label.setText("Automatic: detection, clock alignment and pairing follow each other.")
+            self.auto_label.setText("Detection, clock alignment and pairing follow each other; "
+                                    "you check the curves before the pairing.")
+
+    def _start_synchronisation(self) -> None:
+        """The main action: the three stages chained, from the detection."""
+        self._set_manual_mode(False)
+        self.image_pairing_done = False
+        self.btn_sync_run.hide()
+        self.btn_continue.hide()
+        self.auto_label.setText("Synchronising: detection, clock alignment, then you check the curves.")
+        self.on_run_aruco()
 
     def previous_result(self) -> Optional[dict]:
         """What an earlier run of Step 3 left: offset, pairs, plots (None if not run)."""
@@ -1015,7 +1038,9 @@ class DialogSynchroAruco(QDialog):
         y, m, d = (prev["date"].split("-") + ["", "", ""])[:3]
         when = f" on {d}/{m}/{y}" if d else ""
         self.auto_label.setText(f"Synchronised{when}: infrared clock offset {prev['time_shift']:+.2f} s, "
-                                f"{prev['pairs']} pairs. Run the stages again below to redo it.")
+                                f"{prev['pairs']} pairs.")
+        self.btn_sync_run.setText("Synchronise again")
+        self.btn_sync_run.setStyleSheet(Look.SECONDARY_STYLE)   # Continue is the main action now
         self.progress_label.setText("Step 3 already done: clock alignment checked on the curves below.")
         self.progress_bar.setValue(100)
         if prev["after"] is not None:
@@ -1621,6 +1646,9 @@ class TimeShiftInputDialog(QDialog):
         btn_ok = QPushButton("OK", self)
         btn_cancel = QPushButton("Cancel", self)
 
+        btn_ok.setStyleSheet(Look.PRIMARY_STYLE)
+        btn_cancel.setStyleSheet(Look.SECONDARY_STYLE)
+        btn_ok.setDefault(True)
         btn_ok.setToolTip("Use this clock offset (seconds added to the infrared times).")
         btn_ok.clicked.connect(self.accept)
         btn_cancel.clicked.connect(self.reject)
@@ -1630,8 +1658,8 @@ class TimeShiftInputDialog(QDialog):
         # ------------------------------------------------------------
         button_layout = QHBoxLayout()
         button_layout.addStretch()
-        button_layout.addWidget(btn_ok)
         button_layout.addWidget(btn_cancel)
+        button_layout.addWidget(btn_ok)
 
         main_layout = QVBoxLayout()
         main_layout.addWidget(label)
@@ -1737,21 +1765,19 @@ class TimeShiftAdjustDialog(QDialog):
         self.info_label = QLabel(self)
         self.info_label.setWordWrap(True)
 
-        btn_reset = QPushButton("Reset to computed", self)
-        btn_apply = QPushButton("Apply", self)
-        btn_cancel = QPushButton("Cancel", self)
-        btn_reset.setToolTip("Back to the offset computed from the targets.")
-        btn_apply.setToolTip("Keep this offset: the curves after alignment are drawn again with it.")
-        btn_cancel.setToolTip("Close without changing the offset.")
-        for button in (btn_reset, btn_apply, btn_cancel):
-            button.setStyleSheet(BUTTON_STYLE)
-        btn_apply.setDefault(True)
+        self._opened_shift = float(time_shift)
+        self.btn_reset = Look.reset_button("Back to the offset computed from the targets.")
+        self.btn_close = QPushButton(Look.close_text(False), self)
+        self.btn_close.setToolTip("Close; once the offset is changed, keep it: "
+                                  "the curves after alignment are drawn again with it.")
+        self.btn_close.setStyleSheet(Look.PRIMARY_STYLE)
+        self.btn_close.setDefault(True)
 
         self.slider.valueChanged.connect(self._on_slider)
         self.spinbox.valueChanged.connect(self._on_spinbox)
-        btn_reset.clicked.connect(lambda: self.spinbox.setValue(self.computed_time_shift))
-        btn_apply.clicked.connect(self.accept)
-        btn_cancel.clicked.connect(self.reject)
+        self.spinbox.valueChanged.connect(self._update_buttons)
+        self.btn_reset.clicked.connect(lambda: self.spinbox.setValue(self.computed_time_shift))
+        self.btn_close.clicked.connect(self.accept)
 
         # ---------------- Layout ----------------
         help_label = QLabel(
@@ -1768,10 +1794,9 @@ class TimeShiftAdjustDialog(QDialog):
         slider_row.addWidget(self.spinbox)
 
         button_row = QHBoxLayout()
-        button_row.addWidget(btn_reset)
+        button_row.addWidget(self.btn_reset)
         button_row.addStretch()
-        button_row.addWidget(btn_apply)
-        button_row.addWidget(btn_cancel)
+        button_row.addWidget(self.btn_close)
 
         layout = QVBoxLayout(self)
         layout.addWidget(help_label)
@@ -1785,6 +1810,7 @@ class TimeShiftAdjustDialog(QDialog):
             self.t_vis, self.a_vis, self.t_nir, self.a_nir, self.computed_time_shift
         )
         self._update_plot(time_shift)
+        self._update_buttons(self.value())
 
     # ------------------------------------------------------------------
     def _center_slider(self, time_shift: float) -> None:
@@ -1838,6 +1864,14 @@ class TimeShiftAdjustDialog(QDialog):
                 text += f" (computed shift: {self._computed_rms:.2f}°)"
             text += "."
         self.info_label.setText(text)
+
+    def _update_buttons(self, value: float) -> None:
+        self.btn_close.setText(Look.close_text(abs(value - self._opened_shift) > 1e-9))
+        self.btn_reset.setVisible(abs(value - self.computed_time_shift) > 1e-9)
+
+    def reject(self) -> None:
+        """Closing the window (title bar, Esc) keeps the offset, like Close."""
+        self.accept()
 
     def value(self) -> float:
         """Return the selected time shift (seconds)."""

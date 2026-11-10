@@ -52,7 +52,7 @@ class MissionsOnDiskTest(unittest.TestCase):
     def test_next_step(self):
         info = Home.read_mission(make_mission(self.root, "FLY-x", done=(1, 2)))
         self.assertEqual(info.next_step(), 3)
-        info = Home.read_mission(make_mission(self.root, "FLY-y", done=(1, 2, 3, 4, 5)))
+        info = Home.read_mission(make_mission(self.root, "FLY-y", done=(1, 2, 3, 4, 5, 6)))
         self.assertIsNone(info.next_step())
         self.assertIn("25/01/2022 11:59 · Blassac", info.subtitle())
 
@@ -90,7 +90,7 @@ class MainWindowHomeTest(unittest.TestCase):
         self.window.load_mission(m)
         with mock.patch.object(self.window, "on_pre_process_images") as step3:
             self.window.home.btn_continue.click()
-        step3.assert_called_once_with(auto_run=True)
+        step3.assert_called_once_with()
 
     def test_created_mission_becomes_current(self):
         m = make_mission(self.root, "FLY-20220125-1159-Blassac", done=(1,))
@@ -147,8 +147,37 @@ class HomeMapTest(unittest.TestCase):
         self.assertIsNotNone(page.map_view)
         self.assertEqual(len(page.map_view.model.points), 4)
         self.assertIs(page.right_stack.currentWidget(), page.map_holder)
-        page.btn_show_image.click()
-        self.assertIs(page.right_stack.currentWidget(), page.picture)
+        self.assertFalse(hasattr(page, "btn_show_image"))          # the map only, no Image button
+
+    def test_the_map_just_built_is_shown(self):
+        """Step 5 ends: the page shows the map with its orthophoto, even if the
+        orthophoto was hidden before."""
+        import IRD_Interactive_map as MapV
+        root = Path(tempfile.mkdtemp())
+        m = make_mission(root, "FLY-20220125-1159-Blassac", done=(1,))
+        vis = m / "AerialPhotography" / "VIS"
+        vis.mkdir(parents=True)
+        for k in range(4):
+            (vis / f"VIS_{k + 1:04d}.exif").write_text(json.dumps(
+                {"DroneLatitude": 45.1695, "DroneLongitude": 3.4 + 0.0002 * k, "DroneAltitudeGround": 50.0,
+                 "GimbalYawDegree": -78.9}))
+        settings = {"ortho": "hidden"}
+        fake = mock.MagicMock()
+        fake.return_value.value.side_effect = lambda key, default=None: next(
+            (v for k, v in settings.items() if key.endswith(k)), default)
+        fake.return_value.setValue.side_effect = lambda key, value: settings.update(
+            {k: value for k in settings if key.endswith(k)})
+        with mock.patch.object(MapV, "QSettings", fake):
+            page = Home.HomePage()
+            page.show_mission(m)
+            page.show_mission(m)                 # nothing new: still hidden
+            self.assertEqual(page.map_view.model.ortho_mode, "hidden")
+            result = m / "mapping_MULTI" / "mapping_result"
+            result.mkdir(parents=True)
+            (result / "odm_orthophoto.tif").write_bytes(b"")
+            page.show_mission(m)                 # Step 5 marked done
+        self.assertIs(page.right_stack.currentWidget(), page.map_holder)
+        self.assertEqual(page.map_view.model.ortho_mode, "natural")
 
     def test_no_position_shows_the_image(self):
         m = make_mission(Path(tempfile.mkdtemp()), "FLY-20220125-1159-Blassac", done=(1,))
@@ -156,7 +185,6 @@ class HomeMapTest(unittest.TestCase):
         page.show_mission(m)
         self.assertIsNone(page.map_view)
         self.assertIs(page.right_stack.currentWidget(), page.picture)
-        self.assertFalse(page.btn_show_map.isEnabled())
 
 
 class MissionTitleTest(unittest.TestCase):

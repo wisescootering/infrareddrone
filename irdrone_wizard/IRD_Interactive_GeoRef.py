@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 # --------------------------------------------------------------------------------
-#   IR_drone interactive Phase 5
+#   IR_drone interactive Phase 6
 #   Georeferencing images.  Process
 #   17/10/2026   V004
 # ---------------------------------------------------------------------------------
-"""Georeferencing and orthorectification of IRDrone images (Step 5, "Run Geo ref").
+"""Georeferencing and orthorectification of IRDrone images (Step 6, "Run Geo ref").
 
 Each selected image is projected onto a digital terrain model (DTM) and saved as a
 georeferenced GeoTIFF in UTM coordinates. Two kinds of input are supported
@@ -3784,7 +3784,7 @@ def georef_main(image_callback=None, mission_parameters=None, result_callback=No
 
     Command-line mode (``--input_dir``): the images of a folder (or those listed
     by ``--images``) are processed without any dialog.
-    Interactive mode (used by the Step 5 "Run Geo ref" button): the user selects
+    Interactive mode (used by the Step 6 "Run Geo ref" button): the user selects
     in a file dialog either DJI ``.dng`` images or complete multispectral
     quartets ``IRD_XXXX_1..4.tif``. All selected images must be of the same type.
     Each image is displayed through ``image_callback`` before processing, and

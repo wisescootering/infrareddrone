@@ -5,7 +5,7 @@ Home page of the main window.
     welcome   no mission loaded: New mission / Open a mission, and the recent
               missions of the working folder with their progress
     mission   the current mission: what is done, what comes next ("Continue"),
-              a few figures (images, pairs, aligned, flagged) and the review
+              a few figures (images, pairs, aligned, flagged) and the flight map
 """
 from __future__ import annotations
 
@@ -26,27 +26,31 @@ STEP_TITLES = {
     1: ("Mission", "Copy the images from the SD cards"),
     2: ("Flight timeline", "Check the synchronisation and survey phases"),
     3: ("Synchronise", "Measure the clock offset and pair the images"),
-    4: ("Align", "Align the infrared on the visible images, then review them"),
-    5: ("Map", "Georeference, orthophoto and terrain model"),
-    6: ("Archive", "Keep the results, clean the mission folder"),
+    4: ("Align", "Align the infrared on the visible images"),
+    5: ("Review", "Check the aligned images, realign the wrong ones"),
+    6: ("Map", "Georeference, orthophoto and terrain model"),
+    7: ("Archive", "Keep the results, clean the mission folder"),
 }
 WHAT_NEXT = {
     1: "Insert the SD cards: the images are found and copied.",
     2: "The phases are detected automatically: check them, then the synchronisation, the pairing and "
        "the alignment run on their own.",
     3: "Detection of the rotating target, clock alignment and pairing run on their own, then the alignment.",
-    4: "Align the image pairs of the survey, then review the result.",
-    5: "Build the orthophoto and the terrain model with OpenDroneMap.",
-    6: "Archive the mission to free disk space.",
+    4: "Align the image pairs of the survey.",
+    5: "Check every aligned image on a time line, flag the misaligned ones and realign them by hand.",
+    6: "Build the orthophoto and the terrain model with OpenDroneMap.",
+    7: "Archive the mission to free disk space.",
 }
 STEP_TIPS = {
     1: "Create a new mission: find the images on the SD cards and copy them.",
     2: "Check the automatically detected flight phases (synchronisation, survey).",
     3: "Synchronise the visible and infrared cameras and pair the images.",
-    4: "Align the infrared on the visible images, then review them.",
-    5: "Georeference, orthophoto and terrain model (OpenDroneMap).",
-    6: "Archive the mission (cleans the mission folder).",
+    4: "Align the infrared on the visible images.",
+    5: "Review the aligned images: flag the misaligned ones, realign them by hand.",
+    6: "Georeference, orthophoto and terrain model (OpenDroneMap).",
+    7: "Archive the mission (cleans the mission folder).",
 }
+LAST_STEP = 7           # archiving, optional
 
 
 # ---------------------------------------------------------------------------
@@ -63,8 +67,8 @@ class MissionInfo:
         return self.folder.name
 
     def next_step(self) -> Optional[int]:
-        """First step not done (Step 6, archiving, is optional: None once 1-5 are done)."""
-        return next((s for s in range(1, 6) if s not in self.done), None)
+        """First step not done (Step 7, archiving, is optional: None once 1-6 are done)."""
+        return next((s for s in range(1, LAST_STEP) if s not in self.done), None)
 
     def subtitle(self) -> str:
         bits = []
@@ -157,18 +161,6 @@ def _points(path: Path):
         return None
 
 
-def mission_picture(folder: Path) -> Optional[Path]:
-    """An aligned image (false colours) if there is one, else the vertical profile."""
-    out = Path(folder) / "ImgIRdrone"
-    try:
-        vir = sorted(out.glob("VIR_*_local.jpg")) or sorted(out.glob("VIR_*.jpg"))
-    except OSError:
-        vir = []
-    if vir:
-        return vir[len(vir) // 2]
-    return None
-
-
 # ---------------------------------------------------------------------------
 #  Widgets
 # ---------------------------------------------------------------------------
@@ -234,8 +226,8 @@ class RecentRow(QPushButton):
 
 def progress_dots(done) -> str:
     return "".join(f"<span style='color:{'#2E7D32' if s in done else '#C5CFDA'}; font-size: 12pt'>●</span>"
-                   for s in range(1, 7)) + "&nbsp;<span style='color:#6B7785'>" + \
-        (f"{len([s for s in done if s <= 6])}/6" if done else "new") + "</span>"
+                   for s in range(1, LAST_STEP + 1)) + "&nbsp;<span style='color:#6B7785'>" + \
+        (f"{len([s for s in done if s <= LAST_STEP])}/{LAST_STEP}" if done else "new") + "</span>"
 
 
 TILE_DONE, TILE_NEXT, TILE_TODO = "done", "next", "todo"
@@ -297,11 +289,11 @@ class StepTile(QPushButton):
             what = "Mission created."
             action = ("Click to edit its details (description, pilot, cameras): the SD cards are not read again.\n"
                       "A new mission is started from \"‹ All missions\".")
-        self.setToolTip(f"Step {self.step} · {what}\n{action}\n(Right-click: help on this step)")
+        self.setToolTip(f"Step {self.step} · {what}\n{action}\n(F1: help on this step)")
 
 
 class StepRail(QWidget):
-    """The six steps of a mission, left to right; a click on a step emits clicked(step)."""
+    """The seven steps of a mission, left to right; a click on a step emits clicked(step)."""
     clicked = pyqtSignal(int)
 
     def __init__(self, parent=None):
@@ -310,7 +302,7 @@ class StepRail(QWidget):
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(0)
         self.tiles: Dict[int, StepTile] = {}
-        for s in range(1, 7):
+        for s in range(1, LAST_STEP + 1):
             if s > 1:
                 arrow = QLabel("›")
                 arrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -373,7 +365,6 @@ class HomePage(QStackedWidget):
     open_recent = pyqtSignal(object)      # Path
     run_step = pyqtSignal(int)          # "Continue": the next step, chained
     step_clicked = pyqtSignal(int)      # a step of the rail
-    review = pyqtSignal()
 
     def __init__(self, hero_image: Optional[Path] = None, parent=None):
         super().__init__(parent)
@@ -490,11 +481,6 @@ class HomePage(QStackedWidget):
         nl.addSpacing(6)
         nl.addWidget(self.btn_continue, 0, Qt.AlignmentFlag.AlignLeft)
         left.addWidget(self.next_card)
-        self.btn_review = ActionCard("🔍", "Review the aligned images",
-                                     "Check every survey image on a time line, flag the misaligned ones and "
-                                     "realign them by hand.")
-        self.btn_review.clicked.connect(self.review.emit)
-        left.addWidget(self.btn_review)
         self.figures = QHBoxLayout()
         self.figures.setSpacing(8)
         left.addLayout(self.figures)
@@ -502,22 +488,6 @@ class HomePage(QStackedWidget):
         body.addLayout(left, 1)
         right = QVBoxLayout()
         right.setSpacing(6)
-        switch = QHBoxLayout()
-        switch.setSpacing(4)
-        switch.addStretch(1)
-        self.btn_show_map = QPushButton("Map")
-        self.btn_show_image = QPushButton("Image")
-        for b in (self.btn_show_map, self.btn_show_image):
-            b.setCheckable(True)
-            b.setStyleSheet(Look.SECONDARY_STYLE)
-            b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            switch.addWidget(b)
-        self.btn_show_map.setToolTip("The flight on the map: phases of Step 2, orthophoto of Step 5, aerial photos "
-                                     "(online). Click a point to see the ground covered by its image.")
-        self.btn_show_image.setToolTip("Show an aligned image of the mission instead of the map.")
-        self.btn_show_map.clicked.connect(lambda: self._show_right("map"))
-        self.btn_show_image.clicked.connect(lambda: self._show_right("image"))
-        right.addLayout(switch)
         self.right_stack = QStackedWidget()
         self.picture = ScaledPicture()
         self.map_holder = QWidget()
@@ -530,17 +500,14 @@ class HomePage(QStackedWidget):
         lay.addLayout(body, 1)
         self.map_view = None
         self._map_key = None
-        self._right = "map"
         return page
 
-    def _show_right(self, which):
-        if which == "map" and self.map_view is None:
-            which = "image"
-        else:
-            self._right = which
-        self.right_stack.setCurrentWidget(self.map_holder if which == "map" else self.picture)
-        self.btn_show_map.setChecked(which == "map")
-        self.btn_show_image.setChecked(which == "image")
+    def _show_right(self):
+        """The flight map; the picture of the welcome page when there is none."""
+        if self.map_view is None:
+            self.picture.set_picture(QPixmap(str(self.hero_image))
+                                     if self.hero_image and Path(self.hero_image).is_file() else None)
+        self.right_stack.setCurrentWidget(self.map_holder if self.map_view is not None else self.picture)
 
     def _update_map(self, folder: Path):
         """Flight map of the mission (built again only when its files changed)."""
@@ -551,13 +518,20 @@ class HomePage(QStackedWidget):
                 return path.stat().st_mtime
             except OSError:
                 return None
+        ortho = stamp(F.orthophoto_path(folder))
         key = (str(folder), stamp(folder / "AerialPhotography" / "shoot_points.json"),
-               stamp(F.orthophoto_path(folder)), stamp(folder / "FlightAnalytics" / "flight_timeline.json"),
+               ortho, stamp(folder / "FlightAnalytics" / "flight_timeline.json"),
                stamp(folder / "AerialPhotography" / "VIS"),
                stamp(folder / "FlightAnalytics" / "best_mapping.json"),
-               stamp(folder / "mapping_MULTI" / "img_best_mappping.json"))
+               stamp(folder / "ImgIRdrone" / "shoot_points.json"),          # aligned, flagged
+               stamp(folder / "ImgIRdrone" / "review.json"),                # statuses of the review
+               stamp(folder / "mapping_MULTI" / "img_best_mappping.json"),
+               stamp(folder / "mapping_MULTI" / "mapping_result" / "ortho_dtm.tif"))
         if key == self._map_key:
             return
+        # the map of Step 6 has just been built (or built again): show it
+        new_map = (ortho is not None and self._map_key is not None
+                   and self._map_key[0] == key[0] and self._map_key[2] != ortho)
         self._map_key = key
         if self.map_view is not None:
             self.map_view.setParent(None)
@@ -574,7 +548,8 @@ class HomePage(QStackedWidget):
             self.map_view.picked.connect(model.set_current)
             self.map_view.hovered.connect(model.set_hover)
             self.map_holder_lay.addWidget(self.map_view)
-        self.btn_show_map.setEnabled(self.map_view is not None)
+            if new_map and model.ortho_mode == "hidden":
+                model.set_ortho_mode("natural")
 
     def show_mission(self, folder: Optional[Path]):
         """Mission page of `folder` (None: welcome page)."""
@@ -594,32 +569,27 @@ class HomePage(QStackedWidget):
             self.next_text.setText("The orthophoto and the terrain model are in mapping_MULTI. "
                                    "Archive the mission to free disk space, or click a step above to run it again.")
             self.btn_continue.setText("Archive the mission  ▶")
-            self.btn_continue.setToolTip("Open Step 6: delete the working files, keep what is needed to "
-                                         "process the mission again.\n(Right-click: help on this button)")
-            self._next = 6
+            self.btn_continue.setToolTip(f"Open Step {LAST_STEP}: delete the working files, keep what is "
+                                         "needed to process the mission again.\n(F1: help on this button)")
+            self._next = LAST_STEP
         else:
             name, what = STEP_TITLES[nxt]
             self.next_title.setText(f"Next: Step {nxt} · {what}")
             self.next_text.setText(WHAT_NEXT[nxt])
             self.btn_continue.setText(f"Continue with Step {nxt}  ▶")
             self.btn_continue.setToolTip(f"Open Step {nxt}: {what}."
-                                         "\n(Right-click: help on this button)")
+                                         "\n(F1: help on this button)")
             self._next = nxt
-        has_review = (info.folder / "ImgIRdrone" / "shoot_points.json").is_file()
-        self.btn_review.setVisible(has_review)
         while self.figures.count():
             w = self.figures.takeAt(0).widget()
             if w is not None:
+                w.hide()          # gone at once, even before Qt deletes it
                 w.deleteLater()
         for text, color in mission_figures(info.folder):
             self.figures.addWidget(Look.chip(color, text))
         self.figures.addStretch(1)
-        pic = mission_picture(info.folder)
-        self.picture.set_picture(QPixmap(str(pic)) if pic is not None else (
-            QPixmap(str(self.hero_image)) if self.hero_image and Path(self.hero_image).is_file() else None))
-        self.picture.setToolTip(pic.name if pic is not None else "")
         self._update_map(info.folder)
-        self._show_right(self._right)
+        self._show_right()
         self.setCurrentIndex(1)
 
     def _open_folder(self):

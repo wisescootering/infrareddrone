@@ -57,4 +57,5 @@ markdown_extensions:
 # Maths of the user manual (equations numbered as in the PDF, \eqref resolved)
 extra_javascript:
   - javascripts/mathjax.js
+  - javascripts/legacy.js
   - https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js

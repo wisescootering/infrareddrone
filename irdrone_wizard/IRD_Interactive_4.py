@@ -17,7 +17,6 @@ import time
 from PyQt6.QtCore import QObject, QProcess, QProcessEnvironment, QSettings, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog,
-    QDialogButtonBox,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
@@ -36,7 +35,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from IRD_Interactive_styles import BUTTON_STYLE, colored_button_style
+from IRD_Interactive_look import DIALOG_STYLE, PRIMARY_STYLE, SECONDARY_STYLE, close_text, reset_button
+import IRD_Interactive_look as Look
 import IRD_Interactive_help as Help
 from IRD_Interactive_progress import mark_step_done
 import best_mapping
@@ -44,10 +44,15 @@ from config import SJCONVERTERPATH
 from alignment_workers import (
     ALIGNMENT_WORKER_MEMORY_GB,
     MAX_WORKERS,
+    REDO_WORKER_MEMORY_GB,
     available_alignment_workers,
+    clamp_workers,
+    memory_fitting_workers,
 )
+from manual_redo_archives import restore_manual_redo_originals
 
 
+STEP_NAME = "Image processing"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PROCESSING_SCRIPT = PROJECT_ROOT / "run_after_preprocessing.py"
 VIS_FILENAME_PATTERN = re.compile(r"^VIS_(\d+)\.dng$", re.IGNORECASE)
@@ -153,7 +158,7 @@ class Step4SettingsDialog(QDialog):
         self.workers_spin.setMinimumWidth(110)
         workers_layout.addWidget(self.workers_spin)
         safe_button = QPushButton("Safe mode (1)")
-        safe_button.setStyleSheet(BUTTON_STYLE)
+        safe_button.setStyleSheet(SECONDARY_STYLE)
         safe_button.clicked.connect(lambda: self.workers_spin.setValue(1))
         safe_button.setToolTip("One worker only: slower, but the least memory. "
                                "Use it if the computer freezes or the run is killed.")
@@ -183,12 +188,37 @@ class Step4SettingsDialog(QDialog):
         log_layout.addStretch()
         layout.addLayout(log_layout)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
+        self._opened = (self.workers(), self.log_level())
+        self.btn_reset = reset_button("Back to the default settings: Auto workers, warnings only.")
+        self.btn_reset.clicked.connect(self.reset)
+        self.btn_close = QPushButton(close_text(False))
+        self.btn_close.setStyleSheet(PRIMARY_STYLE)
+        self.btn_close.setDefault(True)
+        self.btn_close.setToolTip("Close; once a setting is changed, keep it for the next runs and sessions.")
+        self.btn_close.clicked.connect(self.accept)
+        buttons = QHBoxLayout()
+        buttons.addWidget(self.btn_reset)
+        buttons.addStretch()
+        buttons.addWidget(self.btn_close)
+        layout.addLayout(buttons)
+        self.workers_spin.valueChanged.connect(self._update_close)
+        self.log_level_combo.currentIndexChanged.connect(self._update_close)
+        self._update_close()
+
+    def changed(self) -> bool:
+        return (self.workers(), self.log_level()) != self._opened
+
+    def _update_close(self, *_):
+        self.btn_close.setText(close_text(self.changed()))
+        self.btn_reset.setVisible((self.workers(), self.log_level()) != (0, LOG_LEVELS[0][0]))
+
+    def reset(self):
+        self.workers_spin.setValue(0)
+        self.log_level_combo.setCurrentIndex(0)
+
+    def reject(self):
+        """Closing the window (title bar, Esc) keeps the settings, like Close."""
+        self.accept()
 
     def workers(self) -> int:
         return self.workers_spin.value()
@@ -367,6 +397,11 @@ def redo_environment() -> QProcessEnvironment:
     return environment
 
 
+def redo_workers() -> int:
+    """Realignments computed at once: the Step 4 setting (0: automatic)."""
+    return clamp_workers(load_worker_setting() or available_alignment_workers())
+
+
 def redo_queue(output_folder: Path, points, log=print) -> list:
     """``(number, stem, arguments)`` of the points ``(number, stem)`` that have a
     readable REDO script; the others are reported through ``log``."""
@@ -382,138 +417,358 @@ def redo_queue(output_folder: Path, points, log=print) -> list:
 
 
 STAGE_MARKER = "IRDRONE_STAGE "   # printed by automatic_registration.py (manual redo)
-REDO_STAGES = [("load", "Loading the images"), ("manual", "Align by hand"),
-               ("compute", "Computing the alignment"), ("write", "Saving")]
+REDO_STAGES = [("load", "Loading the images"), ("compute", "Computing the alignment"), ("write", "Saving")]
+
+
+def _option_values(arguments, option: str) -> list:
+    """Values following ``option`` in a command line (up to the next option)."""
+    if option not in arguments:
+        return []
+    values = []
+    for value in arguments[arguments.index(option) + 1:]:
+        if value.startswith("--"):
+            break
+        values.append(value)
+    return values
+
+
+def redo_pair(arguments) -> tuple:
+    """``(visible image, infrared image, initial angles or None)`` of a REDO command."""
+    images = _option_values(arguments, "--images")
+    if len(images) < 2:
+        raise ValueError("REDO command without its two images")
+    try:
+        angles = [float(v) for v in _option_values(arguments, "--angles")][:3]
+    except ValueError:
+        angles = []
+    return Path(images[0]), Path(images[1]), (tuple(angles) if len(angles) == 3 else None)
+
+
+def manual_redo_arguments(arguments, angles) -> list:
+    """REDO command of a point aligned by hand in the wizard: no slider window,
+    the alignment starts from the user's ``(yaw, pitch, roll)``."""
+    out, skipping = [], False
+    for value in arguments:
+        if value.startswith("--"):
+            skipping = value in ("--angles", "--manual-angles")
+            if skipping or value == "--manual":
+                continue
+        elif skipping:
+            continue
+        out.append(value)
+    return out + ["--manual-angles", *(f"{float(v):.3f}" for v in angles)]
 
 
 class RedoRunner(QObject):
-    """Manual realignment of shoot points, one subprocess at a time.
+    """Realignment of shoot points whose manual alignment is already done (the
+    angles are in their arguments, see ``manual_redo_arguments``): up to
+    ``workers`` automatic_registration.py subprocesses at once, nothing to do
+    for the user meanwhile. Points may be added while others run.
 
-    Each point runs automatic_registration.py with the arguments of its REDO
-    script: a slider window opens, the user aligns VIS and NIR by hand and
-    closes it, the alignment is recomputed. ``point_done`` gives the new
-    aligned image (empty if none) or an error; the next point starts once the
-    slots connected to ``point_done`` have returned (they may ask the user),
-    or, with ``pause_between``, when ``resume()`` is called."""
+    Two points sharing an infrared image never run together (its proxy is
+    written on first use). ``point_done`` gives the new aligned image (empty if
+    none) or an error."""
 
     point_started = pyqtSignal(int, str)          # number, stem
-    stage = pyqtSignal(int, str, str)             # number, stem, load / manual / compute / write
+    stage = pyqtSignal(int, str, str)             # number, stem, load / compute / write
     output = pyqtSignal(str)                      # console output / log lines
     point_done = pyqtSignal(int, str, str, str)   # number, stem, aligned image, error
     all_done = pyqtSignal()
 
-    def __init__(self, output_folder: Path, parent=None, pause_between: bool = False):
+    def __init__(self, output_folder: Path, parent=None, workers: int = 1,
+                 memory_per_worker_gb: float = REDO_WORKER_MEMORY_GB):
         super().__init__(parent)
         self.output_folder = Path(output_folder)
-        self.pause_between = pause_between
-        self._paused = False
-        self.process = QProcess(self)
-        self.process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
-        self.process.readyReadStandardOutput.connect(self._read_output)
-        self.process.finished.connect(self._on_finished)
-        self.process.errorOccurred.connect(self._on_error)
+        self.max_workers = max(1, int(workers))     # the Step 4 setting
+        self.memory_per_worker_gb = memory_per_worker_gb
+        self.workers = self.max_workers             # lowered to the free RAM at each run
         self._queue = []
-        self.current = None
-        self._started_at = 0.0
-        self._partial = ""
-        self.total = 0           # points of the run, and the rank of the current one
-        self.rank = 0
+        self.jobs = {}           # QProcess -> {"number", "stem", "nir", "started", "partial", "stage"}
+        self.total = 0           # points of the run (since the runner was last idle)
+        self.finished = 0
 
     def busy(self) -> bool:
-        return (self.current is not None or self._paused
-                or self.process.state() != QProcess.ProcessState.NotRunning)
+        return bool(self._queue or self.jobs)
 
-    def start(self, queue) -> None:
-        self._queue = list(queue)
-        self.total, self.rank = len(self._queue), 0
-        self._start_next()
+    def numbers(self) -> set:
+        """Points waiting or running."""
+        return {task[0] for task in self._queue} | {job["number"] for job in self.jobs.values()}
 
-    def resume(self) -> None:
-        """Start the next point (``pause_between``: after the user's verdict)."""
-        if self._paused:
-            self._paused = False
-            self._start_next()
+    def running(self) -> list:
+        return list(self.jobs.values())
 
-    def _point_finished(self) -> None:
-        """pause_between: wait for resume() before the next point."""
-        self.current = None
-        self._paused = True
+    def add(self, tasks) -> None:
+        """Queue ``(number, stem, arguments)`` (arguments: see ``manual_redo_arguments``)."""
+        tasks = [t for t in tasks if t[0] not in self.numbers()]
+        if not self.busy():
+            self.total = self.finished = 0
+            # Measured while no redo runs: each one needs its share of RAM, or
+            # the system kills them (out of memory) in the middle of a write.
+            self.workers = memory_fitting_workers(self.max_workers, self.memory_per_worker_gb)
+            if tasks and self.workers < self.max_workers:
+                self.output.emit(
+                    f"Realignments computed {self.workers} at a time (not {self.max_workers}): "
+                    f"about {self.memory_per_worker_gb:g} GB of RAM each, not enough free memory.")
+        self._queue.extend(tasks)
+        self.total += len(tasks)
+        self._fill()
 
-    def _start_next(self) -> None:
-        if not self._queue:
-            self.current = None
+    def stop(self) -> None:
+        """Start no other point: the running ones finish."""
+        self.total -= len(self._queue)
+        self._queue = []
+        if not self.jobs:
             self.all_done.emit()
-            return
-        number, stem, arguments = self._queue.pop(0)
-        self.current = (number, stem)
-        self.rank += 1
-        self._partial = ""
-        self._started_at = time.time()
+
+    @staticmethod
+    def _nir(arguments) -> str:
+        images = _option_values(arguments, "--images")
+        return os.path.normcase(os.path.abspath(images[1])) if len(images) > 1 else ""
+
+    def _fill(self) -> None:
+        busy_nir = {job["nir"] for job in self.jobs.values()}
+        for task in list(self._queue):
+            if len(self.jobs) >= self.workers:
+                break
+            nir = self._nir(task[2])
+            if nir and nir in busy_nir:
+                continue
+            self._queue.remove(task)
+            busy_nir.add(nir)
+            self._start(task, nir)
+
+    def _start(self, task, nir) -> None:
+        number, stem, arguments = task
+        process = QProcess(self)
+        process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        process.readyReadStandardOutput.connect(lambda p=process: self._read_output(p))
+        process.finished.connect(lambda code, status, p=process: self._on_finished(p, code, status))
+        process.errorOccurred.connect(lambda error, p=process: self._on_error(p, error))
+        self.jobs[process] = {"number": number, "stem": stem, "nir": nir, "started": time.time(),
+                              "partial": "", "stage": "load", "arguments": list(arguments)}
         full_arguments = [str(PROJECT_ROOT / "automatic_registration.py"), *arguments]
-        self.process.setProcessEnvironment(redo_environment())
-        self.process.setWorkingDirectory(str(PROJECT_ROOT))
+        process.setProcessEnvironment(redo_environment())
+        process.setWorkingDirectory(str(PROJECT_ROOT))
         self.output.emit(f"\nRedo {stem}: {sys.executable} {' '.join(full_arguments)}")
         self.point_started.emit(number, stem)
-        self.process.start(sys.executable, full_arguments)
+        process.start(sys.executable, full_arguments)
 
-    def _read_output(self) -> None:
-        output = self._partial + bytes(self.process.readAllStandardOutput()).decode("utf-8", errors="replace")
+    def _read_output(self, process) -> None:
+        job = self.jobs.get(process)
+        if job is None:
+            return
+        output = job["partial"] + bytes(process.readAllStandardOutput()).decode("utf-8", errors="replace")
         lines = output.split("\n")
-        self._partial = lines.pop()          # an unfinished line waits for the rest
+        job["partial"] = lines.pop()          # an unfinished line waits for the rest
         shown = []
         for line in lines:
             if line.startswith(STAGE_MARKER):
-                if self.current is not None:
-                    self.stage.emit(self.current[0], self.current[1], line[len(STAGE_MARKER):].strip())
+                job["stage"] = line[len(STAGE_MARKER):].strip()
+                self.stage.emit(job["number"], job["stem"], job["stage"])
             else:
                 shown.append(line.rstrip("\r"))
         text = "\n".join(shown)
         if text.strip():
             self.output.emit(text.rstrip())
 
-    def _flush_output(self) -> None:
-        self._read_output()
-        if self._partial.strip() and not self._partial.startswith(STAGE_MARKER):
-            self.output.emit(self._partial.rstrip())
-        self._partial = ""
+    def _flush_output(self, process) -> None:
+        self._read_output(process)
+        job = self.jobs[process]
+        if job["partial"].strip() and not job["partial"].startswith(STAGE_MARKER):
+            self.output.emit(job["partial"].rstrip())
+        job["partial"] = ""
 
-    def _on_error(self, error) -> None:
+    def _on_error(self, process, error) -> None:
         # A process that never started emits no "finished" signal.
-        if error != QProcess.ProcessError.FailedToStart:
+        if error != QProcess.ProcessError.FailedToStart or process not in self.jobs:
             return
-        number, stem = self.current
-        error = f"Unable to start the redo: {self.process.errorString()}"
-        if self.pause_between:
-            self._point_finished()
-            self.point_done.emit(number, stem, "", error)
-        else:
-            self.point_done.emit(number, stem, "", error)
-            self._start_next()
+        self._done(process, "", f"Unable to start the redo: {process.errorString()}")
 
-    def _on_finished(self, exit_code: int, exit_status) -> None:
-        self._flush_output()
-        number, stem = self.current
+    def _on_finished(self, process, exit_code: int, exit_status) -> None:
+        if process not in self.jobs:
+            return
+        self._flush_output(process)
+        job = self.jobs[process]
+        stem = job["stem"]
         if exit_code != 0 or exit_status != QProcess.ExitStatus.NormalExit:
-            image, error = "", f"Redo of {stem} failed (exit code {exit_code})."
+            crashed = exit_status != QProcess.ExitStatus.NormalExit
+            image = ""
+            error = (f"Redo of {stem} stopped by the system (out of memory?)." if crashed
+                     else f"Redo of {stem} failed (exit code {exit_code}).")
+            restored = self._restore(job)
+            if restored:
+                error += f" Its previous alignment was put back ({restored} file(s))."
         else:
-            found = redo_check_image(self.output_folder, stem, self._started_at)
+            found = redo_check_image(self.output_folder, stem, job["started"])
             image = str(found) if found is not None else ""
             error = "" if found is not None else \
                 f"Redo of {stem}: no aligned image ({ALIGNED_JPEG_LABEL}) was generated."
-        if self.pause_between:
-            self._point_finished()          # paused before the slots run: they may resume()
-            self.point_done.emit(number, stem, image, error)
-        else:
-            self.point_done.emit(number, stem, image, error)
-            self._start_next()
+        self._done(process, image, error)
+
+    def _restore(self, job) -> int:
+        """Point of a failed redo back to its state before the redo (a killed
+        process cannot do it itself): number of files put back."""
+        arguments = job.get("arguments") or []
+        images = _option_values(arguments, "--images")
+        if not images:
+            return 0
+        vis = Path(images[0])
+        out_dir = (_option_values(arguments, "--outdir") or [None])[0]
+        out_dir = Path(out_dir) if out_dir else vis.parent
+        multispectral = (_option_values(arguments, "--multispectral-folder") or [None])[0]
+        original_dir = out_dir / f"{vis.stem}_align_traces_manual" / "original"
+        if not original_dir.is_dir():
+            return 0
+        try:
+            restored = restore_manual_redo_originals(
+                vis, out_dir, multispectral, original_dir, since=job["started"])
+        except OSError as error:
+            self.output.emit(f"{job['stem']}: previous alignment not put back ({error})")
+            return 0
+        return len(restored)
+
+    def _done(self, process, image, error) -> None:
+        job = self.jobs.pop(process)
+        process.deleteLater()
+        self.finished += 1
+        self._fill()
+        self.point_done.emit(job["number"], job["stem"], image, error)
+        if not self.busy():
+            self.all_done.emit()
+
+
+def align_points_arguments(mission_folder: Path, numbers) -> list:
+    """Step 4 command aligning only the shoot points ``numbers`` (left out of the
+    first run): the outputs of the first run (local / global, NIR, NDVI) are
+    read from ImgIRdrone, the time filter is the widest of Step 4 (the user
+    asked for these points), no best mapping."""
+    output = Path(mission_folder) / "ImgIRdrone"
+    modes = [mode for mode in ("local", "global") if next(output.glob(f"VIR_*_{mode}.jpg"), None)]
+    arguments = [
+        str(PROCESSING_SCRIPT), "-i", str(mission_folder),
+        "--image-numbers", *(str(n) for n in sorted(numbers)),
+        "--alignment-modes", *(modes or ["local"]),
+        "--max-time-difference", "6.0",
+        "--workers", str(load_worker_setting()),
+        "--log-level", load_log_level_setting(),
+        "--progress",
+    ]
+    if next(output.glob("NDVI_*.jpg"), None):
+        arguments.append("--ndvi")
+    if next(output.glob("NIR_*_*.jpg"), None):
+        arguments.append("--nir")
+    return arguments
+
+
+class AlignPointsRunner(QObject):
+    """Step 4 alignment of shoot points it left out (best mapping, time filter),
+    asked from the review: one run_after_preprocessing.py process at a time;
+    the points asked meanwhile wait and run together next. ``run_done`` gives
+    the points of the run and an error (empty when the process succeeded; the
+    points actually aligned are the ones now in ImgIRdrone/shoot_points.json)."""
+
+    output = pyqtSignal(str)
+    point_done = pyqtSignal(int)          # its alignment ended (written at the end of the run)
+    run_done = pyqtSignal(object, str)    # set of numbers, error
+
+    def __init__(self, mission_folder: Path, parent=None):
+        super().__init__(parent)
+        self.mission_folder = Path(mission_folder)
+        self.process = None
+        self.running = set()      # numbers of the process running
+        self.done = set()         # of these, the ones whose alignment ended
+        self.waiting = set()
+        self.started = 0.0
+        self._partial = ""
+        self._tail = []
+
+    def busy(self) -> bool:
+        return self.process is not None or bool(self.waiting)
+
+    def numbers(self) -> set:
+        return self.running | self.waiting
+
+    def add(self, numbers) -> None:
+        self.waiting |= set(numbers) - self.running
+        if self.process is None:
+            self._start()
+
+    def stop(self) -> None:
+        """Nothing waits any more; the running process is ended (its points stay
+        out of the review: a next run reuses what was computed)."""
+        self.waiting = set()
+        if self.process is not None:
+            kill_process_tree(self.process.processId())
+            if not self.process.waitForFinished(5000):
+                self.process.kill()
+
+    def _start(self) -> None:
+        if not self.waiting:
+            return
+        self.running, self.waiting, self.done = self.waiting, set(), set()
+        self.started, self._partial, self._tail = time.time(), "", []
+        process = QProcess(self)
+        process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        process.setProcessEnvironment(redo_environment())
+        process.setWorkingDirectory(str(PROJECT_ROOT))
+        process.readyReadStandardOutput.connect(self._read)
+        process.finished.connect(self._on_finished)
+        process.errorOccurred.connect(self._on_error)
+        self.process = process
+        arguments = align_points_arguments(self.mission_folder, self.running)
+        self.output.emit(f"\nAlign {len(self.running)} point(s): {sys.executable} {' '.join(arguments)}")
+        process.start(sys.executable, arguments)
+
+    def _read(self, final: bool = False) -> None:
+        if self.process is None:
+            return
+        text = self._partial + bytes(self.process.readAllStandardOutput()).decode("utf-8", errors="replace")
+        lines = text.split("\n")
+        self._partial = "" if final else lines.pop()
+        for line in (line.rstrip("\r") for line in lines):
+            match = PROGRESS_LINE_PATTERN.fullmatch(line)
+            if match is not None:
+                try:
+                    number = _vis_image_number(match.group(3) or "")
+                except ValueError:
+                    continue
+                self.done.add(number)
+                self.point_done.emit(number)
+            elif line.strip():
+                self._tail = (self._tail + [line])[-12:]
+                self.output.emit(line)
+
+    def _on_error(self, error) -> None:
+        if error == QProcess.ProcessError.FailedToStart and self.process is not None:
+            self._finish(f"Unable to start the alignment: {self.process.errorString()}")
+
+    def _on_finished(self, exit_code: int, exit_status) -> None:
+        self._read(final=True)
+        error = ""
+        if exit_status != QProcess.ExitStatus.NormalExit:
+            error = "The alignment was stopped (by you, or by the system: out of memory?)."
+        elif exit_code != 0:
+            error = f"The alignment failed (exit code {exit_code}).\n\n" + "\n".join(self._tail[-6:])
+        self._finish(error)
+
+    def _finish(self, error: str) -> None:
+        if self.process is None:
+            return
+        self.process.deleteLater()
+        self.process = None
+        numbers, self.running, self.done = self.running, set(), set()
+        self.run_done.emit(numbers, error)
+        self._start()
 
 
 class DialogImageProcessing(QDialog):
     """Run the post-preprocessing image pipeline for a mission.
 
     auto_run (chained from Step 3): the alignment starts at once with the
-    survey range of Step 2, and the review of the aligned images opens when
-    it is done."""
+    survey range of Step 2, and the review of the aligned images (Step 5)
+    opens when it is done."""
+
+    continue_requested = pyqtSignal()     # "Continue with the review": the main window opens Step 5
 
     def __init__(self, mission_parameters: dict, parent=None, auto_run: bool = False):
         super().__init__(parent)
@@ -576,7 +831,8 @@ class DialogImageProcessing(QDialog):
         self.process.errorOccurred.connect(self._on_process_error)
 
 
-        self.setWindowTitle("Step 4 – Image processing")
+        self.setWindowTitle(Look.step_window_title(4, STEP_NAME, self.mission_folder))
+        self.setStyleSheet(DIALOG_STYLE)
         self._init_gui()
         self._fit_to_screen(parent)
         if self.auto_run:
@@ -639,10 +895,7 @@ class DialogImageProcessing(QDialog):
         layout = QVBoxLayout(self)
         # The labels wrap and the mission is named, its path in the tool tip:
         # nothing makes the window wider than the screen (long paths, display scaling).
-        mission_label = QLabel(f"<b>Mission:</b> {self.mission_folder.name}")
-        mission_label.setToolTip(str(self.mission_folder))
-        mission_label.setWordWrap(True)
-        layout.addWidget(mission_label)
+        layout.addWidget(Look.step_header(4, STEP_NAME, self.mission_folder))
         intro = QLabel(
             f"{self.pair_count} preprocessed image pairs found. "
             "The inclusive image-number range is pre-filled from Step 2's "
@@ -731,6 +984,10 @@ class DialogImageProcessing(QDialog):
             signal.connect(self._update_best_mapping_count)
         self._update_best_mapping_count()
 
+        # Actions: the alignment, then the review of its result
+        self.action_layout = QHBoxLayout()
+        layout.addLayout(self.action_layout)
+
         self.status_label = QLabel("Ready")
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
@@ -746,11 +1003,10 @@ class DialogImageProcessing(QDialog):
         self.log_text.setReadOnly(True)
         layout.addWidget(self.log_text)
 
+        # Footer: the manual (?) and settings on the left; Close, then the next step on the right
         button_layout = QHBoxLayout()
-        button_layout.addStretch()
         self.run_button = QPushButton("Run alignment")
         self.run_button.clicked.connect(self._start_processing)
-        button_layout.addWidget(self.run_button)
         self.stop_button = QPushButton("\u25A0  Stop")
         self.stop_button.setStyleSheet(
             "QPushButton { background: white; color: #B03A2E; font-weight: bold; padding: 6px 14px;"
@@ -759,30 +1015,25 @@ class DialogImageProcessing(QDialog):
                                     "Run alignment again reuses their motion models.")
         self.stop_button.clicked.connect(self._stop_processing)
         self.stop_button.hide()
-        button_layout.addWidget(self.stop_button)
         self.close_button = QPushButton("Close")
+        self.close_button.setFixedWidth(120)
         self.close_button.clicked.connect(self.close)
-        button_layout.addWidget(self.close_button)
-        self.review_button = QPushButton("Review images  \u25B6")
-        self.review_button.setToolTip(
-            "Check the aligned images on a time line, flag the misaligned ones and realign them by hand."
-        )
-        self.review_button.clicked.connect(self._open_review)
-        self.review_button.setEnabled(self._has_alignment_output())
-        button_layout.addWidget(self.review_button)
         self.settings_button = QPushButton("\u2699")
-        self.settings_button.setFixedWidth(30)
+        self.settings_button.setFixedWidth(36)
         # The gear glyph renders small: enlarge it, keep the button height.
         self.settings_button.setStyleSheet(
-            BUTTON_STYLE + "QPushButton { font-size: 16px; padding: 2px; }"
+            SECONDARY_STYLE + "QPushButton { font-size: 16px; padding: 2px; }"
         )
         self.settings_button.clicked.connect(self._open_settings)
-        button_layout.addWidget(self.settings_button)
         self.help_button = QPushButton("?")
-        self.help_button.setFixedWidth(30)
-        self.help_button.setStyleSheet(BUTTON_STYLE)
+        self.help_button.setFixedWidth(36)
+        self.help_button.setStyleSheet(SECONDARY_STYLE)
         self.help_button.clicked.connect(lambda: Help.show_help("ch:step4", parent=self))
-        button_layout.addWidget(self.help_button)
+        self.continue_button = Look.continue_button(
+            "the review", "Close this window and open Step 5: check the aligned images, flag the "
+                          "misaligned ones and realign them by hand.")
+        self.continue_button.clicked.connect(self._continue_now)
+        self.continue_button.setVisible(self._has_alignment_output())
 
         for widget, label, tip in (
             (self.ndvi_checkbox, "btn:step4_options", "Also write the NDVI image of each shoot point."),
@@ -796,26 +1047,39 @@ class DialogImageProcessing(QDialog):
              "Align only the synchronised images whose footprints overlap by the chosen amount: "
              "much less computing, and a better map (choice made in Step 2)."),
             (self.all_images_radio, "btn:step4_best_mapping",
-             "Align every synchronised image of the range (more computing; Step 5 can still "
+             "Align every synchronised image of the range (more computing; Step 6 can still "
              "select the images of the map)."),
             (self.best_mapping_overlap, "btn:step4_best_mapping",
              "Overlap between the ground footprints of two successive images kept for the map "
              "(75 % recommended)."),
             (self.run_button, "btn:step4_run_alignment", "Align the VIS and NIR images of the selected shoot points (can take a long time)."),
             (self.close_button, "btn:step4_close", "Close this window."),
-            (self.review_button, "ch:review", self.review_button.toolTip()),
             (self.settings_button, "btn:step4_settings", "Processing settings (worker processes / safe mode, log detail)."),
             (self.stop_button, "btn:step4_stop", self.stop_button.toolTip()),
             (self.help_button, "ch:step4", "Open the manual at Step 4."),
+            (self.continue_button, "btn:step4_continue", self.continue_button.toolTip()),
         ):
             Help.attach_help(widget, label, tip, parent=self)
 
         # Apply the common style to the three main buttons
-        self.run_button.setStyleSheet(BUTTON_STYLE)
-        self.close_button.setStyleSheet(BUTTON_STYLE)
-        self.review_button.setStyleSheet(colored_button_style("#2E7D32"))
+        self.run_button.setStyleSheet(PRIMARY_STYLE)
+        self.close_button.setStyleSheet(SECONDARY_STYLE)
 
+        self.action_layout.addWidget(self.run_button)
+        self.action_layout.addWidget(self.stop_button)
+        self.action_layout.addStretch()
+
+        button_layout.addWidget(self.help_button)
+        button_layout.addWidget(self.settings_button)
+        button_layout.addStretch()
+        button_layout.addWidget(self.close_button)
+        button_layout.addWidget(self.continue_button)
         layout.addLayout(button_layout)
+
+    def _continue_now(self) -> None:
+        """Step 5, the review, opens once this window is closed."""
+        if self.close():
+            self.continue_requested.emit()
 
     def best_mapping_selection(self) -> tuple[int, int]:
         """(shoot points aligned, synchronised shoot points) with the current settings."""
@@ -985,18 +1249,6 @@ class DialogImageProcessing(QDialog):
     def _has_alignment_output(self) -> bool:
         return (self.mission_folder / "ImgIRdrone" / "shoot_points.json").is_file()
 
-    def _open_review(self) -> None:
-        """Review window (modal): flags and redo are done there."""
-        if self.process.state() != QProcess.ProcessState.NotRunning:
-            return
-        try:
-            from IRD_Interactive_review import ReviewDialog
-            dialog = ReviewDialog(self.mission_folder, parent=self)
-        except (FileNotFoundError, ValueError) as error:
-            QMessageBox.warning(self, "Review unavailable", str(error))
-            return
-        dialog.exec()
-
     def _open_settings(self) -> None:
         dialog = Step4SettingsDialog(
             load_worker_setting(), load_log_level_setting(), parent=self
@@ -1086,7 +1338,7 @@ class DialogImageProcessing(QDialog):
         self._progress_total = 0
         self._last_elapsed_seconds = None
         self.run_button.setEnabled(False)
-        self.review_button.setEnabled(False)
+        self.continue_button.setEnabled(False)
         self.close_button.setEnabled(False)
         self.settings_button.setEnabled(False)
         self.start_image_number.setEnabled(False)
@@ -1189,7 +1441,8 @@ class DialogImageProcessing(QDialog):
         elif exit_code == 0 and exit_status == QProcess.ExitStatus.NormalExit:
             self.progress_bar.setValue(self._progress_total)
         self.run_button.setEnabled(True)
-        self.review_button.setEnabled(self._has_alignment_output())
+        self.continue_button.setEnabled(True)
+        self.continue_button.setVisible(self._has_alignment_output())
         self.close_button.setEnabled(True)
         self.settings_button.setEnabled(True)
         self.start_image_number.setEnabled(True)
@@ -1222,12 +1475,12 @@ class DialogImageProcessing(QDialog):
                 self.status_label.setText("Processing completed successfully.")
             self.log_text.append("\nProcessing completed successfully.")
             mark_step_done(self.mission_folder, 4)
-            self.review_button.setEnabled(True)
-            self.review_button.setDefault(True)
-            self.review_button.setFocus()
-            if self.auto_run:
+            self.continue_button.setVisible(True)
+            self.continue_button.setDefault(True)
+            self.continue_button.setFocus()
+            if self.auto_run:           # chained from Step 3: on to the review
                 self.auto_run = False
-                QTimer.singleShot(400, self._open_review)
+                QTimer.singleShot(400, self._continue_now)
         else:
             self.status_label.setText(f"Processing failed (exit code {exit_code}).")
             self.log_text.append(f"\nProcessing failed (exit code {exit_code}).")
@@ -1244,7 +1497,8 @@ class DialogImageProcessing(QDialog):
         self._processing_controls_idle()
         self.status_label.setText("Unable to start processing.")
         self.run_button.setEnabled(True)
-        self.review_button.setEnabled(self._has_alignment_output())
+        self.continue_button.setEnabled(True)
+        self.continue_button.setVisible(self._has_alignment_output())
         self.close_button.setEnabled(True)
         self.settings_button.setEnabled(True)
         self.start_image_number.setEnabled(True)

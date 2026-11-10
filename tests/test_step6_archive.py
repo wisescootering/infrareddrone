@@ -100,6 +100,13 @@ class ArchiveTests(unittest.TestCase):
         self.assertTrue((m / "FlightAnalytics" / "other.txt").is_file())
         self.assertTrue((m / "mapping_MULTI" / "mapping_result" / "ortho.tif").is_file())
 
+    def test_previous_maps_set_aside_by_step5_are_kept(self):
+        old = self.mission / "mapping_MULTI_20261110_171700" / "mapping_result"
+        old.mkdir(parents=True)
+        (old / "ortho.tif").write_bytes(b"x")
+        arc.execute_archive(arc.build_plan(self.mission), log=lambda m: None)
+        self.assertTrue((old / "ortho.tif").is_file())
+
     def test_manifest_and_already_archived(self):
         plan = arc.build_plan(self.mission)
         manifest = arc.execute_archive(plan, log=lambda m: None)

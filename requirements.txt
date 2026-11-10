@@ -3,7 +3,7 @@
 # environment.yml is an optional conda environment built on this file (it adds GDAL).
 #
 # Optional, not listed here:
-#   - GDAL (osgeo): contour lines in Step 5. The pip package needs the system
+#   - GDAL (osgeo): contour lines in Step 6. The pip package needs the system
 #     libgdal headers; without it the wizard runs and skips contour lines.
 #   - torch, kornia, lightglue: the LightGlue matcher in irdrone/ign_registration.py.
 

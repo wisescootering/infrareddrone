@@ -1,5 +1,5 @@
 """Contextual help: every button of the windows has a tool tip, and every
-manual label used by the code (right-click "Help on this button", "?" buttons)
+manual label used by the code (F1 on a button, "?" buttons)
 exists in help/irdrone_help.tex."""
 import json
 import os
@@ -145,3 +145,53 @@ class ToolTipsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class F1HelpTest(unittest.TestCase):
+    """F1 opens the manual at the button (under the mouse or with the focus), else at the window."""
+
+    def setUp(self):
+        import IRD_Interactive_help as Help
+        self.Help = Help
+        self.opened = []
+        self._show_help, Help.show_help = Help.show_help, lambda label, parent=None: self.opened.append(label)
+
+    def tearDown(self):
+        self.Help.show_help = self._show_help
+
+    def press_f1(self, widget):
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtTest import QTest
+        QTest.keyClick(widget, Qt.Key.Key_F1)
+
+    def test_f1_on_the_focused_button(self):
+        from PyQt6.QtWidgets import QDialog, QPushButton, QVBoxLayout
+        dialog = QDialog()
+        button = QPushButton("Run", dialog)
+        QVBoxLayout(dialog).addWidget(button)
+        self.Help.attach_help(button, "btn:step4_run_alignment", "Run.")
+        self.assertIn("F1", button.toolTip())
+        dialog.show()
+        dialog.activateWindow()
+        button.setFocus()
+        APP.processEvents()
+        self.press_f1(button)
+        self.assertEqual(self.opened, ["btn:step4_run_alignment"])
+
+    def test_f1_elsewhere_clicks_the_question_mark_of_the_window(self):
+        from PyQt6.QtWidgets import QDialog, QLineEdit, QPushButton, QVBoxLayout
+        dialog = QDialog()
+        edit = QLineEdit(dialog)
+        dialog.btn_help = QPushButton("?", dialog)
+        clicked = []
+        dialog.btn_help.clicked.connect(lambda: clicked.append(True))
+        lay = QVBoxLayout(dialog)
+        lay.addWidget(edit)
+        lay.addWidget(dialog.btn_help)
+        self.Help.install_f1_help()
+        dialog.show()
+        dialog.activateWindow()
+        edit.setFocus()
+        APP.processEvents()
+        self.press_f1(edit)
+        self.assertEqual(clicked, [True])

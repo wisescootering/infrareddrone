@@ -105,25 +105,31 @@ class MissionDetailsDialog(QDialog):
         self.btn_help.setStyleSheet(Look.SECONDARY_STYLE)
         self.btn_help.setFixedWidth(36)
         self.btn_help.clicked.connect(self._on_help)
+        self.btn_reset = Look.reset_button("Put back the details as they were when the window opened.")
+        self.btn_reset.clicked.connect(self.reset)
         buttons.addWidget(self.btn_help)
+        buttons.addWidget(self.btn_reset)
         buttons.addStretch(1)
-        cancel = QPushButton("Cancel")
-        cancel.setStyleSheet(Look.SECONDARY_STYLE)
-        cancel.clicked.connect(self.reject)
-        self.btn_save = QPushButton("Save")
-        self.btn_save.setStyleSheet(Look.PRIMARY_STYLE)
-        self.btn_save.setDefault(True)
-        self.btn_save.clicked.connect(self.save)
-        buttons.addWidget(cancel)
-        buttons.addWidget(self.btn_save)
+        self.btn_close = QPushButton(Look.close_text(False))
+        self.btn_close.setStyleSheet(Look.PRIMARY_STYLE)
+        self.btn_close.setDefault(True)
+        self.btn_close.clicked.connect(self.save)
+        buttons.addWidget(self.btn_close)
         lay.addLayout(buttons)
-        try:   # tool tips, right-click: the manual
+        self._opened = self.form_values()      # what Reset puts back (as the widgets show it)
+        for line in (self.f_location, self.f_description, self.f_pilot, self.f_pilot_id,
+                     self.f_nir_maker, self.f_nir_model, self.f_filter_maker):
+            line.textChanged.connect(self._update_close)
+        for spin in (self.f_vis_timelapse, self.f_vis_delta, self.f_nir_timelapse, self.f_nir_delta,
+                     self.f_filter_band):
+            spin.valueChanged.connect(self._update_close)
+        try:   # tool tips, F1: the manual
             import IRD_Interactive_help as Help
             for widget, tip in (
                 (self.btn_help, "Open the manual at the mission details."),
-                (cancel, "Close without changing anything."),
-                (self.btn_save, "Write the details in mission_parameters.json (the previous file is kept as .bak). "
-                                "The mission folder keeps its name."),
+                (self.btn_reset, self.btn_reset.toolTip()),
+                (self.btn_close, "Close; once a detail is changed, save the details in mission_parameters.json "
+                                 "(the previous file is kept as .bak). The mission folder keeps its name."),
             ):
                 Help.attach_help(widget, "btn:step1_details", tip, parent=self)
         except Exception as e:  # the help is a convenience
@@ -152,11 +158,40 @@ class MissionDetailsDialog(QDialog):
             "filter_band": self.f_filter_band.value(),
         }
 
+    def edited(self) -> dict:
+        """The fields changed since the window opened."""
+        return {k: v for k, v in self.form_values().items() if v != self._opened.get(k)}
+
+    def _update_close(self, *_):
+        changed = bool(self.edited())
+        self.btn_close.setText(Look.close_text(changed))
+        self.btn_reset.setVisible(changed)
+
+    def reset(self):
+        """The details as they were when the window opened (nothing written)."""
+        f = self._opened
+        for widget, key in ((self.f_location, "location"), (self.f_description, "description"),
+                            (self.f_pilot, "pilot"), (self.f_pilot_id, "pilot_id"),
+                            (self.f_nir_maker, "nir_maker"), (self.f_nir_model, "nir_model"),
+                            (self.f_filter_maker, "filter_maker")):
+            widget.setText(f[key])
+        for widget, key in ((self.f_vis_timelapse, "vis_timelapse"), (self.f_vis_delta, "vis_deltatime"),
+                            (self.f_nir_timelapse, "nir_timelapse"), (self.f_nir_delta, "nir_deltatime"),
+                            (self.f_filter_band, "filter_band")):
+            widget.setValue(f[key])
+
+    def reject(self):
+        """Closing the window (title bar, Esc) saves, like Close."""
+        self.save()
+
     def save(self):
         try:
-            self.changed = MS.update_mission_details(self.folder, self.form_values())
+            edited = self.edited()
+            self.changed = MS.update_mission_details(self.folder, edited) if edited else []
         except (OSError, ValueError) as e:
-            QMessageBox.critical(self, "Mission details", f"The details could not be saved:\n{e}")
+            if QMessageBox.question(self, "Mission details", f"The details could not be saved:\n{e}\n\n"
+                                    "Close without saving?") == QMessageBox.StandardButton.Yes:
+                super().reject()
             return
         self.accept()
 

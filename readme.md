@@ -81,7 +81,7 @@ The launchers find this environment automatically, see below.
 | [ExifTool](https://exiftool.org) | always | bundled in `thirdparty/` | `sudo apt install libimage-exiftool-perl` | `brew install exiftool` |
 | [RawTherapee](https://www.rawtherapee.com) | DJI DNG images | installer, default location | `sudo apt install rawtherapee` | [RawTherapee.app](https://www.rawtherapee.com/downloads) in `/Applications` |
 | [SJCam RAW converter](https://github.com/yanburman/sjcam_raw2dng) | SJCam .RAW images | bundled in `thirdparty/` | bundled (x86-64) | build it from source |
-| [Docker](https://www.docker.com/) | OpenDroneMap maps (step 5) | Docker Desktop | `docker.io` or Docker Engine | Docker Desktop |
+| [Docker](https://www.docker.com/) | OpenDroneMap maps (step 6) | Docker Desktop | `docker.io` or Docker Engine | Docker Desktop |
 
 Each tool is looked up in its environment variable (`EXIFTOOLPATH`, `RAWTHERAPEEPATH`, `SJCONVERTERPATH`),
 then at its usual location, then on the `PATH`.
@@ -412,7 +412,10 @@ for instance, you have to copy/paste into the excel
 While reviewing the data, there may still be some issues in alignment.
 Unfortunately multispectral alignment is an ill-posed problem and sometimes the automatic system fails.
 There's still a way to save your images.
-  * There's a .bat file next to the results which allows you to re-run manually the images which failed. 
+  * In the wizard (Step 5, review): flag the misaligned points, then *Realign N flagged by hand*. A window takes every
+    flagged point in turn: drag the infrared over the visible image (right mouse button, arrow keys, or *Fit*),
+    then the alignments of all the points are computed together in the background and you confirm each result.
+  * From the command line: there's a .bat file (.sh on Linux / macOS) next to the results which allows you to re-run manually the images which failed. 
   * It will open a GUI where you can simply pick the yaw, pitch & roll
     to replace the coarse alignment & make the images overlap. 
     This will guide the automatic system to a manual initial guess which will eventually lead to an accurate automatic alignment.
@@ -504,15 +507,17 @@ Refer to the calibration documents
   * Step 1-2: mission creation (altitude, distance, heading), take-off image, VIS / NIR image loading
   * Step 3: VIS / NIR time synchronization from the ArUco target, with a slider to adjust the time shift by hand
   * Step 4: parallel alignment (worker count sized by CPU and RAM, gear settings dialog), redo of misaligned points from VIR / NDVI / NIR images
-  * Step 5: OpenDroneMap mapping, orthorectification of single images (DJI raw and multispectral), error map, DTM and contour lines (topographic map)
-  * Step 6: mission archive
+  * Step 5 review: realign by hand every flagged point first (Qt window: overlay / swipe / blink, drag or arrow keys,
+    automatic fit), then their alignments run together in the background, then confirm each result
+  * Step 6: OpenDroneMap mapping, orthorectification of single images (DJI raw and multispectral), error map, DTM and contour lines (topographic map)
+  * Step 7: mission archive
   * Launchers at the root: `irdrone_wizard.bat` (Windows) and `irdrone_wizard.sh` (Linux / macOS)
 * 4-channel multispectral TIF with an EXIF sidecar file
 * Linux support: `setup.sh` (uv or pip virtual environment), Docker context fallback for ODM, shell recovery scripts, case-insensitive image extensions
 * `run.py` and `run_after_preprocessing.py`: `--workers` option for parallel alignment, `--log-level`
 * 🗺️ **Best mapping in the wizard**: keep only the images the map needs (ground footprint overlap, 75 % by default),
   previewed live in Step 2 on the time line and on a flight map, applied in Step 4 to the well synchronised pairs
-  (far less to align; best mapping / all images, with a live map) and in Step 5 to the ODM images; the main window map
+  (far less to align; best mapping / all images, with a live map) and in Step 6 to the ODM images; the main window map
   shows the sparse trajectory of the images kept; `run_after_preprocessing.py --best-mapping-overlap 75`
 * Compatibility with recent libraries: OpenCV 4.7+ / 5.x ArUco API, SciPy 1.14+ (interp2d removed), scikit-image pyramids; GDAL is now optional
 * Fixes: black orthophoto preview after ODM (broken JPEG overviews on 16-bit data), angle interpolation across 360°, Windows tool paths, DJI RawTherapee profile

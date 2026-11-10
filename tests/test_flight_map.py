@@ -62,6 +62,17 @@ def make_mission(root: Path, n=5, mapping=False, yaw=-78.9):
     return m
 
 
+def step4_done(m: Path, numbers, failed=(), dt=None):
+    """Step 4 inventory (ImgIRdrone/shoot_points.json) and the flight list of Step 1."""
+    dt = dt or {}
+    (m / "ImgIRdrone").mkdir()
+    (m / "ImgIRdrone" / "shoot_points.json").write_text(json.dumps({"shoot_points": [
+        {"FileName": f"VIS_{n:04d}.dng", "dt": dt.get(n, 0.1), "failed": n in failed} for n in numbers]}))
+    (m / "AerialPhotography" / "VIS").mkdir(exist_ok=True)
+    (m / "AerialPhotography" / "VIS" / "transfer_info_VIS_dng.json").write_text(json.dumps(
+        {"fly": {"listCopiedImages": [f"VIS_{n:04d}.dng" for n in numbers]}}))
+
+
 class GeometryTest(unittest.TestCase):
     def test_mercator_of_the_origin_and_tiles(self):
         x0, y0 = F.mercator(0, 0)
@@ -174,16 +185,21 @@ class MapViewTest(unittest.TestCase):
         self.assertEqual(seen, [3])
         self.MV.tile_cache().stop()
 
-    def test_sparse_trajectory_of_the_mapping_while_the_orthophoto_is_shown(self):
-        """Main window: with the orthophoto, only the shoot points used by the
-        mapping (one image every n) are drawn and picked."""
+    def test_sparse_trajectory_of_the_mapping_orthophoto_shown_or_not(self):
+        """Main window, the mapping done: only the shoot points used by the
+        mapping are drawn and picked, orthophoto shown or not; their footprints
+        while it is hidden."""
         m = make_mission(Path(tempfile.mkdtemp()), n=7)
-        (m / "mapping_MULTI").mkdir()
+        (m / "mapping_MULTI" / "mapping_result").mkdir(parents=True)
         (m / "mapping_MULTI" / "img_best_mappping.json").write_text(json.dumps(
             {"image_quartets": [{"VIS_filename": f"VIS_{n:04d}.dng"} for n in (137, 140, 143)]}))
         self.assertEqual(F.mapped_numbers(m), {137, 140, 143})
         model = self.MV.map_model_for(m, with_ortho=False, sparse_mapping=True)
-        self.assertEqual(model.visible(), list(range(7)))          # no orthophoto yet: whole flight
+        self.assertEqual(model.mapped, [])                          # no orthophoto: not a mapping done
+        F.orthophoto_path(m).write_bytes(b"")
+        model = self.MV.map_model_for(m, with_ortho=False, sparse_mapping=True)
+        self.assertEqual((model.mapped_by, model.visible()), ("mapping", [0, 3, 6]))   # not loaded yet
+        self.assertEqual(model.footprints_kept(), [0, 3, 6])
         rgba = np.zeros((4, 4, 4), np.uint8)
         model.set_ortho(F.OrthoPreview(rgba, rgba, [(LAT, LON), (LAT, LON + 1e-3), (LAT - 1e-3, LON)]))
         model.set_ortho_mode("natural")
@@ -198,8 +214,10 @@ class MapViewTest(unittest.TestCase):
         self.assertIsNone(view.nearest(x, y, radius=3))              # not used by the mapping
         x, y = view.to_screen(*model.xy[3])
         self.assertEqual(view.nearest(x, y), 3)
-        model.set_ortho_mode("hidden")                               # orthophoto hidden: whole flight
-        self.assertEqual(model.visible(), list(range(7)))
+        self.assertEqual(model.footprints_kept(), [])                # on the orthophoto: no footprints
+        model.set_ortho_mode("hidden")                               # orthophoto hidden: still the mapping
+        self.assertEqual(model.visible(), [0, 3, 6])
+        self.assertEqual(model.footprints_kept(), [0, 3, 6])
         # the review keeps every shoot point
         self.assertEqual(self.MV.map_model_for(m, with_ortho=False).mapped, [])
         self.MV.tile_cache().stop()
@@ -228,11 +246,87 @@ class MapViewTest(unittest.TestCase):
         self.assertEqual(self.MV.map_model_for(m, with_ortho=False, sparse_mapping=True).mapped, [])
         # the mapping done: its images, not the plan
         BM.save_choice(m, enabled=True)
-        (m / "mapping_MULTI").mkdir()
+        (m / "mapping_MULTI" / "mapping_result").mkdir(parents=True)
         (m / "mapping_MULTI" / "img_best_mappping.json").write_text(json.dumps(
             {"image_quartets": [{"VIS_filename": "VIS_0138.dng"}]}))
+        F.orthophoto_path(m).write_bytes(b"")
         model = self.MV.map_model_for(m, with_ortho=False, sparse_mapping=True)
-        self.assertEqual((model.mapped, model.planned, model.sparse), ([1], False, False))
+        self.assertEqual((model.mapped, model.planned, model.sparse), ([1], False, True))
+        self.MV.tile_cache().stop()
+
+    def test_main_map_after_step4_shows_the_points_as_the_review(self):
+        """Main window, after Step 4, before the map of Step 5: every shoot
+        point in the colour of its review status, the ones Step 4 did not
+        align as small grey dots (as in the review), nothing thinned out."""
+        import cv2
+        import shoot_review as R
+        import IRD_Interactive_review as Rv
+        m = make_mission(Path(tempfile.mkdtemp()), n=7)
+        step4_done(m, (137, 138, 140, 141, 142, 143), failed={141})        # 139 left out by Step 4
+        img = np.full((30, 40, 3), 128, np.uint8)
+        for n in (137, 138):                                              # their images: not measured yet
+            cv2.imwrite(str(m / "ImgIRdrone" / f"VIS_{n:04d}.jpg"), img)
+            cv2.imwrite(str(m / "ImgIRdrone" / f"VIR_{n:04d}_local.jpg"), img)
+        statuses = R.statuses(m)
+        self.assertEqual(statuses, {137: "unknown", 138: "unknown", 140: "missing", 141: "flagged",
+                                    142: "missing", 143: "missing"})
+        model = self.MV.map_model_for(m, with_ortho=False, sparse_mapping=True)
+        self.assertFalse(model.sparse)
+        self.assertEqual(model.visible(), list(range(7)))                 # every point, like the review
+        for i, n in enumerate(model.numbers):
+            expected = Rv.STATUS_COLORS[statuses[n]] if n in statuses else Rv.NOT_ALIGNED_COLOR
+            self.assertEqual(model.color_of(i).name(), expected.name(), n)
+        self.assertTrue(model.minor(model.index_of(139)))                 # not aligned: small grey dot
+        self.assertTrue(model.cursor_in_point_color)                      # footprint in the status colour
+        self.assertIsNotNone(model.image(model.index_of(137)))            # with the aligned image in it
+        self.assertIsNone(model.image(model.index_of(140)))               # no aligned image
+        self.assertFalse(model.minor(model.index_of(137)))
+        self.assertFalse(model.minor(model.index_of(141)))
+        view = self.MV.FlightMapView(model)
+        view.resize(600, 400)
+        view.show()
+        view.fit()
+        view.grab()                                                       # paints
+        self.assertIsNone(R.statuses(m.parent / "nothing"))              # before Step 4
+        self.MV.tile_cache().stop()
+
+    def test_main_map_once_the_map_is_built_is_still_the_twin_of_the_review(self):
+        """The map of Step 5 built from some of the points: the main window
+        still shows every point of the review (its orthophoto underneath)."""
+        import shoot_review as R
+        m = make_mission(Path(tempfile.mkdtemp()), n=7)
+        step4_done(m, range(137, 144), failed={141})
+        (m / "mapping_MULTI" / "mapping_result").mkdir(parents=True)
+        (m / "mapping_MULTI" / "img_best_mappping.json").write_text(json.dumps({
+            "image_quartets": [{"VIS_filename": f"VIS_{n:04d}.dng"} for n in (137, 143)]}))
+        F.orthophoto_path(m).write_bytes(b"")
+        model = self.MV.map_model_for(m, with_ortho=False, sparse_mapping=True)
+        self.assertFalse(model.sparse)
+        self.assertEqual(model.visible(), list(range(7)))
+        self.assertEqual({n for i, n in enumerate(model.numbers) if not model.minor(i)},
+                         {n for n, s in R.statuses(m).items() if s != "missing"})
+        self.MV.tile_cache().stop()
+
+    def test_the_aligned_image_in_its_footprint_is_not_tinted(self):
+        from PyQt6.QtGui import QColor, QPixmap
+        m = make_mission(Path(tempfile.mkdtemp()))
+        model = self.MV.map_model_for(m, with_ortho=False)
+        pix = QPixmap(40, 30)
+        pix.fill(QColor("#808080"))
+        model.image_of = lambda _n: pix
+        model.cursor_in_point_color = True
+        model.color_of = lambda _i: QColor("#B03A2E")
+        view = self.MV.FlightMapView(model)
+        view.resize(600, 400)
+        view.show()
+        view.fit()
+        view.res /= 4                                          # zoom on the image
+        model.set_current(2)
+        view.center = model.xy[2]
+        x, y = view.to_screen(*model.xy[2])
+        img = view.grab().toImage()
+        c = img.pixelColor(int(x) + 25, int(y) + 12)            # inside the image, off the dot
+        self.assertLessEqual(c.red() - min(c.green(), c.blue()), 2)       # still grey: no red tint
         self.MV.tile_cache().stop()
 
     def test_images_of_the_mapping_from_the_odm_shots(self):

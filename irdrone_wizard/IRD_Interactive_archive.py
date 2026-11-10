@@ -1,16 +1,17 @@
 # -*- coding: utf-8 -*-
-"""Step 6 logic: archiving (cleaning) of a mission folder.
+"""Step 7 logic: archiving (cleaning) of a mission folder.
 
 The mission folder is cleaned in place and the operation is irreversible
 (files are deleted, not sent to the recycle bin). Only the essential elements
 that would allow the mission to be processed again are kept:
 
 * root: ``AerialPhotography``, ``cameras``, ``FlightAnalytics``, ``ImgIRdrone``,
-  ``mapping_MULTI``, ``Synchro``, ``desktop.ini`` (everything else is deleted);
+  ``mapping_MULTI`` (and ``mapping_MULTI_*``), ``Synchro``, ``desktop.ini`` (everything else is deleted);
 * ``AerialPhotography``: the ``VIS`` and ``NIR`` folders, ``shoot_points.json``;
 * ``AerialPhotography/VIS`` and ``NIR``: ``<BAND>_XXXX.dng`` and ``.exif``,
   ``time_line.json``, ``transfer_info_<BAND>_dng.json``;
-* ``cameras``, ``FlightAnalytics`` and ``mapping_MULTI``: untouched;
+* ``cameras``, ``FlightAnalytics``, ``mapping_MULTI`` and the previous maps
+  (``mapping_MULTI_<date>``, set aside by Step 6): untouched;
 * ``ImgIRdrone``: ``VIS_XXXX.jpg``, ``VIR_XXXX_local.jpg``,
   ``VIS_XXXX_motion_model.npy``, ``NDVI_XXXX_local.jpg``, ``NIR_XXXX_local.jpg``,
   ``shoot_points.json``, ``shoot_points_failed_summary.json``;
@@ -65,6 +66,12 @@ class ArchivePlan:
     blockers: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     already_archived: bool = False
+    mission_bytes: int = 0    # size of the whole mission folder when analysed
+
+    @property
+    def final_bytes(self) -> int:
+        """Size of the mission folder once archived."""
+        return max(self.mission_bytes - self.total_bytes, 0)
 
     @property
     def total_bytes(self) -> int:
@@ -171,6 +178,11 @@ def _tree_size(path: Path) -> Tuple[int, int]:
     return total, count
 
 
+def mission_size(mission) -> int:
+    """Size in bytes of a whole mission folder (links not followed)."""
+    return _tree_size(Path(mission))[0]
+
+
 def _band_patterns(band: str) -> List[re.Pattern]:
     return [
         re.compile(rf"^{band}_\d+\.dng$", _FLAGS),
@@ -233,6 +245,7 @@ def build_plan(mission) -> ArchivePlan:
     if not mission.is_dir():
         plan.blockers.append(f"The mission folder does not exist: {mission}")
         return plan
+    plan.mission_bytes = mission_size(mission)
 
     manifest = read_manifest(mission)
     if manifest is not None and manifest.get("status") == "completed":
@@ -278,7 +291,8 @@ def build_plan(mission) -> ArchivePlan:
     root_kept = 0
     for name, path, is_dir in _children(mission):
         lower = name.lower()
-        if is_dir and (lower in UNTOUCHED_DIRS or lower in CLEANED_DIRS):
+        if is_dir and (lower in UNTOUCHED_DIRS or lower in CLEANED_DIRS
+                       or lower.startswith("mapping_multi_")):     # previous maps of Step 6
             root_kept += 1
         elif not is_dir and (_DESKTOP.match(name) or lower in (MANIFEST_NAME, LOG_NAME, ICON_NAME.lower())):
             root_kept += 1

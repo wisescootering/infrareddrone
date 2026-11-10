@@ -399,7 +399,7 @@ class NewMissionDialog(QDialog):
         self._attach_help()
 
     def _attach_help(self):
-        """Tool tip on every button, right-click: its section of the manual."""
+        """Tool tip on every button, F1: its section of the manual."""
         try:
             import IRD_Interactive_help as Help
         except Exception as e:  # the help is a convenience
@@ -629,19 +629,19 @@ class NewMissionDialog(QDialog):
             self.subtitle.setText("Insert the SD cards of the drone and of the infrared camera: "
                                   "the images are found automatically.")
             self.btn_next.setText("Next  ▶")
-            self.btn_next.setToolTip("Go to the mission page: date, place, description, pilot.\n(Right-click: help on this button)")
+            self.btn_next.setToolTip("Go to the mission page: date, place, description, pilot.\n(F1: help on this button)")
             self._check_page_images()
         elif page == 1:
             self.subtitle.setText("Date, time and place come from the first visible image. "
                                   "Add a description and check the pilot.")
             self.btn_next.setText("Create the mission and copy the images  ▶")
-            self.btn_next.setToolTip("Create the mission folder, copy the visible images and convert the infrared ones. The SD cards are only read.\n(Right-click: help on this button)")
+            self.btn_next.setToolTip("Create the mission folder, copy the visible images and convert the infrared ones. The SD cards are only read.\n(F1: help on this button)")
             self.btn_next.setEnabled(self.geo is not None)
             self._update_folder_name()
         else:
             self.subtitle.setText("Copying the images to the mission folder: it takes a few minutes.")
             self.btn_next.setText("Flight timeline  ▶")
-            self.btn_next.setToolTip("Open Step 2: check the synchronisation and survey phases of the flight.\n(Right-click: help on this button)")
+            self.btn_next.setToolTip("Open Step 2: check the synchronisation and survey phases of the flight.\n(F1: help on this button)")
             self.btn_next.setEnabled(False)
 
     def _on_next(self):

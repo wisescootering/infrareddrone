@@ -30,6 +30,17 @@ MATHJAX_CONFIG = """window.MathJax = {
 };
 document$.subscribe(() => { MathJax.typesetPromise && MathJax.typesetPromise(); });
 """
+LEGACY_JS = """// Legacy sections are collapsed: open the one that contains the targeted anchor (F1 help links, TOC).
+function openLegacy() {
+  const id = decodeURIComponent(location.hash.slice(1));
+  const target = id && document.getElementById(id);
+  if (!target) return;
+  for (let d = target.closest("details"); d; d = d.parentElement && d.parentElement.closest("details")) d.open = true;
+  target.scrollIntoView();
+}
+window.addEventListener("hashchange", openLegacy);
+document$.subscribe(openLegacy);
+"""
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"}
 
 # Markdown links/images ](target) and HTML src="target" / href="target".
@@ -85,6 +96,7 @@ def main():
     js = OUT / "javascripts"
     js.mkdir(exist_ok=True)
     (js / "mathjax.js").write_text(MATHJAX_CONFIG, encoding="utf-8")
+    (js / "legacy.js").write_text(LEGACY_JS, encoding="utf-8")
     print(f"Site sources written to {OUT}")
 
 

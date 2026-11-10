@@ -115,6 +115,21 @@ class ShootPointTests(unittest.TestCase):
         self.assertTrue(all(abs(B.rank_one_dt(p)) < 0.5 for p in kept))
         self.assertLess(len(kept), sum(flags))
 
+    def test_badly_synchronised_pairs_keep_about_as_many_images_as_the_preview(self):
+        # the NIR clock drifts against the VIS one: |dt| < 0.5 s for one pair in two
+        # or so; without the tolerance each gap shortened the step to the last
+        # good pair before the ideal one (Labout: 59 in Step 2, 73 in Step 4)
+        points = [shoot_point(i, 5.5, (i * 0.37) % 2 - 1) for i in range(300)]
+        flags = [abs(B.rank_one_dt(p)) < 0.5 for p in points]
+        preview = len(B.select_shoot_points(points, 0.75, FOV, tolerance=0))
+        strict = len(B.select_shoot_points(points, 0.75, FOV, flags, tolerance=0))
+        kept = B.select_shoot_points(points, 0.75, FOV, flags)
+        self.assertGreater(strict, preview * 1.2)
+        self.assertLessEqual(abs(len(kept) - preview), preview * 0.15)
+        shots = [B.shot_from_vis(i, p["VIS"]) for i, p in enumerate(kept)]
+        for a, b in zip(shots, shots[1:]):
+            self.assertGreaterEqual(B.overlap(a, b, FOV), 0.75 - B.SYNC_TOLERANCE - 1e-9)
+
     def test_rank_one_dt(self):
         self.assertEqual(B.rank_one_dt(shoot_point(0, 1, -0.25)), -0.25)
         self.assertIsNone(B.rank_one_dt({"NIR": [{"rank": 2, "dt": 1}]}))

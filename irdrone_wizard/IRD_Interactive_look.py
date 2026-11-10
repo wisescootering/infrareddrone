@@ -6,7 +6,7 @@ review, home page): colours, button styles, chips and window sizing.
 from __future__ import annotations
 
 from PyQt6.QtGui import QColor, QImage, QPixmap
-from PyQt6.QtWidgets import QApplication, QLabel
+from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QWidget
 
 INK = QColor("#1F2933")
 MUTED = QColor("#6B7785")
@@ -54,6 +54,60 @@ SUBTITLE_STYLE = "color: #6B7785;"
 MESSAGE_STYLE = "background: #FFF4E0; color: #7A4B00; border-radius: 6px; padding: 3px 10px;"
 PROGRESS_STYLE = ("QProgressBar { background: #E4E8EE; border: none; border-radius: 2px; }"
                   "QProgressBar::chunk { background: #17365D; border-radius: 2px; }")
+
+
+def reset_button(tip: str) -> QPushButton:
+    """The ↺ button of the windows that edit something: next to ?, at the bottom
+    left, shown only when there is something to put back. It puts the values
+    back; the window stays open."""
+    button = QPushButton("↺")
+    button.setStyleSheet(SECONDARY_STYLE)
+    button.setFixedWidth(36)
+    button.setToolTip(tip)
+    button.hide()
+    return button
+
+
+def close_text(changed: bool) -> str:
+    """Label of the Close button of a window that saves when it closes."""
+    return "Save and close" if changed else "Close"
+
+
+def step_header(step: int, name: str, folder) -> QWidget:
+    """Top of a step window (Steps 3 to 6, as the home page): the step name in
+    the title style, "Step N · mission" under it (the full path in the tool tip).
+    The labels are `header.title` and `header.subtitle`."""
+    from pathlib import Path
+    from PyQt6.QtWidgets import QVBoxLayout
+    header = QWidget()
+    lay = QVBoxLayout(header)
+    lay.setContentsMargins(0, 0, 0, 4)
+    lay.setSpacing(0)
+    header.title = QLabel(name)
+    header.title.setStyleSheet(TITLE_STYLE)
+    header.subtitle = QLabel(f"Step {step} · {Path(folder).name}")
+    header.subtitle.setStyleSheet(SUBTITLE_STYLE)
+    header.subtitle.setToolTip(str(folder))
+    for label in (header.title, header.subtitle):    # a long mission name never widens the window
+        label.setWordWrap(True)
+    lay.addWidget(header.title)
+    lay.addWidget(header.subtitle)
+    return header
+
+
+def step_window_title(step: int, name: str, folder) -> str:
+    """Title bar of a step window, as Step 2: "Step N – Name · mission"."""
+    from pathlib import Path
+    return f"Step {step} – {name} · {Path(folder).name}"
+
+
+def continue_button(next_step: str, tip: str) -> QPushButton:
+    """"Continue with <next step>  ▶": at the bottom right, after Close. It only
+    opens the next step; nothing starts until the user runs it there."""
+    button = QPushButton(f"Continue with {next_step}  ▶")
+    button.setStyleSheet(PRIMARY_STYLE)
+    button.setToolTip(tip)
+    return button
 
 
 def chip(color, text: str = "", tip: str = "") -> QLabel:

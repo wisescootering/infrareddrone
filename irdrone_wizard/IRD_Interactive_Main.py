@@ -37,6 +37,9 @@ from PyQt6.QtWidgets import QSplashScreen
 print("IRDrone is starting, waiting ...", flush=True)
 
 # Small buttons of the status bar
+# F1 over a step of the rail: its chapter of the manual, ch:stepN except the review
+STEP_HELP = {5: "ch:review"}
+
 QUIET_BUTTON = """
 QPushButton { background: white; color: #17365D; border: 1px solid #C5CFDA; border-radius: 5px;
               padding: 3px 10px; font-weight: bold; }
@@ -88,7 +91,8 @@ from IRD_Interactive_color_style import Style
 import config
 from config import missing_tools_message
 import IRD_Interactive_help as Help
-from IRD_Interactive_workdir import WorkingDirBar, ensure_working_dir_at_startup
+import IRD_Interactive_look as Look
+from IRD_Interactive_workdir import MissionSizeLabel, WorkingDirBar, ensure_working_dir_at_startup
 import IRD_Interactive_progress as Progress
 
 
@@ -146,9 +150,10 @@ class Main_Window(QMainWindow):
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
 
-        #  Help button (bottom right of the window)
-        self.btn_help = QPushButton("? Manual", self)
-        self.btn_help.setStyleSheet(QUIET_BUTTON)
+        #  Help button: "?" at the bottom left, as in every window
+        self.btn_help = QPushButton("?", self)
+        self.btn_help.setStyleSheet(Look.SECONDARY_STYLE)
+        self.btn_help.setFixedWidth(36)
         self.btn_help.setToolTip("User manual")
         self.btn_help.clicked.connect(self.on_help)
         Progress.notifier.changed.connect(lambda _folder: self._show_current_mission())
@@ -167,11 +172,10 @@ class Main_Window(QMainWindow):
         self.home.open_recent.connect(self.on_open_recent)
         self.home.run_step.connect(self.run_step)
         self.home.step_clicked.connect(self.open_step)
-        self.home.review.connect(self.on_review)
         self.home.set_recent(recent_missions(Path(self.pref_screen.default_user_dir)))
         self.main_layout.addWidget(self.home, 1)
 
-        # Status bar: working folder, free space and its gear (left), manual (right).
+        # Status bar: manual (?), then (list of the missions only) working folder, free space and its gear.
         # The mission itself is on the page (title, open folder, All missions).
         status = QFrame()
         status.setObjectName("statusbar")
@@ -182,15 +186,21 @@ class Main_Window(QMainWindow):
         self.working_dir_bar = WorkingDirBar(self)
         self.working_dir_bar.changed.connect(self._on_working_dir_changed)
         self.working_dir_bar.gear.setStyleSheet(QUIET_BUTTON)
-        bottom_layout.addWidget(self.working_dir_bar)
-        bottom_layout.addSpacing(30)
-        bottom_layout.addStretch()
         bottom_layout.addWidget(self.btn_help)
+        bottom_layout.addSpacing(8)
+        bottom_layout.addWidget(self.working_dir_bar)
+        bottom_layout.addStretch()
+        # Mission page: the size of the mission folder, at the right
+        self.mission_size_label = MissionSizeLabel(self)
+        bottom_layout.addWidget(self.mission_size_label)
+        # The working folder is chosen with the list of the missions: on the mission page, "?" and the size
+        self.home.currentChanged.connect(self._on_home_page_changed)
+        self._on_home_page_changed(self.home.currentIndex())
         self.main_layout.addWidget(status)
 
         for step, tile in self.home.rail.tiles.items():
-            Help.attach_help(tile, f"ch:step{step}", parent=self)   # right-click: manual
-        # every button of the main window: a tool tip and, on right-click, its section of the manual
+            Help.attach_help(tile, STEP_HELP.get(step, f"ch:step{step}"), parent=self)   # F1: manual
+        # every button of the main window: a tool tip and, with F1, its section of the manual
         home = self.home
         for widget, label, tip in (
             (home.card_new, "btn:home_missions",
@@ -199,13 +209,10 @@ class Main_Window(QMainWindow):
              "Choose the folder of a mission already created (FLY-YYYYMMDD-hhmm-place)."),
             (home.btn_all, "btn:home_missions", "Back to the first page: new mission, open a mission, recent missions."),
             (home.btn_continue, "btn:home_continue", ""),       # tool tip set with the next step
-            (home.btn_review, "ch:review",
-             "Check every aligned image on a time line, flag the misaligned ones and realign them by hand."),
-            (home.btn_show_map, "btn:home_map", home.btn_show_map.toolTip()),
-            (home.btn_show_image, "btn:home_map", home.btn_show_image.toolTip()),
+            (home.right_stack, "btn:home_map", ""),               # F1 over the map: its section
             (self.working_dir_bar.gear, "btn:home_workdir",
              "Change the working folder (the folder that holds the missions)."),
-            (self.btn_help, "sec:help", "Open this manual. Right-click any button: the manual at that button."),
+            (self.btn_help, "sec:help", "Open this manual. F1 over any button: the manual at that button."),
         ):
             Help.attach_help(widget, label, tip, parent=self)
 
@@ -217,12 +224,20 @@ class Main_Window(QMainWindow):
         print(f"Working folder: {folder}")
 
     def _show_current_mission(self):
-        """Refresh the mission page (title, steps, map)."""
+        """Refresh the mission page (title, steps, map) and the mission size."""
         folder = Progress.mission_folder(self.mission_parameters, self.folderMissionPath)
         try:
             self.home.show_mission(folder)
         except Exception as e:  # the home page must never block the steps
             print(f"Home page not updated: {e}")
+        self.mission_size_label.set_folder(folder)
+
+    def _on_home_page_changed(self, page):
+        """List of the missions: working folder and free space; mission page: mission size."""
+        self.working_dir_bar.setVisible(page == 0)
+        self.mission_size_label.setVisible(page != 0)
+        if page != 0:
+            self.mission_size_label.refresh()
 
     # ===================================================================================
     #                   Button #1 click handlers
@@ -310,8 +325,8 @@ class Main_Window(QMainWindow):
     def open_window_load_set_images(self):
         """
         Step 2: flight timeline. The synchronisation and survey phases are
-        detected automatically and confirmed by the user; "Confirm and
-        synchronize" chains into Step 3. The classic selection (5 images per
+        detected automatically and confirmed by the user; "Continue with
+        synchronisation" opens Step 3 without running it. The classic selection (5 images per
         camera) stays available from the timeline window.
         """
         if not self.ensure_mission_parameters():
@@ -330,8 +345,8 @@ class Main_Window(QMainWindow):
         if not accepted:
             return
         Progress.mark_step_done(folderMissionPath, 2)
-        if dialog.action == "synchronize":
-            self.on_pre_process_images(auto_run=True)
+        if dialog.action == "step3":
+            self.on_pre_process_images()    # the user starts the synchronisation
 
     def open_window_classic_selection(self):
         """
@@ -403,7 +418,7 @@ class Main_Window(QMainWindow):
     def on_pre_process_images(self, auto_run=False):
         """
         Phase 3 – VIS / NIR synchronization.
-        auto_run: start the detection and the time alignment right away (from Step 2).
+        auto_run: start the detection and the time alignment right away ("Continue with Step 3").
         """
         if not self.ensure_mission_parameters():
             return
@@ -447,6 +462,8 @@ class Main_Window(QMainWindow):
             self.dialog_image_processing = DialogImageProcessing(
                 self.mission_parameters, self, auto_run=bool(auto_run)
             )
+            # "Continue with the review": Step 5 opens
+            self.dialog_image_processing.continue_requested.connect(self.on_review)
             self.dialog_image_processing.show()
         except (FileNotFoundError, ValueError, json.JSONDecodeError) as e:
             QMessageBox.critical(
@@ -456,13 +473,13 @@ class Main_Window(QMainWindow):
             )
 
     # ===================================================================================
-    #                   Button #5 click handlers
-    #     Step 5 post process images.  Georef, etc
+    #                   Button #6 click handlers
+    #     Step 6 post process images.  Georef, etc
     # ===================================================================================
 
     def on_post_process_images(self):
         """
-        Phase 5 – Georef and Mapping
+        Step 6 – Georef and Mapping
         """
 
         if not self.ensure_mission_parameters():
@@ -472,10 +489,12 @@ class Main_Window(QMainWindow):
 
         try:
 
-            self.dialog_GeoRef = DialogGeoRef(self.mission_parameters)
+            self.dialog_GeoRef = DialogGeoRef(self.mission_parameters, parent=self)
             self.dialog_GeoRef.data_signal_to_main.connect(
                 self.handle_data_from_dialog_GeoRef
             )
+            # "Continue with archiving": Step 7 opens and shows what it frees
+            self.dialog_GeoRef.continue_requested.connect(self.on_archive_mission)
             self.dialog_GeoRef.show()
 
         except Exception as e:
@@ -483,22 +502,22 @@ class Main_Window(QMainWindow):
 
     def handle_data_from_dialog_GeoRef(self, validate: bool):
         if validate:
-            print(Style.GREEN + "✔   Phase 5 completed successfully." + Style.RESET)
+            print(Style.GREEN + "✔   Step 6 completed successfully." + Style.RESET)
         else:
-            print(Style.YELLOW + "⚠  Phase 5 cancelled by user." + Style.RESET)
+            print(Style.YELLOW + "⚠  Step 6 cancelled by user." + Style.RESET)
 
 
 
     # ===================================================================================
-    #                   Button #6 click handlers
-    #     Step 6 archive the mission
+    #                   Button #7 click handlers
+    #     Step 7 archive the mission
     # ===================================================================================
 
     def on_archive_mission(self):
-        """Phase 6 – Archive the mission (refused while another step window is open)."""
+        """Step 7 – Archive the mission (refused while another step window is open)."""
         for attr, name in (("dialog_synchro_aruco", "Step 3"),
                            ("dialog_image_processing", "Step 4"),
-                           ("dialog_GeoRef", "Step 5")):
+                           ("dialog_GeoRef", "Step 6")):
             dialog = getattr(self, attr, None)
             try:
                 if dialog is not None and dialog.isVisible():
@@ -591,27 +610,25 @@ class Main_Window(QMainWindow):
         elif step == 2:
             self.open_window_load_set_images()
         elif step == 3:
-            self.on_pre_process_images(auto_run=True)
+            self.on_pre_process_images()       # started by "Synchronise the cameras"
         elif step == 4:
             self.on_process_images()
         elif step == 5:
-            self.on_post_process_images()
+            self.on_review()
         elif step == 6:
+            self.on_post_process_images()
+        elif step == 7:
             self.on_archive_mission()
 
     def open_step(self, step: int):
-        """A step of the rail: the next ones are chained as with "Continue";
-        a step already done is opened as is (Step 3 without running on its own).
+        """A step of the rail: opened as with "Continue" (Step 3 never runs on its own).
         Step 1 created the loaded mission: its details are edited instead
         (no new mission, the SD cards are not read again)."""
         folder = Progress.mission_folder(self.mission_parameters, self.folderMissionPath)
         if step == 1 and folder is not None and 1 in Progress.done_steps(folder):
             self.edit_mission_details()
             return
-        if step == 3 and folder is not None and 3 in Progress.done_steps(folder):
-            self.on_pre_process_images(auto_run=False)
-        else:
-            self.run_step(step)
+        self.run_step(step)
 
     def edit_mission_details(self):
         """Description, pilot, cameras of the loaded mission (Step 1 done)."""
@@ -626,9 +643,17 @@ class Main_Window(QMainWindow):
         if dialog.exec() == QDialog.DialogCode.Accepted and dialog.changed:
             self.load_mission(Path(folder))          # the new details everywhere
 
+    # ===================================================================================
+    #     Step 5 review the aligned images
+    # ===================================================================================
+
     def on_review(self):
-        """Review of the aligned images (end of Step 4)."""
+        """Step 5: review of the aligned images. "Continue with mapping" opens Step 6."""
         if not self.ensure_mission_parameters():
+            return
+        busy = self._open_step_window()
+        if busy:
+            QMessageBox.warning(self, "Review unavailable", f"Close the {busy} window before the review.")
             return
         folder = Progress.mission_folder(self.mission_parameters, self.folderMissionPath)
         try:
@@ -638,6 +663,8 @@ class Main_Window(QMainWindow):
             return
         dialog.exec()
         self._show_current_mission()
+        if dialog.continue_chosen:
+            self.on_post_process_images()
 
     def on_open_recent(self, folder):
         busy = self._open_step_window()
@@ -648,11 +675,11 @@ class Main_Window(QMainWindow):
             print(f"Mission opened: {self.folderMissionPath}")
 
     def _open_step_window(self):
-        """Name of a Step 3-6 window still open (it works on the current mission), else None."""
+        """Name of a Step 3-7 window still open (it works on the current mission), else None."""
         for attr, name in (("dialog_synchro_aruco", "Step 3"),
                            ("dialog_image_processing", "Step 4"),
-                           ("dialog_GeoRef", "Step 5"),
-                           ("dialog_archive", "Step 6")):
+                           ("dialog_GeoRef", "Step 6"),
+                           ("dialog_archive", "Step 7")):
             dialog = getattr(self, attr, None)
             try:
                 if dialog is not None and dialog.isVisible():

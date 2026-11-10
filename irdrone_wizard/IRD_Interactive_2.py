@@ -31,7 +31,7 @@ import IRD_Interactive_utils as Uti
 import IRD_Interactive_help as Help
 from IRD_Interactive_utils import center_on_screen
 from IRD_Interactive_color_style import Style
-from IRD_Interactive_styles import BUTTON_STYLE
+from IRD_Interactive_look import DIALOG_STYLE, PRIMARY_STYLE, SECONDARY_STYLE
 import config
 
 """
@@ -179,6 +179,7 @@ class LoadVisNirImagesDialog(QDialog):
         self.btn_command: list[QPushButton] = []
         self.btn_load_all_images: Optional[QPushButton] = None
         self.btn_validate_load_all_images: Optional[QPushButton] = None
+        self.btn_cancel: Optional[QPushButton] = None
         self.btn_help: Optional[QPushButton] = None
 
         # ---- GUI progress bar
@@ -269,17 +270,17 @@ class LoadVisNirImagesDialog(QDialog):
             self.btn_command = [QPushButton(btn_legend[i]) for i in range(self.number_images_reference)]
             for btn in self.btn_command:
                 btn.setFixedWidth(button_width)
-                btn.setStyleSheet(BUTTON_STYLE)
+                btn.setStyleSheet(SECONDARY_STYLE)
 
             # Button to load all mission images once reference images are chosen
-            button_width = int(0.7 * (self.screen_width // self.number_images_reference))
-            self.btn_load_all_images = QPushButton("Validate\nmission images")
-            self.btn_load_all_images.setFixedWidth(button_width)
-            self.btn_load_all_images.setMinimumHeight(56)
-            self.btn_load_all_images.setStyleSheet(BUTTON_STYLE)
+            self.btn_load_all_images = QPushButton("Validate mission images")
+            self.btn_load_all_images.setStyleSheet(PRIMARY_STYLE)
+            self.btn_cancel = QPushButton("Cancel")
+            self.btn_cancel.setStyleSheet(SECONDARY_STYLE)
+            self.btn_cancel.setToolTip("Close this window (asks first if the mission images are not loaded).")
             self.btn_help = QPushButton("?")
-            self.btn_help.setStyleSheet(BUTTON_STYLE)
-            self.btn_help.setFixedWidth(button_width)
+            self.btn_help.setStyleSheet(SECONDARY_STYLE)
+            self.btn_help.setFixedWidth(36)
             self.btn_help.setToolTip("Open the manual at the classic selection.")
 
             step2_help = (
@@ -353,12 +354,15 @@ class LoadVisNirImagesDialog(QDialog):
                 middle_layout.addLayout(pair_layout)
 
             # bottom layout for "load mission images" buttons and progress bar
+            # Footer: the manual (?) on the left, Cancel then the main action on the right
             bottom_layout = QVBoxLayout()
-            bottom_command = QHBoxLayout()
-            bottom_command.addWidget(self.btn_load_all_images)
-            bottom_command.addWidget(self.btn_help)
-            bottom_layout.addLayout(bottom_command)
             bottom_layout.addWidget(self.progress_bar)
+            bottom_command = QHBoxLayout()
+            bottom_command.addWidget(self.btn_help)
+            bottom_command.addStretch()
+            bottom_command.addWidget(self.btn_cancel)
+            bottom_command.addWidget(self.btn_load_all_images)
+            bottom_layout.addLayout(bottom_command)
             # bottom_command.addWidget(self.btn_validate_load_all_images)
 
             layout.addLayout(top_layout)
@@ -408,6 +412,8 @@ class LoadVisNirImagesDialog(QDialog):
             self.btn_load_all_images.clicked.connect(self.on_load_all_images)
             # self.btn_validate_load_all_images.clicked.connect(self.on_validate_load_all_images)
             self.btn_help.clicked.connect(self.on_help)
+            self.btn_cancel.clicked.connect(self.close)
+            self.setStyleSheet(DIALOG_STYLE)
             self.setLayout(layout)
 
         except Exception as e:

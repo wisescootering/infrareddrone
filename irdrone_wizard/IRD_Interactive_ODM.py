@@ -583,6 +583,184 @@ def _vis_metadata_by_name(shoot_points_path: Path) -> Dict[str, Dict[str, Any]]:
     return out
 
 
+def select_mapping_pairs(
+    mission_folder: Path,
+    dt_tolerance_s: float = 0.5,
+    sample_every: int = 3,
+    overlap: Optional[float] = None,
+) -> Dict[str, Any]:
+    """The image selection of Step 6, nothing written: the eligible pairs
+    (rank-one |dt| within the tolerance, anywhere in the flight, not flagged
+    failed) thinned by ``overlap`` or one every ``sample_every``.
+
+    Returns {"sampled_pairs", "counters", "shoot_points_path"}; each pair is
+    (shoot point index, VIS, NIR match, dt)."""
+    mission_folder = Path(mission_folder)
+    aerial_photography = mission_folder / "AerialPhotography"
+    status_shoot_points_path = mission_folder / "ImgIRdrone" / "shoot_points.json"
+    shoot_points_path = (
+        status_shoot_points_path
+        if status_shoot_points_path.is_file()
+        else aerial_photography / "shoot_points.json"
+    )
+    shoot_points_data = _load_json(shoot_points_path)
+    if not isinstance(shoot_points_data, dict) or not isinstance(
+        shoot_points_data.get("shoot_points"), list
+    ):
+        raise ODMMappingError(f"{shoot_points_path} must contain a 'shoot_points' list.")
+    eligible_pairs: List[Tuple[int, Dict[str, Any], Dict[str, Any], float]] = []
+    counters = {
+        "rank_one_pairs": 0,
+        "rank_one_pairs_with_valid_dt": 0,
+        "rank_one_pairs_within_dt_tolerance": 0,
+    }
+
+    requested_pairs: List[Tuple[int, Dict[str, Any], Dict[str, Any], float]] = []
+    source_shoot_points = shoot_points_data["shoot_points"]
+    if shoot_points_path == status_shoot_points_path:
+        normalized_points = []
+        for shoot_point_index, shoot_point in enumerate(source_shoot_points):
+            if not isinstance(shoot_point, dict):
+                continue
+            failed = shoot_point.get("failed", False)
+            if isinstance(failed, bool):
+                is_failed = failed
+            elif isinstance(failed, int) and failed in (0, 1):
+                is_failed = bool(failed)
+            else:
+                raise ODMMappingError(
+                    f"Shoot point {shoot_point_index} has an invalid 'failed' status."
+                )
+            if is_failed:
+                continue
+            vis_filename = shoot_point.get("FileName")
+            dt = shoot_point.get("dt")
+            if not isinstance(vis_filename, str):
+                raise ODMMappingError(
+                    f"Shoot point {shoot_point_index} has no valid 'FileName'."
+                )
+            normalized_points.append(
+                {
+                    "VIS": {"FileName": vis_filename},
+                    "NIR": [{"rank": 1, "dt": dt}],
+                    "on_request": shoot_point.get("aligned_on_request") is True,
+                }
+            )
+        source_shoot_points = normalized_points
+
+    for shoot_point_index, shoot_point in enumerate(source_shoot_points):
+        if not isinstance(shoot_point, dict):
+            continue
+        vis_data = shoot_point.get("VIS")
+        nir_matches = shoot_point.get("NIR")
+        if not isinstance(vis_data, dict) or not isinstance(nir_matches, list):
+            continue
+        vis_filename = vis_data.get("FileName")
+        if not isinstance(vis_filename, str):
+            continue
+
+        for nir_match in nir_matches:
+            if not isinstance(nir_match, dict):
+                continue
+            rank = nir_match.get("rank")
+            if isinstance(rank, bool) or not isinstance(rank, (int, float)) or rank != 1:
+                continue
+            counters["rank_one_pairs"] += 1
+            dt = nir_match.get("dt")
+            if isinstance(dt, bool) or not isinstance(dt, (int, float)) or not math.isfinite(dt):
+                continue
+            counters["rank_one_pairs_with_valid_dt"] += 1
+            pair = (shoot_point_index, vis_data, nir_match, float(dt))
+            if shoot_point.get("on_request"):
+                requested_pairs.append(pair)     # aligned from the review: kept whatever the rules
+            absolute_dt = abs(float(dt))
+            if absolute_dt > dt_tolerance_s:
+                continue
+            counters["rank_one_pairs_within_dt_tolerance"] += 1
+            eligible_pairs.append(pair)
+
+    if overlap is None:
+        sampled_pairs = eligible_pairs[::sample_every]
+    else:
+        vis_metadata = _vis_metadata_by_name(aerial_photography / "shoot_points.json")
+        shots = [
+            best_mapping.shot_from_vis(
+                index,
+                vis_metadata.get(Path(str(vis_data["FileName"])).name.casefold(), vis_data),
+            )
+            for index, (_, vis_data, _, _) in enumerate(eligible_pairs)
+        ]
+        kept = best_mapping.select(shots, float(overlap), best_mapping.mission_fov(mission_folder))
+        sampled_pairs = [eligible_pairs[index] for index in kept]
+    if requested_pairs:
+        counters["aligned_on_request"] = len(requested_pairs)
+        sampled = {pair[0] for pair in sampled_pairs}
+        sampled_pairs = sorted(sampled_pairs + [pair for pair in requested_pairs if pair[0] not in sampled],
+                               key=lambda pair: pair[0])
+    return {
+        "sampled_pairs": sampled_pairs,
+        "counters": counters,
+        "shoot_points_path": shoot_points_path,
+    }
+
+
+def selection_settings(mission_folder: Path) -> Dict[str, Any]:
+    """Settings of the image selection the Step 6 window proposes:
+    {"dt_tolerance_s", "sample_every", "overlap" (None: one image every n)}.
+
+    Those of the last run (selection_rules of img_best_mappping.json), else
+    |dt| <= 0.5 s and one image in 3; the best mapping (on/off and overlap) of
+    Steps 2 and 4 when it was chosen after the last run, or without one."""
+    mission_folder = Path(mission_folder)
+    choice = best_mapping.load_choice(mission_folder)
+    settings = {"dt_tolerance_s": 0.5, "sample_every": 3,
+                "overlap": choice["overlap"] if choice["enabled"] else None}
+    manifest_path = mission_folder / ODM_PROJECT_NAME / MANIFEST_NAME
+    try:
+        rules = _load_json(manifest_path).get("selection_rules")
+    except (ODMMappingError, AttributeError):
+        rules = None
+    if not isinstance(rules, dict):
+        return settings
+    dt = rules.get("maximum_absolute_dt_seconds")
+    if isinstance(dt, (int, float)) and not isinstance(dt, bool) and 0.05 <= dt <= 6.0:
+        settings["dt_tolerance_s"] = float(dt)
+    every = rules.get("sample_every_nth_eligible_pair")
+    if isinstance(every, int) and not isinstance(every, bool) and every in (1, 2, 3, 4):
+        settings["sample_every"] = every
+    try:
+        choice_newer = ((mission_folder / best_mapping.CHOICE_FILE).stat().st_mtime
+                        > manifest_path.stat().st_mtime)
+    except OSError:
+        choice_newer = False
+    if not choice_newer:
+        overlap = rules.get("footprint_overlap")
+        if rules.get("selection") == "overlap" and isinstance(overlap, (int, float)):
+            settings["overlap"] = best_mapping.clamp_overlap(overlap)
+        elif rules.get("selection") == "sample_every":
+            settings["overlap"] = None
+    return settings
+
+
+def planned_mapping_numbers(mission_folder: Path) -> Set[int]:
+    """Numbers of the visible images the next run of Step 6 will map with the
+    settings its window proposes (`selection_settings`); empty when it cannot
+    be known (before Step 4)."""
+    mission_folder = Path(mission_folder)
+    if not (mission_folder / "ImgIRdrone" / "shoot_points.json").is_file():
+        return set()
+    try:
+        selection = select_mapping_pairs(mission_folder, **selection_settings(mission_folder))
+    except ODMMappingError:
+        return set()
+    out = set()
+    for _, vis_data, _, _ in selection["sampled_pairs"]:
+        m = VIS_FILENAME_PATTERN.match(Path(str(vis_data["FileName"])).name)
+        if m:
+            out.add(int(m.group(1)))
+    return out
+
+
 def build_best_mapping(
     mission_folder: Path,
     dt_tolerance_s: float = 0.5,
@@ -591,7 +769,7 @@ def build_best_mapping(
 ) -> Dict[str, Any]:
     """Build and save the selected shoot points and their matching TIFF quartets.
 
-    The eligible pairs (rank-one |dt| within the tolerance, survey of Step 2, not
+    The eligible pairs (rank-one |dt| within the tolerance, anywhere in the flight, not
     flagged failed) are thinned either by ``overlap`` (best mapping: footprint
     overlap between successive images, 0.5 to 0.95) or, when ``overlap`` is None,
     by keeping one pair every ``sample_every``."""
@@ -623,118 +801,16 @@ def build_best_mapping(
             f"{best_mapping.MAX_OVERLAP:.2f}."
         )
 
-    aerial_photography = mission_folder / "AerialPhotography"
-    status_shoot_points_path = mission_folder / "ImgIRdrone" / "shoot_points.json"
-    shoot_points_path = (
-        status_shoot_points_path
-        if status_shoot_points_path.is_file()
-        else aerial_photography / "shoot_points.json"
-    )
-    transfer_info_path = aerial_photography / "VIS" / "transfer_info_VIS_dng.json"
+    selection = select_mapping_pairs(mission_folder, dt_tolerance_s, sample_every, overlap)
+    sampled_pairs = selection["sampled_pairs"]
+    counters = selection["counters"]
+    shoot_points_path = selection["shoot_points_path"]
     mapping_folder = mission_folder / "mapping_MULTI"
     images_folder = mission_folder / "ImgIRdrone" / "imgMultispectral"
     camera_path = mapping_folder / "camera" / "camera_IRdrone.json"
-
-    shoot_points_data = _load_json(shoot_points_path)
-    if not isinstance(shoot_points_data, dict) or not isinstance(
-        shoot_points_data.get("shoot_points"), list
-    ):
-        raise ODMMappingError(f"{shoot_points_path} must contain a 'shoot_points' list.")
-    transfer_data = _load_json(transfer_info_path)
-    fly_section = transfer_data.get("fly") if isinstance(transfer_data, dict) else None
-    fly_images = fly_section.get("listCopiedImages") if isinstance(fly_section, dict) else None
-    if not isinstance(fly_images, list) or not all(isinstance(name, str) for name in fly_images):
-        raise ODMMappingError(
-            f"{transfer_info_path} must contain 'fly.listCopiedImages' as a list of filenames."
-        )
     camera_data = _load_json(camera_path)
     if not isinstance(camera_data, dict) or not camera_data:
         raise ODMMappingError(f"{camera_path} must contain a non-empty camera configuration object.")
-
-    fly_filenames: Set[str] = {Path(filename).name.casefold() for filename in fly_images}
-    eligible_pairs: List[Tuple[int, Dict[str, Any], Dict[str, Any], float]] = []
-    counters = {
-        "rank_one_pairs": 0,
-        "rank_one_pairs_with_valid_dt": 0,
-        "rank_one_pairs_within_dt_tolerance": 0,
-        "fly_pairs_within_dt_tolerance": 0,
-    }
-
-    source_shoot_points = shoot_points_data["shoot_points"]
-    if shoot_points_path == status_shoot_points_path:
-        normalized_points = []
-        for shoot_point_index, shoot_point in enumerate(source_shoot_points):
-            if not isinstance(shoot_point, dict):
-                continue
-            failed = shoot_point.get("failed", False)
-            if isinstance(failed, bool):
-                is_failed = failed
-            elif isinstance(failed, int) and failed in (0, 1):
-                is_failed = bool(failed)
-            else:
-                raise ODMMappingError(
-                    f"Shoot point {shoot_point_index} has an invalid 'failed' status."
-                )
-            if is_failed:
-                continue
-            vis_filename = shoot_point.get("FileName")
-            dt = shoot_point.get("dt")
-            if not isinstance(vis_filename, str):
-                raise ODMMappingError(
-                    f"Shoot point {shoot_point_index} has no valid 'FileName'."
-                )
-            normalized_points.append(
-                {
-                    "VIS": {"FileName": vis_filename},
-                    "NIR": [{"rank": 1, "dt": dt}],
-                }
-            )
-        source_shoot_points = normalized_points
-
-    for shoot_point_index, shoot_point in enumerate(source_shoot_points):
-        if not isinstance(shoot_point, dict):
-            continue
-        vis_data = shoot_point.get("VIS")
-        nir_matches = shoot_point.get("NIR")
-        if not isinstance(vis_data, dict) or not isinstance(nir_matches, list):
-            continue
-        vis_filename = vis_data.get("FileName")
-        if not isinstance(vis_filename, str):
-            continue
-
-        for nir_match in nir_matches:
-            if not isinstance(nir_match, dict):
-                continue
-            rank = nir_match.get("rank")
-            if isinstance(rank, bool) or not isinstance(rank, (int, float)) or rank != 1:
-                continue
-            counters["rank_one_pairs"] += 1
-            dt = nir_match.get("dt")
-            if isinstance(dt, bool) or not isinstance(dt, (int, float)) or not math.isfinite(dt):
-                continue
-            counters["rank_one_pairs_with_valid_dt"] += 1
-            absolute_dt = abs(float(dt))
-            if absolute_dt > dt_tolerance_s:
-                continue
-            counters["rank_one_pairs_within_dt_tolerance"] += 1
-            if Path(vis_filename).name.casefold() not in fly_filenames:
-                continue
-            counters["fly_pairs_within_dt_tolerance"] += 1
-            eligible_pairs.append((shoot_point_index, vis_data, nir_match, float(dt)))
-
-    if overlap is None:
-        sampled_pairs = eligible_pairs[::sample_every]
-    else:
-        vis_metadata = _vis_metadata_by_name(aerial_photography / "shoot_points.json")
-        shots = [
-            best_mapping.shot_from_vis(
-                index,
-                vis_metadata.get(Path(str(vis_data["FileName"])).name.casefold(), vis_data),
-            )
-            for index, (_, vis_data, _, _) in enumerate(eligible_pairs)
-        ]
-        kept = best_mapping.select(shots, float(overlap), best_mapping.mission_fov(mission_folder))
-        sampled_pairs = [eligible_pairs[index] for index in kept]
     shoot_point_records: List[Dict[str, Any]] = []
     image_quartets: List[Dict[str, Any]] = []
     for selection_index, (shoot_point_index, vis_data, nir_match, dt) in enumerate(sampled_pairs):
@@ -783,7 +859,6 @@ def build_best_mapping(
         "selection_rules": {
             "nir_rank": 1,
             "maximum_absolute_dt_seconds": dt_tolerance_s,
-            "vis_transfer_section": "fly.listCopiedImages",
             "selection": "overlap" if overlap is not None else "sample_every",
             "sample_every_nth_eligible_pair": sample_every if overlap is None else None,
             "footprint_overlap": overlap,
@@ -792,7 +867,6 @@ def build_best_mapping(
         },
         "source_files": {
             "shoot_points": str(shoot_points_path),
-            "vis_transfer_info": str(transfer_info_path),
             "camera_configuration": str(camera_path),
         },
         "camera_configuration": camera_data,
@@ -965,6 +1039,76 @@ def prepare_odm_input(
         ) from error
 
     return images_folder
+
+
+def previous_mapping_details(mapping_folder: Path) -> List[str]:
+    """What a previous run left in the mapping folder (empty: nothing)."""
+    if not Path(mapping_folder).is_dir():
+        return []
+    existing_odm_outputs = [
+        path.name
+        for path in Path(mapping_folder).iterdir()
+        if path.is_dir()
+        and (
+            path.name.casefold().startswith("odm_")
+            or path.name.casefold() in {"opensfm", "openmvs", "stats", "entwine"}
+        )
+    ]
+    result_folder = Path(mapping_folder) / ODM_RESULTS_FOLDER
+    existing_archives = [path.name for path in result_folder.iterdir()] if result_folder.is_dir() else []
+    details = []
+    if existing_odm_outputs:
+        details.append(f"ODM outputs: {', '.join(existing_odm_outputs)}")
+    if existing_archives:
+        details.append(f"archived results: {', '.join(existing_archives)}")
+    return details
+
+
+def _unique_folder(path: Path) -> Path:
+    candidate, k = path, 2
+    while candidate.exists():
+        candidate = path.with_name(f"{path.name}_{k}")
+        k += 1
+    return candidate
+
+
+def _run_stamp(mapping_folder: Path) -> str:
+    """Date of the run that built a mapping folder (its manifest), else of the folder."""
+    try:
+        created = _load_json(mapping_folder / MANIFEST_NAME).get("created_at_utc")
+        return datetime.fromisoformat(created).astimezone().strftime("%Y%m%d_%H%M%S")
+    except (ODMMappingError, AttributeError, TypeError, ValueError):
+        return datetime.fromtimestamp(mapping_folder.stat().st_mtime).strftime("%Y%m%d_%H%M%S")
+
+
+def set_previous_mapping_aside(mission_folder: Path) -> Optional[Path]:
+    """A map already built: its folder renamed mapping_MULTI_<date of its run>
+    (nothing deleted), a new mapping_MULTI with the same camera configuration.
+    Returns the renamed folder, None when there was nothing to keep."""
+    mapping_folder = Path(mission_folder) / ODM_PROJECT_NAME
+    if not previous_mapping_details(mapping_folder):
+        return None
+    previous = _unique_folder(mapping_folder.with_name(f"{ODM_PROJECT_NAME}_{_run_stamp(mapping_folder)}"))
+    mapping_folder.rename(previous)
+    mapping_folder.mkdir()
+    if (previous / "camera").is_dir():
+        shutil.copytree(previous / "camera", mapping_folder / "camera")
+    return previous
+
+
+def _put_previous_mapping_back(mission_folder: Path, previous: Path) -> Optional[Path]:
+    """The new run failed: its folder kept as mapping_MULTI_failed_<now> (removed
+    when the run wrote nothing), the previous map back in mapping_MULTI.
+    Returns the failed run's folder (None: removed)."""
+    mapping_folder = Path(mission_folder) / ODM_PROJECT_NAME
+    failed = _unique_folder(mapping_folder.with_name(
+        f"{ODM_PROJECT_NAME}_failed_{datetime.now().strftime('%Y%m%d_%H%M%S')}"))
+    mapping_folder.rename(failed)
+    previous.rename(mapping_folder)
+    if all(path.name == "camera" for path in failed.iterdir()):     # nothing done (Docker off…)
+        shutil.rmtree(failed)
+        return None
+    return failed
 
 
 def _check_mapping_outputs_available(mapping_folder: Path) -> None:
@@ -1237,6 +1381,26 @@ def run_odm(
 
     if not mapping_folder.is_dir():
         raise ODMMappingError(f"ODM mapping folder does not exist: {mapping_folder}")
+    previous = set_previous_mapping_aside(mission_folder)
+    if previous is not None:
+        worker_log(f"The previous map is kept in {previous}; a new one is built in {mapping_folder}.")
+    try:
+        return _run_odm_in(mission_folder, mapping_folder, manifest_path, worker_log, stage,
+                           dt_tolerance_s, sample_every, overlap)
+    except BaseException:
+        if previous is not None:
+            try:
+                failed = _put_previous_mapping_back(mission_folder, previous)
+                worker_log(f"The new map failed: the previous one is back in {mapping_folder}"
+                           + (f" (the failed run, with its log, is in {failed})." if failed else "."))
+            except OSError as error:
+                worker_log(f"The previous map could not be put back ({error}): it is in {previous}.")
+        raise
+
+
+def _run_odm_in(mission_folder, mapping_folder, manifest_path, worker_log, stage,
+                dt_tolerance_s, sample_every, overlap) -> Dict[str, Any]:
+    """run_odm in an empty mapping folder."""
     _check_mapping_outputs_available(mapping_folder)
 
     stage("Checking Docker")

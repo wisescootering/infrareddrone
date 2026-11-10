@@ -11,7 +11,6 @@ import sys
 import time
 from matplotlib.colors import LinearSegmentedColormap
 import interactive.imagepipe as ipipe
-import shutil
 import cv2
 import argparse
 import json
@@ -20,6 +19,12 @@ from pathlib import Path
 from copy import deepcopy
 from config import CROP
 from alignment_workers import available_alignment_workers, clamp_workers  # noqa: F401 (re-exported)
+from manual_redo_archives import (  # noqa: F401 (re-exported)
+    _manual_redo_result_names,
+    finalize_manual_redo_archives,
+    prepare_manual_redo_archives,
+    restore_manual_redo_originals,
+)
 from registration.pyramid_wrapper import pyramid_reduce
 try:
     conda_env_name = os.environ['CONDA_DEFAULT_ENV']
@@ -229,13 +234,16 @@ def report_stage(name):
     print(f"IRDRONE_STAGE {name}", flush=True)
 
 
-def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extension=1.4, manual=True, init_angles=[0., 0., 0.], motion_model_file = None):
+def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extension=1.4, manual=True, init_angles=[0., 0., 0.], motion_model_file = None,
+              manual_window=True):
     """
     :param vis_path: Path to visible DJI DNG image
     :param nir_path: Path to NIR SJCAM M20 RAW image
     :param cals_dict: Geometric calibration dictionary.
     :param debug_dir: traces folder
     :param extension: extend the FOV of the NIR camera compared to the DJI camera 1.4 by default, 1.75 is ~maximum
+    :param manual_window: manual mode only. False: the manual alignment was done beforehand
+        (the wizard's alignment window), ``init_angles`` are its result: no slider window.
     :return:
     """
     cals = deepcopy(cals_dict)
@@ -260,12 +268,14 @@ def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extens
     ts_end_load = time.perf_counter()
     logging.info("{:.2f}s elapsed in loading full resolution RAW".format(ts_end_load - ts_start))
     if motion_model_file is None or not osp.isfile(motion_model_file+".npy"):
-        if manual:
+        if manual and manual_window:
             report_stage("manual")
             alignment_params = user_assisted_manual_alignment(ref_full, mov_full, cals, init_angles[0], init_angles[1], init_angles[2])
             report_stage("compute")
             yaw_main, pitch_main, roll_main = alignment_params["yaw"], alignment_params["pitch"], alignment_params["roll"]
         else:
+            if manual:
+                report_stage("compute")
             yaw_main, pitch_main, roll_main = init_angles
         mov_wr_fullres, coarse_rotation_estimation = coarse_alignment(
             ref_full, mov_full, cals,
@@ -361,109 +371,6 @@ def save_readable_motion_model(motion_model, path):
         json.dump(readable, file, indent=2)
 
 
-def _manual_redo_result_names(vis_pth):
-    image_number = Path(vis_pth).stem.removeprefix("VIS_")
-    names = [
-        f"VIS_{image_number}.jpg",
-        f"VIS_{image_number}_motion_model.npy",
-        f"VIS_{image_number}_motion_model.json",
-    ]
-    for trace in (VIR, NIR, NDVI):
-        names.extend(
-            f"{trace.upper()}_{image_number}_{mode}.jpg"
-            for mode in ("local", "global")
-        )
-    names.extend(
-        f"IRD_{image_number}_{band}.tif"
-        for band in range(1, 5)
-    )
-    names.append(f"IRD_{image_number}_1.exif")
-    return names
-
-
-def _move_to_archive(source, archive_dir):
-    source = Path(source)
-    destination = archive_dir / source.name
-    index = 1
-    while destination.exists():
-        destination = archive_dir / f"{source.stem}_{index}{source.suffix}"
-        index += 1
-    shutil.move(str(source), str(destination))
-    return destination
-
-
-def prepare_manual_redo_archives(vis_pth, out_dir, multispectral_folder=None):
-    """Preserve existing REDO outputs and clear stale diagnostics before rerunning."""
-    vis_pth = Path(vis_pth)
-    out_dir = Path(out_dir)
-    debug_dir = out_dir / f"{vis_pth.stem}_align_traces_manual"
-    tech_dir = debug_dir / "Tech"
-    original_dir = debug_dir / "original"
-    debug_dir.mkdir(parents=True, exist_ok=True)
-    tech_dir.mkdir(exist_ok=True)
-    original_dir.mkdir(exist_ok=True)
-
-    for existing in debug_dir.iterdir():
-        if existing not in (tech_dir, original_dir):
-            _move_to_archive(existing, tech_dir)
-
-    image_number = vis_pth.stem.removeprefix("VIS_")
-    original_names = _manual_redo_result_names(vis_pth)
-    original_names.remove(f"VIS_{image_number}_motion_model.npy")
-    archived_exif = None
-    for name in original_names:
-        if name.startswith("IRD_"):
-            if multispectral_folder is None:
-                continue
-            source_dir = Path(multispectral_folder)
-        else:
-            source_dir = out_dir
-        source = source_dir / name
-        if source.is_file():
-            archived = _move_to_archive(source, original_dir)
-            if name.endswith("_1.exif"):
-                archived_exif = archived
-
-    motion_model = out_dir / f"VIS_{image_number}_motion_model.npy"
-    if motion_model.is_file():
-        _move_to_archive(motion_model, original_dir)
-    return debug_dir, original_dir, archived_exif
-
-
-def finalize_manual_redo_archives(
-    vis_pth, out_dir, multispectral_folder, debug_dir, archived_exif
-):
-    """Copy the regenerated deliverables into the trace folder and file diagnostics."""
-    vis_pth = Path(vis_pth)
-    out_dir = Path(out_dir)
-    debug_dir = Path(debug_dir)
-    image_number = vis_pth.stem.removeprefix("VIS_")
-
-    if archived_exif is not None and multispectral_folder is not None:
-        sidecar = Path(multispectral_folder) / f"IRD_{image_number}_1.exif"
-        shutil.copy2(archived_exif, sidecar)
-
-    result_names = _manual_redo_result_names(vis_pth)
-    result_paths = [
-        (Path(multispectral_folder) if name.startswith("IRD_") else out_dir) / name
-        for name in result_names
-        if not name.startswith("IRD_") or multispectral_folder is not None
-    ]
-
-    archived_names = set(result_names)
-    tech_dir = debug_dir / "Tech"
-    try:
-        for result in result_paths:
-            if not result.is_file():
-                raise FileNotFoundError(f"Expected REDO output was not created: {result}")
-            shutil.copy2(result, debug_dir / result.name)
-    finally:
-        for item in debug_dir.iterdir():
-            if item.name in ("Tech", "original") or item.name in archived_names:
-                continue
-            _move_to_archive(item, tech_dir)
-
-
 # Recovery script written next to each aligned pair, read back by the GUI "Redo".
 # Windows: batch file (conda activate + python). Elsewhere: shell script calling
 # the current interpreter directly (works with conda, venv or uv alike).
@@ -524,9 +431,11 @@ def _process_raw_pairs_serial(
         alignment_modes=("local", "global"),
         redo_nir_candidates=None,
         progress_callback=None,
+        manual_window=True,
     ):
     """
     listPts [optional]: contains all metadata & theoretical angles
+    manual_window: see align_raw
     """
     # if debug_folder is None:
     #     debug_folder = osp.dirname(sync_pairs[0][0])
@@ -601,21 +510,24 @@ def _process_raw_pairs_serial(
 
         gps_vis = pr.Image(vis_pth).gps
         try:
+            if listPts is None:
+                # No point metadata (e.g. a bare pair): keep the EXIF altitude, nothing to substitute
+                logging.info(f"No point metadata: keep the EXIF altitude {gps_vis['altitude']} m")
             #option_alti = 'sealevel'  #   geo, ground, sealevel, takeoff
 
-            if option_alti == 'geo':
+            elif option_alti == 'geo':
                 # Substitutes of drone altitude to the takeoff by altitude of ground to sea level
                 gps_vis['altitude'] = listPts[index_pair].altGeo
                 logging.info(f"Use altitude of ground to sea level : {gps_vis['altitude']} m")
-            if option_alti == 'ground':
+            elif option_alti == 'ground':
                 #Substitutes of drone altitude to the takeoff by drone altitude to ground.
                 gps_vis['altitude'] = listPts[index_pair].altGround
                 logging.info(f"Use altitude of drone to ground  : {gps_vis['altitude']} m")
-            if option_alti == 'sealevel':
+            elif option_alti == 'sealevel':
                 #Substitutes of drone altitude to the takeoff by drone altitude to ground.
                 gps_vis['altitude'] = listPts[index_pair].altGeo + listPts[index_pair].altGround
                 logging.info(f"Use altitude of drone to sea level  : {gps_vis['altitude']} m")
-            if option_alti == 'takeoff':
+            elif option_alti == 'takeoff':
                 # altitude of droe to the takeoff.
                 logging.info(f"Use altitude of drone to takeoff  : {gps_vis['altitude']} m")
                 gps_vis['altitude'] = listPts[index_pair].altTakeOff
@@ -628,7 +540,8 @@ def _process_raw_pairs_serial(
             manual=manual,
             extension=extension,
             init_angles=[yaw_init, pitch_init, roll_init],
-            motion_model_file=motion_model_file
+            motion_model_file=motion_model_file,
+            manual_window=manual_window,
         )
         
         # AGGREGATED RESULTS!
@@ -763,6 +676,7 @@ def _process_single_pair_task(task):
         skip=task["skip"],
         alignment_modes=task["alignment_modes"],
         redo_nir_candidates=[task["redo_nir_candidates"]],
+        manual_window=task.get("manual_window", True),
     )
     updated_point = point_list[0] if point_list is not None else None
     return task["index"], task["pair"][0], motion_models, updated_point
@@ -788,8 +702,11 @@ def process_raw_pairs(
     redo_nir_candidates=None,
     progress_callback=None,
     max_workers=1,
+    manual_window=True,
 ):
-    """Orchestrate independent shoot-point alignment in worker processes."""
+    """Orchestrate independent shoot-point alignment in worker processes.
+
+    manual_window: see align_raw."""
     if not sync_pairs:
         return []
     if isinstance(max_workers, bool) or not isinstance(max_workers, int) or max_workers < 1:
@@ -816,6 +733,7 @@ def process_raw_pairs(
             alignment_modes=alignment_modes,
             redo_nir_candidates=redo_nir_candidates,
             progress_callback=progress_callback,
+            manual_window=manual_window,
         )
 
     if out_dir is None:
@@ -847,6 +765,7 @@ def process_raw_pairs(
                 "debug_folder": debug_folder,
                 "out_dir": out_dir,
                 "manual": manual,
+                "manual_window": manual_window,
                 "debug": debug,
                 "crop": crop,
                 "option_alti": option_alti,
@@ -921,7 +840,15 @@ if __name__ == "__main__":
         help='Alignment modes for generated NIR, VIR, and NDVI images.',
     )
     parser.add_argument("--angles", nargs='+', type=float, help="yaw,pitch,roll")
+    parser.add_argument(
+        "--manual-angles", nargs=3, type=float, metavar=("YAW", "PITCH", "ROLL"),
+        help="manual alignment already done (the wizard's alignment window): "
+             "start from these angles, no slider window (implies --manual)",
+    )
     args = parser.parse_args()
+    if args.manual_angles is not None:
+        args.manual = True
+        args.angles = args.manual_angles
     extension = 1.6
     if args.images is None:
         import utils.utils_IRdrone as IRd
@@ -941,29 +868,40 @@ if __name__ == "__main__":
     else:
         out_dir = osp.dirname(im_pairs[0][0])
     if args.redo:
-        debug_dir, _, archived_exif = prepare_manual_redo_archives(
+        redo_started = time.time()
+        debug_dir, original_dir, archived_exif = prepare_manual_redo_archives(
             im_pairs[0][0],
             out_dir,
             multispectral_folder=args.multispectral_folder,
         )
-    process_raw_pairs(
-        im_pairs,
-        debug_folder=out_dir,
-        out_dir=out_dir,
-        manual=args.manual,
-        debug=args.debug,
-        extension=extension,
-        crop=CROP,
-        multispectral_folder=args.multispectral_folder,
-        angles=args.angles,
-        traces=args.traces,
-        alignment_modes=tuple(args.alignment_modes),
-    )
-    if args.redo:
-        finalize_manual_redo_archives(
-            im_pairs[0][0],
-            out_dir,
-            args.multispectral_folder,
-            debug_dir,
-            archived_exif,
+    try:
+        process_raw_pairs(
+            im_pairs,
+            debug_folder=out_dir,
+            out_dir=out_dir,
+            manual=args.manual,
+            debug=args.debug,
+            extension=extension,
+            crop=CROP,
+            multispectral_folder=args.multispectral_folder,
+            angles=args.angles,
+            traces=args.traces,
+            alignment_modes=tuple(args.alignment_modes),
+            manual_window=args.manual_angles is None,
         )
+        if args.redo:
+            finalize_manual_redo_archives(
+                im_pairs[0][0],
+                out_dir,
+                args.multispectral_folder,
+                debug_dir,
+                archived_exif,
+            )
+    except BaseException:
+        if args.redo:
+            for path in restore_manual_redo_originals(
+                im_pairs[0][0], out_dir, args.multispectral_folder, original_dir,
+                since=redo_started,
+            ):
+                print(f"Redo failed: previous {path.name} put back")
+        raise

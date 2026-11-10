@@ -1,4 +1,4 @@
-"""Review of the aligned survey images (end of Step 4): loading the shoot
+"""Review of the aligned survey images (Step 5): loading the shoot
 points, measuring the residual misalignment, flagging and the saved state."""
 import json
 import sys
@@ -69,7 +69,7 @@ class StatusTests(unittest.TestCase):
     def test_flag_wins_then_missing_then_checked(self):
         self.assertEqual(self.point(shift=1.0, failed=True).status, R.STATUS_FLAGGED)
         self.assertEqual(self.point(vir_image=None).status, R.STATUS_MISSING)
-        self.assertEqual(self.point(shift=12.0, checked=True).status, R.STATUS_CHECKED)
+        self.assertEqual(self.point(shift=12.0, checked=True).status, R.STATUS_OK)
 
 
 class MissionTests(unittest.TestCase):
@@ -104,6 +104,19 @@ class MissionTests(unittest.TestCase):
         self.assertEqual((p.time, p.altitude, p.nir_name), (270.0, 115.0, "NIR_0100.dng"))
         self.assertIsNotNone(p.redo_script)
         self.assertEqual(review.points[2].status, R.STATUS_MISSING)
+
+    def test_load_undoes_an_interrupted_redo(self):
+        import manual_redo_archives as A
+        out = self.mission / "ImgIRdrone"
+        vis = self.mission / "AerialPhotography" / "VIS" / "VIS_0137.dng"
+        before = (out / "VIR_0137_local.jpg").read_bytes()
+        A.prepare_manual_redo_archives(vis, out, out / "imgMultispectral")
+        (out / "VIR_0137_local.jpg").write_bytes(b"cut")         # killed while writing
+        review = R.load_review(self.mission)
+        self.assertEqual(review.recovered, ["VIS_0137"])
+        self.assertEqual((out / "VIR_0137_local.jpg").read_bytes(), before)
+        self.assertEqual(review.points[0].status, R.STATUS_UNKNOWN)   # an image again, to measure
+        self.assertEqual(R.load_review(self.mission).recovered, [])
 
     def test_no_step4_output_yet(self):
         with self.assertRaises(FileNotFoundError):
@@ -149,6 +162,11 @@ if __name__ == "__main__":
     unittest.main()
 
 
+def RVbox():
+    import IRD_Interactive_review as RV
+    return RV.QMessageBox
+
+
 class ReviewDialogTests(MissionTests):
     """The window, offscreen (no slider window is started: the runner is mocked)."""
 
@@ -166,11 +184,46 @@ class ReviewDialogTests(MissionTests):
         self.app.processEvents()
         return d
 
+    def test_opens_in_overlay_framed_in_the_status_colour(self):
+        import IRD_Interactive_review as Rv
+        d = self.dialog()
+        self.assertEqual(d.view.mode, "overlay")
+        self.assertTrue(d.mode_group.button([m[0] for m in Rv.MODES].index("overlay")).isChecked())
+        pt = d.current()
+        self.assertEqual(d.view.status_color.name(), Rv.STATUS_COLORS[pt.status].name())
+        d.toggle_flag()                                    # the frame follows the new status at once
+        self.assertEqual(d.view.status_color.name(), Rv.STATUS_COLORS[R.STATUS_FLAGGED].name())
+        d.done(0)
+
     def test_opens_on_the_point_to_review_and_measures_in_background(self):
         d = self.dialog()
         self.assertEqual(d.current().number, 140)          # probably misaligned first
         self.assertEqual(d.current().status, R.STATUS_SUSPICIOUS)
         self.assertTrue((self.mission / "ImgIRdrone" / "review.json").is_file())
+        d.done(0)
+
+    def test_is_step5_and_continues_with_mapping(self):
+        import IRD_Interactive_progress as Progress
+        d = self.dialog()
+        self.assertTrue(d.windowTitle().startswith("Step 5 – Review the aligned images"))
+        self.assertEqual(d.btn_continue.text(), "Continue with mapping  ▶")
+        self.assertFalse(d.continue_chosen)
+        d.show()
+        d.btn_continue.click()
+        self.assertFalse(d.isVisible())
+        self.assertTrue(d.continue_chosen)
+        self.assertIn(5, Progress.done_steps(self.mission))
+
+    def test_continue_refused_while_realignments_run(self):
+        from unittest import mock
+        d = self.dialog()
+        d.show()
+        with mock.patch.object(d, "redo_runner_busy", return_value=True), \
+                mock.patch.object(RVbox(), "information") as told:
+            d.btn_continue.click()
+        told.assert_called_once()
+        self.assertTrue(d.isVisible())
+        self.assertFalse(d.continue_chosen)
         d.done(0)
 
     def test_flag_key_writes_the_inventory(self):
@@ -181,28 +234,150 @@ class ReviewDialogTests(MissionTests):
         self.assertIn("Realign 1 flagged", d.btn_redo.text())
         d.done(0)
 
-    def test_looks_good_marks_checked_and_moves_on(self):
+    def test_flag_the_probably_misaligned_only_when_there_are_some(self):
         d = self.dialog()
-        d.select(0)
-        d.looks_good()
-        self.assertTrue(R.load_review(self.mission).by_number(137).checked)
-        self.assertEqual(d.current().number, 140)
+        self.assertTrue(d.btn_flag_suspicious.isVisibleTo(d))
+        self.assertIn("Flag the 1 probably misaligned", d.btn_flag_suspicious.text())
+        d.btn_flag_suspicious.click()                  # 140 flagged: none left to flag
+        self.assertFalse(d.btn_flag_suspicious.isVisibleTo(d))
+        self.assertIn("out of the map", d.btn_flag.text())
+        self.assertIn("out of the map", d.chips[R.STATUS_FLAGGED].text())
         d.done(0)
 
-    def test_redo_result_is_accepted_in_the_window(self):
-        from unittest import mock
+    def test_no_looks_good_button_nor_space_key(self):
+        from PyQt6.QtGui import QShortcut
         d = self.dialog()
-        d.toggle_flag()                                   # 140 flagged
-        with mock.patch.object(d.redo_runner, "resume") as resume:
-            vir = self.mission / "ImgIRdrone" / "VIR_0140_local.jpg"
-            d._on_redo_done(140, "VIS_0140", str(vir), "")
-            self.assertTrue(d.banner.isVisibleTo(d))
-            d._verdict(True)
-            resume.assert_called_once()
+        self.assertFalse(hasattr(d, "btn_good"))
+        self.assertNotIn("Space", [sc.key().toString() for sc in d.findChildren(QShortcut)])
+        d.done(0)
+
+    def _realigned(self, d, number=140):
+        d.select([p.number for p in d.review.points].index(number))
+        d.toggle_flag()                                   # flagged
+        vir = self.mission / "ImgIRdrone" / f"VIR_{number:04d}_local.jpg"
+        d._on_redo_done(number, f"VIS_{number:04d}", str(vir), "")
+
+    def test_redo_result_is_confirmed_in_the_window(self):
+        d = self.dialog()
+        self._realigned(d)
+        self.assertEqual(d.current().status, R.STATUS_REALIGNED)
+        self.assertTrue(d.banner.isVisibleTo(d))
+        self.assertTrue(d.btn_accept_redo.isVisibleTo(d))
+        self.assertIn("◆ 1 to confirm", d.chips[R.STATUS_REALIGNED].text())
+        self.assertFalse(d.btn_redo.isEnabled())          # its verdict first
+        # still flagged on disk (Step 6 skips it) and remembered as realigned
+        self.assertEqual(R.load_review(self.mission).by_number(140).status, R.STATUS_REALIGNED)
+        d._verdict(True)
         point = R.load_review(self.mission).by_number(140)
         self.assertFalse(point.failed)
         self.assertTrue(point.checked)
+        self.assertFalse(d.banner.isVisibleTo(d))
         d.scan.wait(10000)
+        d.done(0)
+
+    def test_rejected_redo_stays_flagged(self):
+        d = self.dialog()
+        self._realigned(d)
+        d._verdict(False)
+        point = R.load_review(self.mission).by_number(140)
+        self.assertEqual(point.status, R.STATUS_FLAGGED)
+        self.assertIn("Realign 1 flagged", d.btn_redo.text())
+        d.scan.wait(10000)
+        d.done(0)
+
+    def test_all_realigned_confirmed_at_once(self):
+        d = self.dialog()
+        self._realigned(d, 137)
+        self._realigned(d, 140)
+        self.assertTrue(d.btn_accept_all.isVisibleTo(d))
+        self.assertIn("All 2", d.btn_accept_all.text())
+        d._accept_all()
+        review = R.load_review(self.mission)
+        self.assertEqual([review.by_number(n).status for n in (137, 140)], [R.STATUS_OK] * 2)
+        d.scan.wait(10000)
+        d.done(0)
+
+    def test_placed_points_are_computed_in_the_background(self):
+        """The alignment window returns the angles; the runner gets the REDO commands
+        without the slider window, and the review stays usable."""
+        from unittest import mock
+        import IRD_Interactive_manual_align as M
+        d = self.dialog()
+        d.toggle_flag()                                   # 140 flagged
+        args = ["--images", "/m/VIS_0140.dng", "/m/NIR_0101.dng", "--manual", "--angles", "1.0", "2.0", "0.0",
+                "--redo"]
+        item = M.AlignItem(140, "VIS_0140", args, Path("/m/VIS_0140.dng"), Path("/m/NIR_0101.dng"),
+                           (1.0, 2.0, 0.0), (1.5, 2.25, 0.1), M.PLACED)
+
+        class FakeWindow:
+            def __init__(self, *a, **k):
+                pass
+
+            def exec(self):
+                from PyQt6.QtWidgets import QDialog
+                return QDialog.DialogCode.Accepted
+
+            def placed(self):
+                return [item]
+        with mock.patch.object(M, "ManualAlignDialog", FakeWindow), \
+                mock.patch.object(d.redo_runner, "_start") as start:
+            import IRD_Interactive_4 as S4
+            with mock.patch.object(S4, "read_redo_command", return_value=args):
+                d._redo_flagged()
+            (number, stem, arguments), _nir = start.call_args[0]
+            self.assertEqual((number, stem), (140, "VIS_0140"))
+            self.assertNotIn("--manual", arguments)
+            self.assertEqual(arguments[-4:], ["--manual-angles", "1.500", "2.250", "0.100"])
+            # computing: the point cannot be flagged / unflagged, the others can
+            d.redo_runner.jobs[object()] = {"number": 140, "stem": "VIS_0140", "nir": _nir,
+                                            "started": 0.0, "partial": "", "stage": "compute"}
+            d._update_banner()
+            self.assertTrue(d.redo_box.isVisibleTo(d))
+            self.assertIn("0 of 1 done", d.banner_text.text())
+            d.select(1)
+            d.toggle_flag()
+            self.assertTrue(d.current().failed)
+            d.select(0)
+            d.toggle_flag()
+            self.assertTrue(d.current().failed)
+            d.redo_runner.jobs.clear()
+            d.redo_runner._queue.clear()
+        d._redo_clock.stop()
+        d.done(0)
+
+
+    def test_a_placed_point_computes_while_the_window_is_open(self):
+        from unittest import mock
+        import IRD_Interactive_manual_align as M
+        d = self.dialog()
+        d.toggle_flag()                                   # 140 flagged
+        args = ["--images", "/m/VIS_0140.dng", "/m/NIR_0101.dng", "--manual", "--angles", "1.0", "2.0", "0.0",
+                "--redo"]
+        item = M.AlignItem(140, "VIS_0140", args, Path("/m/VIS_0140.dng"), Path("/m/NIR_0101.dng"),
+                           (1.0, 2.0, 0.0), (1.5, 2.25, 0.1), M.PLACED)
+        seen = {}
+
+        class FakeWindow:
+            def __init__(self, *a, send_now=None, **k):
+                self.send_now = send_now
+
+            def exec(self):
+                from PyQt6.QtWidgets import QDialog
+                self.send_now(item)                       # "Placed, next"
+                seen["started"] = start.called            # before the window is closed
+                return QDialog.DialogCode.Rejected        # closed: the point still computes
+
+            def placed(self):
+                return []
+        with mock.patch.object(M, "ManualAlignDialog", FakeWindow), \
+                mock.patch.object(d.redo_runner, "_start") as start:
+            import IRD_Interactive_4 as S4
+            with mock.patch.object(S4, "read_redo_command", return_value=args):
+                d._redo_flagged()
+            self.assertTrue(seen["started"])
+            start.assert_called_once()
+            d.redo_runner._queue.clear()
+        d._redo_clock.stop()
         d.done(0)
 
 
@@ -262,6 +437,35 @@ class ReviewMapTests(ReviewDialogTests):
         self.assertIs(d.view_stack.currentWidget(), d.view)
         d.done(0)
 
+    def test_a_click_outside_the_points_leaves_the_map_without_selection(self):
+        d = self.dialog()
+        d.set_mode("map")
+        d.select(0)
+        self.assertIsNotNone(d.map_model.current)
+        d.big_map.clicked_empty.emit()                    # trajectory alone: no footprint, no image
+        self.assertIsNone(d.map_model.current)
+        d.big_map.grab()                                   # paints without a current point
+        self.assertEqual(d.current().number, 137)          # the review keeps its point
+        d.step(1)                                          # a move selects again
+        self.assertEqual(d.map_model.numbers[d.map_model.current], d.current().number)
+        d.done(0)
+
+    def test_footprint_in_the_status_colour_legend_of_what_is_there(self):
+        d = self.dialog()
+        import IRD_Interactive_review as Rv
+        self.assertTrue(d.map_model.cursor_in_point_color)
+        d.select(0)
+        pt = d.current()
+        i = d.map_model.index_of(pt.number)
+        self.assertEqual(d.map_model.color_of(i).name(), Rv.STATUS_COLORS[pt.status].name())
+        texts = [t for _c, t, _n in d.legend_counts()]
+        counts = d.review.counts()
+        self.assertEqual(texts, [Rv.STATUS_TEXT[s] for s in Rv.LEGEND_ORDER if counts.get(s)])   # present only
+        self.assertTrue(all(n > 0 for _c, _t, n in d.legend_counts()))
+        self.assertIn(f"<b>{counts[pt.status]}</b>", d.legend.text())
+        self.assertFalse(d.map_model.minor(i))                    # an aligned point: normal dot
+        d.done(0)
+
     def test_without_positions_the_map_is_off(self):
         path = self.mission / "AerialPhotography" / "shoot_points.json"
         data = json.loads(path.read_text())
@@ -276,32 +480,10 @@ class ReviewMapTests(ReviewDialogTests):
 
 
 class RedoProgressTests(ReviewDialogTests):
-    """While a redo runs, the review shows its stage and an activity bar."""
+    """While the alignments compute, the review shows their progress."""
 
-    def test_stages_follow_the_redo_process(self):
-        d = self.dialog()
-        d.toggle_flag()
-        d.redo_runner.total, d.redo_runner.rank = 2, 1
-        d._on_redo_started(140, "VIS_0140")
-        self.assertTrue(d.redo_box.isVisibleTo(d))
-        self.assertIn("Point 1 of 2", d.banner_text.text())
-        d._on_redo_stage(140, "VIS_0140", "manual")
-        self.assertIn("slider window", d.banner_text.text())
-        d._on_redo_stage(140, "VIS_0140", "compute")
-        self.assertEqual(d.redo_stages.states[:3], ["done", "done", "running"])
-        self.assertIn("computing", d.banner_text.text())
-        from unittest import mock
-        with mock.patch.object(d.redo_runner, "resume"):
-            vir = self.mission / "ImgIRdrone" / "VIR_0140_local.jpg"
-            d._on_redo_done(140, "VIS_0140", str(vir), "")
-        self.assertFalse(d.redo_box.isVisibleTo(d))       # now the verdict question
-        self.assertTrue(d.btn_accept_redo.isVisibleTo(d))
-        d.scan.wait(10000)
-        d.done(0)
-
-
-    def test_window_keeps_its_size_during_a_redo(self):
-        """The redo banner (stages, then the verdict) takes its room from the image:
+    def test_window_keeps_its_size_while_computing(self):
+        """The banner (progress, then the verdict) takes its room from the image:
         the window neither grows nor goes past the screen."""
         d = self.dialog()
         d.show()
@@ -310,36 +492,254 @@ class RedoProgressTests(ReviewDialogTests):
         screen = d.screen().availableGeometry()
         self.assertLessEqual(d.minimumSizeHint().height(), screen.height())
         d.toggle_flag()
-        d.redo_runner.total, d.redo_runner.rank = 3, 2
-        d._on_redo_started(140, "VIS_0140_with_a_rather_long_image_name_from_the_camera")
+        runner = d.redo_runner
+        runner.total, runner.finished = 3, 1
+        runner.jobs[object()] = {"number": 140, "started": 0.0, "partial": "", "nir": "a", "stage": "compute",
+                                 "stem": "VIS_0140_with_a_rather_long_image_name_from_the_camera"}
+        runner._queue.append((137, "VIS_0137", []))
+        d._update_banner()
         self.app.processEvents()
         self.assertEqual(d.size(), size)
-        from unittest import mock
-        with mock.patch.object(d.redo_runner, "resume"):
-            d._on_redo_done(140, "VIS_0140", str(self.mission / "ImgIRdrone" / "VIR_0140_local.jpg"), "")
+        self.assertIn("1 of 3 done", d.banner_text.text())
+        self.assertTrue(d.btn_stop_redo.isVisibleTo(d))
+        self.assertEqual(d.redo_bar.value(), 1 * 3 + 1)        # one done, one at its 2nd stage
+        runner.jobs.clear()
+        runner._queue.clear()
+        d._on_redo_done(140, "VIS_0140", str(self.mission / "ImgIRdrone" / "VIR_0140_local.jpg"), "")
         self.app.processEvents()
         self.assertEqual(d.size(), size)
+        self.assertFalse(d.redo_box.isVisibleTo(d))
+        self.assertTrue(d.btn_accept_redo.isVisibleTo(d))
         self.assertLessEqual(d.minimumSizeHint().height(), screen.height())
         d.scan.wait(10000)
         d.done(0)
 
 
-class RedoRunnerOutputTests(unittest.TestCase):
-    def test_stage_lines_become_signals_not_log(self):
+class RedoRunnerTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
         import os
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         from PyQt6.QtWidgets import QApplication
         QApplication.instance() or QApplication([])
+
+    def runner(self, workers=2, memory_per_worker_gb=0):
         import IRD_Interactive_4 as S4
-        r = S4.RedoRunner(Path(tempfile.mkdtemp()))
-        r.current = (140, "VIS_0140")
+        return S4.RedoRunner(Path(tempfile.mkdtemp()), workers=workers,
+                             memory_per_worker_gb=memory_per_worker_gb)
+
+    def test_fewer_redos_at_once_than_requested_when_the_ram_is_short(self):
+        from unittest import mock
+        import alignment_workers
+        r = self.runner(workers=3, memory_per_worker_gb=8)
+        logs = []
+        r.output.connect(logs.append)
+        memory = mock.Mock(available=17 * 2**30)                 # room for 2
+        with mock.patch.object(alignment_workers.psutil, "virtual_memory", return_value=memory), \
+                mock.patch.object(r, "_start", side_effect=lambda task, nir: r.jobs.__setitem__(
+                    object(), {"number": task[0], "stem": task[1], "nir": nir})):
+            r.add([(n, f"VIS_{n:04d}", ["--images", f"/v/VIS_{n}.dng", f"/n/NIR_{n}.dng"])
+                   for n in (1, 2, 3)])
+        self.assertEqual((r.workers, len(r.jobs)), (2, 2))
+        self.assertIn("2 at a time", "\n".join(logs))
+
+    def test_a_killed_redo_puts_the_previous_alignment_back(self):
+        from unittest import mock
+        from PyQt6.QtCore import QProcess
+        import manual_redo_archives as A
+        root = Path(tempfile.mkdtemp())
+        output, multispectral = root / "ImgIRdrone", root / "ImgIRdrone" / "imgMultispectral"
+        multispectral.mkdir(parents=True)
+        vis = root / "VIS_0105.dng"
+        for name in A._manual_redo_result_names(vis):
+            ((multispectral if name.startswith("IRD_") else output) / name).write_bytes(b"old")
+        A.prepare_manual_redo_archives(vis, output, multispectral)
+        (multispectral / "IRD_0105_3.tif").write_bytes(b"cut")      # killed while writing
+        r = self.runner()
+        process = mock.Mock()
+        r.jobs[process] = {"number": 105, "stem": "VIS_0105", "nir": "", "started": 0.0,
+                           "partial": "", "stage": "write",
+                           "arguments": ["--images", str(vis), "/n/NIR.dng", "--outdir", str(output),
+                                         "--multispectral-folder", str(multispectral), "--redo"]}
+        process.readAllStandardOutput.return_value = b""
+        done = []
+        r.point_done.connect(lambda n, s, image, error: done.append(error))
+        r._on_finished(process, 9, QProcess.ExitStatus.CrashExit)
+        self.assertIn("out of memory", done[0])
+        self.assertIn("put back", done[0])
+        for name in A._manual_redo_result_names(vis):
+            self.assertEqual(((multispectral if name.startswith("IRD_") else output) / name).read_bytes(),
+                             b"old", name)
+
+    def test_stage_lines_become_signals_not_log(self):
+        r = self.runner()
+        process = object()
+        r.jobs[process] = {"number": 140, "stem": "VIS_0140", "partial": "", "stage": "load"}
         stages, logs = [], []
         r.stage.connect(lambda n, s, k: stages.append(k))
         r.output.connect(logs.append)
-        chunks = [b"loading\nIRDRONE_STA", b"GE manual\n2D translation\nIRDRONE_STAGE compute\n"]
+        chunks = [b"loading\nIRDRONE_STA", b"GE compute\n2D translation\nIRDRONE_STAGE write\n"]
         from unittest import mock
-        with mock.patch.object(r.process, "readAllStandardOutput", side_effect=chunks):
-            r._read_output()
-            r._read_output()
-        self.assertEqual(stages, ["manual", "compute"])          # a marker split across two reads
+        fake = mock.Mock()
+        fake.readAllStandardOutput.side_effect = chunks
+        r.jobs[fake] = r.jobs.pop(process)
+        r._read_output(fake)
+        r._read_output(fake)
+        self.assertEqual(stages, ["compute", "write"])          # a marker split across two reads
         self.assertEqual("\n".join(logs), "loading\n2D translation")
+        self.assertEqual(r.jobs[fake]["stage"], "write")
+
+    def test_runs_up_to_workers_never_two_on_the_same_infrared(self):
+        from unittest import mock
+        r = self.runner(workers=2)
+        started = []
+
+        def fake_start(task, nir):
+            started.append(task[0])
+            r.jobs[object()] = {"number": task[0], "stem": task[1], "nir": nir, "started": 0.0,
+                                "partial": "", "stage": "load"}
+        tasks = [(n, f"VIS_{n:04d}", ["--images", f"/v/VIS_{n}.dng", f"/n/NIR_{nir}.dng"])
+                 for n, nir in ((1, 10), (2, 10), (3, 11), (4, 12))]
+        with mock.patch.object(r, "_start", side_effect=fake_start):
+            r.add(tasks)
+            self.assertEqual(started, [1, 3])                     # 2 waits: same infrared as 1
+            self.assertEqual(r.numbers(), {1, 2, 3, 4})
+            r.add(tasks[:1])                                      # already there: ignored
+            self.assertEqual(r.total, 4)
+            done = []
+            r.point_done.connect(lambda n, *_: done.append(n))
+            first = next(k for k, j in r.jobs.items() if j["number"] == 1)
+            process = mock.Mock()
+            r.jobs[process] = r.jobs.pop(first)
+            r._done(process, "", "boom")
+            self.assertEqual(started, [1, 3, 2])
+            self.assertEqual((done, r.finished), ([1], 1))
+            ended = []
+            r.all_done.connect(lambda: ended.append(True))
+            r.stop()                                              # 4 never starts
+            self.assertEqual(r.total, 3)
+            self.assertEqual(ended, [])                           # 3 and 2 still running
+            for key in list(r.jobs):
+                process = mock.Mock()
+                r.jobs[process] = r.jobs.pop(key)
+                r._done(process, "", "")
+            self.assertEqual(ended, [True])
+            self.assertFalse(r.busy())
+
+
+FAKE_STEP4 = '''
+import json, shutil, sys
+from pathlib import Path
+mission, numbers = Path(sys.argv[1]), [int(n) for n in sys.argv[2:]]
+out = mission / "ImgIRdrone"
+inv = json.loads((out / "shoot_points.json").read_text())
+for n in numbers:
+    if n == 139:
+        continue                                   # the alignment of 139 fails
+    shutil.copy(out / "VIS_0137.jpg", out / f"VIS_{n:04d}.jpg")
+    shutil.copy(out / "VIR_0137_local.jpg", out / f"VIR_{n:04d}_local.jpg")
+    print(f"STEP4_PROGRESS 1 1 VIS_{n:04d}.dng 1.0 0.0", flush=True)
+    inv["shoot_points"].append({"FileName": f"VIS_{n:04d}.dng", "dt": 0.2, "failed": False})
+(out / "shoot_points.json").write_text(json.dumps(inv))
+'''
+
+
+class NotAlignedPointsTests(ReviewMapTests):
+    """Grey points of the map (left out by Step 4): right-click, aligned in the
+    background, then in the time line."""
+
+    def setUp(self):
+        super().setUp()
+        path = self.mission / "AerialPhotography" / "shoot_points.json"
+        data = json.loads(path.read_text())
+        by_number = {int(sp["VIS"]["FileName"][4:8]): sp for sp in data["shoot_points"]}
+        for number, dt in ((138, 0.3), (139, 0.4), (141, 8.0)):   # 141: no infrared close in time
+            by_number[number] = {"VIS": {"FileName": f"VIS_{number:04d}.dng", "RelativeTimeLine": 2.0 * number,
+                                         "DroneAltitudeGround": 115.0, "DroneLatitude": 45.1695,
+                                         "DroneLongitude": 3.4 + 0.0001 * (number - 137),
+                                         "GimbalYawDegree": "-78.9"},
+                                 "NIR": [{"rank": 1, "FileName": f"NIR_{number:04d}.dng", "dt": dt}]}
+        data["shoot_points"] = [by_number[n] for n in sorted(by_number)]
+        path.write_text(json.dumps(data))
+
+    def test_no_menu_on_an_aligned_point(self):
+        d = self.dialog()
+        self.assertEqual(sorted(R.not_aligned_pairs(d.review)), [138, 139, 141])
+        self.assertIsNone(d.map_menu(137))
+        d.done(0)
+
+    def test_menu_of_a_grey_point_aligns_it_alone(self):
+        d = self.dialog()
+        self.assertEqual(d.map_menu_content(138),
+                         ("VIS_0138", "Not aligned by Step 4 · infrared +0.30 s apart", "Align this point", True))
+        menu = d.map_menu(138)
+        actions = [a for a in menu.actions() if a.text()]
+        self.assertEqual([a.text() for a in actions], ["Align this point"])     # one point, never a batch
+        title, _detail, text, enabled = d.map_menu_content(141)                # too far in time: disabled
+        self.assertFalse(enabled)
+        self.assertIn("Cannot be aligned", text)
+        d.done(0)
+
+    def test_aligned_points_appear_in_the_time_line(self):
+        from unittest import mock
+        import IRD_Interactive_4 as Step4
+        script = Path(tempfile.mkdtemp()) / "fake_step4.py"
+        script.write_text(FAKE_STEP4)
+        d = self.dialog()
+        d.select(1)                                               # VIS_0140
+        warnings = []
+        with mock.patch.object(Step4, "align_points_arguments",
+                               lambda mission, numbers: [str(script), str(mission), *map(str, sorted(numbers))]), \
+                mock.patch.object(Rv_QMessageBox(), "warning", lambda *a: warnings.append(a[2])):
+            d.align_points([138])
+            d.align_points([139])                                 # asked while 138 runs: queued
+            self.assertEqual((d.point_aligner.running, d.point_aligner.waiting), ({138}, {139}))
+            self.assertIn("queued, aligned next: <b>VIS_0139</b>", d.banner_text.text())
+            self.assertIn("Queued", d.map_menu_content(139)[2])
+            self.assertEqual(d.map_menu_content(138)[2], "Being aligned…")
+            self.assertEqual(d._aligning(), {138, 139})
+            i = d.map_model.index_of(138)
+            self.assertEqual(d.map_model.color_of(i).name(), "#e8a33d")      # being aligned
+            self.assertFalse(d.map_model.minor(i))
+            self.assertTrue(d.banner.isVisibleTo(d))
+            d.align_points([138])                                 # already asked: ignored
+            ended = []
+            d.point_aligner.run_done.connect(lambda *a: ended.append(a))
+            for _ in range(400):
+                if len(ended) == 2:
+                    break
+                d.point_aligner.process and d.point_aligner.process.waitForFinished(100)
+                self.app.processEvents()
+        self.assertEqual([e[0] for e in ended], [{138}, {139}])         # one run after the other
+        self.assertEqual([p.number for p in d.review.points], [137, 138, 140, 143])
+        self.assertEqual(d.current().number, 138)                # shown at once (the user had not moved)
+        self.assertFalse(d.point_aligner.busy())
+        self.assertIn("VIS_0139", warnings[0])                    # its alignment failed: said
+        inventory = json.loads((self.mission / "ImgIRdrone" / "shoot_points.json").read_text())
+        requested = [p["FileName"] for p in inventory["shoot_points"] if p.get(R.ALIGNED_ON_REQUEST)]
+        self.assertEqual(requested, ["VIS_0138.dng"])             # Step 6 maps it whatever its selection
+        self.assertEqual(d.map_model.color_of(i).name(), d._map_color(138).name())
+        d.scan.wait(10000)
+        d.done(0)
+
+    def test_the_command_aligns_only_the_points_asked_like_the_first_run(self):
+        import IRD_Interactive_4 as Step4
+        out = self.mission / "ImgIRdrone"
+        (out / "NDVI_0137_local.jpg").write_bytes(b"x")
+        args = Step4.align_points_arguments(self.mission, {139, 138})
+        k = args.index("--image-numbers")
+        self.assertEqual(args[k + 1:k + 3], ["138", "139"])
+        self.assertEqual(args[args.index("--alignment-modes") + 1], "local")
+        self.assertIn("--ndvi", args)
+        self.assertNotIn("--nir", args)
+        self.assertNotIn("--best-mapping-overlap", args)
+
+
+def Rv_QMessageBox():
+    import IRD_Interactive_review as Rv
+    return Rv.QMessageBox
+
+
+for _name in [n for n in dir(ReviewMapTests) if n.startswith("test_")]:
+    if _name not in NotAlignedPointsTests.__dict__:
+        setattr(NotAlignedPointsTests, _name, None)    # run once, in ReviewMapTests

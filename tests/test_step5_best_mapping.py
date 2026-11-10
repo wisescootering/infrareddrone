@@ -37,6 +37,50 @@ class ODMSelectionDialogTest(unittest.TestCase):
             self.assertIsNone(d.selected_overlap())
             self.assertIn("one image every 3", d.description())
 
+    def test_settings_of_the_last_run_are_proposed(self):
+        import json
+        with tempfile.TemporaryDirectory() as m:
+            best_mapping.save_choice(Path(m), enabled=True, overlap=0.85)
+            os.utime(Path(m) / best_mapping.CHOICE_FILE, (1, 1))
+            (Path(m) / "mapping_MULTI").mkdir()
+            (Path(m) / "mapping_MULTI" / "img_best_mappping.json").write_text(json.dumps({"selection_rules": {
+                "maximum_absolute_dt_seconds": 0.4, "selection": "sample_every",
+                "sample_every_nth_eligible_pair": 2, "footprint_overlap": None}}))
+            d = S5.ODMSelectionDialog(mission_folder=Path(m))
+            self.assertTrue(d.sample_radio.isChecked())
+            self.assertEqual((d.dt_tolerance.value(), d.sample_every.value()), (0.4, 2))
+            self.assertEqual(d.overlap.value(), 85)
+
+    def test_all_the_aligned_images_ignores_the_criteria(self):
+        import json
+        d = S5.ODMSelectionDialog()
+        d.all_radio.setChecked(True)
+        self.assertFalse(d.dt_tolerance.isEnabled() or d.overlap.isEnabled() or d.sample_every.isEnabled())
+        self.assertEqual((d.selected_dt_tolerance(), d.selected_sample_every(), d.selected_overlap()),
+                         (6.0, 1, None))
+        self.assertEqual(d.short_description(), "all the aligned images")
+        d.overlap_radio.setChecked(True)                      # back: the criteria again
+        self.assertTrue(d.dt_tolerance.isEnabled() and d.overlap.isEnabled())
+        self.assertEqual(d.selected_sample_every(), d.sample_every.value())
+        with tempfile.TemporaryDirectory() as m:             # proposed again after such a run
+            best_mapping.save_choice(Path(m), enabled=True)
+            os.utime(Path(m) / best_mapping.CHOICE_FILE, (1, 1))
+            (Path(m) / "mapping_MULTI").mkdir()
+            (Path(m) / "mapping_MULTI" / "img_best_mappping.json").write_text(json.dumps({"selection_rules": {
+                "maximum_absolute_dt_seconds": 6.0, "selection": "sample_every",
+                "sample_every_nth_eligible_pair": 1, "footprint_overlap": None}}))
+            d = S5.ODMSelectionDialog(mission_folder=Path(m))
+            self.assertTrue(d.all_radio.isChecked())
+            self.assertEqual(d.selected_dt_tolerance(), 6.0)
+
+    def test_the_window_says_a_map_built_is_kept(self):
+        with tempfile.TemporaryDirectory() as m:
+            self.assertFalse(hasattr(S5.ODMSelectionDialog(mission_folder=Path(m)), "previous_map_note"))
+            (Path(m) / "mapping_MULTI" / "mapping_result").mkdir(parents=True)
+            (Path(m) / "mapping_MULTI" / "mapping_result" / "ortho.tif").write_bytes(b"x")
+            d = S5.ODMSelectionDialog(mission_folder=Path(m))
+            self.assertIn("kept, renamed mapping_MULTI_<date", d.previous_map_note.text())
+
     def test_sample_every_can_still_be_chosen(self):
         d = S5.ODMSelectionDialog()
         d.sample_radio.setChecked(True)

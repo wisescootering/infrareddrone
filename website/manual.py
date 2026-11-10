@@ -123,6 +123,8 @@ def latex_body(images: Images) -> str:
     body = text[text.index(r"\begin{document}") + len(r"\begin{document}"):text.index(r"\end{document}")]
     body = re.sub(r"(?<!\\)%.*", "", body)                                  # comments
     body = re.sub(r"\\begin\{titlepage\}.*?\\end\{titlepage\}", "", body, flags=re.S)
+    body = re.sub(r"\\legacybegin\{([^}]*)\}", r"\n\nLEGACYBEGIN \1\n\n", body)   # collapsible legacy sections
+    body = body.replace(r"\legacyend", "\n\nLEGACYEND\n\n")
     body = body.replace(r"\tableofcontents", "").replace(r"\appendix", "")
 
     def picture(name, width="0.8"):
@@ -156,6 +158,7 @@ def latex_body(images: Images) -> str:
     body = re.sub(r"\\og(\{\s*\})?\s*", "« ", body)
     body = re.sub(r"\s*\\fg(\{\s*\})?", " »", body)
     body = body.replace(r"\oe ", "œ").replace(r"\oe{}", "œ").replace(r"\oe", "œ")
+    body = re.sub(r"\\textdegree(\{\})?", "°", body)     # pandoc drops it
     return "\\documentclass{report}\n\\usepackage{amsmath,amssymb}\n\\begin{document}\n" + body + "\n\\end{document}\n"
 
 
@@ -186,6 +189,9 @@ def to_mkdocs(md: str) -> str:
         return f"{section or ''}[{number}](#{anchor})"
 
     md = REF.sub(ref, md)
+    # legacy sections: collapsed (md_in_html), opened by website/javascripts/legacy.js when a link points inside
+    md = re.sub(r"^LEGACYBEGIN (.*)$", r'<details class="legacy" markdown="1">\n<summary>\1</summary>', md, flags=re.M)
+    md = md.replace("LEGACYEND", "</details>")
 
     def fig(m):
         caption, src, anchor = m.group(1), m.group(2), m.group(3)
@@ -219,7 +225,7 @@ def to_mkdocs(md: str) -> str:
     header = (f"# User manual\n\n"
               f"!!! info \"PDF version\"\n    The same manual as a PDF, rebuilt on every change: "
               f"[irdrone_help_en.pdf]({PDF_URL}) (in French: [irdrone_help.pdf]({PDF_URL_FR})). "
-              f"In the software, right-click a button to open this page at the section of that button.\n\n")
+              f"In the software, press F1 over a button to open this page at the section of that button.\n\n")
     return header + md
 
 

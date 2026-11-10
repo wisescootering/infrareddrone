@@ -122,5 +122,36 @@ class ReadRedoCommandTests(unittest.TestCase):
                 step4.read_redo_command(batch)
 
 
+class ManualRedoArgumentsTests(unittest.TestCase):
+    ARGS = ["--images", "/m/VIS_0011.dng", "/m/NIR_0200.dng", "--manual", "--outdir", "/m/Out",
+            "--debug", "--angles", "1.000", "-2.000", "3.000", "--traces", "vis", "nir", "--redo"]
+
+    def test_pair_and_initial_angles(self):
+        vis, nir, angles = step4.redo_pair(self.ARGS)
+        self.assertEqual((vis.name, nir.name), ("VIS_0011.dng", "NIR_0200.dng"))
+        self.assertEqual(angles, (1.0, -2.0, 3.0))
+        self.assertIsNone(step4.redo_pair(["--images", "a", "b"])[2])
+        with self.assertRaises(ValueError):
+            step4.redo_pair(["--images", "a"])
+
+    def test_aligned_by_hand_no_slider_window(self):
+        arguments = step4.manual_redo_arguments(self.ARGS, (0.5, -1.25, 0.0))
+        self.assertNotIn("--manual", arguments)
+        self.assertNotIn("--angles", arguments)
+        self.assertEqual(arguments[-4:], ["--manual-angles", "0.500", "-1.250", "0.000"])
+        self.assertEqual(arguments[:3], self.ARGS[:3])
+        self.assertIn("--redo", arguments)
+        self.assertEqual(arguments[arguments.index("--traces") + 1:][:2], ["vis", "nir"])
+        again = step4.manual_redo_arguments(arguments, (1, 2, 3))     # realigned once more
+        self.assertEqual(again.count("--manual-angles"), 1)
+        self.assertEqual(again[-3:], ["1.000", "2.000", "3.000"])
+
+    def test_cli_accepts_manual_angles(self):
+        """automatic_registration.py parses --manual-angles (no window: implies --manual)."""
+        text = (ROOT / "automatic_registration.py").read_text(encoding="utf-8")
+        self.assertIn('"--manual-angles", nargs=3', text)
+        self.assertIn("manual_window=args.manual_angles is None", text)
+
+
 if __name__ == "__main__":
     unittest.main()

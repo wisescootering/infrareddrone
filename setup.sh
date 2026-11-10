@@ -109,7 +109,7 @@ if [ -z "$(find_tool SJCONVERTERPATH "$sjcam_bundled" sjcam_raw2dng)" ]; then
     echo "         https://github.com/yanburman/sjcam_raw2dng and set SJCONVERTERPATH."
 fi
 if ! command -v docker >/dev/null 2>&1; then
-    echo "NOTE: docker not found: ODM mapping (Step 5) needs it."
+    echo "NOTE: docker not found: ODM mapping (Step 6) needs it."
 fi
 
 echo

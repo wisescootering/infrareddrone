@@ -237,7 +237,6 @@ class BestMappingTests(unittest.TestCase):
 
             self.assertEqual(manifest["counts"]["rank_one_pairs"], 8)
             self.assertEqual(manifest["counts"]["rank_one_pairs_within_dt_tolerance"], 7)
-            self.assertEqual(manifest["counts"]["fly_pairs_within_dt_tolerance"], 7)
             self.assertEqual(manifest["counts"]["sampled_shoot_points"], 3)
             self.assertEqual(manifest["counts"]["ready_for_odm"], 3)
             resolution = manifest["orthophoto_resolution_estimate"]
@@ -427,6 +426,62 @@ class BestMappingTests(unittest.TestCase):
                 ["VIS_0121.DNG", "VIS_0125.DNG", "VIS_0128.DNG"],
             )
 
+    def test_images_outside_the_survey_of_step2_are_mapped_too(self):
+        """No survey-phase filter: the aligned images of the whole flight are
+        eligible (and the Step 2 list is not needed any more)."""
+        with tempfile.TemporaryDirectory() as temporary:
+            mission = Path(temporary)
+            self._create_mission(mission)
+            (mission / "AerialPhotography" / "VIS" / "transfer_info_VIS_dng.json").unlink()
+
+            manifest = build_best_mapping(mission, sample_every=1)
+
+            self.assertEqual(
+                [point["VIS"]["FileName"] for point in manifest["shoot_points"]],
+                ["VIS_0120.DNG", "VIS_0121.DNG", "VIS_0124.DNG", "VIS_0125.DNG",
+                 "VIS_0126.DNG", "VIS_0127.DNG", "VIS_0128.DNG"],
+            )
+
+    def test_points_aligned_from_the_review_are_always_mapped(self):
+        """Aligned on request in the review: kept whatever the time tolerance
+        and the thinning, unless flagged; the other images selected as before."""
+        with tempfile.TemporaryDirectory() as temporary:
+            mission = Path(temporary)
+            self._create_mission(mission)
+            inventory_path = mission / "ImgIRdrone" / "shoot_points.json"
+            points = []
+            for index, dt in ((120, 0.5), (121, -0.2), (122, 0.1), (123, 0.5001), (124, -0.5),
+                              (125, 0.2), (126, 0.4), (127, -0.49), (128, 0.1)):
+                point = {"FileName": f"VIS_{index:04d}.DNG", "dt": dt, "failed": index == 124}
+                if index in (122, 123, 124):          # 123: beyond 0.5 s; 124: flagged since
+                    point["aligned_on_request"] = True
+                points.append(point)
+            inventory_path.write_text(json.dumps({"shoot_points": points}), encoding="utf-8")
+
+            manifest = build_best_mapping(mission)
+
+            self.assertEqual(
+                [point["VIS"]["FileName"] for point in manifest["shoot_points"]],
+                ["VIS_0120.DNG", "VIS_0122.DNG", "VIS_0123.DNG", "VIS_0125.DNG", "VIS_0128.DNG"],
+            )
+
+    def test_all_the_aligned_images_maps_every_point_not_flagged(self):
+        """Step 5 "All the aligned images" (|dt| up to 6 s, one image in 1)."""
+        with tempfile.TemporaryDirectory() as temporary:
+            mission = Path(temporary)
+            self._create_mission(mission)
+            (mission / "ImgIRdrone" / "shoot_points.json").write_text(json.dumps({"shoot_points": [
+                {"FileName": f"VIS_{index:04d}.DNG", "dt": dt, "failed": index == 125}
+                for index, dt in ((120, 0.5), (121, -2.2), (122, 0.1), (123, 5.9), (125, 0.2), (128, 0.1))]}),
+                encoding="utf-8")
+
+            manifest = build_best_mapping(mission, dt_tolerance_s=6.0, sample_every=1)
+
+            self.assertEqual(
+                [point["VIS"]["FileName"] for point in manifest["shoot_points"]],
+                ["VIS_0120.DNG", "VIS_0121.DNG", "VIS_0122.DNG", "VIS_0123.DNG", "VIS_0128.DNG"],
+            )
+
     def test_required_mission_metadata_is_reported(self):
         with tempfile.TemporaryDirectory() as temporary:
             with self.assertRaises(ODMMappingError):
@@ -613,6 +668,69 @@ class BestMappingTests(unittest.TestCase):
                 previous_result.read_text(encoding="utf-8"),
                 "previous output",
             )
+
+    def _built_map(self, mission):
+        mapping_folder = mission / "mapping_MULTI"
+        (mapping_folder / "mapping_result").mkdir(parents=True)
+        (mapping_folder / "mapping_result" / "ortho.tif").write_text("previous map", encoding="utf-8")
+        (mapping_folder / "img_best_mappping.json").write_text(
+            json.dumps({"created_at_utc": "2026-11-10T16:17:00+00:00"}), encoding="utf-8")
+        return mapping_folder
+
+    def test_a_map_already_built_is_set_aside_not_overwritten(self):
+        import IRD_Interactive_ODM as ODM
+        with tempfile.TemporaryDirectory() as temporary:
+            mission = Path(temporary)
+            self._create_mission(mission)
+            mapping_folder = self._built_map(mission)
+            self.assertIsNone(ODM.set_previous_mapping_aside(mission / "elsewhere"))
+            previous = ODM.set_previous_mapping_aside(mission)
+            self.assertTrue(previous.name.startswith("mapping_MULTI_20261110_"))
+            self.assertEqual((previous / "mapping_result" / "ortho.tif").read_text(encoding="utf-8"),
+                             "previous map")
+            # a new, empty mapping folder with the same camera configuration
+            self.assertEqual(sorted(p.name for p in mapping_folder.iterdir()), ["camera"])
+            self.assertTrue((mapping_folder / "camera" / "camera_IRdrone.json").is_file())
+            self.assertEqual(ODM.previous_mapping_details(mapping_folder), [])
+            _check_mapping_outputs_available(mapping_folder)          # a new run can start
+            self._built_map(mission)                                  # a second time: another name
+            self.assertNotEqual(ODM.set_previous_mapping_aside(mission), previous)
+
+    def test_a_failed_run_puts_the_previous_map_back(self):
+        import IRD_Interactive_ODM as ODM
+        with tempfile.TemporaryDirectory() as temporary:
+            mission = Path(temporary)
+            self._create_mission(mission)
+            self._built_map(mission)
+            log = []
+
+            def failing_run(_mission, mapping_folder, *args):
+                (mapping_folder / "odm_run.log").write_text("boom", encoding="utf-8")
+                raise ODM.ODMMappingError("ODM exited with code 1")
+
+            with patch.object(ODM, "_run_odm_in", side_effect=failing_run):
+                with self.assertRaisesRegex(ODMMappingError, "code 1"):
+                    ODM.run_odm(mission, log_callback=log.append)
+            self.assertEqual((mission / "mapping_MULTI" / "mapping_result" / "ortho.tif").read_text(
+                encoding="utf-8"), "previous map")
+            failed = [p for p in mission.iterdir() if p.name.startswith("mapping_MULTI_failed_")]
+            self.assertEqual(len(failed), 1)
+            self.assertTrue((failed[0] / "odm_run.log").is_file())          # its log kept
+            self.assertFalse(any(p.name.startswith("mapping_MULTI_2026") for p in mission.iterdir()))
+            self.assertTrue(any("previous one is back" in line for line in log))
+
+    def test_a_run_that_wrote_nothing_leaves_no_failed_folder(self):
+        import IRD_Interactive_ODM as ODM
+        with tempfile.TemporaryDirectory() as temporary:
+            mission = Path(temporary)
+            self._create_mission(mission)
+            self._built_map(mission)
+            with patch.object(ODM, "_run_odm_in", side_effect=ODM.DockerUnavailableError("off")):
+                with self.assertRaises(ODM.DockerUnavailableError):
+                    ODM.run_odm(mission)
+            self.assertEqual(sorted(p.name for p in mission.iterdir() if p.name.startswith("mapping")),
+                             ["mapping_MULTI"])
+            self.assertTrue((mission / "mapping_MULTI" / "mapping_result" / "ortho.tif").is_file())
 
     def test_style_shots_geojson_adds_shot_number_and_qgis_style(self):
         import xml.etree.ElementTree as ElementTree

@@ -1,5 +1,5 @@
-"""Step 3 opened from the flight timeline: the stages follow each other and
-Step 4 is never started on its own: the user opens it."""
+"""Step 3: the stages follow each other once the user clicks "Synchronise the
+cameras" (never on its own), and Step 4 is never started on its own either."""
 import os
 import sys
 import tempfile
@@ -26,18 +26,38 @@ class ChainedStep3Test(unittest.TestCase):
         (self.mission / "FlightAnalytics").mkdir(parents=True)
 
     def dialog(self, auto_run):
-        with mock.patch.object(S3.DialogSynchroAruco, "on_run_aruco"):
-            return S3.DialogSynchroAruco({"folderMissionPath": str(self.mission)}, auto_run=auto_run)
+        # patched for the whole test: auto_run starts the detection a moment later
+        patcher = mock.patch.object(S3.DialogSynchroAruco, "on_run_aruco")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        d = S3.DialogSynchroAruco({"folderMissionPath": str(self.mission)}, auto_run=auto_run)
+        self.addCleanup(d._start_timer.stop)         # never started after the test
+        return d
 
     def test_chained_run_hides_the_stage_buttons(self):
         d = self.dialog(True)
         self.assertFalse(d.btn_run_aruco.isVisibleTo(d))
         self.assertTrue(d.btn_manual.isVisibleTo(d))
 
-    def test_classic_run_shows_them(self):
+    def test_opened_waits_for_the_main_action(self):
+        with mock.patch.object(S3.DialogSynchroAruco, "on_run_aruco") as run:
+            d = S3.DialogSynchroAruco({"folderMissionPath": str(self.mission)})
+            APP.processEvents()
+            run.assert_not_called()                          # nothing starts on its own
+            self.assertTrue(d.btn_sync_run.isVisibleTo(d))
+            self.assertTrue(d.btn_sync_run.isEnabled())
+            self.assertFalse(d.btn_run_aruco.isVisibleTo(d))
+            d.btn_sync_run.click()
+            run.assert_called_once()
+        self.assertTrue(d.auto_run)                          # the stages are chained
+        self.assertFalse(d.btn_sync_run.isVisibleTo(d))
+
+    def test_manual_mode_shows_the_stage_buttons(self):
         d = self.dialog(False)
+        d._set_manual_mode(True)
         self.assertTrue(d.btn_image_pairing.isVisibleTo(d))
         self.assertFalse(d.btn_manual.isVisibleTo(d))
+        self.assertFalse(d.btn_sync_run.isVisibleTo(d))
 
     def measured(self, d):
         with mock.patch.object(d, "_save_and_show_alignment_plots"):
@@ -140,6 +160,7 @@ class Step3ReopenedTest(unittest.TestCase):
         self.assertEqual(d.time_shift, -30.99)
         self.assertTrue(d.btn_before.isVisibleTo(d))
         self.assertTrue(d.btn_continue.isVisibleTo(d))
+        self.assertEqual(d.btn_sync_run.text(), "Synchronise again")
         d.btn_before.click()
         self.assertEqual(d.btn_before.text(), "After alignment")
 

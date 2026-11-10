@@ -203,7 +203,7 @@ def compute_theoretical_ir2vi_angles(
 
 
 def write_multispectral_exif(image_path: Path, vis_data: dict) -> Path:
-    """Write the Phase 5 companion metadata beside a multispectral band TIFF."""
+    """Write the Phase 6 companion metadata beside a multispectral band TIFF."""
     metadata = read_exiftool_json(EXIFTOOLPATH, image_path)
     for key in GEOREF_METADATA_KEYS:
         if key in vis_data:
@@ -332,7 +332,7 @@ def build_available_shoot_points(
 def write_available_shoot_points(
     pairing_data: dict, multispectral_folder: Path, output_path: Path
 ) -> Path:
-    """Write the Step 4 output inventory used by Step 5."""
+    """Write the Step 4 output inventory used by Step 6."""
     output_path = Path(output_path)
     previous_inventory = None
     if output_path.is_file():
@@ -466,8 +466,11 @@ def run_postprocessing(
     progress_callback=None,
     max_workers: int = None,
     best_mapping_overlap: float = None,
+    image_numbers=None,
 ):
     """``max_workers``: alignment worker processes; ``None`` picks it from cores and RAM.
+    ``image_numbers``: align only these VIS image numbers (the review aligns a point
+    Step 4 left out); the shoot points already aligned stay in the inventory.
     ``best_mapping_overlap``: align only the images the map needs (footprint overlap
     0.5 to 0.95 between successive ones); ``None`` or 0: every synchronized image."""
     if max_workers is None:
@@ -480,6 +483,12 @@ def run_postprocessing(
     paired_points = filter_shoot_points_by_image_number(
         paired_points, start_image_number, end_image_number
     )
+    if image_numbers:
+        wanted = {int(n) for n in image_numbers}
+        paired_points = [
+            point for point in paired_points
+            if int(VIS_FILENAME_PATTERN.fullmatch(Path(point["VIS"]["FileName"]).name).group(1)) in wanted
+        ]
     selected_point_count = len(paired_points)
     flight_points = paired_points
     paired_points = filter_shoot_points_by_time_difference(
@@ -721,6 +730,14 @@ if __name__ == "__main__":
         ),
     )
     parser.add_argument(
+        "--image-numbers",
+        dest="image_numbers",
+        type=int,
+        nargs="+",
+        default=None,
+        help="Align only these VIS image numbers (others already aligned are kept).",
+    )
+    parser.add_argument(
         "--workers",
         dest="workers",
         type=int,
@@ -785,4 +802,5 @@ if __name__ == "__main__":
         progress_callback=report_progress if args.progress else None,
         max_workers=worker_count_setting,
         best_mapping_overlap=args.best_mapping_overlap or None,
+        image_numbers=args.image_numbers,
     )

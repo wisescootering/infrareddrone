@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Flight map widget: background map (aerial photos, optional, online), the
-orthophoto of Step 5 when it is built, the flight and the ground footprint of
+orthophoto of Step 6 when it is built, the flight and the ground footprint of
 the current image.
 
     wheel        zoom around the mouse
@@ -9,11 +9,11 @@ the current image.
     click        pick the nearest shoot point (signal `picked`)
     Layers ▾     background source, orthophoto natural / infrared colours
 
-While the orthophoto is shown, a model built with `mapped` (the main window)
-draws the sparse trajectory of the mapping: only the shoot points selected
-for it (one image every n), the whole flight faint behind. Before the
-mapping, the images kept by the best mapping (Steps 2 and 4) are drawn the
-same way, with their ground footprints. Layers ▾ shows every image again.
+A model built with `mapped` (the main window) draws the sparse trajectory
+of the map: only the shoot points it uses (the mapping done, else the ones
+the next run of Step 6 will map), the whole flight faint behind, the flagged
+ones in red; with their ground footprints while no orthophoto is shown.
+Layers ▾ shows every image again.
 
 Several views can share one `MapModel` (mini map and large map of the review).
 """
@@ -32,6 +32,7 @@ import flight_map as F
 import IRD_Interactive_look as Look
 
 SETTINGS_KEY = "flight_map/"
+FLAGGED_COLOR = QColor("#B03A2E")       # flagged in the review: left out of the map (as in the review)
 
 
 # ---------------------------------------------------------------------------
@@ -96,8 +97,16 @@ class TileCache(QObject):
         self.changed.emit()
 
     def stop(self):
+        """Drop the queued requests, wait for the running ones, free the pixmaps.
+        Called while the application still exists: a QPixmap destroyed after it (module
+        globals are freed at interpreter exit) crashes the process when it closes."""
+        global _TILES
         self.pool.clear()
         self.pool.waitForDone(2000)
+        self.tiles.clear()
+        self.pending.clear()
+        if _TILES is self:
+            _TILES = None
 
 
 _TILES: Optional[TileCache] = None
@@ -110,7 +119,7 @@ def tile_cache() -> TileCache:
         from PyQt6.QtWidgets import QApplication
         app = QApplication.instance()
         if app is not None:       # pending requests are dropped when the application quits
-            app.aboutToQuit.connect(_TILES.pool.clear)
+            app.aboutToQuit.connect(_TILES.stop)
     return _TILES
 
 
@@ -123,7 +132,7 @@ class MapModel(QObject):
 
     def __init__(self, points: List[F.MapPoint], fov=None, ortho: Optional[F.OrthoPreview] = None,
                  color_of: Optional[Callable[[int], QColor]] = None, path: Optional[List[F.MapPoint]] = None,
-                 mapped=None, mapped_by: str = "mapping", parent=None):
+                 mapped=None, mapped_by: str = "mapping", flagged=None, built=None, parent=None):
         super().__init__(parent)
         self.points = points
         # the whole flight (line), the points are the shoot points on it
@@ -131,10 +140,16 @@ class MapModel(QObject):
         self.numbers = [p.number for p in points]
         self._index = {n: i for i, n in enumerate(self.numbers)}
         self.xy = [p.xy for p in points]
-        # indices of the shoot points used by the mapping of Step 5
+        # indices of the shoot points used by the mapping of Step 6
         self.mapped = [i for i, n in enumerate(self.numbers) if n in mapped] if mapped else []
-        # "mapping" (Step 5 done) or "best mapping" (planned in Steps 2 and 4)
+        # "mapping" (Step 6 done), "next mapping" (Step 4 done: the images the
+        # next run of Step 6 will map) or "best mapping" (planned in Steps 2 and 4)
         self.mapped_by = mapped_by
+        # numbers of the images of the map built (Step 6 done), when the points
+        # drawn are the ones of the next run ("next mapping")
+        self.built = set(built or ())
+        # indices of the shoot points flagged in the review: left out of the map
+        self.flagged = [i for i, n in enumerate(self.numbers) if n in flagged] if flagged else []
         self.show_mapped = True             # Layers ▾ "Only the images of the mapping"
         self.fov = fov or F.field_of_view()
         self.color_of = color_of
@@ -154,6 +169,10 @@ class MapModel(QObject):
         self.ortho_mode = str(s.value(SETTINGS_KEY + "ortho", "natural") or "natural")
         self.show_image = str(s.value(SETTINGS_KEY + "image", "true")) != "false"
         self.image_of: Optional[Callable[[int], Optional[QPixmap]]] = None    # number -> image (thumbnail)
+        # the current footprint in the colour of its point (review: its status), not the cursor orange
+        self.cursor_in_point_color = False
+        # minor(index): a secondary point (review: not aligned), a small dot until zoomed in
+        self.minor: Optional[Callable[[int], bool]] = None
         # images kept for the map (best mapping): footprints drawn, bigger dots
         self.selection: List[int] = []
         self._selection_set = set()
@@ -196,15 +215,17 @@ class MapModel(QObject):
     @property
     def planned(self) -> bool:
         """The mapped points are the best mapping planned (no mapping yet)."""
-        return self.mapped_by == "best mapping"
+        return self.mapped_by in ("best mapping", "next mapping")
 
     @property
     def sparse(self) -> bool:
-        """Only the shoot points of the mapping: while the orthophoto is shown,
-        or before the mapping when the best mapping is chosen."""
-        if not (self.mapped and self.show_mapped):
-            return False
-        return self.planned or (bool(self.ortho_images) and self.ortho_mode in self.ortho_images)
+        """Only the shoot points of the map (and the flagged ones), orthophoto
+        shown or not; Layers ▾ shows every image again."""
+        return bool((self.mapped or self.flagged) and self.show_mapped)
+
+    @property
+    def ortho_shown(self) -> bool:
+        return bool(self.ortho_images) and self.ortho_mode in self.ortho_images
 
     def set_show_mapped(self, on: bool):
         self.show_mapped = bool(on)
@@ -215,11 +236,11 @@ class MapModel(QObject):
         Step 2, or the best mapping planned on the main window map."""
         if self.selection:
             return self.selection
-        return self.mapped if self.sparse and self.planned else []
+        return self.mapped if self.sparse and not self.ortho_shown else []
 
     def visible(self) -> List[int]:
-        """Indices of the points drawn (and picked)."""
-        return self.mapped if self.sparse else list(range(len(self.xy)))
+        """Indices of the points drawn (and picked): the flagged ones too."""
+        return sorted(set(self.mapped) | set(self.flagged)) if self.sparse else list(range(len(self.xy)))
 
     def footprint(self, index: int) -> Optional[List[Tuple[float, float]]]:
         """Footprint corners in mercator metres (None without height or yaw)."""
@@ -292,6 +313,7 @@ class FlightMapView(QWidget):
     picked = pyqtSignal(int)
     hovered = pyqtSignal(object)          # index or None
     clicked_empty = pyqtSignal()          # click outside any point (the mini map expands)
+    menu_requested = pyqtSignal(int, object)   # right-click on a point: index, global position (QPoint)
 
     def __init__(self, model: MapModel, compact: bool = False, parent=None):
         super().__init__(parent)
@@ -321,11 +343,11 @@ class FlightMapView(QWidget):
         self.btn_fit.setStyleSheet(self.btn_layers.styleSheet())
         self.btn_fit.clicked.connect(self.fit)
         self.btn_fit.setVisible(not compact)
-        try:   # right-click: the map section of the manual (a help, never a blocker)
+        try:   # F1: the map section of the manual (a help, never a blocker)
             import IRD_Interactive_help as Help
             Help.attach_help(self.btn_layers, "btn:home_map",
                              "Background (IGN aerial photos, Esri, OpenStreetMap or none, from the internet) "
-                             "and orthophoto of Step 5 (natural or false colours).", parent=self)
+                             "and orthophoto of Step 6 (natural or false colours).", parent=self)
             Help.attach_help(self.btn_fit, "btn:home_map", "Show the whole flight (or double-click the map).",
                              parent=self)
         except Exception as e:
@@ -342,7 +364,7 @@ class FlightMapView(QWidget):
             act.triggered.connect(lambda _=False, k=key: self.model.set_source(k))
             group.addAction(act)
             menu.addAction(act)
-        menu.addSection("Orthophoto (Step 5)")
+        menu.addSection("Orthophoto (Step 6)")
         group2 = QActionGroup(menu)
         for key, name in (("natural", "Natural colours"), ("infrared", "Infrared false colours"),
                           ("hidden", "Hidden")):
@@ -355,8 +377,9 @@ class FlightMapView(QWidget):
             menu.addAction(act)
         if self.model.mapped:
             menu.addSection("Trajectory")
-            self.act_mapped = QAction("Only the images of the best mapping" if self.model.planned
-                                      else "Only the images of the mapping (orthophoto shown)",
+            self.act_mapped = QAction("Only the images of the best mapping"
+                                      if self.model.mapped_by == "best mapping" and not self.model.flagged
+                                      else "Only the images of the map (and the flagged ones)",
                                       menu, checkable=True)
             self.act_mapped.setChecked(self.model.show_mapped)
             self.act_mapped.triggered.connect(self.model.set_show_mapped)
@@ -500,7 +523,7 @@ class FlightMapView(QWidget):
             # the whole flight, faint; the trajectory of the mapping on top
             p.setPen(QPen(QColor(255, 255, 255, 150), 1.2, Qt.PenStyle.DashLine))
             p.drawPath(self._polyline(line))
-            line_main = [pts[i] for i in shown]
+            line_main = [pts[i] for i in self.model.mapped] or [pts[i] for i in shown]
         else:
             line_main = line
         path = self._polyline(line_main)
@@ -511,8 +534,21 @@ class FlightMapView(QWidget):
         r = 3.2 if not self.compact else 2.2
         if self.model.sparse:
             r += 0.8
+        flagged = set(self.model.flagged)
+        # secondary points: small at the scale of the flight, full size once zoomed in (< 6 cm per pixel)
+        r_minor = max(1.2, r * min(1.0, max(0.4, 0.06 / max(self.res, 1e-6))))
         for i in shown:
             q = pts[i]
+            if self.model.minor is not None and self.model.minor(i) and not self.model.is_selected(i):
+                p.setPen(Qt.PenStyle.NoPen if r_minor < r else QPen(QColor("white"), 1))
+                p.setBrush(self.model.color_of(i) if self.model.color_of else QColor("#A0AAB4"))
+                p.drawEllipse(q, r_minor, r_minor)
+                continue
+            if i in flagged:                     # left out of the map: a red dot (footprint on hover)
+                p.setPen(QPen(QColor("white"), 1))
+                p.setBrush(FLAGGED_COLOR)
+                p.drawEllipse(q, r, r)
+                continue
             color = self.model.color_of(i) if self.model.color_of else QColor("#17365D")
             if self.model.is_selected(i):
                 p.setPen(QPen(QColor("#17365D"), 1.4))
@@ -593,7 +629,14 @@ class FlightMapView(QWidget):
     def _paint_footprints(self, p):
         if self.model.hover is not None and self.model.hover != self.model.current:
             q = self._quad(self.model.hover)
-            if q is not None:
+            if q is not None and self.model.hover in self.model.flagged:
+                fill = QColor(FLAGGED_COLOR)        # flagged: the hole it leaves in the map
+                fill.setAlpha(25)
+                p.setBrush(fill)
+                for pen in (QPen(QColor(255, 255, 255, 200), 3.0), QPen(FLAGGED_COLOR, 1.6, Qt.PenStyle.DashLine)):
+                    p.setPen(pen)
+                    p.drawPolygon(q)
+            elif q is not None:
                 p.setPen(QPen(QColor(255, 255, 255, 230), 1.5, Qt.PenStyle.DashLine))
                 p.setBrush(QColor(255, 255, 255, 40))
                 p.drawPolygon(q)
@@ -612,17 +655,26 @@ class FlightMapView(QWidget):
                 p.setOpacity(0.92)
                 p.drawPixmap(0, 0, pix)
                 p.restore()
+        color = QColor(Look.CURSOR)
+        if self.model.cursor_in_point_color and self.model.color_of is not None:
+            color = QColor(self.model.color_of(cur))
         if q is not None:
-            p.setPen(QPen(Look.CURSOR, 2.2))
-            p.setBrush(QColor(232, 163, 61, 55))
+            fill = QColor(color)
+            fill.setAlpha(55)
+            p.setPen(QPen(QColor(255, 255, 255, 170), 4.0))   # halo: readable on any background
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawPolygon(q)
+            p.setPen(QPen(color, 2.2))
+            # no tint over the aligned image: its colours are what is checked
+            p.setBrush(Qt.BrushStyle.NoBrush if pix is not None else fill)
             p.drawPolygon(q)
             p.setPen(QPen(QColor("white"), 3.5))          # top of the image
             p.drawLine(q[0], q[1])
-            p.setPen(QPen(Look.CURSOR, 2.2))
+            p.setPen(QPen(color, 2.2))
             p.drawLine(q[0], q[1])
         x, y = self.to_screen(*self.model.xy[cur])
         p.setPen(QPen(QColor("white"), 2))
-        p.setBrush(Look.CURSOR)
+        p.setBrush(color)
         p.drawEllipse(QPointF(x, y), 5.5, 5.5)
 
     def _paint_hover_thumb(self, p):
@@ -645,6 +697,30 @@ class FlightMapView(QWidget):
         p.setPen(QColor("#17365D"))
         p.drawText(QRectF(x, y + h, w, 20), Qt.AlignmentFlag.AlignCenter, stem)
 
+    def selection_summary(self) -> List[str]:
+        """Texts of the bottom right about the images of the map drawn."""
+        bits: List[str] = []
+        if not self.model.sparse:
+            return bits
+        n = len(self.model.mapped)
+        built = self.model.built
+        numbers = {self.model.numbers[i] for i in self.model.mapped}
+        if self.model.mapped_by == "next mapping" and built:
+            bits.append(f"{n} images of the map" if numbers == built else
+                        f"{n} images for the next map (Step 6 again: the map built has {len(built)})")
+        else:
+            bits.append(f"{n} images Step 6 will map" if self.model.mapped_by == "next mapping"
+                        else f"{n} images kept by the best mapping" if self.model.planned
+                        else f"{n} images of the mapping")
+        if self.model.flagged:
+            # flagged after Step 6: they are in the map built, not in the next one
+            again = {self.model.numbers[i] for i in self.model.flagged} & (
+                built or ({self.model.numbers[i] for i in self.model.mapped}
+                          if self.model.mapped_by == "mapping" else set()))
+            bits.append(f"⚑ {len(self.model.flagged)} flagged, left out"
+                        + (" when Step 6 runs again" if again else ""))
+        return bits
+
     def _paint_texts(self, p, note):
         src = F.TILE_SOURCES.get(self.model.source)
         bits = []
@@ -654,9 +730,7 @@ class FlightMapView(QWidget):
             bits.append("orthophoto IRDrone")
         if self.model.progress is not None and self.model.selection:
             bits.append(f"{len(self.model.progress[0])} of {len(self.model.selection)} done")
-        if self.model.sparse:
-            bits.append(f"{len(self.model.mapped)} images kept by the best mapping" if self.model.planned
-                        else f"{len(self.model.mapped)} images of the mapping")
+        bits += self.selection_summary()
         font = p.font()
         font.setPointSizeF(7.5 if self.compact else 8.0)
         p.setFont(font)
@@ -756,6 +830,14 @@ class FlightMapView(QWidget):
         else:
             self.clicked_empty.emit()
 
+    def contextMenuEvent(self, e):
+        i = self.nearest(e.pos().x(), e.pos().y())
+        if i is not None and self.receivers(self.menu_requested) > 0:
+            self.menu_requested.emit(i, e.globalPos())
+            e.accept()
+            return
+        super().contextMenuEvent(e)
+
     def leaveEvent(self, e):
         self.hovered.emit(None)
         super().leaveEvent(e)
@@ -789,6 +871,31 @@ class _OrthoJob(QRunnable):
 PHASE_COLORS = {"sync": Look.SYNC, "survey": Look.SURVEY}
 
 
+def review_statuses(mission: Path):
+    """{number: review status} of the shoot points Step 4 aligned (the scores
+    measured by the review), None before Step 4."""
+    try:
+        import shoot_review as R
+        return R.statuses(Path(mission))
+    except Exception as e:  # the map is a help, never a blocker
+        print(f"Review statuses unavailable: {e}")
+        return None
+
+
+def _aligned_thumbnails(mission: Path):
+    """number -> thumbnail of its aligned image (read once, None without one)."""
+    cache: Dict[int, Optional[QPixmap]] = {}
+
+    def image_of(number):
+        if number not in cache:
+            import shoot_review as R
+            path = R.aligned_image(mission / R.OUTPUT_FOLDER, number)
+            img = R.thumbnail(path) if path is not None else None
+            cache[number] = QPixmap.fromImage(Look.bgr_to_qimage(img)) if img is not None else None
+        return cache[number]
+    return image_of
+
+
 def phase_colors(mission: Path):
     """color_of(number) after the phases of Step 2 (grey outside them)."""
     ph = F.phases(mission)
@@ -802,25 +909,39 @@ def map_model_for(mission: Path, color_of=None, with_ortho: bool = True, shoot_p
     points (every visible image before Step 3) on the whole flight. The
     orthophoto and the ground are read in the background. `color_of(number)`
     gives the colour of a point (default: phases of Step 2). With
-    `sparse_mapping`, only the shoot points used by the mapping are drawn
-    while the orthophoto is shown; before the mapping, the shoot points kept
-    by the best mapping."""
+    `sparse_mapping` (the main window): once Step 4 is done, the points
+    exactly as in the review (status colours, the ones Step 4 did not align
+    as small grey dots), over the orthophoto of Step 6 when it is built;
+    before, the ones kept by the best mapping."""
     track = F.mission_track(mission, shoot_points_only=shoot_points_only)
     if not track:
         return None
     if color_of is None:
         color_of = phase_colors(mission)
     path = F.image_track(mission)
-    mapped, mapped_by = None, "mapping"
+    mapped, mapped_by, flagged, built = None, "mapping", None, None
+    minor = None
     if sparse_mapping:
-        mapped = F.mapped_numbers(mission)
-        if not mapped:
-            import best_mapping as BM
-            mapped, mapped_by = BM.planned_numbers(mission), "best mapping"
+        statuses = review_statuses(mission)
+        if statuses is not None:      # Step 4 done: the twin of the review map
+            import IRD_Interactive_review as Rv
+            color_of = lambda n: (Rv.STATUS_COLORS[statuses[n]] if n in statuses  # noqa: E731
+                                  else Rv.NOT_ALIGNED_COLOR)
+            minor = lambda n: statuses.get(n, "missing") == "missing"  # noqa: E731
+        else:     # no Step 4 inventory: the images of a map built (older missions), else the plan
+            built = F.mapped_numbers(mission) if F.orthophoto_path(mission).is_file() else set()
+            mapped, mapped_by = built, "mapping"
+            if not mapped:
+                import best_mapping as BM
+                mapped, mapped_by = BM.planned_numbers(mission), "best mapping"
     model = MapModel(track, fov=F.field_of_view(F.camera_model(mission)), parent=parent,
                      path=path if len(path) > len(track) else None,
-                     mapped=mapped, mapped_by=mapped_by,
+                     mapped=mapped, mapped_by=mapped_by, flagged=flagged, built=built,
                      color_of=lambda i: color_of(track[i].number))
+    if minor is not None:            # the twin of the review map
+        model.minor = lambda i: minor(track[i].number)
+        model.cursor_in_point_color = True      # the footprint in the colour of the point's status
+        model.image_of = _aligned_thumbnails(Path(mission))
     # in the background: ground under the drone (footprint size), orthophoto
     job = _OrthoJob(Path(mission), track, with_ortho and F.orthophoto_path(mission).is_file())
     model._job = job                      # keeps the signals alive
