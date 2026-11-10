@@ -662,7 +662,12 @@ class NotAlignedPointsTests(ReviewMapTests):
         with mock.patch.object(Step4, "align_points_arguments",
                                lambda mission, numbers: [str(script), str(mission), *map(str, sorted(numbers))]), \
                 mock.patch.object(Rv_QMessageBox(), "warning", lambda *a: warnings.append(a[2])):
-            d.align_points([138, 139])
+            d.align_points([138])
+            d.align_points([139])                                 # asked while 138 runs: queued
+            self.assertEqual((d.point_aligner.running, d.point_aligner.waiting), ({138}, {139}))
+            self.assertIn("queued, aligned next: <b>VIS_0139</b>", d.banner_text.text())
+            self.assertIn("Queued", d.map_menu_content(139)[2])
+            self.assertEqual(d.map_menu_content(138)[2], "Being aligned…")
             self.assertEqual(d._aligning(), {138, 139})
             i = d.map_model.index_of(138)
             self.assertEqual(d.map_model.color_of(i).name(), "#e8a33d")      # being aligned
@@ -671,12 +676,12 @@ class NotAlignedPointsTests(ReviewMapTests):
             d.align_points([138])                                 # already asked: ignored
             ended = []
             d.point_aligner.run_done.connect(lambda *a: ended.append(a))
-            for _ in range(200):
-                if ended:
+            for _ in range(400):
+                if len(ended) == 2:
                     break
                 d.point_aligner.process and d.point_aligner.process.waitForFinished(100)
                 self.app.processEvents()
-        self.assertEqual(ended[0][0], {138, 139})
+        self.assertEqual([e[0] for e in ended], [{138}, {139}])         # one run after the other
         self.assertEqual([p.number for p in d.review.points], [137, 138, 140, 143])
         self.assertEqual(d.current().number, 138)                # shown at once (the user had not moved)
         self.assertFalse(d.point_aligner.busy())

@@ -1324,8 +1324,10 @@ class ReviewDialog(QDialog):
         dt = here["dt"]
         detail = ("Not aligned by Step 4 · " +
                   (f"infrared {dt:+.2f} s apart" if dt is not None else "no infrared image"))
-        if number in self._aligning():
+        if number in self.point_aligner.running:
             return here["stem"], detail, "Being aligned…", False
+        if number in self.point_aligner.waiting:
+            return here["stem"], detail, "Queued: aligned after the current one", False
         if not here["alignable"]:
             return here["stem"], detail, f"Cannot be aligned (no infrared within {R.MAX_ALIGN_DT:g} s)", False
         return here["stem"], detail, "Align this point", True
@@ -1370,10 +1372,13 @@ class ReviewDialog(QDialog):
             return
         if not self.point_aligner.busy():
             self._align_from = self.current().number if self.current() is not None else None
-        self.point_aligner.add(numbers)
         self._redo_clock.start()
-        self.subtitle.setText(f"Aligning {len(numbers)} point(s) left out by Step 4 in the background: "
-                              "they appear in the time line when done.")
+        queued = self.point_aligner.busy()
+        stems = ", ".join(f"VIS_{n:04d}" for n in sorted(numbers))
+        self.point_aligner.add(numbers)
+        self.subtitle.setText(f"{stems} queued: aligned after the current one, one Step 4 run at a time "
+                              "(each needs several GB of memory)." if queued else
+                              f"Aligning {stems} in the background: it appears in the time line when done.")
         self._on_align_progress()
 
     def _on_align_progress(self):
@@ -1620,12 +1625,17 @@ class ReviewDialog(QDialog):
         aligning = aligner is not None and aligner.busy()
         if aligning:
             running, waiting = aligner.running, aligner.waiting
-            stems = ", ".join(f"VIS_{n:04d}" for n in sorted(running)[:4]) + (" …" if len(running) > 4 else "")
-            lines.append(f"Aligning {len(running)} point(s) left out by Step 4 ({stems}): "
-                         f"{len(aligner.done)} of {len(running)} done, "
-                         f"{fmt_time(_time.time() - aligner.started)[:-2]}"
-                         + (f" · {len(waiting)} waiting" if waiting else "")
-                         + " <span style='color:#6B7785'>— they appear in the time line when done.</span>")
+
+            def names(numbers, at_most=4):
+                numbers = sorted(numbers)
+                return (", ".join(f"<b>VIS_{n:04d}</b>" for n in numbers[:at_most])
+                        + (f" and {len(numbers) - at_most} more" if len(numbers) > at_most else ""))
+            todo = sorted(running - aligner.done)
+            lines.append(f"Aligning {names(todo or running)} "
+                         f"({fmt_time(_time.time() - aligner.started)[:-2]})"
+                         + (f" · {len(aligner.done)} of {len(running)} done" if len(running) > 1 else "")
+                         + (f" · queued, aligned next: {names(waiting)}" if waiting else "")
+                         + " <span style='color:#6B7785'>— each appears in the time line when done.</span>")
         to_confirm = [p for p in self.review.points if p.status == R.STATUS_REALIGNED]
         pt = self.current()
         confirm = pt is not None and pt.status == R.STATUS_REALIGNED
