@@ -49,6 +49,9 @@
 \DeclareRobustCommand{\bouton}[1]{\texorpdfstring{\fbox{\small\textsf{#1}}}{#1}}
 % A completer
 \newcommand{\todo}[1]{\textcolor{red}{[\`A r\'ediger : #1]}}
+% Sections historiques : repliees dans le manuel web, texte normal dans le PDF
+\newcommand{\legacybegin}[1]{}
+\newcommand{\legacyend}{}
 % Figure tolerante : affiche un cadre si l'image n'existe pas encore.
 % Usage : \figureIRD[label]{fichier}{legende}{largeur}
 %   - label optionnel (ex. fig:img_VIR_1), utilisable avec \ref{...} / \autoref{...}
@@ -522,6 +525,7 @@ Dès qu'une information change, \bouton{Close} devient \bouton{Save and close} :
 \figureIRD[fig:step1_mission_details]{step1_mission_details.png}{La fenêtre \og Mission details \fg : les images sont déjà dans la mission, seules ces informations changent.}{0.55}
 
 \section{Formulaire classique}\label{sec:step1_classic}
+\legacybegin{Afficher le formulaire classique (ancienne étape 1)}
 Le bouton \bouton{Classic form…} de la page \og Images \fg~ouvre l'ancien Step~1, décrit ci-dessous. Il se d\'eroule en deux fen\^etres successives :
 \begin{enumerate}
   \item \textbf{\og Choose the image taken by the drone during takeoff \fg} : on choisit la premi\`ere image prise par le drone
@@ -672,6 +676,8 @@ La durée des transferts dépend beaucoup des performances des supports (carte S
 %\todo{Compl\'eter avec les erreurs rencontr\'ees sur le terrain (carte SD absente, dossier prot\'eg\'e en \'ecriture, \dots).}
 
 %==========================================================
+\legacyend
+
 \chapter{Step 2 -- Ligne de temps du vol}\label{ch:step2}
 \section{Principe}
 L'étape 2 découpe le vol en phases : \emph{synchronisation} (vol stationnaire au-dessus de la mire ArUco tournante) et \emph{survey} (vol au-dessus de la zone étudiée). Ces phases sont maintenant \textbf{détectées automatiquement} ; l'utilisateur vérifie et ajuste si besoin (figure~\ref{fig:step2_flight_timeline}).
@@ -720,6 +726,7 @@ Les deux boutons enregistrent les phases dans les fichiers \texttt{transfer\_inf
 \bouton{Continue with synchronisation} ouvre ensuite l'étape~3 ; rien ne démarre tout seul : la synchronisation se lance depuis sa fenêtre (chapitre~\ref{ch:step3}). \bouton{Close} ferme simplement la fenêtre : l'étape~3 se lancera plus tard depuis la fenêtre principale. Il devient \bouton{Save and close} quand les phases ou le choix best mapping ont changé, ou n'ont jamais été enregistrés : fermer la fenêtre les enregistre alors aussi. S'il manque une phase, fermer demande s'il faut fermer sans enregistrer.
 
 \section{Sélection classique}\label{btn:step2_classic}
+\legacybegin{Afficher la sélection classique (ancienne fenêtre de l'étape 2)}
 Le bouton \bouton{Classic selection…} ouvre l'ancienne sélection manuelle des cinq images de référence de chaque caméra, décrite ci-dessous.
 
 \figureIRD{step2_dialog_select_phase_images_1.png}{Fen\^etre de s\'election des images de r\'ef\'erence. Pour la bande spectrale visible la première image est par défaut celle du point de décollage qui a servi à définir la mission à l'étape 1. Mais elle peut être changée ici.}{0.95}
@@ -754,6 +761,8 @@ L'utilisateur doit choisir la première image prise au-dessus de la zone à étu
 \figureIRD[fig:step2_dialog_select_NIR]{step2_dialog_select_phase_images_NIR.png}{Fen\^etre de s\'election des images de r\'ef\'erence. Bande spectrale proche infrarouge (NIR).}{0.95}
 
 %==========================================================
+\legacyend
+
 \chapter{Step 3 -- Synchronisation des caméras}\label{ch:step3}
 \section{Principe}
 Pour combiner différentes bandes spectrales, les images doivent être prises au même instant. Malheureusement ce n'est techniquement pas possible avec les matériels utilisés dans le projet IRdrone. C'est un choix de départ lié au caractère financièrement abordable (\emph{inexpensive and low cost}) du projet. Chaque caméra a sa propre horloge, qui définit la chronologie des images. On peut positionner les images sur une ligne représentant le temps. C'est la \og time line \fg~de la caméra. Dès lors il faut synchroniser les deux time lines VIS et NIR. Mettre les horloges à l'heure est insuffisant : d'une part elles ne donnent accès qu'à des points toutes les secondes, d'autre part on ne peut pas contrôler l'instant exact où l'opérateur sur le terrain a déclenché les caméras. On doit donc détecter des repères sur les images. Dans l'industrie cinématographique on synchronise la pellicule photo et la bande son à l'aide du \og clap \fg. Cette solution avait été envisagée dans les premières versions d'IRdrone, qui utilisaient la vidéo au lieu des images. Mais la vidéo posait de nombreux problèmes de qualité (résolution, \og jelly \fg, ...) et a été abandonnée. Par contre le principe d'un objet mobile sur les images au début du vol a été conservé. L'idée est de repérer un objet (automatiquement) et de suivre sa trajectoire sur les deux caméras. En faisant coïncider les deux trajectoires on synchronise les horloges. On peut atteindre une précision de l'ordre de 0.05s, ce qui est amplement suffisant dans notre cas.

@@ -49,6 +49,9 @@
 \DeclareRobustCommand{\bouton}[1]{\texorpdfstring{\fbox{\small\textsf{#1}}}{#1}}
 % To be completed
 \newcommand{\todo}[1]{\textcolor{red}{[To be written: #1]}}
+% Legacy sections: collapsed on the web manual, plain text in the PDF
+\newcommand{\legacybegin}[1]{}
+\newcommand{\legacyend}{}
 % Tolerant figure: shows a frame if the image does not exist yet.
 % Usage: \figureIRD[label]{file}{caption}{width}
 %   - optional label (e.g. fig:img_VIR_1), usable with \ref{...} / \autoref{...}
@@ -522,6 +525,7 @@ As soon as a piece of information is changed, \bouton{Close} becomes \bouton{Sav
 \figureIRD[fig:step1_mission_details]{step1_mission_details.png}{The ``Mission details'' window: the images are already in the mission, only this information changes.}{0.55}
 
 \section{Classic form}\label{sec:step1_classic}
+\legacybegin{Show the classic form (old Step 1)}
 The \bouton{Classic form…} button of the ``Images'' page opens the old Step~1, described below. It takes place in two successive windows:
 \begin{enumerate}
   \item \textbf{``Choose the image taken by the drone during takeoff''}: choose the first image taken by the drone
@@ -672,6 +676,8 @@ The duration of the transfers depends a lot on the performance of the storage me
 %\todo{Add the errors encountered in the field (missing SD card, write-protected folder, \dots).}
 
 %==========================================================
+\legacyend
+
 \chapter{Step 2 -- Flight timeline}\label{ch:step2}
 \section{Principle}
 Step~2 splits the flight into phases: \emph{synchronization} (hovering above the rotating ArUco target) and \emph{survey} (flight over the study area). These phases are now \textbf{detected automatically}; the user checks them and adjusts them if needed (Figure~\ref{fig:step2_flight_timeline}).
@@ -720,6 +726,7 @@ Both buttons save the phases in the files \texttt{transfer\_info\_VIS\_dng.json}
 \bouton{Continue with synchronisation} then opens Step~3; nothing starts by itself: the synchronization is started from its window (Chapter~\ref{ch:step3}). \bouton{Close} only closes the window: Step~3 will be run later from the main window. It reads \bouton{Save and close} when the phases or the best mapping choice are changed, or were never saved: closing the window then saves them too. If a phase is missing, closing asks whether to close without saving.
 
 \section{Classic selection}\label{btn:step2_classic}
+\legacybegin{Show the classic selection (old Step 2 window)}
 The \bouton{Classic selection…} button opens the old manual selection of the five reference images of each camera, described below.
 
 \figureIRD{step2_dialog_select_phase_images_1.png}{Reference image selection window. For the visible spectral band, the first image is by default the take-off image that was used to define the mission in Step~1. But it can be changed here.}{0.95}
@@ -754,6 +761,8 @@ The user must choose the first image taken above the area to study (mission flig
 \figureIRD[fig:step2_dialog_select_NIR]{step2_dialog_select_phase_images_NIR.png}{Reference image selection window. Near-infrared spectral band (NIR).}{0.95}
 
 %==========================================================
+\legacyend
+
 \chapter{Step 3 -- Camera synchronization}\label{ch:step3}
 \section{Principle}
 To combine different spectral bands, the images must be taken at the same moment. Unfortunately this is not technically possible with the hardware used in the IRdrone project. This is an initial choice linked to the affordable nature (\emph{inexpensive and low cost}) of the project. Each camera has its own clock, which defines the chronology of the images. The images can be placed on a line representing time. This is the ``time line'' of the camera. The two time lines, VIS and NIR, must then be synchronized. Setting the clocks to the right time is not enough: on the one hand they only give points every second, on the other hand the exact moment when the operator in the field started the cameras cannot be controlled. Markers must therefore be detected in the images. In the film industry, the film and the soundtrack are synchronized with a ``clapperboard''. This solution was considered in the first versions of IRdrone, which used video instead of images. But video raised many quality problems (resolution, ``jelly'', ...) and was abandoned. However, the principle of a moving object in the images at the start of the flight was kept. The idea is to locate an object (automatically) and to track its trajectory on both cameras. Making the two trajectories coincide synchronizes the clocks. An accuracy of about 0.05s can be reached, which is more than enough in our case.

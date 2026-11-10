@@ -123,6 +123,8 @@ def latex_body(images: Images) -> str:
     body = text[text.index(r"\begin{document}") + len(r"\begin{document}"):text.index(r"\end{document}")]
     body = re.sub(r"(?<!\\)%.*", "", body)                                  # comments
     body = re.sub(r"\\begin\{titlepage\}.*?\\end\{titlepage\}", "", body, flags=re.S)
+    body = re.sub(r"\\legacybegin\{([^}]*)\}", r"\n\nLEGACYBEGIN \1\n\n", body)   # collapsible legacy sections
+    body = body.replace(r"\legacyend", "\n\nLEGACYEND\n\n")
     body = body.replace(r"\tableofcontents", "").replace(r"\appendix", "")
 
     def picture(name, width="0.8"):
@@ -187,6 +189,9 @@ def to_mkdocs(md: str) -> str:
         return f"{section or ''}[{number}](#{anchor})"
 
     md = REF.sub(ref, md)
+    # legacy sections: collapsed (md_in_html), opened by website/javascripts/legacy.js when a link points inside
+    md = re.sub(r"^LEGACYBEGIN (.*)$", r'<details class="legacy" markdown="1">\n<summary>\1</summary>', md, flags=re.M)
+    md = md.replace("LEGACYEND", "</details>")
 
     def fig(m):
         caption, src, anchor = m.group(1), m.group(2), m.group(3)
