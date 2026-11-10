@@ -1310,71 +1310,58 @@ class ReviewDialog(QDialog):
         self.map_model.set_current(None)
 
     # ---- points left out by Step 4: right-click on the map, aligned in the background
-    def not_aligned_around(self, number, not_aligned=None) -> List[int]:
-        """The grey points next to ``number`` along the flight, up to the aligned
-        point on each side (``number`` itself included when it is grey)."""
-        if self.map_model is None:
-            return []
-        if not_aligned is None:
-            not_aligned = R.not_aligned_pairs(self.review)
-        numbers = self.map_model.numbers
-        i = self.map_model.index_of(number)
-        if i is None:
-            return []
-        out = [number] if number in not_aligned else []
-        for step in (-1, 1):
-            j = i + step
-            while 0 <= j < len(numbers) and numbers[j] in not_aligned:
-                out.append(numbers[j])
-                j += step
-        return sorted(out)
+    MENU_STYLE = ("QMenu { background: white; border: 1px solid #C5CFDA; border-radius: 8px; padding: 6px; }"
+                  "QMenu::item { color: #17365D; font-weight: bold; padding: 7px 18px; border-radius: 6px; }"
+                  "QMenu::item:selected { background: #EAF2FB; }"
+                  "QMenu::item:disabled { color: #8A96A3; font-weight: normal; }")
 
-    def map_menu_actions(self, number):
-        """[(text, numbers to align or None for a disabled line, tool tip)] of the
-        right-click menu of a map point."""
-        not_aligned = R.not_aligned_pairs(self.review)
-        aligning = self._aligning()
-        actions = []
-        here = not_aligned.get(number)
-        if here is not None:
-            dt = here["dt"]
-            dt_text = f"infrared {dt:+.2f} s apart" if dt is not None else "no infrared image"
-            if number in aligning:
-                actions.append((f"{here['stem']}: being aligned…", None, ""))
-            elif here["alignable"]:
-                actions.append((f"Align {here['stem']}  ({dt_text})", [number],
-                                "Left out by Step 4 (best mapping or time filter). Aligned in the background "
-                                "like Step 4 does, then it appears in the time line."))
-            else:
-                actions.append((f"{here['stem']} cannot be aligned ({dt_text})", None,
-                                f"Step 4 aligns an image only with an infrared taken less than "
-                                f"{R.MAX_ALIGN_DT:g} s apart."))
-        around = [n for n in self.not_aligned_around(number, not_aligned)
-                  if not_aligned[n]["alignable"] and n not in aligning]
-        if len(around) > (1 if here is not None else 0):
-            first, last = not_aligned[around[0]]["stem"], not_aligned[around[-1]]["stem"]
-            where = f"from {first} to {last}" if len(around) > 1 else first
-            stem = here["stem"] if here is not None else self.review.by_number(number).stem
-            actions.append((f"Align the {len(around)} point(s) not aligned around {stem} ({where})", around,
-                            "The grey points on both sides along the flight, up to the next aligned point: "
-                            "useful when an image cannot be recovered, a neighbour may be fine."))
-        if not actions:
-            stem = self.review.by_number(number).stem if self.review.by_number(number) else str(number)
-            actions.append((f"No point left out by Step 4 around {stem}", None, ""))
-        return actions
+    def map_menu_content(self, number):
+        """(title, detail, action text, can align) of the right-click menu of a
+        map point; None for a point Step 4 aligned (no menu)."""
+        here = R.not_aligned_pairs(self.review).get(number)
+        if here is None:
+            return None
+        dt = here["dt"]
+        detail = ("Not aligned by Step 4 · " +
+                  (f"infrared {dt:+.2f} s apart" if dt is not None else "no infrared image"))
+        if number in self._aligning():
+            return here["stem"], detail, "Being aligned…", False
+        if not here["alignable"]:
+            return here["stem"], detail, f"Cannot be aligned (no infrared within {R.MAX_ALIGN_DT:g} s)", False
+        return here["stem"], detail, "Align this point", True
+
+    def map_menu(self, number):
+        """The right-click menu of a map point (None: nothing to offer)."""
+        from PyQt6.QtGui import QAction
+        from PyQt6.QtWidgets import QMenu, QWidgetAction
+        content = self.map_menu_content(number)
+        if content is None:
+            return None
+        title, detail, text, enabled = content
+        menu = QMenu(self)
+        menu.setStyleSheet(self.MENU_STYLE)
+        menu.setWindowFlags(menu.windowFlags() | Qt.WindowType.FramelessWindowHint)
+        menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)   # rounded corners
+        header = QLabel(f"<span style='font-size:11pt; font-weight:bold; color:#1F2933'>{title}</span><br>"
+                        f"<span style='color:#6B7785'>{detail}</span>")
+        header.setTextFormat(Qt.TextFormat.RichText)
+        header.setStyleSheet("padding: 4px 18px 8px 18px; border-bottom: 1px solid #E4E8EE;")
+        head = QWidgetAction(menu)
+        head.setDefaultWidget(header)
+        head.setEnabled(False)
+        menu.addAction(head)
+        action = QAction(text, menu)
+        action.setEnabled(enabled)
+        if enabled:
+            action.setToolTip("Aligned in the background like Step 4 does, then it appears in the time line.")
+            action.triggered.connect(lambda _=False, n=number: self.align_points([n]))
+        menu.addAction(action)
+        return menu
 
     def _map_menu(self, index, global_pos):
-        from PyQt6.QtWidgets import QMenu
-        number = self.map_model.numbers[index]
-        menu = QMenu(self)
-        menu.setToolTipsVisible(True)
-        for text, numbers, tip in self.map_menu_actions(number):
-            action = menu.addAction(text)
-            action.setToolTip(tip)
-            action.setEnabled(numbers is not None)
-            if numbers is not None:
-                action.triggered.connect(lambda _=False, numbers=numbers: self.align_points(numbers))
-        menu.exec(global_pos)
+        menu = self.map_menu(self.map_model.numbers[index])
+        if menu is not None:
+            menu.exec(global_pos)
 
     def align_points(self, numbers):
         """Align the points ``numbers`` left out by Step 4, in the background."""

@@ -633,23 +633,22 @@ class NotAlignedPointsTests(ReviewMapTests):
         data["shoot_points"] = [by_number[n] for n in sorted(by_number)]
         path.write_text(json.dumps(data))
 
-    def test_menu_of_an_aligned_point_offers_its_grey_neighbours(self):
+    def test_no_menu_on_an_aligned_point(self):
         d = self.dialog()
         self.assertEqual(sorted(R.not_aligned_pairs(d.review)), [138, 139, 141])
-        actions = d.map_menu_actions(137)
-        self.assertEqual(len(actions), 1)
-        self.assertIn("2 point(s) not aligned around VIS_0137", actions[0][0])
-        self.assertEqual(actions[0][1], [138, 139])
+        self.assertIsNone(d.map_menu(137))
         d.done(0)
 
-    def test_menu_of_a_grey_point(self):
+    def test_menu_of_a_grey_point_aligns_it_alone(self):
         d = self.dialog()
-        texts = [(t, n) for t, n, _tip in d.map_menu_actions(138)]
-        self.assertEqual(texts[0], ("Align VIS_0138  (infrared +0.30 s apart)", [138]))
-        self.assertEqual(texts[1][1], [138, 139])                  # the grey run, from 138 to 139
-        t, n, _ = d.map_menu_actions(141)[0]                       # too far in time: disabled
-        self.assertIsNone(n)
-        self.assertIn("cannot be aligned", t)
+        self.assertEqual(d.map_menu_content(138),
+                         ("VIS_0138", "Not aligned by Step 4 · infrared +0.30 s apart", "Align this point", True))
+        menu = d.map_menu(138)
+        actions = [a for a in menu.actions() if a.text()]
+        self.assertEqual([a.text() for a in actions], ["Align this point"])     # one point, never a batch
+        title, _detail, text, enabled = d.map_menu_content(141)                # too far in time: disabled
+        self.assertFalse(enabled)
+        self.assertIn("Cannot be aligned", text)
         d.done(0)
 
     def test_aligned_points_appear_in_the_time_line(self):
