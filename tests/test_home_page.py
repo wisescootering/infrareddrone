@@ -147,46 +147,11 @@ class HomeMapTest(unittest.TestCase):
         self.assertIsNotNone(page.map_view)
         self.assertEqual(len(page.map_view.model.points), 4)
         self.assertIs(page.right_stack.currentWidget(), page.map_holder)
-        page.btn_show_image.click()
-        self.assertIs(page.right_stack.currentWidget(), page.picture)
-
-    def test_image_shows_the_point_clicked_on_the_map(self):
-        from PyQt6.QtGui import QPixmap
-        root = Path(tempfile.mkdtemp())
-        m = make_mission(root, "FLY-20220125-1159-Blassac", done=(1,))
-        vis = m / "AerialPhotography" / "VIS"
-        vis.mkdir(parents=True)
-        for k in range(4):
-            (vis / f"VIS_{k + 1:04d}.exif").write_text(json.dumps(
-                {"DroneLatitude": 45.1695, "DroneLongitude": 3.4 + 0.0002 * k, "DroneAltitudeGround": 50.0,
-                 "GimbalYawDegree": -78.9}))
-        out = m / "ImgIRdrone"
-        out.mkdir()
-        for n in (1, 2, 3):
-            pix = QPixmap(8, 6)
-            pix.fill()
-            pix.save(str(out / f"VIR_{n:04d}_local.jpg"))
-        page = Home.HomePage()
-        page.show_mission(m)
-        page.btn_show_image.click()                       # nothing clicked: one of the flight
-        self.assertIn("selected on the map", page.picture_caption.text())   # the middle one, selected on the map
-        self.assertEqual(page.picture.toolTip(), "VIR_0002_local.jpg")
-        model = page.map_view.model
-        number = lambda i: model.points[i].number
-        i = next(k for k in range(len(model.points)) if number(k) == 1)
-        model.set_current(i)
-        page.btn_show_map.click()
-        page.btn_show_image.click()
-        self.assertEqual(page.picture.toolTip(), "VIR_0001_local.jpg")
-        self.assertIn("selected on the map", page.picture_caption.text())
-        model.set_current(next(k for k in range(len(model.points)) if number(k) == 4))
-        page.btn_show_image.click()
-        self.assertIn("0004 was not aligned", page.picture_caption.text())
-        self.assertEqual(page.picture.toolTip(), "VIR_0003_local.jpg")   # the nearest one
+        self.assertFalse(hasattr(page, "btn_show_image"))          # the map only, no Image button
 
     def test_the_map_just_built_is_shown(self):
         """Step 5 ends: the page shows the map with its orthophoto, even if the
-        image was on screen or the orthophoto hidden before."""
+        orthophoto was hidden before."""
         import IRD_Interactive_map as MapV
         root = Path(tempfile.mkdtemp())
         m = make_mission(root, "FLY-20220125-1159-Blassac", done=(1,))
@@ -205,9 +170,8 @@ class HomeMapTest(unittest.TestCase):
         with mock.patch.object(MapV, "QSettings", fake):
             page = Home.HomePage()
             page.show_mission(m)
-            page.btn_show_image.click()
-            page.show_mission(m)                 # nothing new: the image stays
-            self.assertIs(page.right_stack.currentWidget(), page.picture)
+            page.show_mission(m)                 # nothing new: still hidden
+            self.assertEqual(page.map_view.model.ortho_mode, "hidden")
             result = m / "mapping_MULTI" / "mapping_result"
             result.mkdir(parents=True)
             (result / "odm_orthophoto.tif").write_bytes(b"")
@@ -221,7 +185,6 @@ class HomeMapTest(unittest.TestCase):
         page.show_mission(m)
         self.assertIsNone(page.map_view)
         self.assertIs(page.right_stack.currentWidget(), page.picture)
-        self.assertFalse(page.btn_show_map.isEnabled())
 
 
 class MissionTitleTest(unittest.TestCase):

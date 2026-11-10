@@ -209,8 +209,7 @@ class Main_Window(QMainWindow):
             (home.btn_continue, "btn:home_continue", ""),       # tool tip set with the next step
             (home.btn_review, "ch:review",
              "Check every aligned image on a time line, flag the misaligned ones and realign them by hand."),
-            (home.btn_show_map, "btn:home_map", home.btn_show_map.toolTip()),
-            (home.btn_show_image, "btn:home_map", home.btn_show_image.toolTip()),
+            (home.right_stack, "btn:home_map", ""),               # F1 over the map: its section
             (self.working_dir_bar.gear, "btn:home_workdir",
              "Change the working folder (the folder that holds the missions)."),
             (self.btn_help, "sec:help", "Open this manual. F1 over any button: the manual at that button."),

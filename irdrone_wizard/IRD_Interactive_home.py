@@ -157,34 +157,6 @@ def _points(path: Path):
         return None
 
 
-def aligned_images(folder: Path) -> dict:
-    """{image number: aligned image (false colours, local alignment first)} of Step 4."""
-    out = Path(folder) / "ImgIRdrone"
-    found = {}
-    try:
-        files = sorted(out.glob("VIR_*_global.jpg")) + sorted(out.glob("VIR_*_local.jpg"))
-    except OSError:
-        files = []
-    for path in files:                       # local after global: it wins
-        digits = path.stem.split("_")[1] if path.stem.count("_") >= 2 else ""
-        if digits.isdigit():
-            found[int(digits)] = path
-    return found
-
-
-def mission_picture(folder: Path, number: Optional[int] = None) -> Optional[Path]:
-    """The aligned image (false colours) of shoot point `number`; when it has
-    none (not aligned: best mapping), the aligned image nearest to it in the
-    flight; without `number`, one in the middle of the flight (None before Step 4)."""
-    images = aligned_images(folder)
-    if not images:
-        return None
-    numbers = sorted(images)
-    if number is None:
-        return images[numbers[len(numbers) // 2]]
-    return images[min(numbers, key=lambda n: (abs(n - number), n))]
-
-
 # ---------------------------------------------------------------------------
 #  Widgets
 # ---------------------------------------------------------------------------
@@ -518,27 +490,6 @@ class HomePage(QStackedWidget):
         body.addLayout(left, 1)
         right = QVBoxLayout()
         right.setSpacing(6)
-        switch = QHBoxLayout()
-        switch.setSpacing(4)
-        self.picture_caption = QLabel()
-        self.picture_caption.setStyleSheet("color: #6B7785;")
-        switch.addWidget(self.picture_caption)
-        switch.addStretch(1)
-        self.btn_show_map = QPushButton("Map")
-        self.btn_show_image = QPushButton("Image")
-        for b in (self.btn_show_map, self.btn_show_image):
-            b.setCheckable(True)
-            b.setStyleSheet(Look.SECONDARY_STYLE)
-            b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            switch.addWidget(b)
-        self.btn_show_map.setToolTip("The flight on the map: phases of Step 2, orthophoto of Step 5, aerial photos "
-                                     "(online). Click a point to see the ground covered by its image.")
-        self.btn_show_image.setToolTip("Show large the aligned image (false colours, VIR) of the point clicked on "
-                                       "the map (the nearest aligned one if it was not aligned); without a point clicked, "
-                                       "one in the middle of the flight.")
-        self.btn_show_map.clicked.connect(lambda: self._show_right("map"))
-        self.btn_show_image.clicked.connect(lambda: self._show_right("image"))
-        right.addLayout(switch)
         self.right_stack = QStackedWidget()
         self.picture = ScaledPicture()
         self.map_holder = QWidget()
@@ -551,55 +502,14 @@ class HomePage(QStackedWidget):
         lay.addLayout(body, 1)
         self.map_view = None
         self._map_key = None
-        self._right = "map"
         return page
 
-    def _show_right(self, which):
-        if which == "map" and self.map_view is None:
-            which = "image"
-        else:
-            self._right = which
-        if which == "image":
-            self._show_picture()
-        self.picture_caption.setVisible(which == "image")
-        self.right_stack.setCurrentWidget(self.map_holder if which == "map" else self.picture)
-        self.btn_show_map.setChecked(which == "map")
-        self.btn_show_image.setChecked(which == "image")
-
-    def _selected_number(self) -> Optional[int]:
-        """Image number of the point clicked on the map (None: none)."""
-        model = self.map_view.model if self.map_view is not None else None
-        if model is None or model.current is None or not (0 <= model.current < len(model.points)):
-            return None
-        return model.points[model.current].number
-
-    def _show_picture(self):
-        """The aligned image of the point clicked on the map (the nearest aligned
-        one if it has none); without a click, one of the middle of the flight,
-        which becomes the point selected on the map."""
-        if self.info is None:
-            return
-        number = self._selected_number()
-        pic = mission_picture(self.info.folder, number)
-        if number is None and pic is not None and self.map_view is not None:
-            shown = int(pic.stem.split("_")[1])
-            model = self.map_view.model
-            index = next((i for i, p in enumerate(model.points) if p.number == shown), None)
-            if index is not None:
-                model.set_current(index)     # the map shows where it is
-                number = shown
-        self.picture.set_picture(QPixmap(str(pic)) if pic is not None else (
-            QPixmap(str(self.hero_image)) if self.hero_image and Path(self.hero_image).is_file() else None))
-        self.picture.setToolTip(pic.name if pic is not None else "")
-        if pic is None:
-            caption = "No aligned image yet (Step 4)"
-        elif number is not None and pic.name.startswith(f"VIR_{number:04d}_"):
-            caption = f"{pic.stem} · the point selected on the map"
-        elif number is not None:
-            caption = f"{pic.stem} · nearest aligned image: point {number:04d} was not aligned (Step 4)"
-        else:
-            caption = f"{pic.stem} · click a point on the map to see its image"
-        self.picture_caption.setText(caption)
+    def _show_right(self):
+        """The flight map; the picture of the welcome page when there is none."""
+        if self.map_view is None:
+            self.picture.set_picture(QPixmap(str(self.hero_image))
+                                     if self.hero_image and Path(self.hero_image).is_file() else None)
+        self.right_stack.setCurrentWidget(self.map_holder if self.map_view is not None else self.picture)
 
     def _update_map(self, folder: Path):
         """Flight map of the mission (built again only when its files changed)."""
@@ -638,11 +548,8 @@ class HomePage(QStackedWidget):
             self.map_view.picked.connect(model.set_current)
             self.map_view.hovered.connect(model.set_hover)
             self.map_holder_lay.addWidget(self.map_view)
-            if new_map:
-                self._right = "map"
-                if model.ortho_mode == "hidden":
-                    model.set_ortho_mode("natural")
-        self.btn_show_map.setEnabled(self.map_view is not None)
+            if new_map and model.ortho_mode == "hidden":
+                model.set_ortho_mode("natural")
 
     def show_mission(self, folder: Optional[Path]):
         """Mission page of `folder` (None: welcome page)."""
@@ -684,7 +591,7 @@ class HomePage(QStackedWidget):
             self.figures.addWidget(Look.chip(color, text))
         self.figures.addStretch(1)
         self._update_map(info.folder)
-        self._show_right(self._right)
+        self._show_right()
         self.setCurrentIndex(1)
 
     def _open_folder(self):
