@@ -712,6 +712,9 @@ class ReviewDialog(QDialog):
         fit_to_screen(self, parent)
         self._build()
         import IRD_Interactive_4 as Step4
+        self._aligning_by_hand = False        # the alignment window is open
+        self._redo_report_pending = False     # alignments finished meanwhile, not reported yet
+        self._redo_errors = []
         self.redo_runner = Step4.RedoRunner(self.review.output, self, workers=Step4.redo_workers())
         self.redo_runner.output.connect(lambda text: print(text))
         self.redo_runner.point_started.connect(lambda *_: self._update_banner())
@@ -1338,18 +1341,32 @@ class ReviewDialog(QDialog):
         if not items:
             QMessageBox.warning(self, "Review", "No flagged point can be realigned (no REDO script).")
             return
-        dialog = M.ManualAlignDialog(items, self.mission.name, self)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
+        # Each point computes as soon as it is placed, while the next one is placed
+        dialog = M.ManualAlignDialog(items, self.mission.name, self,
+                                     send_now=lambda item: self._compute_realigned([item]))
+        self._aligning_by_hand = True
+        try:
+            accepted = dialog.exec() == QDialog.DialogCode.Accepted
+        finally:
+            self._aligning_by_hand = False
+        if accepted:
+            self._compute_realigned(dialog.placed())
+        if self._redo_report_pending and not self.redo_runner.busy():
+            self._on_redo_all_done()          # finished while the window was open
+
+    def _compute_realigned(self, items):
+        """Realign the points placed by hand (angles in ``items``), in the background."""
+        import IRD_Interactive_4 as Step4
+        if not items:
             return
-        placed = dialog.placed()
-        for item in placed:
+        for item in items:
             pt = self.review.by_number(item.number)
             if pt is not None:
                 pt.realigned = False          # a new result is coming
-        if not self.redo_runner.busy():
+        if not self.redo_runner.busy() and not self._redo_report_pending:
             self._redo_errors = []
         self.redo_runner.add([(i.number, i.stem, Step4.manual_redo_arguments(i.arguments, i.angles))
-                              for i in placed])
+                              for i in items])
         self._redo_clock.start()
         self._after_change()
 
@@ -1421,6 +1438,12 @@ class ReviewDialog(QDialog):
         self._update_banner()
 
     def _on_redo_all_done(self):
+        if self._aligning_by_hand:            # reported once the alignment window is closed
+            self._redo_report_pending = True
+            self._refresh_counts()
+            self._update_banner()
+            return
+        self._redo_report_pending = False
         self._redo_clock.stop()
         to_confirm = [p for p in self.review.points if p.status == R.STATUS_REALIGNED]
         errors = self._redo_errors

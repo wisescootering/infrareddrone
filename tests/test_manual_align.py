@@ -159,6 +159,27 @@ class WindowTests(unittest.TestCase):
         self.assertEqual([i.number for i in d.placed()], [1])
         self.assertEqual([i.state for i in items], [M.PLACED, M.SKIPPED, M.TODO])
 
+    def test_placed_points_compute_while_the_next_is_placed(self):
+        sent = []
+        d, items = self.window()
+        d.send_now = sent.append
+        d.nudge(1, 0)
+        d.place_and_next()
+        self.assertEqual(sent, [items[0]])
+        self.assertEqual(items[0].state, M.SENT)
+        self.assertIs(d.current(), items[1])
+        self.assertEqual(d.placed(), [])                 # sent already: not sent again
+        self.assertIn("Compute 0", d.btn_compute.text())
+        self.assertEqual(d.btn_cancel.text(), "Close")
+        d.select(0)                                      # locked while it computes
+        angles = items[0].angles
+        d.nudge(5, 5)
+        d.skip()
+        self.assertEqual((items[0].angles, items[0].state), (angles, M.SENT))
+        self.assertFalse(d.sliders["yaw"].isEnabled())
+        d.compute()                                      # nothing left to send: closes
+        self.assertEqual(d.result(), 1)
+
     def test_cancel_asks_before_forgetting_the_placed_points(self):
         d, _items = self.window(2)
         d.place_and_next()

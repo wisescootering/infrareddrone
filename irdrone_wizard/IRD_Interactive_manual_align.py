@@ -3,19 +3,19 @@
 Align by hand (Step 4 review): every flagged point, one after the other, then
 the alignments are computed together.
 
-    list          the points to realign: ○ to place, ✓ placed, – skipped
+    list          the points to realign: ○ to place, ✓ placed, ⚙ computing, – skipped
     view          the visible image (undistorted) and the infrared warped with
                   the yaw / pitch / roll set here, shown like in the review:
                   overlay, curtain, blink, side by side, optionally edges only
     side panel    yaw, pitch, roll; "Fit" (the measured offset of the edges is
                   turned into yaw and pitch); the mismatch measured live
 
-Nothing heavy runs while the user places the images: the previews are about
-1600 px wide and the warp takes a few milliseconds. Once the points are
-placed, "Compute" hands their angles back to the review, which runs
-automatic_registration.py --manual-angles on all of them in the background (the
-automatic alignment refines from those angles, as after the old slider window)
-and asks to confirm each result at the end.
+The previews are about 1600 px wide and the warp takes a few milliseconds.
+With ``send_now`` (the review), "Placed, next" hands the angles of the point
+to the review at once: it runs automatic_registration.py --manual-angles in the
+background (the automatic alignment refines from those angles, as after the
+old slider window) while the user places the next point. "Compute" sends the
+points placed but not sent yet; the review asks to confirm each result.
 
 The matplotlib slider window (automatic_registration.py --manual) stays for the
 command line.
@@ -53,8 +53,11 @@ ANGLES = ("yaw", "pitch", "roll")
 MEASURE_WIDTH = 1000          # width of the copy the offset is measured on
 CLOSE_ENOUGH = 10.0           # px of the full image: the automatic alignment does the rest
 
-TODO, PLACED, SKIPPED = "todo", "placed", "skipped"
-STATE_LOOK = {TODO: ("○", "#6B7785"), PLACED: ("✓", "#2E7D32"), SKIPPED: ("–", "#A0AAB4")}
+TODO, PLACED, SKIPPED, SENT = "todo", "placed", "skipped", "sent"
+STATE_LOOK = {TODO: ("○", "#6B7785"), PLACED: ("✓", "#2E7D32"), SKIPPED: ("–", "#A0AAB4"),
+              SENT: ("⚙", "#7B3FA0")}
+STATE_TEXT = {TODO: "To place", PLACED: "Placed", SKIPPED: "Skipped: stays flagged, left out of the map",
+              SENT: "Computing in the background"}
 
 MODES = [  # (key, text, tooltip)
     ("ana", "Overlay", "Visible in cyan, infrared in red: move the infrared until the edges are single."),
@@ -303,12 +306,19 @@ def _compare_view_class():
 #  Window
 # ---------------------------------------------------------------------------
 class ManualAlignDialog(QDialog):
-    """Place the infrared of each point by hand; ``placed()`` once accepted."""
-    INTRO = "Place every point, then compute them all at once: no waiting between points."
+    """Place the infrared of each point by hand; ``placed()`` once accepted.
 
-    def __init__(self, items: List[AlignItem], mission_name: str = "", parent=None):
+    send_now(item): called by "Placed, next", the point computes in the
+    background meanwhile (it is then locked, SENT)."""
+    INTRO = "Place every point, then compute them all at once: no waiting between points."
+    INTRO_SEND = "Place a point and press Enter: it computes in the background while you place the next."
+
+    def __init__(self, items: List[AlignItem], mission_name: str = "", parent=None, send_now=None):
         super().__init__(parent)
         self.items = items
+        self.send_now = send_now
+        if send_now is not None:
+            self.INTRO = self.INTRO_SEND
         self.index = 0
         self._edges = False
         self._move_from = None          # angles when a drag started
@@ -348,7 +358,8 @@ class ManualAlignDialog(QDialog):
         self.chip_placed = chip("#2E7D32")
         self.chip_todo = chip("#6B7785")
         self.chip_skipped = chip("#A0AAB4")
-        for c in (self.chip_placed, self.chip_todo, self.chip_skipped):
+        self.chip_sent = chip("#7B3FA0")
+        for c in (self.chip_sent, self.chip_placed, self.chip_todo, self.chip_skipped):
             head.addWidget(c)
         outer.addLayout(head)
 
@@ -407,7 +418,8 @@ class ManualAlignDialog(QDialog):
         self.btn_help.clicked.connect(self._on_help)
         self.btn_skip = QPushButton("Skip this point  (S)")
         self.btn_skip.setStyleSheet(SECONDARY_STYLE)
-        self.btn_skip.setToolTip("Leave this point out: it stays flagged misaligned (Step 5 skips it).")
+        self.btn_skip.setToolTip("Leave this point out: it stays flagged misaligned and is left out of the map "
+                                 "(Step 5 skips it).")
         self.btn_skip.clicked.connect(self.skip)
         self.btn_cancel = QPushButton("Cancel")
         self.btn_cancel.setStyleSheet(SECONDARY_STYLE)
@@ -419,7 +431,8 @@ class ManualAlignDialog(QDialog):
         self.btn_prev.clicked.connect(lambda: self.select(self.index - 1))
         self.btn_next = QPushButton("Placed, next  ▶")
         self.btn_next.setStyleSheet(SECONDARY_STYLE)
-        self.btn_next.setToolTip("This point is placed: go to the next one to place (Enter).")
+        self.btn_next.setToolTip("This point is placed: go to the next one to place (Enter)."
+                                 + (" Its alignment starts in the background meanwhile." if self.send_now else ""))
         self.btn_next.clicked.connect(self.place_and_next)
         self.btn_compute = QPushButton()
         self.btn_compute.setStyleSheet(PRIMARY_STYLE)
@@ -570,13 +583,15 @@ class ManualAlignDialog(QDialog):
             w = self.list.item(row)
             w.setText(f"{icon}  {item.stem}" + ("   ⚠" if item.error else ""))
             w.setForeground(QColor(color if item.state != TODO else "#1F2933"))
-            w.setToolTip(item.error or {TODO: "To place", PLACED: "Placed", SKIPPED: "Skipped"}[item.state])
+            w.setToolTip(item.error or STATE_TEXT[item.state])
         n = {s: sum(1 for i in self.items if i.state == s) for s in STATE_LOOK}
         set_chip(self.chip_placed, f"✓ {n[PLACED]} placed" if n[PLACED] else "")
+        set_chip(self.chip_sent, f"⚙ {n[SENT]} computing" if n[SENT] else "")
         set_chip(self.chip_todo, f"○ {n[TODO]} to place" if n[TODO] else "")
         set_chip(self.chip_skipped, f"– {n[SKIPPED]} skipped" if n[SKIPPED] else "")
         self.btn_compute.setText(f"Compute {n[PLACED]} alignment{'s' if n[PLACED] != 1 else ''}  ▶")
         self.btn_compute.setEnabled(n[PLACED] > 0)
+        self.btn_cancel.setText("Close" if n[SENT] and not n[PLACED] else "Cancel")
         self.btn_prev.setEnabled(self.index > 0)
 
     def _refresh_point(self):
@@ -585,7 +600,7 @@ class ManualAlignDialog(QDialog):
             return
         self.point_title.setText(item.stem)
         icon, color = STATE_LOOK[item.state]
-        text = {TODO: "To place", PLACED: "Placed", SKIPPED: "Skipped: stays flagged"}[item.state]
+        text = STATE_TEXT[item.state]
         self.point_state.setText(f"<span style='color:{color}'>{icon} {text}</span>"
                                  f"&nbsp;&nbsp;<span style='color:#6B7785'>{self.index + 1} / {len(self.items)}</span>")
         self._updating = True
@@ -593,10 +608,10 @@ class ManualAlignDialog(QDialog):
             self.spins[key].setValue(value)
             self.sliders[key].setValue(round(value * SLIDER_UNITS))
         self._updating = False
-        ready = item.preview is not None
+        ready = item.preview is not None and item.state != SENT
         for w in list(self.spins.values()) + list(self.sliders.values()) + [self.btn_fit, self.btn_reset]:
             w.setEnabled(ready)
-        self.offset_label.setText(describe_offset(item.offset) if ready else "")
+        self.offset_label.setText(describe_offset(item.offset) if item.preview is not None else "")
 
     # ---- navigation
     def select(self, index: int):
@@ -623,20 +638,28 @@ class ManualAlignDialog(QDialog):
 
     def place_and_next(self):
         item = self.current()
-        if item is None or item.preview is None:
+        if item is None or item.preview is None or item.state == SENT:
+            nxt = self._next_todo()
+            if item is not None and item.state == SENT and nxt is not None:
+                self.select(nxt)
             return
         item.state = PLACED
+        if self.send_now is not None:
+            self.send_now(item)          # computes while the next one is placed
+            item.state = SENT
         nxt = self._next_todo()
         if nxt is None:
             self._refresh_list()
             self._refresh_point()
-            self.subtitle.setText("Every point is placed: compute them.")
+            self.subtitle.setText("Every point is placed: close the window, the review shows the results."
+                                  if self.send_now is not None and not self.placed()
+                                  else "Every point is placed: compute them.")
             return
         self.select(nxt)
 
     def skip(self):
         item = self.current()
-        if item is None:
+        if item is None or item.state == SENT:
             return
         item.state = SKIPPED
         nxt = self._next_todo()
@@ -705,7 +728,7 @@ class ManualAlignDialog(QDialog):
     # ---- moving the infrared
     def set_angles(self, angles, measure: bool = True):
         item = self.current()
-        if item is None or item.preview is None:
+        if item is None or item.preview is None or item.state == SENT:
             return
         item.angles = clamp_angles(angles)
         if item.state == TODO:
@@ -764,7 +787,7 @@ class ManualAlignDialog(QDialog):
         """Move the infrared by the offset measured between the edges (twice:
         the second pass corrects the first); keep the result only if better."""
         item = self.current()
-        if item is None or item.preview is None:
+        if item is None or item.preview is None or item.state == SENT:
             return
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
@@ -805,6 +828,8 @@ class ManualAlignDialog(QDialog):
     def compute(self):
         placed = self.placed()
         if not placed:
+            if any(i.state == SENT for i in self.items):
+                self.accept()            # all sent already
             return
         todo = [i for i in self.items if i.state == TODO]
         if todo and QMessageBox.question(
@@ -816,8 +841,10 @@ class ManualAlignDialog(QDialog):
         self.accept()
 
     def reject(self):
+        sent = any(i.state == SENT for i in self.items)
         if any(i.state == PLACED for i in self.items) and QMessageBox.question(
-                self, "Align by hand", "Forget the points placed by hand?",
+                self, "Align by hand", "Forget the points placed by hand but not computed yet?"
+                + ("\n\nThe ones already computing go on." if sent else ""),
                 QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel
         ) != QMessageBox.StandardButton.Discard:
             return

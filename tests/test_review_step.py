@@ -284,6 +284,41 @@ class ReviewDialogTests(MissionTests):
         d.done(0)
 
 
+    def test_a_placed_point_computes_while_the_window_is_open(self):
+        from unittest import mock
+        import IRD_Interactive_manual_align as M
+        d = self.dialog()
+        d.toggle_flag()                                   # 140 flagged
+        args = ["--images", "/m/VIS_0140.dng", "/m/NIR_0101.dng", "--manual", "--angles", "1.0", "2.0", "0.0",
+                "--redo"]
+        item = M.AlignItem(140, "VIS_0140", args, Path("/m/VIS_0140.dng"), Path("/m/NIR_0101.dng"),
+                           (1.0, 2.0, 0.0), (1.5, 2.25, 0.1), M.PLACED)
+        seen = {}
+
+        class FakeWindow:
+            def __init__(self, *a, send_now=None, **k):
+                self.send_now = send_now
+
+            def exec(self):
+                from PyQt6.QtWidgets import QDialog
+                self.send_now(item)                       # "Placed, next"
+                seen["started"] = start.called            # before the window is closed
+                return QDialog.DialogCode.Rejected        # closed: the point still computes
+
+            def placed(self):
+                return []
+        with mock.patch.object(M, "ManualAlignDialog", FakeWindow), \
+                mock.patch.object(d.redo_runner, "_start") as start:
+            import IRD_Interactive_4 as S4
+            with mock.patch.object(S4, "read_redo_command", return_value=args):
+                d._redo_flagged()
+            self.assertTrue(seen["started"])
+            start.assert_called_once()
+            d.redo_runner._queue.clear()
+        d._redo_clock.stop()
+        d.done(0)
+
+
 class ReviewInteractionTests(ReviewDialogTests):
     def test_dragging_the_time_line_pans_without_selecting(self):
         from PyQt6.QtCore import QPoint, Qt
