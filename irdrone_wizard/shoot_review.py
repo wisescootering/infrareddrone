@@ -57,7 +57,6 @@ STATUS_CHECK = "check"           # residual between SHIFT_OK and SHIFT_SUSPICIOU
 STATUS_SUSPICIOUS = "suspicious"
 STATUS_FLAGGED = "flagged"        # failed in the inventory
 STATUS_REALIGNED = "realigned"    # flagged, realigned by hand: the user confirms the new image
-STATUS_CHECKED = "checked"        # looked at and accepted by the user
 STATUS_UNKNOWN = "unknown"        # not measured (yet, or no texture)
 STATUS_MISSING = "missing"        # no aligned image on disk
 
@@ -102,8 +101,8 @@ class ReviewPoint:
             return STATUS_REALIGNED if self.realigned else STATUS_FLAGGED
         if self.vir_image is None or self.vis_image is None:
             return STATUS_MISSING
-        if self.checked:
-            return STATUS_CHECKED
+        if self.checked:            # confirmed by the user: aligned
+            return STATUS_OK
         return self.measured_status
 
 

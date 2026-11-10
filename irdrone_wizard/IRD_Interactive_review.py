@@ -43,7 +43,6 @@ from IRD_Interactive_look import (BLUE, CURSOR, DANGER_STYLE, DIALOG_STYLE, GRID
 
 STATUS_COLORS = {
     R.STATUS_OK: QColor("#2E7D32"),
-    R.STATUS_CHECKED: QColor("#1565C0"),
     R.STATUS_CHECK: QColor("#E0A030"),
     R.STATUS_SUSPICIOUS: QColor("#D35400"),
     R.STATUS_FLAGGED: QColor("#B03A2E"),
@@ -53,7 +52,6 @@ STATUS_COLORS = {
 }
 STATUS_TEXT = {
     R.STATUS_OK: "Aligned",
-    R.STATUS_CHECKED: "Confirmed by you",      # a realigned point confirmed (or checked before)
     R.STATUS_CHECK: "To check",
     R.STATUS_SUSPICIOUS: "Probably misaligned",
     R.STATUS_FLAGGED: "Flagged: left out of the map",
@@ -62,7 +60,7 @@ STATUS_TEXT = {
     R.STATUS_MISSING: "No aligned image",
 }
 NOT_ALIGNED_COLOR = QColor("#A0AAB4")      # map: a shoot point Step 4 did not align
-LEGEND_ORDER = (R.STATUS_OK, R.STATUS_CHECKED, R.STATUS_CHECK, R.STATUS_UNKNOWN, R.STATUS_SUSPICIOUS,
+LEGEND_ORDER = (R.STATUS_OK, R.STATUS_CHECK, R.STATUS_UNKNOWN, R.STATUS_SUSPICIOUS,
                 R.STATUS_FLAGGED, R.STATUS_REALIGNED, R.STATUS_MISSING)
 # Points worth a look, in this order, for "Next to review"
 TO_REVIEW = (R.STATUS_REALIGNED, R.STATUS_SUSPICIOUS, R.STATUS_CHECK, R.STATUS_UNKNOWN)
@@ -599,7 +597,7 @@ class ReviewStrip(QWidget):
             p.setBrush(Qt.BrushStyle.NoBrush)
         elif pt.checked:
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(STATUS_COLORS[R.STATUS_CHECKED])
+            p.setBrush(STATUS_COLORS[R.STATUS_OK])
             p.drawEllipse(QRectF(target.left() + 3, target.top() + 3, 15, 15))
             p.setPen(QColor("white"))
             p.drawText(QRectF(target.left() + 3, target.top() + 3, 15, 15), Qt.AlignmentFlag.AlignCenter, "✓")
@@ -1300,7 +1298,7 @@ class ReviewDialog(QDialog):
     def _refresh_counts(self):
         self._refresh_legend()
         counts = self.review.counts()
-        ok = counts.get(R.STATUS_OK, 0) + counts.get(R.STATUS_CHECKED, 0)
+        ok = counts.get(R.STATUS_OK, 0)
         check = counts.get(R.STATUS_CHECK, 0) + counts.get(R.STATUS_UNKNOWN, 0)
         set_chip(self.chips[R.STATUS_OK], f"✓ {ok} aligned" if ok else "", self.chips[R.STATUS_OK].toolTip())
         set_chip(self.chips[R.STATUS_CHECK], f"? {check} to check" if check else "", self.chips[R.STATUS_CHECK].toolTip())

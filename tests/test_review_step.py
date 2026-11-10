@@ -69,7 +69,7 @@ class StatusTests(unittest.TestCase):
     def test_flag_wins_then_missing_then_checked(self):
         self.assertEqual(self.point(shift=1.0, failed=True).status, R.STATUS_FLAGGED)
         self.assertEqual(self.point(vir_image=None).status, R.STATUS_MISSING)
-        self.assertEqual(self.point(shift=12.0, checked=True).status, R.STATUS_CHECKED)
+        self.assertEqual(self.point(shift=12.0, checked=True).status, R.STATUS_OK)
 
 
 class MissionTests(unittest.TestCase):
@@ -264,7 +264,7 @@ class ReviewDialogTests(MissionTests):
         self.assertIn("All 2", d.btn_accept_all.text())
         d._accept_all()
         review = R.load_review(self.mission)
-        self.assertEqual([review.by_number(n).status for n in (137, 140)], [R.STATUS_CHECKED] * 2)
+        self.assertEqual([review.by_number(n).status for n in (137, 140)], [R.STATUS_OK] * 2)
         d.scan.wait(10000)
         d.done(0)
 
