@@ -69,7 +69,7 @@ TO_REVIEW = (R.STATUS_REALIGNED, R.STATUS_SUSPICIOUS, R.STATUS_CHECK, R.STATUS_U
 TAG_COLOR = QColor("#1F2933")      # labels on the images: neutral, the colours are the images'
 DEFAULT_MODE = "overlay"           # doubled edges show a misalignment at a glance
 MODES = [  # (key, button text, tooltip)
-    ("swipe", "Swipe", "Visible on the left of the curtain, aligned infrared (false colours) on the right. "
+    ("swipe", "Swipe", "Visible on the left of the curtain, aligned infrared (grey values) on the right. "
                        "Drag the curtain: roads, hedges and buildings must continue across it."),
     ("blink", "Blink", "Visible and infrared shown in turn: a misaligned image jumps."),
     ("overlay", "Overlay", "Visible in cyan, infrared in red (vegetation is naturally red). Aligned: "
@@ -266,7 +266,7 @@ class CompareView(QWidget):
                 self._tag(p, area, cap, TAG_COLOR)
         elif self.mode == "swipe":
             area = areas[0]
-            self._draw(p, area, "vir")
+            self._draw(p, area, "nir")
             rect = self._image_rect(area)
             x = rect.left() + self.curtain * rect.width()
             p.save()
