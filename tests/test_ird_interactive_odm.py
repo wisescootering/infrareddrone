@@ -442,6 +442,29 @@ class BestMappingTests(unittest.TestCase):
                  "VIS_0126.DNG", "VIS_0127.DNG", "VIS_0128.DNG"],
             )
 
+    def test_points_aligned_from_the_review_are_always_mapped(self):
+        """Aligned on request in the review: kept whatever the time tolerance
+        and the thinning, unless flagged; the other images selected as before."""
+        with tempfile.TemporaryDirectory() as temporary:
+            mission = Path(temporary)
+            self._create_mission(mission)
+            inventory_path = mission / "ImgIRdrone" / "shoot_points.json"
+            points = []
+            for index, dt in ((120, 0.5), (121, -0.2), (122, 0.1), (123, 0.5001), (124, -0.5),
+                              (125, 0.2), (126, 0.4), (127, -0.49), (128, 0.1)):
+                point = {"FileName": f"VIS_{index:04d}.DNG", "dt": dt, "failed": index == 124}
+                if index in (122, 123, 124):          # 123: beyond 0.5 s; 124: flagged since
+                    point["aligned_on_request"] = True
+                points.append(point)
+            inventory_path.write_text(json.dumps({"shoot_points": points}), encoding="utf-8")
+
+            manifest = build_best_mapping(mission)
+
+            self.assertEqual(
+                [point["VIS"]["FileName"] for point in manifest["shoot_points"]],
+                ["VIS_0120.DNG", "VIS_0122.DNG", "VIS_0123.DNG", "VIS_0125.DNG", "VIS_0128.DNG"],
+            )
+
     def test_required_mission_metadata_is_reported(self):
         with tempfile.TemporaryDirectory() as temporary:
             with self.assertRaises(ODMMappingError):

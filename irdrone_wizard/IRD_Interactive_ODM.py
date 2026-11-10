@@ -615,6 +615,7 @@ def select_mapping_pairs(
         "rank_one_pairs_within_dt_tolerance": 0,
     }
 
+    requested_pairs: List[Tuple[int, Dict[str, Any], Dict[str, Any], float]] = []
     source_shoot_points = shoot_points_data["shoot_points"]
     if shoot_points_path == status_shoot_points_path:
         normalized_points = []
@@ -642,6 +643,7 @@ def select_mapping_pairs(
                 {
                     "VIS": {"FileName": vis_filename},
                     "NIR": [{"rank": 1, "dt": dt}],
+                    "on_request": shoot_point.get("aligned_on_request") is True,
                 }
             )
         source_shoot_points = normalized_points
@@ -668,11 +670,14 @@ def select_mapping_pairs(
             if isinstance(dt, bool) or not isinstance(dt, (int, float)) or not math.isfinite(dt):
                 continue
             counters["rank_one_pairs_with_valid_dt"] += 1
+            pair = (shoot_point_index, vis_data, nir_match, float(dt))
+            if shoot_point.get("on_request"):
+                requested_pairs.append(pair)     # aligned from the review: kept whatever the rules
             absolute_dt = abs(float(dt))
             if absolute_dt > dt_tolerance_s:
                 continue
             counters["rank_one_pairs_within_dt_tolerance"] += 1
-            eligible_pairs.append((shoot_point_index, vis_data, nir_match, float(dt)))
+            eligible_pairs.append(pair)
 
     if overlap is None:
         sampled_pairs = eligible_pairs[::sample_every]
@@ -687,6 +692,11 @@ def select_mapping_pairs(
         ]
         kept = best_mapping.select(shots, float(overlap), best_mapping.mission_fov(mission_folder))
         sampled_pairs = [eligible_pairs[index] for index in kept]
+    if requested_pairs:
+        counters["aligned_on_request"] = len(requested_pairs)
+        sampled = {pair[0] for pair in sampled_pairs}
+        sampled_pairs = sorted(sampled_pairs + [pair for pair in requested_pairs if pair[0] not in sampled],
+                               key=lambda pair: pair[0])
     return {
         "sampled_pairs": sampled_pairs,
         "counters": counters,
