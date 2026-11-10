@@ -583,46 +583,19 @@ def _vis_metadata_by_name(shoot_points_path: Path) -> Dict[str, Dict[str, Any]]:
     return out
 
 
-def build_best_mapping(
+def select_mapping_pairs(
     mission_folder: Path,
     dt_tolerance_s: float = 0.5,
     sample_every: int = 3,
     overlap: Optional[float] = None,
 ) -> Dict[str, Any]:
-    """Build and save the selected shoot points and their matching TIFF quartets.
+    """The image selection of Step 5, nothing written: the eligible pairs
+    (rank-one |dt| within the tolerance, images of the flight, not flagged
+    failed) thinned by ``overlap`` or one every ``sample_every``.
 
-    The eligible pairs (rank-one |dt| within the tolerance, survey of Step 2, not
-    flagged failed) are thinned either by ``overlap`` (best mapping: footprint
-    overlap between successive images, 0.5 to 0.95) or, when ``overlap`` is None,
-    by keeping one pair every ``sample_every``."""
-    mission_folder = Path(mission_folder).expanduser().resolve()
-    if not mission_folder.is_dir():
-        raise ODMMappingError(f"Mission folder does not exist: {mission_folder}")
-    if (
-        isinstance(dt_tolerance_s, bool)
-        or not isinstance(dt_tolerance_s, (int, float))
-        or not math.isfinite(dt_tolerance_s)
-        or not 0.05 <= dt_tolerance_s <= 6.0
-    ):
-        raise ODMMappingError(
-            "The maximum time difference must be between 0.05 and 6.0 seconds."
-        )
-    if (
-        isinstance(sample_every, bool)
-        or not isinstance(sample_every, int)
-        or sample_every not in (1, 2, 3, 4)
-    ):
-        raise ODMMappingError("The image sampling interval must be 1, 2, 3, or 4.")
-    if overlap is not None and (
-        isinstance(overlap, bool)
-        or not isinstance(overlap, (int, float))
-        or not best_mapping.MIN_OVERLAP <= overlap <= best_mapping.MAX_OVERLAP
-    ):
-        raise ODMMappingError(
-            f"The image overlap must be between {best_mapping.MIN_OVERLAP:.2f} and "
-            f"{best_mapping.MAX_OVERLAP:.2f}."
-        )
-
+    Returns {"sampled_pairs", "counters", "shoot_points_path",
+    "transfer_info_path"}; each pair is (shoot point index, VIS, NIR match, dt)."""
+    mission_folder = Path(mission_folder)
     aerial_photography = mission_folder / "AerialPhotography"
     status_shoot_points_path = mission_folder / "ImgIRdrone" / "shoot_points.json"
     shoot_points_path = (
@@ -631,9 +604,6 @@ def build_best_mapping(
         else aerial_photography / "shoot_points.json"
     )
     transfer_info_path = aerial_photography / "VIS" / "transfer_info_VIS_dng.json"
-    mapping_folder = mission_folder / "mapping_MULTI"
-    images_folder = mission_folder / "ImgIRdrone" / "imgMultispectral"
-    camera_path = mapping_folder / "camera" / "camera_IRdrone.json"
 
     shoot_points_data = _load_json(shoot_points_path)
     if not isinstance(shoot_points_data, dict) or not isinstance(
@@ -647,9 +617,6 @@ def build_best_mapping(
         raise ODMMappingError(
             f"{transfer_info_path} must contain 'fly.listCopiedImages' as a list of filenames."
         )
-    camera_data = _load_json(camera_path)
-    if not isinstance(camera_data, dict) or not camera_data:
-        raise ODMMappingError(f"{camera_path} must contain a non-empty camera configuration object.")
 
     fly_filenames: Set[str] = {Path(filename).name.casefold() for filename in fly_images}
     eligible_pairs: List[Tuple[int, Dict[str, Any], Dict[str, Any], float]] = []
@@ -735,6 +702,86 @@ def build_best_mapping(
         ]
         kept = best_mapping.select(shots, float(overlap), best_mapping.mission_fov(mission_folder))
         sampled_pairs = [eligible_pairs[index] for index in kept]
+    return {
+        "sampled_pairs": sampled_pairs,
+        "counters": counters,
+        "shoot_points_path": shoot_points_path,
+        "transfer_info_path": transfer_info_path,
+    }
+
+
+def planned_mapping_numbers(mission_folder: Path) -> Set[int]:
+    """Numbers of the visible images the next run of Step 5 will map, with its
+    default settings (|dt| ≤ 0.5 s, best mapping at the overlap of Steps 2 and
+    4, else one image in 3); empty when it cannot be known (before Step 4)."""
+    mission_folder = Path(mission_folder)
+    if not (mission_folder / "ImgIRdrone" / "shoot_points.json").is_file():
+        return set()
+    choice = best_mapping.load_choice(mission_folder)
+    try:
+        selection = select_mapping_pairs(
+            mission_folder, overlap=choice["overlap"] if choice["enabled"] else None)
+    except ODMMappingError:
+        return set()
+    out = set()
+    for _, vis_data, _, _ in selection["sampled_pairs"]:
+        m = VIS_FILENAME_PATTERN.match(Path(str(vis_data["FileName"])).name)
+        if m:
+            out.add(int(m.group(1)))
+    return out
+
+
+def build_best_mapping(
+    mission_folder: Path,
+    dt_tolerance_s: float = 0.5,
+    sample_every: int = 3,
+    overlap: Optional[float] = None,
+) -> Dict[str, Any]:
+    """Build and save the selected shoot points and their matching TIFF quartets.
+
+    The eligible pairs (rank-one |dt| within the tolerance, survey of Step 2, not
+    flagged failed) are thinned either by ``overlap`` (best mapping: footprint
+    overlap between successive images, 0.5 to 0.95) or, when ``overlap`` is None,
+    by keeping one pair every ``sample_every``."""
+    mission_folder = Path(mission_folder).expanduser().resolve()
+    if not mission_folder.is_dir():
+        raise ODMMappingError(f"Mission folder does not exist: {mission_folder}")
+    if (
+        isinstance(dt_tolerance_s, bool)
+        or not isinstance(dt_tolerance_s, (int, float))
+        or not math.isfinite(dt_tolerance_s)
+        or not 0.05 <= dt_tolerance_s <= 6.0
+    ):
+        raise ODMMappingError(
+            "The maximum time difference must be between 0.05 and 6.0 seconds."
+        )
+    if (
+        isinstance(sample_every, bool)
+        or not isinstance(sample_every, int)
+        or sample_every not in (1, 2, 3, 4)
+    ):
+        raise ODMMappingError("The image sampling interval must be 1, 2, 3, or 4.")
+    if overlap is not None and (
+        isinstance(overlap, bool)
+        or not isinstance(overlap, (int, float))
+        or not best_mapping.MIN_OVERLAP <= overlap <= best_mapping.MAX_OVERLAP
+    ):
+        raise ODMMappingError(
+            f"The image overlap must be between {best_mapping.MIN_OVERLAP:.2f} and "
+            f"{best_mapping.MAX_OVERLAP:.2f}."
+        )
+
+    selection = select_mapping_pairs(mission_folder, dt_tolerance_s, sample_every, overlap)
+    sampled_pairs = selection["sampled_pairs"]
+    counters = selection["counters"]
+    shoot_points_path = selection["shoot_points_path"]
+    transfer_info_path = selection["transfer_info_path"]
+    mapping_folder = mission_folder / "mapping_MULTI"
+    images_folder = mission_folder / "ImgIRdrone" / "imgMultispectral"
+    camera_path = mapping_folder / "camera" / "camera_IRdrone.json"
+    camera_data = _load_json(camera_path)
+    if not isinstance(camera_data, dict) or not camera_data:
+        raise ODMMappingError(f"{camera_path} must contain a non-empty camera configuration object.")
     shoot_point_records: List[Dict[str, Any]] = []
     image_quartets: List[Dict[str, Any]] = []
     for selection_index, (shoot_point_index, vis_data, nir_match, dt) in enumerate(sampled_pairs):

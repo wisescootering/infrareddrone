@@ -62,6 +62,17 @@ def make_mission(root: Path, n=5, mapping=False, yaw=-78.9):
     return m
 
 
+def step4_done(m: Path, numbers, failed=(), dt=None):
+    """Step 4 inventory (ImgIRdrone/shoot_points.json) and the flight list of Step 1."""
+    dt = dt or {}
+    (m / "ImgIRdrone").mkdir()
+    (m / "ImgIRdrone" / "shoot_points.json").write_text(json.dumps({"shoot_points": [
+        {"FileName": f"VIS_{n:04d}.dng", "dt": dt.get(n, 0.1), "failed": n in failed} for n in numbers]}))
+    (m / "AerialPhotography" / "VIS").mkdir(exist_ok=True)
+    (m / "AerialPhotography" / "VIS" / "transfer_info_VIS_dng.json").write_text(json.dumps(
+        {"fly": {"listCopiedImages": [f"VIS_{n:04d}.dng" for n in numbers]}}))
+
+
 class GeometryTest(unittest.TestCase):
     def test_mercator_of_the_origin_and_tiles(self):
         x0, y0 = F.mercator(0, 0)
@@ -174,16 +185,21 @@ class MapViewTest(unittest.TestCase):
         self.assertEqual(seen, [3])
         self.MV.tile_cache().stop()
 
-    def test_sparse_trajectory_of_the_mapping_while_the_orthophoto_is_shown(self):
-        """Main window: with the orthophoto, only the shoot points used by the
-        mapping (one image every n) are drawn and picked."""
+    def test_sparse_trajectory_of_the_mapping_orthophoto_shown_or_not(self):
+        """Main window, the mapping done: only the shoot points used by the
+        mapping are drawn and picked, orthophoto shown or not; their footprints
+        while it is hidden."""
         m = make_mission(Path(tempfile.mkdtemp()), n=7)
-        (m / "mapping_MULTI").mkdir()
+        (m / "mapping_MULTI" / "mapping_result").mkdir(parents=True)
         (m / "mapping_MULTI" / "img_best_mappping.json").write_text(json.dumps(
             {"image_quartets": [{"VIS_filename": f"VIS_{n:04d}.dng"} for n in (137, 140, 143)]}))
         self.assertEqual(F.mapped_numbers(m), {137, 140, 143})
         model = self.MV.map_model_for(m, with_ortho=False, sparse_mapping=True)
-        self.assertEqual(model.visible(), list(range(7)))          # no orthophoto yet: whole flight
+        self.assertEqual(model.mapped, [])                          # no orthophoto: not a mapping done
+        F.orthophoto_path(m).write_bytes(b"")
+        model = self.MV.map_model_for(m, with_ortho=False, sparse_mapping=True)
+        self.assertEqual((model.mapped_by, model.visible()), ("mapping", [0, 3, 6]))   # not loaded yet
+        self.assertEqual(model.footprints_kept(), [0, 3, 6])
         rgba = np.zeros((4, 4, 4), np.uint8)
         model.set_ortho(F.OrthoPreview(rgba, rgba, [(LAT, LON), (LAT, LON + 1e-3), (LAT - 1e-3, LON)]))
         model.set_ortho_mode("natural")
@@ -198,8 +214,10 @@ class MapViewTest(unittest.TestCase):
         self.assertIsNone(view.nearest(x, y, radius=3))              # not used by the mapping
         x, y = view.to_screen(*model.xy[3])
         self.assertEqual(view.nearest(x, y), 3)
-        model.set_ortho_mode("hidden")                               # orthophoto hidden: whole flight
-        self.assertEqual(model.visible(), list(range(7)))
+        self.assertEqual(model.footprints_kept(), [])                # on the orthophoto: no footprints
+        model.set_ortho_mode("hidden")                               # orthophoto hidden: still the mapping
+        self.assertEqual(model.visible(), [0, 3, 6])
+        self.assertEqual(model.footprints_kept(), [0, 3, 6])
         # the review keeps every shoot point
         self.assertEqual(self.MV.map_model_for(m, with_ortho=False).mapped, [])
         self.MV.tile_cache().stop()
@@ -228,28 +246,32 @@ class MapViewTest(unittest.TestCase):
         self.assertEqual(self.MV.map_model_for(m, with_ortho=False, sparse_mapping=True).mapped, [])
         # the mapping done: its images, not the plan
         BM.save_choice(m, enabled=True)
-        (m / "mapping_MULTI").mkdir()
+        (m / "mapping_MULTI" / "mapping_result").mkdir(parents=True)
         (m / "mapping_MULTI" / "img_best_mappping.json").write_text(json.dumps(
             {"image_quartets": [{"VIS_filename": "VIS_0138.dng"}]}))
+        F.orthophoto_path(m).write_bytes(b"")
         model = self.MV.map_model_for(m, with_ortho=False, sparse_mapping=True)
-        self.assertEqual((model.mapped, model.planned, model.sparse), ([1], False, False))
+        self.assertEqual((model.mapped, model.planned, model.sparse), ([1], False, True))
         self.MV.tile_cache().stop()
 
     def test_main_map_shows_the_images_for_the_map_and_the_flagged_ones(self):
-        """Main window, after Step 4: the images aligned (what Step 5 maps),
-        the flagged ones in red with their footprints, off the trajectory."""
+        """Main window, after Step 4, before Step 5: the images the next run of
+        Step 5 will map (its own selection: |dt|, one in 3 here), the flagged
+        ones in red with their footprints, off the trajectory."""
+        import best_mapping as BM
+        import IRD_Interactive_ODM as ODM
         m = make_mission(Path(tempfile.mkdtemp()), n=7)
-        (m / "ImgIRdrone").mkdir()
-        (m / "ImgIRdrone" / "shoot_points.json").write_text(json.dumps({"shoot_points": [
-            {"FileName": "VIS_0137.DNG"}, {"FileName": "VIS_0139.DNG", "failed": True},
-            {"FileName": "VIS_0141.DNG"}, {"FileName": "VIS_0143.DNG", "failed": False}]}))
-        self.assertEqual(F.aligned_selection(m), ({137, 141, 143}, {139}))
+        step4_done(m, range(137, 144), failed={139}, dt={142: 0.8})
+        BM.save_choice(m, enabled=False)                             # one image in 3
+        self.assertEqual(F.aligned_selection(m), ({137, 138, 140, 141, 142, 143}, {139}))
+        # eligible: 137 138 140 141 143 (139 flagged, 142 |dt| > 0.5 s); one in 3
+        self.assertEqual(ODM.planned_mapping_numbers(m), {137, 141})
         model = self.MV.map_model_for(m, with_ortho=False, sparse_mapping=True)
-        self.assertEqual((model.mapped_by, model.planned, model.sparse), ("aligned", True, True))
-        self.assertEqual(model.mapped, [0, 4, 6])
+        self.assertEqual((model.mapped_by, model.planned, model.sparse), ("next mapping", True, True))
+        self.assertEqual(model.mapped, [0, 4])
         self.assertEqual(model.flagged, [2])
-        self.assertEqual(model.visible(), [0, 2, 4, 6])               # the flagged one can be clicked
-        self.assertEqual(model.footprints_kept(), [0, 4, 6])
+        self.assertEqual(model.visible(), [0, 2, 4])                 # the flagged one can be clicked
+        self.assertEqual(model.footprints_kept(), [0, 4])
         self.assertEqual(model.footprints_flagged(), [2])
         view = self.MV.FlightMapView(model)
         view.resize(600, 400)

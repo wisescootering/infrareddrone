@@ -9,11 +9,11 @@ the current image.
     click        pick the nearest shoot point (signal `picked`)
     Layers ▾     background source, orthophoto natural / infrared colours
 
-While the orthophoto is shown, a model built with `mapped` (the main window)
-draws the sparse trajectory of the mapping: only the shoot points selected
-for it (one image every n), the whole flight faint behind. Before the
-mapping, the images kept by the best mapping (Steps 2 and 4) are drawn the
-same way, with their ground footprints. Layers ▾ shows every image again.
+A model built with `mapped` (the main window) draws the sparse trajectory
+of the map: only the shoot points it uses (the mapping done, else the ones
+the next run of Step 5 will map), the whole flight faint behind, the flagged
+ones in red; with their ground footprints while no orthophoto is shown.
+Layers ▾ shows every image again.
 
 Several views can share one `MapModel` (mini map and large map of the review).
 """
@@ -142,8 +142,8 @@ class MapModel(QObject):
         self.xy = [p.xy for p in points]
         # indices of the shoot points used by the mapping of Step 5
         self.mapped = [i for i, n in enumerate(self.numbers) if n in mapped] if mapped else []
-        # "mapping" (Step 5 done), "aligned" (Step 4 done: the images Step 5
-        # will map) or "best mapping" (planned in Steps 2 and 4)
+        # "mapping" (Step 5 done), "next mapping" (Step 4 done: the images the
+        # next run of Step 5 will map) or "best mapping" (planned in Steps 2 and 4)
         self.mapped_by = mapped_by
         # indices of the shoot points flagged in the review: left out of the map
         self.flagged = [i for i, n in enumerate(self.numbers) if n in flagged] if flagged else []
@@ -208,15 +208,17 @@ class MapModel(QObject):
     @property
     def planned(self) -> bool:
         """The mapped points are the best mapping planned (no mapping yet)."""
-        return self.mapped_by in ("best mapping", "aligned")
+        return self.mapped_by in ("best mapping", "next mapping")
 
     @property
     def sparse(self) -> bool:
-        """Only the shoot points of the mapping: while the orthophoto is shown,
-        or before the mapping when the best mapping is chosen."""
-        if not ((self.mapped or self.flagged) and self.show_mapped):
-            return False
-        return self.planned or (bool(self.ortho_images) and self.ortho_mode in self.ortho_images)
+        """Only the shoot points of the map (and the flagged ones), orthophoto
+        shown or not; Layers ▾ shows every image again."""
+        return bool((self.mapped or self.flagged) and self.show_mapped)
+
+    @property
+    def ortho_shown(self) -> bool:
+        return bool(self.ortho_images) and self.ortho_mode in self.ortho_images
 
     def set_show_mapped(self, on: bool):
         self.show_mapped = bool(on)
@@ -227,12 +229,12 @@ class MapModel(QObject):
         Step 2, or the best mapping planned on the main window map."""
         if self.selection:
             return self.selection
-        return self.mapped if self.sparse and self.planned else []
+        return self.mapped if self.sparse and not self.ortho_shown else []
 
     def footprints_flagged(self) -> List[int]:
         """Indices whose footprints are drawn in red: flagged, left out of the
         map planned (holes in the coverage)."""
-        return self.flagged if self.sparse and self.planned and not self.selection else []
+        return self.flagged if self.sparse and not self.ortho_shown and not self.selection else []
 
     def visible(self) -> List[int]:
         """Indices of the points drawn (and picked): the flagged ones too."""
@@ -372,10 +374,9 @@ class FlightMapView(QWidget):
             menu.addAction(act)
         if self.model.mapped:
             menu.addSection("Trajectory")
-            self.act_mapped = QAction("Only the images for the map (and the flagged ones)"
-                                      if self.model.mapped_by == "aligned"
-                                      else "Only the images of the best mapping" if self.model.planned
-                                      else "Only the images of the mapping (orthophoto shown)",
+            self.act_mapped = QAction("Only the images of the best mapping"
+                                      if self.model.mapped_by == "best mapping" and not self.model.flagged
+                                      else "Only the images of the map (and the flagged ones)",
                                       menu, checkable=True)
             self.act_mapped.setChecked(self.model.show_mapped)
             self.act_mapped.triggered.connect(self.model.set_show_mapped)
@@ -697,7 +698,7 @@ class FlightMapView(QWidget):
             bits.append(f"{len(self.model.progress[0])} of {len(self.model.selection)} done")
         if self.model.sparse:
             n = len(self.model.mapped)
-            bits.append(f"{n} images for the map" if self.model.mapped_by == "aligned"
+            bits.append(f"{n} images Step 5 will map" if self.model.mapped_by == "next mapping"
                         else f"{n} images kept by the best mapping" if self.model.planned
                         else f"{n} images of the mapping")
             if self.model.flagged:
@@ -850,9 +851,9 @@ def map_model_for(mission: Path, color_of=None, with_ortho: bool = True, shoot_p
     points (every visible image before Step 3) on the whole flight. The
     orthophoto and the ground are read in the background. `color_of(number)`
     gives the colour of a point (default: phases of Step 2). With
-    `sparse_mapping`, only the shoot points used by the mapping are drawn
-    while the orthophoto is shown; before the mapping, the shoot points kept
-    by the best mapping."""
+    `sparse_mapping`, only the shoot points of the map are drawn: the ones
+    of the mapping done, else the ones the next run of Step 5 will map, else
+    the ones kept by the best mapping; the flagged ones in red."""
     track = F.mission_track(mission, shoot_points_only=shoot_points_only)
     if not track:
         return None
@@ -861,13 +862,16 @@ def map_model_for(mission: Path, color_of=None, with_ortho: bool = True, shoot_p
     path = F.image_track(mission)
     mapped, mapped_by, flagged = None, "mapping", None
     if sparse_mapping:
-        # the images of the map: Step 5 done, else the ones aligned by Step 4
-        # (flagged ones left out, drawn in red), else the best mapping planned
-        kept, flagged = F.aligned_selection(mission)
-        mapped = F.mapped_numbers(mission)
-        if not mapped and (kept or flagged):
-            mapped, mapped_by = kept, "aligned"
-        elif not mapped:
+        # the images of the map: Step 5 done (orthophoto), else the ones the
+        # next run of Step 5 will map (its own selection over the images aligned
+        # by Step 4, flagged ones left out and drawn in red), else the best
+        # mapping planned (Steps 2 and 4)
+        _kept, flagged = F.aligned_selection(mission)
+        mapped = F.mapped_numbers(mission) if F.orthophoto_path(mission).is_file() else set()
+        if not mapped:
+            import IRD_Interactive_ODM as ODM
+            mapped, mapped_by = ODM.planned_mapping_numbers(mission), "next mapping"
+        if not mapped:
             import best_mapping as BM
             mapped, mapped_by = BM.planned_numbers(mission), "best mapping"
     model = MapModel(track, fov=F.field_of_view(F.camera_model(mission)), parent=parent,

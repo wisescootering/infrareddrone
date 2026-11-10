@@ -525,6 +525,7 @@ class HomePage(QStackedWidget):
                ortho, stamp(folder / "FlightAnalytics" / "flight_timeline.json"),
                stamp(folder / "AerialPhotography" / "VIS"),
                stamp(folder / "FlightAnalytics" / "best_mapping.json"),
+               stamp(folder / "ImgIRdrone" / "shoot_points.json"),          # aligned, flagged
                stamp(folder / "mapping_MULTI" / "img_best_mappping.json"),
                stamp(folder / "mapping_MULTI" / "mapping_result" / "ortho_dtm.tif"))
         if key == self._map_key:
