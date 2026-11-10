@@ -37,7 +37,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 import shoot_review as R  # noqa: E402
 import IRD_Interactive_map as MapV  # noqa: E402
 from IRD_Interactive_look import (BLUE, CURSOR, DANGER_STYLE, DIALOG_STYLE, GRID, MESSAGE_STYLE,  # noqa: E402
-                                  MUTED, NIR_ACCENT, PANEL, PRIMARY_STYLE, PROGRESS_STYLE, SECONDARY_STYLE,
+                                  MUTED, PANEL, PRIMARY_STYLE, PROGRESS_STYLE, SECONDARY_STYLE,
                                   SUBTITLE_STYLE, TITLE_STYLE, bgr_to_qimage, chip, fit_to_screen, fmt_time,
                                   set_chip)
 
@@ -67,6 +67,8 @@ LEGEND_ORDER = (R.STATUS_OK, R.STATUS_CHECKED, R.STATUS_CHECK, R.STATUS_UNKNOWN,
 # Points worth a look, in this order, for "Next to review"
 TO_REVIEW = (R.STATUS_REALIGNED, R.STATUS_SUSPICIOUS, R.STATUS_CHECK, R.STATUS_UNKNOWN)
 
+TAG_COLOR = QColor("#1F2933")      # labels on the images: neutral, the colours are the images'
+DEFAULT_MODE = "overlay"           # doubled edges show a misalignment at a glance
 MODES = [  # (key, button text, tooltip)
     ("swipe", "Swipe", "Visible on the left of the curtain, aligned infrared (false colours) on the right. "
                        "Drag the curtain: roads, hedges and buildings must continue across it."),
@@ -158,7 +160,8 @@ class CompareView(QWidget):
         self.setMouseTracking(True)
         self.setMinimumSize(320, 220)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.mode = "swipe"
+        self.mode = DEFAULT_MODE
+        self.status_color: Optional[QColor] = None    # frame in the colour of the point's status
         self.arrays: Dict[str, np.ndarray] = {}
         self.pix: Dict[str, QPixmap] = {}
         self.placeholder: Optional[QPixmap] = None
@@ -260,7 +263,7 @@ class CompareView(QWidget):
         if self.mode == "side":
             for area, key, cap in ((areas[0], "vis", "Visible"), (areas[1], "vir", "Aligned infrared")):
                 self._draw(p, area, key)
-                self._tag(p, area, cap, BLUE if key == "vis" else NIR_ACCENT)
+                self._tag(p, area, cap, TAG_COLOR)
         elif self.mode == "swipe":
             area = areas[0]
             self._draw(p, area, "vir")
@@ -279,16 +282,16 @@ class CompareView(QWidget):
                 p.setPen(QPen(BLUE, 2))
                 for dx in (-3, 3):
                     p.drawLine(QPointF(x + dx, grip.top() + 12), QPointF(x + dx, grip.bottom() - 12))
-            self._tag(p, area, "◀ Visible", BLUE)
-            self._tag(p, area, "Aligned infrared ▶", NIR_ACCENT, right=True)
+            self._tag(p, area, "◀ Visible", TAG_COLOR)
+            self._tag(p, area, "Aligned infrared ▶", TAG_COLOR, right=True)
         elif self.mode == "blink":
             key = "nir" if self._blink_on else "vis"
             self._draw(p, areas[0], key)
-            self._tag(p, areas[0], "Infrared" if self._blink_on else "Visible",
-                      NIR_ACCENT if self._blink_on else BLUE)
+            self._tag(p, areas[0], "Infrared" if self._blink_on else "Visible", TAG_COLOR)
         else:
             self._draw(p, areas[0], "ana")
-            self._tag(p, areas[0], "Visible cyan · infrared red · doubled edges = misaligned", NIR_ACCENT)
+            self._tag(p, areas[0], "Visible cyan · infrared red · doubled edges = misaligned", TAG_COLOR)
+        self._paint_status_frame(p)
         if self.caption:
             p.setPen(QColor("#C5CFDA"))
             p.drawText(QRectF(8, self.height() - 22, self.width() - 16, 20),
@@ -298,6 +301,17 @@ class CompareView(QWidget):
         p.drawText(QRectF(8, self.height() - 22, self.width() - 16, 20),
                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                    f"zoom {zoom}  ·  {self.hint}")
+
+    def _paint_status_frame(self, p):
+        if self.status_color is None:
+            return
+        p.setPen(QPen(self.status_color, 6))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRect(QRectF(self.rect()).adjusted(3, 3, -3, -3))
+
+    def set_status_color(self, color: Optional[QColor]):
+        self.status_color = color
+        self.update()
 
     def _fit_scale(self):
         area, size = self._areas()[0], self._ref_size()
@@ -505,7 +519,7 @@ class ReviewStrip(QWidget):
         fb = QFont(f)
         fb.setBold(True)
         p.setFont(fb)
-        p.setPen(NIR_ACCENT)
+        p.setPen(TAG_COLOR)
         p.drawText(QRectF(0, lane.top(), self.GUTTER - 10, lane.height()), al, "Aligned\nimages")
         p.setFont(self.font())
 
@@ -830,7 +844,7 @@ class ReviewDialog(QDialog):
             b.clicked.connect(lambda _=False, key=key: self.set_mode(key))
             self.mode_group.addButton(b, k)
             modes.addWidget(b)
-        self.mode_group.button(0).setChecked(True)
+        self.mode_group.button([m[0] for m in MODES].index(DEFAULT_MODE)).setChecked(True)
         modes.addStretch(1)
         self.btn_open = QPushButton("Open full size")
         self.btn_open.setStyleSheet(SECONDARY_STYLE)
@@ -1144,6 +1158,7 @@ class ReviewDialog(QDialog):
 
     def _show_point(self, index):
         pt = self.review.points[index]
+        self.view.set_status_color(STATUS_COLORS[pt.status])
         self.view.caption = (f"{pt.stem}  ·  " + STATUS_TEXT[pt.status]
                              + (f"  ·  {pt.vir_image.name}" if pt.vir_image is not None else ""))
         if pt.number in self._cache:
@@ -1245,6 +1260,8 @@ class ReviewDialog(QDialog):
                 b.setEnabled(False)
             return
         color = STATUS_COLORS[pt.status]
+        if self._hover_index is None:
+            self.view.set_status_color(color)          # flagged / checked: the frame follows at once
         self.point_title.setText(pt.stem)
         self.point_status.setText(f"<span style='background:{color.name()}; color:white; border-radius:8px;'>"
                                   f"&nbsp;{STATUS_TEXT[pt.status]}&nbsp;</span>"

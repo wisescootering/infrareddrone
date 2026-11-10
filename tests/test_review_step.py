@@ -166,6 +166,17 @@ class ReviewDialogTests(MissionTests):
         self.app.processEvents()
         return d
 
+    def test_opens_in_overlay_framed_in_the_status_colour(self):
+        import IRD_Interactive_review as Rv
+        d = self.dialog()
+        self.assertEqual(d.view.mode, "overlay")
+        self.assertTrue(d.mode_group.button([m[0] for m in Rv.MODES].index("overlay")).isChecked())
+        pt = d.current()
+        self.assertEqual(d.view.status_color.name(), Rv.STATUS_COLORS[pt.status].name())
+        d.toggle_flag()                                    # the frame follows the new status at once
+        self.assertEqual(d.view.status_color.name(), Rv.STATUS_COLORS[R.STATUS_FLAGGED].name())
+        d.done(0)
+
     def test_opens_on_the_point_to_review_and_measures_in_background(self):
         d = self.dialog()
         self.assertEqual(d.current().number, 140)          # probably misaligned first
