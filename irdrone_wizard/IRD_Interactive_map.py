@@ -234,11 +234,6 @@ class MapModel(QObject):
             return self.selection
         return self.mapped if self.sparse and not self.ortho_shown else []
 
-    def footprints_flagged(self) -> List[int]:
-        """Indices whose footprints are drawn in red: flagged, left out of the
-        map planned (holes in the coverage)."""
-        return self.flagged if self.sparse and not self.ortho_shown and not self.selection else []
-
     def visible(self) -> List[int]:
         """Indices of the points drawn (and picked): the flagged ones too."""
         return sorted(set(self.mapped) | set(self.flagged)) if self.sparse else list(range(len(self.xy)))
@@ -537,10 +532,10 @@ class FlightMapView(QWidget):
         flagged = set(self.model.flagged)
         for i in shown:
             q = pts[i]
-            if i in flagged:                     # left out of the map: red, a little bigger
-                p.setPen(QPen(QColor("white"), 1.5))
+            if i in flagged:                     # left out of the map: a red dot (footprint on hover)
+                p.setPen(QPen(QColor("white"), 1))
                 p.setBrush(FLAGGED_COLOR)
-                p.drawEllipse(q, r + 1.5, r + 1.5)
+                p.drawEllipse(q, r, r)
                 continue
             color = self.model.color_of(i) if self.model.color_of else QColor("#17365D")
             if self.model.is_selected(i):
@@ -567,7 +562,6 @@ class FlightMapView(QWidget):
         """Footprints of the images kept for the map: their overlap shows."""
         kept = self.model.footprints_kept()
         if not kept:
-            self._paint_flagged(p)
             return
         if self.model.progress is not None:
             self._paint_progress(p, kept)
@@ -585,21 +579,6 @@ class FlightMapView(QWidget):
             p.setPen(pen)
             for q in quads:
                 p.drawPolygon(q)
-        self._paint_flagged(p)              # on top: the red outlines stay readable
-
-    def _paint_flagged(self, p):
-        """Footprints of the flagged images, in red: what the map will miss."""
-        quads = [q for q in (self._quad(i) for i in self.model.footprints_flagged()) if q is not None]
-        if not quads:
-            return
-        fill = QColor(FLAGGED_COLOR)
-        fill.setAlpha(25)
-        p.setBrush(fill)
-        for pen in (QPen(QColor(255, 255, 255, 170), 2.8), QPen(FLAGGED_COLOR, 1.6, Qt.PenStyle.DashLine)):
-            p.setPen(pen)
-            for q in quads:
-                p.drawPolygon(q)
-        p.setBrush(Qt.BrushStyle.NoBrush)
 
     def _paint_progress(self, p, indices):
         """Footprints still to do (dashed), done (green) and in progress
@@ -638,7 +617,14 @@ class FlightMapView(QWidget):
     def _paint_footprints(self, p):
         if self.model.hover is not None and self.model.hover != self.model.current:
             q = self._quad(self.model.hover)
-            if q is not None:
+            if q is not None and self.model.hover in self.model.flagged:
+                fill = QColor(FLAGGED_COLOR)        # flagged: the hole it leaves in the map
+                fill.setAlpha(25)
+                p.setBrush(fill)
+                for pen in (QPen(QColor(255, 255, 255, 200), 3.0), QPen(FLAGGED_COLOR, 1.6, Qt.PenStyle.DashLine)):
+                    p.setPen(pen)
+                    p.drawPolygon(q)
+            elif q is not None:
                 p.setPen(QPen(QColor(255, 255, 255, 230), 1.5, Qt.PenStyle.DashLine))
                 p.setBrush(QColor(255, 255, 255, 40))
                 p.drawPolygon(q)

@@ -257,7 +257,7 @@ class MapViewTest(unittest.TestCase):
     def test_main_map_shows_the_images_for_the_map_and_the_flagged_ones(self):
         """Main window, after Step 4, before Step 5: the images the next run of
         Step 5 will map (its own selection: |dt|, one in 3 here), the flagged
-        ones in red with their footprints, off the trajectory."""
+        ones as red dots (footprint on hover), off the trajectory."""
         import best_mapping as BM
         import IRD_Interactive_ODM as ODM
         m = make_mission(Path(tempfile.mkdtemp()), n=7)
@@ -272,7 +272,6 @@ class MapViewTest(unittest.TestCase):
         self.assertEqual(model.flagged, [2])
         self.assertEqual(model.visible(), [0, 2, 4])                 # the flagged one can be clicked
         self.assertEqual(model.footprints_kept(), [0, 4])
-        self.assertEqual(model.footprints_flagged(), [2])
         view = self.MV.FlightMapView(model)
         view.resize(600, 400)
         view.show()
@@ -280,9 +279,12 @@ class MapViewTest(unittest.TestCase):
         img = view.grab().toImage()
         x, y = view.to_screen(*model.xy[2])
         self.assertEqual(img.pixelColor(int(x), int(y)).name(), self.MV.FLAGGED_COLOR.name())   # red dot
+        model.set_hover(2)                                           # its red footprint on hover only
+        self.assertNotEqual(view.grab().toImage(), img)
+        model.set_hover(None)
+        self.assertEqual(view.grab().toImage(), img)
         view.act_mapped.trigger()                                    # every image: still red
         self.assertEqual(model.visible(), list(range(7)))
-        self.assertEqual(model.footprints_flagged(), [])
         # without the review file: not drawn in red
         self.assertEqual(self.MV.map_model_for(m, with_ortho=False).flagged, [])
         self.MV.tile_cache().stop()
