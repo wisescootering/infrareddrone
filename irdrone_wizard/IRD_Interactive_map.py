@@ -882,6 +882,20 @@ def review_statuses(mission: Path):
         return None
 
 
+def _aligned_thumbnails(mission: Path):
+    """number -> thumbnail of its aligned image (read once, None without one)."""
+    cache: Dict[int, Optional[QPixmap]] = {}
+
+    def image_of(number):
+        if number not in cache:
+            import shoot_review as R
+            path = R.aligned_image(mission / R.OUTPUT_FOLDER, number)
+            img = R.thumbnail(path) if path is not None else None
+            cache[number] = QPixmap.fromImage(Look.bgr_to_qimage(img)) if img is not None else None
+        return cache[number]
+    return image_of
+
+
 def phase_colors(mission: Path):
     """color_of(number) after the phases of Step 2 (grey outside them)."""
     ph = F.phases(mission)
@@ -924,8 +938,10 @@ def map_model_for(mission: Path, color_of=None, with_ortho: bool = True, shoot_p
                      path=path if len(path) > len(track) else None,
                      mapped=mapped, mapped_by=mapped_by, flagged=flagged, built=built,
                      color_of=lambda i: color_of(track[i].number))
-    if minor is not None:
+    if minor is not None:            # the twin of the review map
         model.minor = lambda i: minor(track[i].number)
+        model.cursor_in_point_color = True      # the footprint in the colour of the point's status
+        model.image_of = _aligned_thumbnails(Path(mission))
     # in the background: ground under the drone (footprint size), orthophoto
     job = _OrthoJob(Path(mission), track, with_ortho and F.orthophoto_path(mission).is_file())
     model._job = job                      # keeps the signals alive

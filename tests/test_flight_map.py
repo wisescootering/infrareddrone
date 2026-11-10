@@ -277,6 +277,9 @@ class MapViewTest(unittest.TestCase):
             expected = Rv.STATUS_COLORS[statuses[n]] if n in statuses else Rv.NOT_ALIGNED_COLOR
             self.assertEqual(model.color_of(i).name(), expected.name(), n)
         self.assertTrue(model.minor(model.index_of(139)))                 # not aligned: small grey dot
+        self.assertTrue(model.cursor_in_point_color)                      # footprint in the status colour
+        self.assertIsNotNone(model.image(model.index_of(137)))            # with the aligned image in it
+        self.assertIsNone(model.image(model.index_of(140)))               # no aligned image
         self.assertFalse(model.minor(model.index_of(137)))
         self.assertFalse(model.minor(model.index_of(141)))
         view = self.MV.FlightMapView(model)
