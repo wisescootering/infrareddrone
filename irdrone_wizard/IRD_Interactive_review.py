@@ -181,11 +181,11 @@ class CompareView(QWidget):
         self.message = message
         self.update()
 
-    def set_images(self, arrays: dict):
+    def set_images(self, arrays: dict, unreadable="The images of this point cannot be read."):
         self.arrays = {k: v for k, v in arrays.items() if v is not None}
         self.pix = {}
         self.placeholder = None
-        self.message = "" if self.arrays else "The images of this point cannot be read."
+        self.message = "" if self.arrays else unreadable
         self.update()
 
     def has_images(self):
@@ -1156,7 +1156,13 @@ class ReviewDialog(QDialog):
             self._cache.popitem(last=False)
         shown = self._shown_index()
         if shown is not None and self.review.points[shown].number == number:
-            self.view.set_images(arrays)
+            self.view.set_images(arrays, self._unreadable_text(number))
+
+    def _unreadable_text(self, number, default="The images of this point cannot be read."):
+        """Message when a point's images cannot be read: calm while its realignment is running."""
+        if number in self.redo_runner.numbers():
+            return "This point is being realigned: its images will appear when it is done."
+        return default
 
     def _shown_index(self):
         return self._hover_index if self._hover_index is not None else self.index
@@ -1168,9 +1174,9 @@ class ReviewDialog(QDialog):
                              + (f"  ·  {pt.vir_image.name}" if pt.vir_image is not None else ""))
         if pt.number in self._cache:
             self._cache.move_to_end(pt.number)
-            self.view.set_images(self._cache[pt.number])
+            self.view.set_images(self._cache[pt.number], self._unreadable_text(pt.number))
         elif pt.vir_image is None and pt.vis_image is None:
-            self.view.set_placeholder(None, "The alignment wrote no image for this point.")
+            self.view.set_placeholder(None, self._unreadable_text(pt.number, "The alignment wrote no image for this point."))
         else:
             self.view.set_placeholder(self.thumbs.get(pt.number), "Loading…")
             self._load(pt)
