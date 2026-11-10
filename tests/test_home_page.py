@@ -169,7 +169,8 @@ class HomeMapTest(unittest.TestCase):
         page = Home.HomePage()
         page.show_mission(m)
         page.btn_show_image.click()                       # nothing clicked: one of the flight
-        self.assertIn("click a point", page.picture_caption.text())
+        self.assertIn("selected on the map", page.picture_caption.text())   # the middle one, selected on the map
+        self.assertEqual(page.picture.toolTip(), "VIR_0002_local.jpg")
         model = page.map_view.model
         number = lambda i: model.points[i].number
         i = next(k for k in range(len(model.points)) if number(k) == 1)
@@ -177,10 +178,11 @@ class HomeMapTest(unittest.TestCase):
         page.btn_show_map.click()
         page.btn_show_image.click()
         self.assertEqual(page.picture.toolTip(), "VIR_0001_local.jpg")
-        self.assertIn("clicked on the map", page.picture_caption.text())
+        self.assertIn("selected on the map", page.picture_caption.text())
         model.set_current(next(k for k in range(len(model.points)) if number(k) == 4))
         page.btn_show_image.click()
-        self.assertIn("0004 has no aligned image", page.picture_caption.text())
+        self.assertIn("0004 was not aligned", page.picture_caption.text())
+        self.assertEqual(page.picture.toolTip(), "VIR_0003_local.jpg")   # the nearest one
 
     def test_the_map_just_built_is_shown(self):
         """Step 5 ends: the page shows the map with its orthophoto, even if the

@@ -157,22 +157,32 @@ def _points(path: Path):
         return None
 
 
-def mission_picture(folder: Path, number: Optional[int] = None) -> Optional[Path]:
-    """The aligned image (false colours) of shoot point `number` if it has one,
-    else one in the middle of the flight (None before Step 4)."""
+def aligned_images(folder: Path) -> dict:
+    """{image number: aligned image (false colours, local alignment first)} of Step 4."""
     out = Path(folder) / "ImgIRdrone"
-    if number is not None:
-        for mode in ("local", "global"):
-            path = out / f"VIR_{number:04d}_{mode}.jpg"
-            if path.is_file():
-                return path
+    found = {}
     try:
-        vir = sorted(out.glob("VIR_*_local.jpg")) or sorted(out.glob("VIR_*.jpg"))
+        files = sorted(out.glob("VIR_*_global.jpg")) + sorted(out.glob("VIR_*_local.jpg"))
     except OSError:
-        vir = []
-    if vir:
-        return vir[len(vir) // 2]
-    return None
+        files = []
+    for path in files:                       # local after global: it wins
+        digits = path.stem.split("_")[1] if path.stem.count("_") >= 2 else ""
+        if digits.isdigit():
+            found[int(digits)] = path
+    return found
+
+
+def mission_picture(folder: Path, number: Optional[int] = None) -> Optional[Path]:
+    """The aligned image (false colours) of shoot point `number`; when it has
+    none (not aligned: best mapping), the aligned image nearest to it in the
+    flight; without `number`, one in the middle of the flight (None before Step 4)."""
+    images = aligned_images(folder)
+    if not images:
+        return None
+    numbers = sorted(images)
+    if number is None:
+        return images[numbers[len(numbers) // 2]]
+    return images[min(numbers, key=lambda n: (abs(n - number), n))]
 
 
 # ---------------------------------------------------------------------------
@@ -524,7 +534,8 @@ class HomePage(QStackedWidget):
         self.btn_show_map.setToolTip("The flight on the map: phases of Step 2, orthophoto of Step 5, aerial photos "
                                      "(online). Click a point to see the ground covered by its image.")
         self.btn_show_image.setToolTip("Show large the aligned image (false colours, VIR) of the point clicked on "
-                                       "the map; without a point clicked, one in the middle of the flight.")
+                                       "the map (the nearest aligned one if it was not aligned); without a point clicked, "
+                                       "one in the middle of the flight.")
         self.btn_show_map.clicked.connect(lambda: self._show_right("map"))
         self.btn_show_image.clicked.connect(lambda: self._show_right("image"))
         right.addLayout(switch)
@@ -563,20 +574,29 @@ class HomePage(QStackedWidget):
         return model.points[model.current].number
 
     def _show_picture(self):
-        """The aligned image of the point clicked on the map, else one of the mission."""
+        """The aligned image of the point clicked on the map (the nearest aligned
+        one if it has none); without a click, one of the middle of the flight,
+        which becomes the point selected on the map."""
         if self.info is None:
             return
         number = self._selected_number()
         pic = mission_picture(self.info.folder, number)
+        if number is None and pic is not None and self.map_view is not None:
+            shown = int(pic.stem.split("_")[1])
+            model = self.map_view.model
+            index = next((i for i, p in enumerate(model.points) if p.number == shown), None)
+            if index is not None:
+                model.set_current(index)     # the map shows where it is
+                number = shown
         self.picture.set_picture(QPixmap(str(pic)) if pic is not None else (
             QPixmap(str(self.hero_image)) if self.hero_image and Path(self.hero_image).is_file() else None))
         self.picture.setToolTip(pic.name if pic is not None else "")
         if pic is None:
             caption = "No aligned image yet (Step 4)"
         elif number is not None and pic.name.startswith(f"VIR_{number:04d}_"):
-            caption = f"{pic.stem} · the point clicked on the map"
+            caption = f"{pic.stem} · the point selected on the map"
         elif number is not None:
-            caption = f"{pic.stem} · point {number:04d} has no aligned image"
+            caption = f"{pic.stem} · nearest aligned image: point {number:04d} was not aligned (Step 4)"
         else:
             caption = f"{pic.stem} · click a point on the map to see its image"
         self.picture_caption.setText(caption)
