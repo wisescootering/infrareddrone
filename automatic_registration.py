@@ -11,7 +11,6 @@ import sys
 import time
 from matplotlib.colors import LinearSegmentedColormap
 import interactive.imagepipe as ipipe
-import shutil
 import cv2
 import argparse
 import json
