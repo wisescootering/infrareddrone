@@ -1,5 +1,6 @@
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -216,16 +217,36 @@ class ManualRedoBatchTests(unittest.TestCase):
             # The sidecar stays in place, the regenerated outputs are moved away.
             self.assertTrue((multispectral / "IRD_0103_1.exif").is_file())
             self.assertFalse((multispectral / "IRD_0103_1.tif").exists())
-            (multispectral / "IRD_0103_1.tif").write_bytes(b"new")   # written before the failure
+            # Cut short by the failure (e.g. the process killed out of memory).
+            (multispectral / "IRD_0103_1.tif").write_bytes(b"truncat")
 
             restored = restore_manual_redo_originals(vis, output, multispectral, original_dir)
 
-            self.assertNotIn(multispectral / "IRD_0103_1.tif", restored)
-            self.assertEqual((multispectral / "IRD_0103_1.tif").read_bytes(), b"new")
+            self.assertIn(multispectral / "IRD_0103_1.tif", restored)
+            self.assertEqual((multispectral / "IRD_0103_1.tif").read_bytes(), b"old")
             for name in _manual_redo_result_names(vis):
                 folder = multispectral if name.startswith("IRD_") else output
                 self.assertTrue((folder / name).is_file(), name)
             self.assertEqual((multispectral / "IRD_0103_2.tif").read_bytes(), b"old")
+
+    def test_failed_redo_removes_a_new_file_with_no_previous_version(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "ImgIRdrone"
+            multispectral = output / "imgMultispectral"
+            multispectral.mkdir(parents=True)
+            vis = root / "VIS_0104.dng"
+            (multispectral / "IRD_0104_1.exif").write_bytes(b"georef")
+            started = time.time()
+            _, original_dir, _ = prepare_manual_redo_archives(vis, output, multispectral)
+            (multispectral / "IRD_0104_2.tif").write_bytes(b"trunc")
+
+            restore_manual_redo_originals(
+                vis, output, multispectral, original_dir, since=started
+            )
+
+            self.assertFalse((multispectral / "IRD_0104_2.tif").exists())
+            self.assertEqual((multispectral / "IRD_0104_1.exif").read_bytes(), b"georef")
 
 if __name__ == "__main__":
     unittest.main()

@@ -20,6 +20,12 @@ from pathlib import Path
 from copy import deepcopy
 from config import CROP
 from alignment_workers import available_alignment_workers, clamp_workers  # noqa: F401 (re-exported)
+from manual_redo_archives import (  # noqa: F401 (re-exported)
+    _manual_redo_result_names,
+    finalize_manual_redo_archives,
+    prepare_manual_redo_archives,
+    restore_manual_redo_originals,
+)
 from registration.pyramid_wrapper import pyramid_reduce
 try:
     conda_env_name = os.environ['CONDA_DEFAULT_ENV']
@@ -364,169 +370,6 @@ def save_readable_motion_model(motion_model, path):
         }
     with open(path, "w", encoding="utf-8") as file:
         json.dump(readable, file, indent=2)
-
-
-def _manual_redo_result_names(vis_pth):
-    image_number = Path(vis_pth).stem.removeprefix("VIS_")
-    names = [
-        f"VIS_{image_number}.jpg",
-        f"VIS_{image_number}_motion_model.npy",
-        f"VIS_{image_number}_motion_model.json",
-    ]
-    for trace in (VIR, NIR, NDVI):
-        names.extend(
-            f"{trace.upper()}_{image_number}_{mode}.jpg"
-            for mode in ("local", "global")
-        )
-    names.extend(
-        f"IRD_{image_number}_{band}.tif"
-        for band in range(1, 5)
-    )
-    names.append(f"IRD_{image_number}_1.exif")
-    return names
-
-
-def _archive_destination(source, archive_dir):
-    destination = archive_dir / source.name
-    index = 1
-    while destination.exists():
-        destination = archive_dir / f"{source.stem}_{index}{source.suffix}"
-        index += 1
-    return destination
-
-
-def _move_to_archive(source, archive_dir):
-    source = Path(source)
-    destination = _archive_destination(source, archive_dir)
-    shutil.move(str(source), str(destination))
-    return destination
-
-
-def _copy_to_archive(source, archive_dir):
-    source = Path(source)
-    destination = _archive_destination(source, archive_dir)
-    shutil.copy2(source, destination)
-    return destination
-
-
-def _archived_versions(archive_dir, name):
-    """Archived copies of ``name``, oldest first (``name``, ``stem_1``, ...)."""
-    name = Path(name)
-    versions = []
-    candidate = Path(archive_dir) / name.name
-    index = 1
-    while candidate.is_file():
-        versions.append(candidate)
-        candidate = Path(archive_dir) / f"{name.stem}_{index}{name.suffix}"
-        index += 1
-    return versions
-
-
-def restore_manual_redo_originals(vis_pth, out_dir, multispectral_folder, original_dir):
-    """After a failed redo: put back, from the archive, every deliverable the
-    redo did not write (the point keeps its previous alignment, a new redo
-    can start from a complete point). Returns the restored paths."""
-    out_dir = Path(out_dir)
-    restored = []
-    for name in _manual_redo_result_names(vis_pth):
-        if name.startswith("IRD_"):
-            if multispectral_folder is None:
-                continue
-            target = Path(multispectral_folder) / name
-        else:
-            target = out_dir / name
-        if target.is_file():
-            continue
-        versions = _archived_versions(original_dir, name)
-        if versions:
-            # The sidecar never changes: the first copy; otherwise the last archived.
-            source = versions[0] if name.endswith(".exif") else versions[-1]
-            shutil.copy2(source, target)
-            restored.append(target)
-    return restored
-
-
-def prepare_manual_redo_archives(vis_pth, out_dir, multispectral_folder=None):
-    """Preserve existing REDO outputs and clear stale diagnostics before rerunning."""
-    vis_pth = Path(vis_pth)
-    out_dir = Path(out_dir)
-    debug_dir = out_dir / f"{vis_pth.stem}_align_traces_manual"
-    tech_dir = debug_dir / "Tech"
-    original_dir = debug_dir / "original"
-    debug_dir.mkdir(parents=True, exist_ok=True)
-    tech_dir.mkdir(exist_ok=True)
-    original_dir.mkdir(exist_ok=True)
-
-    for existing in debug_dir.iterdir():
-        if existing not in (tech_dir, original_dir):
-            _move_to_archive(existing, tech_dir)
-
-    image_number = vis_pth.stem.removeprefix("VIS_")
-    original_names = _manual_redo_result_names(vis_pth)
-    original_names.remove(f"VIS_{image_number}_motion_model.npy")
-    exif_name = f"IRD_{image_number}_1.exif"
-    original_names.remove(exif_name)
-    archived_exif = None
-    if multispectral_folder is not None:
-        # The sidecar is an input of the redo (georeferencing), not regenerated:
-        # it stays in place, a copy is kept. A redo that died earlier may have
-        # left it only in the archive: put it back.
-        sidecar = Path(multispectral_folder) / exif_name
-        if not sidecar.is_file():
-            previous = _archived_versions(original_dir, exif_name)
-            if previous:
-                shutil.copy2(previous[0], sidecar)
-        if sidecar.is_file():
-            archived_exif = _copy_to_archive(sidecar, original_dir)
-    for name in original_names:
-        if name.startswith("IRD_"):
-            if multispectral_folder is None:
-                continue
-            source_dir = Path(multispectral_folder)
-        else:
-            source_dir = out_dir
-        source = source_dir / name
-        if source.is_file():
-            _move_to_archive(source, original_dir)
-
-    motion_model = out_dir / f"VIS_{image_number}_motion_model.npy"
-    if motion_model.is_file():
-        _move_to_archive(motion_model, original_dir)
-    return debug_dir, original_dir, archived_exif
-
-
-def finalize_manual_redo_archives(
-    vis_pth, out_dir, multispectral_folder, debug_dir, archived_exif
-):
-    """Copy the regenerated deliverables into the trace folder and file diagnostics."""
-    vis_pth = Path(vis_pth)
-    out_dir = Path(out_dir)
-    debug_dir = Path(debug_dir)
-    image_number = vis_pth.stem.removeprefix("VIS_")
-
-    if archived_exif is not None and multispectral_folder is not None:
-        sidecar = Path(multispectral_folder) / f"IRD_{image_number}_1.exif"
-        shutil.copy2(archived_exif, sidecar)
-
-    result_names = _manual_redo_result_names(vis_pth)
-    result_paths = [
-        (Path(multispectral_folder) if name.startswith("IRD_") else out_dir) / name
-        for name in result_names
-        if not name.startswith("IRD_") or multispectral_folder is not None
-    ]
-
-    archived_names = set(result_names)
-    tech_dir = debug_dir / "Tech"
-    try:
-        for result in result_paths:
-            if not result.is_file():
-                raise FileNotFoundError(f"Expected REDO output was not created: {result}")
-            shutil.copy2(result, debug_dir / result.name)
-    finally:
-        for item in debug_dir.iterdir():
-            if item.name in ("Tech", "original") or item.name in archived_names:
-                continue
-            _move_to_archive(item, tech_dir)
 
 
 # Recovery script written next to each aligned pair, read back by the GUI "Redo".
@@ -1023,6 +866,7 @@ if __name__ == "__main__":
     else:
         out_dir = osp.dirname(im_pairs[0][0])
     if args.redo:
+        redo_started = time.time()
         debug_dir, original_dir, archived_exif = prepare_manual_redo_archives(
             im_pairs[0][0],
             out_dir,
@@ -1054,7 +898,8 @@ if __name__ == "__main__":
     except BaseException:
         if args.redo:
             for path in restore_manual_redo_originals(
-                im_pairs[0][0], out_dir, args.multispectral_folder, original_dir
+                im_pairs[0][0], out_dir, args.multispectral_folder, original_dir,
+                since=redo_started,
             ):
                 print(f"Redo failed: previous {path.name} put back")
         raise

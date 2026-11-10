@@ -44,9 +44,12 @@ from config import SJCONVERTERPATH
 from alignment_workers import (
     ALIGNMENT_WORKER_MEMORY_GB,
     MAX_WORKERS,
+    REDO_WORKER_MEMORY_GB,
     available_alignment_workers,
     clamp_workers,
+    memory_fitting_workers,
 )
+from manual_redo_archives import restore_manual_redo_originals
 
 
 STEP_NAME = "Image processing"
@@ -472,10 +475,13 @@ class RedoRunner(QObject):
     point_done = pyqtSignal(int, str, str, str)   # number, stem, aligned image, error
     all_done = pyqtSignal()
 
-    def __init__(self, output_folder: Path, parent=None, workers: int = 1):
+    def __init__(self, output_folder: Path, parent=None, workers: int = 1,
+                 memory_per_worker_gb: float = REDO_WORKER_MEMORY_GB):
         super().__init__(parent)
         self.output_folder = Path(output_folder)
-        self.workers = max(1, int(workers))
+        self.max_workers = max(1, int(workers))     # the Step 4 setting
+        self.memory_per_worker_gb = memory_per_worker_gb
+        self.workers = self.max_workers             # lowered to the free RAM at each run
         self._queue = []
         self.jobs = {}           # QProcess -> {"number", "stem", "nir", "started", "partial", "stage"}
         self.total = 0           # points of the run (since the runner was last idle)
@@ -496,6 +502,13 @@ class RedoRunner(QObject):
         tasks = [t for t in tasks if t[0] not in self.numbers()]
         if not self.busy():
             self.total = self.finished = 0
+            # Measured while no redo runs: each one needs its share of RAM, or
+            # the system kills them (out of memory) in the middle of a write.
+            self.workers = memory_fitting_workers(self.max_workers, self.memory_per_worker_gb)
+            if tasks and self.workers < self.max_workers:
+                self.output.emit(
+                    f"Realignments computed {self.workers} at a time (not {self.max_workers}): "
+                    f"about {self.memory_per_worker_gb:g} GB of RAM each, not enough free memory.")
         self._queue.extend(tasks)
         self.total += len(tasks)
         self._fill()
@@ -532,7 +545,7 @@ class RedoRunner(QObject):
         process.finished.connect(lambda code, status, p=process: self._on_finished(p, code, status))
         process.errorOccurred.connect(lambda error, p=process: self._on_error(p, error))
         self.jobs[process] = {"number": number, "stem": stem, "nir": nir, "started": time.time(),
-                              "partial": "", "stage": "load"}
+                              "partial": "", "stage": "load", "arguments": list(arguments)}
         full_arguments = [str(PROJECT_ROOT / "automatic_registration.py"), *arguments]
         process.setProcessEnvironment(redo_environment())
         process.setWorkingDirectory(str(PROJECT_ROOT))
@@ -578,13 +591,41 @@ class RedoRunner(QObject):
         job = self.jobs[process]
         stem = job["stem"]
         if exit_code != 0 or exit_status != QProcess.ExitStatus.NormalExit:
-            image, error = "", f"Redo of {stem} failed (exit code {exit_code})."
+            crashed = exit_status != QProcess.ExitStatus.NormalExit
+            image = ""
+            error = (f"Redo of {stem} stopped by the system (out of memory?)." if crashed
+                     else f"Redo of {stem} failed (exit code {exit_code}).")
+            restored = self._restore(job)
+            if restored:
+                error += f" Its previous alignment was put back ({restored} file(s))."
         else:
             found = redo_check_image(self.output_folder, stem, job["started"])
             image = str(found) if found is not None else ""
             error = "" if found is not None else \
                 f"Redo of {stem}: no aligned image ({ALIGNED_JPEG_LABEL}) was generated."
         self._done(process, image, error)
+
+    def _restore(self, job) -> int:
+        """Point of a failed redo back to its state before the redo (a killed
+        process cannot do it itself): number of files put back."""
+        arguments = job.get("arguments") or []
+        images = _option_values(arguments, "--images")
+        if not images:
+            return 0
+        vis = Path(images[0])
+        out_dir = (_option_values(arguments, "--outdir") or [None])[0]
+        out_dir = Path(out_dir) if out_dir else vis.parent
+        multispectral = (_option_values(arguments, "--multispectral-folder") or [None])[0]
+        original_dir = out_dir / f"{vis.stem}_align_traces_manual" / "original"
+        if not original_dir.is_dir():
+            return 0
+        try:
+            restored = restore_manual_redo_originals(
+                vis, out_dir, multispectral, original_dir, since=job["started"])
+        except OSError as error:
+            self.output.emit(f"{job['stem']}: previous alignment not put back ({error})")
+            return 0
+        return len(restored)
 
     def _done(self, process, image, error) -> None:
         job = self.jobs.pop(process)

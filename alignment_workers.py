@@ -11,6 +11,10 @@ import psutil
 # Peak memory of one alignment worker (RAM + swap) measured on full-resolution
 # DJI / SJCam pairs: about 5.5 GB. Rounded up to keep a margin for the system.
 ALIGNMENT_WORKER_MEMORY_GB = 6.0
+# A manual redo (wizard review) writes every diagnostic image at full
+# resolution on top of that: estimated, with a margin. Running more redos than
+# the RAM holds gets them killed by the system, mid-write.
+REDO_WORKER_MEMORY_GB = 8.0
 # concurrent.futures.ProcessPoolExecutor refuses more than 61 workers on Windows.
 MAX_WORKERS = 61 if os.name == "nt" else 1024
 
@@ -28,6 +32,16 @@ def available_alignment_workers(
     available_gb = psutil.virtual_memory().available / 2**30
     memory_limit = int(available_gb // memory_per_worker_gb)
     return clamp_workers(min(cores, memory_limit))
+
+
+def memory_fitting_workers(requested: int, memory_per_worker_gb: float) -> int:
+    """``requested`` lowered to what the available RAM holds (never less than
+    one); ``memory_per_worker_gb`` <= 0: no memory limit."""
+    requested = clamp_workers(requested)
+    if memory_per_worker_gb <= 0:
+        return requested
+    available_gb = psutil.virtual_memory().available / 2**30
+    return clamp_workers(min(requested, int(available_gb // memory_per_worker_gb)))
 
 
 def worker_count_report(

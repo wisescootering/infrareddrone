@@ -1464,6 +1464,13 @@ class ReviewDialog(QDialog):
         if error or pt is None:
             self._redo_errors.append(error or f"{stem}: unknown point")
             print(error)
+            if pt is not None:          # back to its images before the redo: shown again from disk
+                R.refresh_point(self.review, pt)
+                self._cache.pop(number, None)
+                self.thumbs.pop(number, None)
+                self._start_scan({number})
+                if self.current() is pt:
+                    self._show_point(self.index)
         else:
             R.refresh_point(self.review, pt)
             pt.realigned = pt.failed

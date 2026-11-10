@@ -481,9 +481,53 @@ class RedoRunnerTests(unittest.TestCase):
         from PyQt6.QtWidgets import QApplication
         QApplication.instance() or QApplication([])
 
-    def runner(self, workers=2):
+    def runner(self, workers=2, memory_per_worker_gb=0):
         import IRD_Interactive_4 as S4
-        return S4.RedoRunner(Path(tempfile.mkdtemp()), workers=workers)
+        return S4.RedoRunner(Path(tempfile.mkdtemp()), workers=workers,
+                             memory_per_worker_gb=memory_per_worker_gb)
+
+    def test_fewer_redos_at_once_than_requested_when_the_ram_is_short(self):
+        from unittest import mock
+        import alignment_workers
+        r = self.runner(workers=3, memory_per_worker_gb=8)
+        logs = []
+        r.output.connect(logs.append)
+        memory = mock.Mock(available=17 * 2**30)                 # room for 2
+        with mock.patch.object(alignment_workers.psutil, "virtual_memory", return_value=memory), \
+                mock.patch.object(r, "_start", side_effect=lambda task, nir: r.jobs.__setitem__(
+                    object(), {"number": task[0], "stem": task[1], "nir": nir})):
+            r.add([(n, f"VIS_{n:04d}", ["--images", f"/v/VIS_{n}.dng", f"/n/NIR_{n}.dng"])
+                   for n in (1, 2, 3)])
+        self.assertEqual((r.workers, len(r.jobs)), (2, 2))
+        self.assertIn("2 at a time", "\n".join(logs))
+
+    def test_a_killed_redo_puts_the_previous_alignment_back(self):
+        from unittest import mock
+        from PyQt6.QtCore import QProcess
+        import manual_redo_archives as A
+        root = Path(tempfile.mkdtemp())
+        output, multispectral = root / "ImgIRdrone", root / "ImgIRdrone" / "imgMultispectral"
+        multispectral.mkdir(parents=True)
+        vis = root / "VIS_0105.dng"
+        for name in A._manual_redo_result_names(vis):
+            ((multispectral if name.startswith("IRD_") else output) / name).write_bytes(b"old")
+        A.prepare_manual_redo_archives(vis, output, multispectral)
+        (multispectral / "IRD_0105_3.tif").write_bytes(b"cut")      # killed while writing
+        r = self.runner()
+        process = mock.Mock()
+        r.jobs[process] = {"number": 105, "stem": "VIS_0105", "nir": "", "started": 0.0,
+                           "partial": "", "stage": "write",
+                           "arguments": ["--images", str(vis), "/n/NIR.dng", "--outdir", str(output),
+                                         "--multispectral-folder", str(multispectral), "--redo"]}
+        process.readAllStandardOutput.return_value = b""
+        done = []
+        r.point_done.connect(lambda n, s, image, error: done.append(error))
+        r._on_finished(process, 9, QProcess.ExitStatus.CrashExit)
+        self.assertIn("out of memory", done[0])
+        self.assertIn("put back", done[0])
+        for name in A._manual_redo_result_names(vis):
+            self.assertEqual(((multispectral if name.startswith("IRD_") else output) / name).read_bytes(),
+                             b"old", name)
 
     def test_stage_lines_become_signals_not_log(self):
         r = self.runner()
