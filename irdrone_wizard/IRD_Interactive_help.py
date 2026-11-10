@@ -339,23 +339,20 @@ def install_f1_help() -> None:
     global _f1_filter
     if _f1_filter is not None:
         return
-    from PyQt6.QtCore import QEvent, QObject, Qt
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtGui import QKeySequence, QShortcut
     from PyQt6.QtWidgets import QApplication
 
     app = QApplication.instance()
     if app is None:
         return
 
-    class _F1Filter(QObject):
-        def eventFilter(self, obj, event):
-            if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_F1:
-                if not event.isAutoRepeat():
-                    help_on_f1()
-                return True
-            return False
-
-    _f1_filter = _F1Filter(app)
-    app.installEventFilter(_f1_filter)
+    # A QShortcut, not an event filter on the application: a Python filter makes PyQt wrap every
+    # QObject that receives an event, also the ones being destroyed, which crashed (segmentation fault).
+    _f1_filter = QShortcut(QKeySequence(Qt.Key.Key_F1), app)
+    _f1_filter.setContext(Qt.ShortcutContext.ApplicationShortcut)
+    _f1_filter.setAutoRepeat(False)
+    _f1_filter.activated.connect(help_on_f1)
 
 
 def _warn(parent, message: str) -> None:
