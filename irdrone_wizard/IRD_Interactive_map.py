@@ -871,6 +871,17 @@ class _OrthoJob(QRunnable):
 PHASE_COLORS = {"sync": Look.SYNC, "survey": Look.SURVEY}
 
 
+def review_statuses(mission: Path):
+    """{number: review status} of the shoot points Step 4 aligned (the scores
+    measured by the review), None before Step 4."""
+    try:
+        import shoot_review as R
+        return R.statuses(Path(mission))
+    except Exception as e:  # the map is a help, never a blocker
+        print(f"Review statuses unavailable: {e}")
+        return None
+
+
 def phase_colors(mission: Path):
     """color_of(number) after the phases of Step 2 (grey outside them)."""
     ph = F.phases(mission)
@@ -884,9 +895,11 @@ def map_model_for(mission: Path, color_of=None, with_ortho: bool = True, shoot_p
     points (every visible image before Step 3) on the whole flight. The
     orthophoto and the ground are read in the background. `color_of(number)`
     gives the colour of a point (default: phases of Step 2). With
-    `sparse_mapping`, only the shoot points of the map are drawn: the ones
-    of the mapping done, else the ones the next run of Step 5 will map, else
-    the ones kept by the best mapping; the flagged ones in red."""
+    `sparse_mapping` (the main window): once the map of Step 5 is built,
+    only the shoot points it used are drawn (the flagged ones in red); else,
+    once Step 4 is done, the points as in the review (status colours, the
+    ones Step 4 did not align as small grey dots); else the ones kept by the
+    best mapping."""
     track = F.mission_track(mission, shoot_points_only=shoot_points_only)
     if not track:
         return None
@@ -894,25 +907,27 @@ def map_model_for(mission: Path, color_of=None, with_ortho: bool = True, shoot_p
         color_of = phase_colors(mission)
     path = F.image_track(mission)
     mapped, mapped_by, flagged, built = None, "mapping", None, None
+    minor = None
     if sparse_mapping:
-        # the images of the map: once Step 4 is done, the ones the next run of
-        # Step 5 will map (its own selection, with the settings of its last run,
-        # over the images aligned now: realigned ones in, flagged ones out and
-        # drawn in red), even when a map is built; else the ones of the map
-        # built; else the best mapping planned (Steps 2 and 4)
-        _kept, flagged = F.aligned_selection(mission)
         built = F.mapped_numbers(mission) if F.orthophoto_path(mission).is_file() else set()
-        import IRD_Interactive_ODM as ODM
-        mapped, mapped_by = ODM.planned_mapping_numbers(mission), "next mapping"
-        if not mapped:
+        statuses = review_statuses(mission)
+        if built:          # the viewpoints the map used; flagged since: in red
             mapped, mapped_by = built, "mapping"
-        if not mapped:
+            flagged = {n for n, status in (statuses or {}).items() if status in ("flagged", "realigned")}
+        elif statuses is not None:      # Step 4 done: as in the review
+            import IRD_Interactive_review as Rv
+            color_of = lambda n: (Rv.STATUS_COLORS[statuses[n]] if n in statuses  # noqa: E731
+                                  else Rv.NOT_ALIGNED_COLOR)
+            minor = lambda n: statuses.get(n, "missing") == "missing"  # noqa: E731
+        else:
             import best_mapping as BM
             mapped, mapped_by = BM.planned_numbers(mission), "best mapping"
     model = MapModel(track, fov=F.field_of_view(F.camera_model(mission)), parent=parent,
                      path=path if len(path) > len(track) else None,
                      mapped=mapped, mapped_by=mapped_by, flagged=flagged, built=built,
                      color_of=lambda i: color_of(track[i].number))
+    if minor is not None:
+        model.minor = lambda i: minor(track[i].number)
     # in the background: ground under the drone (footprint size), orthophoto
     job = _OrthoJob(Path(mission), track, with_ortho and F.orthophoto_path(mission).is_file())
     model._job = job                      # keeps the signals alive

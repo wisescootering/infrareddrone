@@ -254,69 +254,55 @@ class MapViewTest(unittest.TestCase):
         self.assertEqual((model.mapped, model.planned, model.sparse), ([1], False, True))
         self.MV.tile_cache().stop()
 
-    def test_main_map_shows_the_images_for_the_map_and_the_flagged_ones(self):
-        """Main window, after Step 4, before Step 5: the images the next run of
-        Step 5 will map (its own selection: |dt|, one in 3 here), the flagged
-        ones as red dots (footprint on hover), off the trajectory."""
-        import best_mapping as BM
-        import IRD_Interactive_ODM as ODM
+    def test_main_map_after_step4_shows_the_points_as_the_review(self):
+        """Main window, after Step 4, before the map of Step 5: every shoot
+        point in the colour of its review status, the ones Step 4 did not
+        align as small grey dots (as in the review), nothing thinned out."""
+        import cv2
+        import shoot_review as R
+        import IRD_Interactive_review as Rv
         m = make_mission(Path(tempfile.mkdtemp()), n=7)
-        step4_done(m, range(137, 144), failed={139}, dt={142: 0.8})
-        BM.save_choice(m, enabled=False)                             # one image in 3
-        self.assertEqual(F.aligned_selection(m), ({137, 138, 140, 141, 142, 143}, {139}))
-        # eligible: 137 138 140 141 143 (139 flagged, 142 |dt| > 0.5 s); one in 3
-        self.assertEqual(ODM.planned_mapping_numbers(m), {137, 141})
+        step4_done(m, (137, 138, 140, 141, 142, 143), failed={141})        # 139 left out by Step 4
+        img = np.full((30, 40, 3), 128, np.uint8)
+        for n in (137, 138):                                              # their images: not measured yet
+            cv2.imwrite(str(m / "ImgIRdrone" / f"VIS_{n:04d}.jpg"), img)
+            cv2.imwrite(str(m / "ImgIRdrone" / f"VIR_{n:04d}_local.jpg"), img)
+        statuses = R.statuses(m)
+        self.assertEqual(statuses, {137: "unknown", 138: "unknown", 140: "missing", 141: "flagged",
+                                    142: "missing", 143: "missing"})
         model = self.MV.map_model_for(m, with_ortho=False, sparse_mapping=True)
-        self.assertEqual((model.mapped_by, model.planned, model.sparse), ("next mapping", True, True))
-        self.assertEqual(model.mapped, [0, 4])
-        self.assertEqual(model.flagged, [2])
-        self.assertEqual(model.visible(), [0, 2, 4])                 # the flagged one can be clicked
-        self.assertEqual(model.footprints_kept(), [0, 4])
+        self.assertFalse(model.sparse)
+        self.assertEqual(model.visible(), list(range(7)))                 # every point, like the review
+        for i, n in enumerate(model.numbers):
+            expected = Rv.STATUS_COLORS[statuses[n]] if n in statuses else Rv.NOT_ALIGNED_COLOR
+            self.assertEqual(model.color_of(i).name(), expected.name(), n)
+        self.assertTrue(model.minor(model.index_of(139)))                 # not aligned: small grey dot
+        self.assertFalse(model.minor(model.index_of(137)))
+        self.assertFalse(model.minor(model.index_of(141)))
         view = self.MV.FlightMapView(model)
         view.resize(600, 400)
         view.show()
         view.fit()
-        img = view.grab().toImage()
-        x, y = view.to_screen(*model.xy[2])
-        self.assertEqual(img.pixelColor(int(x), int(y)).name(), self.MV.FLAGGED_COLOR.name())   # red dot
-        model.set_hover(2)                                           # its red footprint on hover only
-        self.assertNotEqual(view.grab().toImage(), img)
-        model.set_hover(None)
-        self.assertEqual(view.grab().toImage(), img)
-        view.act_mapped.trigger()                                    # every image: still red
-        self.assertEqual(model.visible(), list(range(7)))
-        # without the review file: not drawn in red
-        self.assertEqual(self.MV.map_model_for(m, with_ortho=False).flagged, [])
+        view.grab()                                                       # paints
+        self.assertIsNone(R.statuses(m.parent / "nothing"))              # before Step 4
         self.MV.tile_cache().stop()
 
-    def test_map_built_then_a_point_realigned_the_next_map_is_shown(self):
-        """The map built did not use a point realigned since: the main window
-        shows the images of the next run (settings of the last run), says the
-        map built differs; a flag set after the run is left out next time."""
+    def test_main_map_once_the_map_is_built_shows_the_viewpoints_used(self):
+        """The map of Step 5 built: the main window shows the shoot points it
+        used (not what a next run would pick), a point flagged since in red."""
         import best_mapping as BM
-        import IRD_Interactive_ODM as ODM
         m = make_mission(Path(tempfile.mkdtemp()), n=7)
-        step4_done(m, range(137, 144), failed={139})
+        step4_done(m, range(137, 144), failed={141})
         BM.save_choice(m, enabled=True)
         (m / "mapping_MULTI" / "mapping_result").mkdir(parents=True)
         (m / "mapping_MULTI" / "img_best_mappping.json").write_text(json.dumps({
-            "selection_rules": {"maximum_absolute_dt_seconds": 0.3, "selection": "sample_every",
-                                "sample_every_nth_eligible_pair": 2, "footprint_overlap": None},
-            "image_quartets": [{"VIS_filename": f"VIS_{n:04d}.dng"} for n in (137, 141)]}))
-        os.utime(m / BM.CHOICE_FILE, (1, 1))                        # chosen before the run
+            "image_quartets": [{"VIS_filename": f"VIS_{n:04d}.dng"} for n in (137, 141, 143)]}))
         F.orthophoto_path(m).write_bytes(b"")
-        self.assertEqual(ODM.selection_settings(m), {"dt_tolerance_s": 0.3, "sample_every": 2, "overlap": None})
-        # eligible now: 137 138 140 141 142 143 (139 flagged), one in 2
-        self.assertEqual(ODM.planned_mapping_numbers(m), {137, 140, 142})
         model = self.MV.map_model_for(m, with_ortho=False, sparse_mapping=True)
-        self.assertEqual((model.mapped_by, model.built), ("next mapping", {137, 141}))
-        self.assertEqual([model.numbers[i] for i in model.mapped], [137, 140, 142])
-        view = self.MV.FlightMapView(model)
-        self.assertEqual(view.selection_summary(), ["3 images for the next map (Step 5 again: the map built has 2)",
-                                                    "⚑ 1 flagged, left out"])
-        # the best mapping chosen again after the run: its overlap wins
-        BM.save_choice(m, enabled=True, overlap=0.8)
-        self.assertEqual(ODM.selection_settings(m)["overlap"], 0.8)
+        self.assertEqual((model.mapped_by, model.planned, model.sparse), ("mapping", False, True))
+        self.assertEqual([model.numbers[i] for i in model.mapped], [137, 141, 143])
+        self.assertEqual([model.numbers[i] for i in model.flagged], [141])     # flagged after the run
+        self.assertEqual(model.visible(), [0, 4, 6])
         self.MV.tile_cache().stop()
 
     def test_the_aligned_image_in_its_footprint_is_not_tinted(self):

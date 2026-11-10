@@ -243,6 +243,16 @@ def _inventory_points(mission: Path, inventory: dict, numbers=None) -> List[Revi
     return points
 
 
+def statuses(mission: Path) -> Optional[Dict[int, str]]:
+    """{number: status} of the shoot points as the review shows them (with the
+    scores it measured), nothing changed on disk; None before Step 4."""
+    mission = Path(mission)
+    inventory = _read_json(mission / OUTPUT_FOLDER / INVENTORY)
+    if not isinstance(inventory, dict) or not isinstance(inventory.get("shoot_points"), list):
+        return None
+    return {p.number: p.status for p in _inventory_points(mission, inventory)}
+
+
 def add_points(review: Review, numbers: Iterable[int]) -> List[ReviewPoint]:
     """Points of ``numbers`` that Step 4 has just aligned (now in its inventory,
     not in the review yet), added to the review in order; the others stay out."""
