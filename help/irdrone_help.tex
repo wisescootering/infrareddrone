@@ -1305,7 +1305,7 @@ Un aperçu en couleurs (bandes rouge, vert, bleu) de l'orthophoto s'affiche ensu
 
 \subsection{Précautions}
 \begin{itemize}
-	\item Les résultats existants ne sont \textbf{jamais écrasés}. Si le dossier \texttt{mapping\_MULTI} contient déjà des résultats d'ODM ou un dossier \texttt{mapping\_result} non vide, le logiciel refuse de relancer le calcul. Pour recommencer, déplacer ou supprimer manuellement ces dossiers.
+	\item Les résultats existants ne sont \textbf{jamais écrasés}. Quand une carte est déjà construite, elle est conservée : son dossier est renommé \texttt{mapping\_MULTI\_<date de son exécution>} et la nouvelle carte est construite dans un nouveau \texttt{mapping\_MULTI} (avec la même configuration de caméra) ; la fenêtre de choix des images l'indique. Si la nouvelle exécution échoue, la carte précédente est remise dans \texttt{mapping\_MULTI} et l'exécution échouée, avec son journal, est conservée dans \texttt{mapping\_MULTI\_failed\_<date>}. L'étape~6 conserve ces dossiers.
 	\item Docker doit utiliser le moteur \og desktop-linux \fg~de Docker Desktop. Le premier lancement télécharge l'image ODM (plusieurs gigaoctets) : prévoir une connexion Internet.
 	\item Si certaines images retenues sont incomplètes (quadruplet TIFF manquant ou de tailles différentes), le calcul est refusé et le journal indique les fichiers en cause.
 \end{itemize}
@@ -1391,7 +1391,7 @@ Comme pour les autres étapes, la mission archivée est la mission ouverte dans 
 \section{Ce qui est conservé}\label{btn:step6_rules}
 La comparaison des noms de fichiers ne tient pas compte des majuscules et minuscules (\texttt{.dng} et \texttt{.DNG} sont équivalents).
 \begin{description}
-  \item[Racine de la mission] les dossiers \texttt{AerialPhotography}, \texttt{cameras}, \texttt{FlightAnalytics}, \texttt{ImgIRdrone}, \texttt{mapping\_MULTI}, \texttt{Synchro}
+  \item[Racine de la mission] les dossiers \texttt{AerialPhotography}, \texttt{cameras}, \texttt{FlightAnalytics}, \texttt{ImgIRdrone}, \texttt{mapping\_MULTI} (et les cartes précédentes \texttt{mapping\_MULTI\_<date>} mises de côté par l'étape~5), \texttt{Synchro}
         et le fichier \texttt{desktop.ini}. Tout le reste est supprimé.
   \item[\texttt{AerialPhotography}] les dossiers \texttt{VIS} et \texttt{NIR} et le fichier \texttt{shoot\_points.json}. Dans \texttt{VIS} et \texttt{NIR} : les images originales
         \texttt{.dng} avec leurs fichiers compagnons \texttt{.exif}, ainsi que \texttt{time\_line.json} et \texttt{transfer\_info\_VIS\_dng.json} (respectivement \texttt{transfer\_info\_NIR\_dng.json}).

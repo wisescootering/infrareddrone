@@ -226,10 +226,18 @@ class ODMSelectionDialog(QDialog):
 
         note = QLabel("OpenDroneMap runs in Docker: the map can take a long time and use several "
                       "gigabytes of memory and disk space. The images are hard-linked, not copied, when "
-                      "the disk allows it. Existing results are never overwritten.")
+                      "the disk allows it.")
         note.setWordWrap(True)
         note.setStyleSheet(MESSAGE_STYLE)
         layout.addWidget(note)
+        if mission_folder and ODM.previous_mapping_details(Path(mission_folder) / ODM.ODM_PROJECT_NAME):
+            kept = QLabel(f"A map is already built: it is kept, renamed {ODM.ODM_PROJECT_NAME}_<date of its run>, "
+                          "and the new one is built in its place (the previous one comes back if the new "
+                          "one fails).")
+            kept.setWordWrap(True)
+            kept.setStyleSheet(MESSAGE_STYLE)
+            layout.addWidget(kept)
+            self.previous_map_note = kept
         layout.addLayout(launch_buttons(
             self, "Build the map",
             "Start OpenDroneMap with these images; the terrain model and the contour lines follow.",

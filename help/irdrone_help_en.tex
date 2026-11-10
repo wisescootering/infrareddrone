@@ -1306,7 +1306,7 @@ A color preview (red, green, blue bands) of the orthophoto is then shown in the 
 
 \subsection{Precautions}
 \begin{itemize}
-	\item Existing results are \textbf{never overwritten}. If the \texttt{mapping\_MULTI} folder already contains ODM results or a non-empty \texttt{mapping\_result} folder, the software refuses to run the computation again. To start over, move or delete these folders by hand.
+	\item Existing results are \textbf{never overwritten}. When a map is already built, it is kept: its folder is renamed \texttt{mapping\_MULTI\_<date of its run>} and the new map is built in a new \texttt{mapping\_MULTI} (with the same camera configuration); the selection window says so. If the new run fails, the previous map is put back in \texttt{mapping\_MULTI} and the failed run, with its log, is kept in \texttt{mapping\_MULTI\_failed\_<date>}. Step~6 keeps these folders.
 	\item Docker must use the ``desktop-linux'' engine of Docker Desktop. The first run downloads the ODM image (several gigabytes): an Internet connection is needed.
 	\item If some selected images are incomplete (missing TIFF quadruplet or different sizes), the computation is refused and the log lists the files concerned.
 \end{itemize}
@@ -1392,7 +1392,7 @@ As for the other steps, the mission archived is the mission open in the main win
 \section{What is kept}\label{btn:step6_rules}
 File names are compared without regard to case (\texttt{.dng} and \texttt{.DNG} are equivalent).
 \begin{description}
-  \item[Mission root] the folders \texttt{AerialPhotography}, \texttt{cameras}, \texttt{FlightAnalytics}, \texttt{ImgIRdrone}, \texttt{mapping\_MULTI}, \texttt{Synchro}
+  \item[Mission root] the folders \texttt{AerialPhotography}, \texttt{cameras}, \texttt{FlightAnalytics}, \texttt{ImgIRdrone}, \texttt{mapping\_MULTI} (and the previous maps \texttt{mapping\_MULTI\_<date>} set aside by Step~5), \texttt{Synchro}
         and the file \texttt{desktop.ini}. Everything else is deleted.
   \item[\texttt{AerialPhotography}] the \texttt{VIS} and \texttt{NIR} folders and the file \texttt{shoot\_points.json}. In \texttt{VIS} and \texttt{NIR}: the original
         \texttt{.dng} images with their companion \texttt{.exif} files, as well as \texttt{time\_line.json} and \texttt{transfer\_info\_VIS\_dng.json} (respectively \texttt{transfer\_info\_NIR\_dng.json}).

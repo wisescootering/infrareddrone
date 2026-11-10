@@ -73,6 +73,14 @@ class ODMSelectionDialogTest(unittest.TestCase):
             self.assertTrue(d.all_radio.isChecked())
             self.assertEqual(d.selected_dt_tolerance(), 6.0)
 
+    def test_the_window_says_a_map_built_is_kept(self):
+        with tempfile.TemporaryDirectory() as m:
+            self.assertFalse(hasattr(S5.ODMSelectionDialog(mission_folder=Path(m)), "previous_map_note"))
+            (Path(m) / "mapping_MULTI" / "mapping_result").mkdir(parents=True)
+            (Path(m) / "mapping_MULTI" / "mapping_result" / "ortho.tif").write_bytes(b"x")
+            d = S5.ODMSelectionDialog(mission_folder=Path(m))
+            self.assertIn("kept, renamed mapping_MULTI_<date", d.previous_map_note.text())
+
     def test_sample_every_can_still_be_chosen(self):
         d = S5.ODMSelectionDialog()
         d.sample_radio.setChecked(True)

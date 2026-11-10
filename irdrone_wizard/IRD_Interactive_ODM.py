@@ -1041,6 +1041,76 @@ def prepare_odm_input(
     return images_folder
 
 
+def previous_mapping_details(mapping_folder: Path) -> List[str]:
+    """What a previous run left in the mapping folder (empty: nothing)."""
+    if not Path(mapping_folder).is_dir():
+        return []
+    existing_odm_outputs = [
+        path.name
+        for path in Path(mapping_folder).iterdir()
+        if path.is_dir()
+        and (
+            path.name.casefold().startswith("odm_")
+            or path.name.casefold() in {"opensfm", "openmvs", "stats", "entwine"}
+        )
+    ]
+    result_folder = Path(mapping_folder) / ODM_RESULTS_FOLDER
+    existing_archives = [path.name for path in result_folder.iterdir()] if result_folder.is_dir() else []
+    details = []
+    if existing_odm_outputs:
+        details.append(f"ODM outputs: {', '.join(existing_odm_outputs)}")
+    if existing_archives:
+        details.append(f"archived results: {', '.join(existing_archives)}")
+    return details
+
+
+def _unique_folder(path: Path) -> Path:
+    candidate, k = path, 2
+    while candidate.exists():
+        candidate = path.with_name(f"{path.name}_{k}")
+        k += 1
+    return candidate
+
+
+def _run_stamp(mapping_folder: Path) -> str:
+    """Date of the run that built a mapping folder (its manifest), else of the folder."""
+    try:
+        created = _load_json(mapping_folder / MANIFEST_NAME).get("created_at_utc")
+        return datetime.fromisoformat(created).astimezone().strftime("%Y%m%d_%H%M%S")
+    except (ODMMappingError, AttributeError, TypeError, ValueError):
+        return datetime.fromtimestamp(mapping_folder.stat().st_mtime).strftime("%Y%m%d_%H%M%S")
+
+
+def set_previous_mapping_aside(mission_folder: Path) -> Optional[Path]:
+    """A map already built: its folder renamed mapping_MULTI_<date of its run>
+    (nothing deleted), a new mapping_MULTI with the same camera configuration.
+    Returns the renamed folder, None when there was nothing to keep."""
+    mapping_folder = Path(mission_folder) / ODM_PROJECT_NAME
+    if not previous_mapping_details(mapping_folder):
+        return None
+    previous = _unique_folder(mapping_folder.with_name(f"{ODM_PROJECT_NAME}_{_run_stamp(mapping_folder)}"))
+    mapping_folder.rename(previous)
+    mapping_folder.mkdir()
+    if (previous / "camera").is_dir():
+        shutil.copytree(previous / "camera", mapping_folder / "camera")
+    return previous
+
+
+def _put_previous_mapping_back(mission_folder: Path, previous: Path) -> Optional[Path]:
+    """The new run failed: its folder kept as mapping_MULTI_failed_<now> (removed
+    when the run wrote nothing), the previous map back in mapping_MULTI.
+    Returns the failed run's folder (None: removed)."""
+    mapping_folder = Path(mission_folder) / ODM_PROJECT_NAME
+    failed = _unique_folder(mapping_folder.with_name(
+        f"{ODM_PROJECT_NAME}_failed_{datetime.now().strftime('%Y%m%d_%H%M%S')}"))
+    mapping_folder.rename(failed)
+    previous.rename(mapping_folder)
+    if all(path.name == "camera" for path in failed.iterdir()):     # nothing done (Docker off…)
+        shutil.rmtree(failed)
+        return None
+    return failed
+
+
 def _check_mapping_outputs_available(mapping_folder: Path) -> None:
     """Prevent ODM from overwriting prior reconstructions or archived deliverables."""
     existing_odm_outputs = [
@@ -1311,6 +1381,26 @@ def run_odm(
 
     if not mapping_folder.is_dir():
         raise ODMMappingError(f"ODM mapping folder does not exist: {mapping_folder}")
+    previous = set_previous_mapping_aside(mission_folder)
+    if previous is not None:
+        worker_log(f"The previous map is kept in {previous}; a new one is built in {mapping_folder}.")
+    try:
+        return _run_odm_in(mission_folder, mapping_folder, manifest_path, worker_log, stage,
+                           dt_tolerance_s, sample_every, overlap)
+    except BaseException:
+        if previous is not None:
+            try:
+                failed = _put_previous_mapping_back(mission_folder, previous)
+                worker_log(f"The new map failed: the previous one is back in {mapping_folder}"
+                           + (f" (the failed run, with its log, is in {failed})." if failed else "."))
+            except OSError as error:
+                worker_log(f"The previous map could not be put back ({error}): it is in {previous}.")
+        raise
+
+
+def _run_odm_in(mission_folder, mapping_folder, manifest_path, worker_log, stage,
+                dt_tolerance_s, sample_every, overlap) -> Dict[str, Any]:
+    """run_odm in an empty mapping folder."""
     _check_mapping_outputs_available(mapping_folder)
 
     stage("Checking Docker")
