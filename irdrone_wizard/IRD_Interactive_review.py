@@ -158,7 +158,7 @@ class ScanThread(QThread):
 
 
 class _LoadSignals(QObject):
-    loaded = pyqtSignal(int, object)    # number, view_images() (None: no longer wanted, not loaded)
+    loaded = pyqtSignal(int, object, int)    # number, view_images() (None: no longer wanted, not loaded), token
 
 
 def view_images(vis, vir) -> dict:
@@ -191,10 +191,11 @@ class LoadJob(QRunnable):
     before the work starts: a point passed by meanwhile (the mouse ran along the
     time line) is not loaded for nothing."""
 
-    def __init__(self, point: R.ReviewPoint, wanted=None):
+    def __init__(self, point: R.ReviewPoint, wanted=None, token: int = 0):
         super().__init__()
         self.point = point
         self.wanted = wanted
+        self.token = token            # tells the window which request this answers
         self.signals = _LoadSignals()
 
     def run(self):
@@ -202,7 +203,7 @@ class LoadJob(QRunnable):
         number = self.point.number
         try:
             if self.wanted is not None and not self.wanted(number):
-                self.signals.loaded.emit(number, None)
+                self.signals.loaded.emit(number, None, self.token)
                 return
             vis = imread(self.point.vis_image) if self.point.vis_image is not None else None
             vir = imread(self.point.vir_image) if self.point.vir_image is not None else None
@@ -210,7 +211,7 @@ class LoadJob(QRunnable):
         except Exception as e:  # never leave the point "loading" for ever
             print(f"Review: {self.point.stem} not shown ({e})")
             out = {}
-        self.signals.loaded.emit(number, out)
+        self.signals.loaded.emit(number, out, self.token)
 
 
 # ---------------------------------------------------------------------------
@@ -796,7 +797,8 @@ class ReviewDialog(QDialog):
         self.thumbs: Dict[int, QPixmap] = {}
         self._scans: List[ScanThread] = []
         self._cache: "OrderedDict[int, dict]" = OrderedDict()
-        self._loading = set()
+        self._loading = {}          # number -> token of the load asked (a later answer only counts)
+        self._load_tokens = 0
         self._wanted = frozenset()     # points whose images are worth loading now (read by the workers)
         # A pool of its own: the map tiles keep the global one, and a run along
         # the time line never piles up full size decodings (memory).
@@ -1287,22 +1289,38 @@ class ReviewDialog(QDialog):
             return
         if point.vis_image is None and point.vir_image is None:
             return
-        self._loading.add(point.number)
-        job = LoadJob(point, self._is_wanted)
+        self._load_tokens += 1
+        self._loading[point.number] = self._load_tokens
+        job = LoadJob(point, self._is_wanted, self._load_tokens)
         job.signals.loaded.connect(self._on_loaded)
         self._pool.start(job)
 
-    def _on_loaded(self, number, images):
-        self._loading.discard(number)
+    def _forget_images(self, number):
+        """The images of ``number`` changed on disk (realigned, aligned): what
+        was read or is being read is old; the next showing reads them again."""
+        self._cache.pop(number, None)
+        self._loading.pop(number, None)
+        self.thumbs.pop(number, None)
+
+    def _on_loaded(self, number, images, token=0):
+        if self._loading.get(number) != token:
+            # answer of a load asked before the images changed (realignment
+            # finished meanwhile): stale, the current images are read instead
+            pt = self.review.by_number(number)
+            if pt is not None and number in self._wanted and number not in self._cache:
+                self._load(pt)
+            return
+        self._loading.pop(number, None)
         if images is None:            # dropped: passed by before its turn
             pt = self.review.by_number(number)
             if pt is not None and number in self._wanted:    # wanted again meanwhile
                 self._load(pt)
             return
-        self._cache[number] = images
-        self._cache.move_to_end(number)
-        while len(self._cache) > CACHE_POINTS:
-            self._cache.popitem(last=False)
+        if any(isinstance(v, QImage) for v in images.values()):   # a failed read is never kept:
+            self._cache[number] = images                            # the next showing tries again
+            self._cache.move_to_end(number)
+            while len(self._cache) > CACHE_POINTS:
+                self._cache.popitem(last=False)
         shown = self._shown_index()
         if shown is not None and 0 <= shown < len(self.review.points) and self.review.points[shown].number == number:
             self.view.set_images(images, self._unreadable_text(number))
@@ -1784,21 +1802,23 @@ class ReviewDialog(QDialog):
             print(error)
             if pt is not None:          # back to its images before the redo: shown again from disk
                 R.refresh_point(self.review, pt)
-                self._cache.pop(number, None)
-                self.thumbs.pop(number, None)
+                self._forget_images(number)
                 self._start_scan({number})
-                if self.current() is pt:
-                    self._show_point(self.index)
+                self._show_again(pt)
         else:
             R.refresh_point(self.review, pt)
             pt.realigned = pt.failed
-            self._cache.pop(number, None)
-            self.thumbs.pop(number, None)
+            self._forget_images(number)
             self._start_scan({number})
-            if self.current() is pt:
-                self._show_point(self.index)
+            self._show_again(pt)
         self._after_change()
         self._update_banner()
+
+    def _show_again(self, pt):
+        """Show ``pt`` again (its images changed) if it is the point on screen."""
+        shown = self._shown_index()
+        if shown is not None and 0 <= shown < len(self.review.points) and self.review.points[shown] is pt:
+            self._show_point(shown)
 
     def _on_redo_all_done(self):
         if self._aligning_by_hand:            # reported once the alignment window is closed
