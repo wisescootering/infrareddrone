@@ -42,6 +42,7 @@ import numpy as np
 OUTPUT_FOLDER = "ImgIRdrone"
 INVENTORY = "shoot_points.json"
 REVIEW_FILE = "review.json"
+THUMB_FOLDER = "review_thumbnails"   # small copies of the aligned images: the time line at once
 REVIEW_VERSION = 1
 
 # Residual misalignment (pixels of the full image)
@@ -111,6 +112,7 @@ class Review:
     mission: Path
     points: List[ReviewPoint] = field(default_factory=list)
     recovered: List[str] = field(default_factory=list)   # interrupted redos undone at load
+    _index: Optional[tuple] = field(default=None, repr=False, compare=False)   # see by_number
 
     @property
     def output(self) -> Path:
@@ -123,7 +125,12 @@ class Review:
         return out
 
     def by_number(self, number: int) -> Optional[ReviewPoint]:
-        return next((p for p in self.points if p.number == number), None)
+        # an index, made again when the list changes: the map asks for every
+        # point at each redraw (hundreds of points)
+        index = self._index
+        if index is None or index[0] is not self.points or index[1] != len(self.points):
+            index = self._index = (self.points, len(self.points), {p.number: p for p in self.points})
+        return index[2].get(number)
 
     def flagged(self) -> List[ReviewPoint]:
         return [p for p in self.points if p.failed]
@@ -461,6 +468,42 @@ def thumbnail(path: Path, width: int = 200):
         return None
     if img.shape[1] > width:
         img = cv2.resize(img, (width, round(img.shape[0] * width / img.shape[1])), interpolation=cv2.INTER_AREA)
+    return img
+
+
+def cached_thumbnail(output: Path, path: Path, width: int = 200):
+    """thumbnail() of an image of the output folder, kept in
+    ImgIRdrone/review_thumbnails (a 5 MB JPEG takes ~0.1 s to decode even at
+    1/8 size: hundreds of them, every time the review opens, were slow).
+    The copy takes the date of its image: any other date (realigned, or an
+    earlier alignment put back) makes it again."""
+    import os
+    import threading
+    import cv2
+    from image_io import imread, imwrite
+    path = Path(path)
+    copy = Path(output) / THUMB_FOLDER / path.name
+    try:
+        source = path.stat()
+    except OSError:
+        return None
+    try:
+        if copy.stat().st_mtime_ns == source.st_mtime_ns:
+            img = imread(copy)
+            if img is not None:
+                return img
+    except OSError:
+        pass
+    img = thumbnail(path, width)
+    if img is not None:
+        try:
+            copy.parent.mkdir(exist_ok=True)
+            tmp = copy.with_name(f"{copy.stem}.{threading.get_ident()}.tmp{copy.suffix}")   # never read half written
+            if imwrite(tmp, img, [cv2.IMWRITE_JPEG_QUALITY, 90]):
+                os.utime(tmp, ns=(source.st_atime_ns, source.st_mtime_ns))
+                os.replace(tmp, copy)
+        except OSError:       # read-only mission: no cache, still shown
+            pass
     return img
 
 
