@@ -87,6 +87,20 @@ class WindowTests(unittest.TestCase):
         self.app.processEvents()
         return d, items
 
+    def test_the_images_are_shown_in_every_mode(self):
+        """Not black: the view is given images it can paint, in each mode."""
+        d, items = self.window()
+        self.assertTrue(d.view.has_images())
+        self.assertEqual(d.view.message, "")
+        for key in ("vis", "vir", "nir", "ana"):
+            pix = d.view.image(key)
+            self.assertIsNotNone(pix, key)
+            self.assertFalse(pix.isNull(), key)
+            self.assertGreater(pix.toImage().pixelColor(pix.width() // 2, pix.height() // 2).value(), 0, key)
+        d.nudge(1, 0)                                  # moved: new images, shown too
+        self.assertIsNotNone(d.view.image("ana"))
+        d.done(0)
+
     def test_keys_move_the_infrared_and_place_the_point(self):
         d, items = self.window()
         self.assertEqual(items[0].state, M.TODO)

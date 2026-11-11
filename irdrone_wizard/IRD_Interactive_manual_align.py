@@ -164,6 +164,23 @@ def display_arrays(vis_rgb, warped_rgb, edges: bool = False) -> dict:
     return {"vis": vis_bgr, "vir": np.dstack([vis_rgb[:, :, 1], vis_rgb[:, :, 0], nir8])}
 
 
+def view_images(arrays: dict) -> dict:
+    """What the compare view shows, from the BGR "vis" / "vir" of display_arrays():
+    QImages, the grey infrared and the overlay made only if their mode is shown
+    (the images change at each move of the infrared)."""
+    from IRD_Interactive_look import bgr_to_qimage
+    vis, vir = arrays.get("vis"), arrays.get("vir")
+    out = {}
+    if vis is not None:
+        out["vis"] = bgr_to_qimage(vis)
+    if vir is not None:
+        out["vir"] = bgr_to_qimage(vir)
+        out["nir"] = lambda: bgr_to_qimage(R.nir_from_vir(vir))
+        if vis is not None:
+            out["ana"] = lambda: bgr_to_qimage(R.anaglyph(vis, vir))
+    return out
+
+
 def measure_offset(vis_bgr, nir_gray) -> Optional[Tuple[float, float]]:
     """Median offset (dx, dy) of the infrared edges against the visible ones, in
     pixels of the given images; None without enough texture."""
@@ -688,7 +705,7 @@ class ManualAlignDialog(QDialog):
                                       else f"Loading {item.stem}…")
             return
         warped = warp_preview(item.preview, item.angles)
-        self.view.set_images(display_arrays(item.preview.vis, warped, self._edges))
+        self.view.set_images(view_images(display_arrays(item.preview.vis, warped, self._edges)))
         self.view.caption = f"{item.stem}  ·  yaw {item.angles[0]:+.2f}°  pitch {item.angles[1]:+.2f}°  " \
                             f"roll {item.angles[2]:+.2f}°"
         if measure:
