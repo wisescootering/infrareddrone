@@ -59,6 +59,39 @@ class OffsetTests(unittest.TestCase):
                                     (6, "VIS_0006", ["--outdir", "x"])])        # unreadable: left out
         self.assertEqual([(i.number, i.initial) for i in items], [(5, (0.0, 0.0, 0.0))])
 
+    def test_overlay_colours(self):
+        """An edge only in the visible / only in the infrared, in each scheme."""
+        from shoot_review import OVERLAY_COLOURS, overlay
+        vis = np.zeros((40, 40, 3), np.uint8)
+        vis[:, :10] = (40, 200, 120)                    # visible only (BGR, greenish)
+        vir = np.zeros((40, 40, 3), np.uint8)
+        vir[:, 30:, 2] = 255                            # infrared only
+        expected = {  # (visible only, infrared only), BGR
+            "colour_grey": ((20, 100, 60), (127, 127, 127)),
+            "green_grey": ((0, 127, 0), (127, 127, 127)),
+            "blue_red": ((255, 0, 0), (0, 0, 255)),
+            "cyan_red": ((255, 255, 0), (0, 0, 255)),
+        }
+        self.assertEqual(set(expected), set(OVERLAY_COLOURS))
+        for key, (only_vis, only_nir) in expected.items():
+            out = overlay(vis, vir, key)
+            np.testing.assert_allclose(out[20, 5], only_vis, atol=1, err_msg=key)
+            np.testing.assert_allclose(out[20, 35], only_nir, atol=1, err_msg=key)
+        self.assertIn(M.DEFAULT_OVERLAY_COLOURS, OVERLAY_COLOURS)
+
+    def test_overlay_colours_kept_in_the_settings(self):
+        from PyQt6.QtCore import QSettings
+        with mock.patch.object(M, "SETTINGS", ("IRdrone-test", "manual-align-test")):
+            QSettings(*M.SETTINGS).clear()
+            try:
+                self.assertEqual(M.load_overlay_colours(), "colour_grey")
+                M.save_overlay_colours("blue_red")
+                self.assertEqual(M.load_overlay_colours(), "blue_red")
+                QSettings(*M.SETTINGS).setValue(M.OVERLAY_COLOURS_KEY, "purple")   # unknown: default
+                self.assertEqual(M.load_overlay_colours(), "colour_grey")
+            finally:
+                QSettings(*M.SETTINGS).clear()
+
     def test_describe(self):
         self.assertIn("well placed", M.describe_offset((3.0, -2.0)))
         self.assertIn("40 px right, 25 px up", M.describe_offset((40.0, -25.0)))
@@ -76,9 +109,12 @@ class WindowTests(unittest.TestCase):
         items = [M.AlignItem(k, f"VIS_{k:04d}", ["--images", f"/a/VIS_{k:04d}.dng", f"/a/NIR_{k:04d}.dng"],
                              Path(f"/a/VIS_{k:04d}.dng"), Path(f"/a/NIR_{k:04d}.dng"), start, start)
                  for k in range(1, n + 1)]
-        patcher = mock.patch.object(M, "load_preview", return_value=self.preview)
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        for name, value in (("load_preview", mock.Mock(return_value=self.preview)),
+                            ("load_overlay_colours", mock.Mock(return_value=M.DEFAULT_OVERLAY_COLOURS)),
+                            ("save_overlay_colours", mock.Mock())):   # not the user's settings
+            patcher = mock.patch.object(M, name, value)
+            setattr(self, name, patcher.start())
+            self.addCleanup(patcher.stop)
         d = M.ManualAlignDialog(items, "Mission")
         deadline = time.time() + 20
         while any(i.preview is None for i in items) and time.time() < deadline:
@@ -99,6 +135,32 @@ class WindowTests(unittest.TestCase):
             self.assertGreater(pix.toImage().pixelColor(pix.width() // 2, pix.height() // 2).value(), 0, key)
         d.nudge(1, 0)                                  # moved: new images, shown too
         self.assertIsNotNone(d.view.image("ana"))
+        d.done(0)
+
+    def test_overlay_colours_chosen_and_kept(self):
+        """Default: the visible in colour, the infrared in grey; a choice in the
+        Colours menu is drawn at once, saved, and shows the overlay."""
+        d, items = self.window(1)
+        self.assertEqual(d.overlay_colours, "colour_grey")
+        self.assertIn("Visible colour · infrared grey", d.view.overlay_tag)
+        checked = [a.data() for a in d.colour_actions.actions() if a.isChecked()]
+        self.assertEqual(checked, ["colour_grey"])
+        d.set_mode("swipe")
+        action = next(a for a in d.colour_actions.actions() if a.data() == "green_grey")
+        action.trigger()
+        self.assertEqual(d.overlay_colours, "green_grey")
+        self.save_overlay_colours.assert_called_once_with("green_grey")
+        self.assertEqual(d.view.mode, "overlay")
+        self.assertIn("Visible green · infrared grey", d.view.overlay_tag)
+        self.assertIsNotNone(d.view.image("ana"))
+        d.done(0)
+
+    def test_the_edges_in_colour_are_drawn_in_green(self):
+        d, items = self.window(1)
+        d.edges_box.setChecked(True)
+        self.assertIn("Visible green", d.view.overlay_tag)
+        d.edges_box.setChecked(False)
+        self.assertIn("Visible colour", d.view.overlay_tag)
         d.done(0)
 
     def test_keys_move_the_infrared_and_place_the_point(self):

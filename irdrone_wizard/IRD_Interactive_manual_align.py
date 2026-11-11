@@ -33,10 +33,10 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 import numpy as np
-from PyQt6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QKeySequence, QShortcut
+from PyQt6.QtCore import QObject, QRunnable, QSettings, Qt, QThreadPool, QTimer, pyqtSignal
+from PyQt6.QtGui import QActionGroup, QColor, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (QApplication, QButtonGroup, QCheckBox, QDialog, QDoubleSpinBox, QFrame, QGridLayout,
-                             QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
+                             QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMenu, QMessageBox, QPushButton,
                              QSizePolicy, QSlider, QToolButton, QVBoxLayout)
 
 sys.path.append(str(Path(__file__).resolve().parent))
@@ -60,11 +60,35 @@ STATE_TEXT = {TODO: "To place", PLACED: "Placed", SKIPPED: "Skipped: stays flagg
               SENT: "Computing in the background"}
 
 MODES = [  # (key, text, tooltip)
-    ("ana", "Overlay", "Visible in cyan, infrared in red: move the infrared until the edges are single."),
+    ("ana", "Overlay", "Visible and infrared on one image: move the infrared until the edges are single."),
     ("swipe", "Swipe", "Visible on the left of the curtain, infrared on the right."),
     ("blink", "Blink", "Visible and infrared in turn: the infrared jumps while it is misplaced."),
     ("side", "Side by side", "Visible and infrared next to each other."),
 ]
+
+
+DEFAULT_OVERLAY_COLOURS = "colour_grey"   # does not look like the VIR result (infrared in red)
+EDGES_COLOURS = {"colour_grey": "green_grey"}   # the edges have no colour: the visible ones in green
+SETTINGS = ("IRdrone", "IRD_Interactive")
+OVERLAY_COLOURS_KEY = "manual_align/overlay_colours"
+
+
+def load_overlay_colours() -> str:
+    """The overlay colours chosen last (R.OVERLAY_COLOURS key)."""
+    try:
+        value = str(QSettings(*SETTINGS).value(OVERLAY_COLOURS_KEY, DEFAULT_OVERLAY_COLOURS))
+    except Exception:
+        return DEFAULT_OVERLAY_COLOURS
+    return value if value in R.OVERLAY_COLOURS else DEFAULT_OVERLAY_COLOURS
+
+
+def save_overlay_colours(colours: str) -> None:
+    QSettings(*SETTINGS).setValue(OVERLAY_COLOURS_KEY, colours)
+
+
+def overlay_colours_shown(colours: str, edges: bool) -> str:
+    """The colours drawn: "colour" means green on the edges, which have none."""
+    return EDGES_COLOURS.get(colours, colours) if edges else colours
 
 
 # ---------------------------------------------------------------------------
@@ -164,10 +188,11 @@ def display_arrays(vis_rgb, warped_rgb, edges: bool = False) -> dict:
     return {"vis": vis_bgr, "vir": np.dstack([vis_rgb[:, :, 1], vis_rgb[:, :, 0], nir8])}
 
 
-def view_images(arrays: dict) -> dict:
+def view_images(arrays: dict, colours: str = DEFAULT_OVERLAY_COLOURS) -> dict:
     """What the compare view shows, from the BGR "vis" / "vir" of display_arrays():
-    QImages, the grey infrared and the overlay made only if their mode is shown
-    (the images change at each move of the infrared)."""
+    QImages, the grey infrared and the overlay (in ``colours``, see
+    R.OVERLAY_COLOURS) made only if their mode is shown (the images change at
+    each move of the infrared)."""
     from IRD_Interactive_look import bgr_to_qimage
     vis, vir = arrays.get("vis"), arrays.get("vir")
     out = {}
@@ -177,7 +202,7 @@ def view_images(arrays: dict) -> dict:
         out["vir"] = bgr_to_qimage(vir)
         out["nir"] = lambda: bgr_to_qimage(R.nir_from_vir(vir))
         if vis is not None:
-            out["ana"] = lambda: bgr_to_qimage(R.anaglyph(vis, vir))
+            out["ana"] = lambda: bgr_to_qimage(R.overlay(vis, vir, colours))
     return out
 
 
@@ -338,6 +363,7 @@ class ManualAlignDialog(QDialog):
             self.INTRO = self.INTRO_SEND
         self.index = 0
         self._edges = False
+        self.overlay_colours = load_overlay_colours()
         self._move_from = None          # angles when a drag started
         self._updating = False
         self.setWindowTitle("Step 4 – Align by hand" + (f" · {mission_name}" if mission_name else ""))
@@ -411,6 +437,20 @@ class ManualAlignDialog(QDialog):
         self.edges_box.setToolTip("Show the outlines of both images: easier on fields and forests, where "
                                   "the infrared and the visible look different.")
         self.edges_box.toggled.connect(self.set_edges)
+        self.btn_colours = QPushButton("Colours  ▾")
+        self.btn_colours.setStyleSheet(SECONDARY_STYLE + "QPushButton::menu-indicator { width: 0; }")
+        self.btn_colours.setToolTip("Colours of the overlay (kept for the next time)")
+        menu = QMenu(self.btn_colours)
+        self.colour_actions = QActionGroup(self)
+        for key, (text, _tag) in R.OVERLAY_COLOURS.items():
+            action = menu.addAction(text + ("  (default)" if key == DEFAULT_OVERLAY_COLOURS else ""))
+            action.setCheckable(True)
+            action.setChecked(key == self.overlay_colours)
+            action.setData(key)
+            self.colour_actions.addAction(action)
+        self.colour_actions.triggered.connect(lambda action: self.set_overlay_colours(action.data()))
+        self.btn_colours.setMenu(menu)
+        modes.addWidget(self.btn_colours)
         modes.addSpacing(10)
         modes.addWidget(self.edges_box)
         modes.addStretch(1)
@@ -692,6 +732,20 @@ class ManualAlignDialog(QDialog):
         self.mode_group.button(k).setChecked(True)
         self.view.set_mode("overlay" if key == "ana" else key)
 
+    def set_overlay_colours(self, colours: str):
+        """Overlay in ``colours`` (R.OVERLAY_COLOURS), kept for the next time; shows the overlay."""
+        if colours not in R.OVERLAY_COLOURS:
+            return
+        self.overlay_colours = colours
+        for action in self.colour_actions.actions():
+            action.setChecked(action.data() == colours)
+        try:
+            save_overlay_colours(colours)
+        except Exception as e:  # a preference: never stop the alignment for it
+            print(f"Overlay colours not saved: {e}")
+        self.set_mode("ana")
+        self._show(measure=False)
+
     def set_edges(self, on: bool):
         self._edges = bool(on)
         self._show()
@@ -705,7 +759,9 @@ class ManualAlignDialog(QDialog):
                                       else f"Loading {item.stem}…")
             return
         warped = warp_preview(item.preview, item.angles)
-        self.view.set_images(view_images(display_arrays(item.preview.vis, warped, self._edges)))
+        colours = overlay_colours_shown(self.overlay_colours, self._edges)
+        self.view.overlay_tag = R.OVERLAY_COLOURS[colours][1] + " · doubled edges = misaligned"
+        self.view.set_images(view_images(display_arrays(item.preview.vis, warped, self._edges), colours))
         self.view.caption = f"{item.stem}  ·  yaw {item.angles[0]:+.2f}°  pitch {item.angles[1]:+.2f}°  " \
                             f"roll {item.angles[2]:+.2f}°"
         if measure:
