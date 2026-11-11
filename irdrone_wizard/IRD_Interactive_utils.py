@@ -2206,7 +2206,7 @@ def build_time_line(dates: list[float],
     # --- 3) Construct adjusted timeline ---
     if verbose:
         print("\n--- Adjusted real timeline ---")
-        print(f"raw image N° : {numeros[0]:04d} | time_line {time_line[0]:.3f} s")
+        print(f"raw image {Path(list_file_path[0]).name} (no. {numeros[0] + 1}) | time_line {time_line[0]:.3f} s")
 
     for i in range(1, n):
         delta = periode_reelle  # default value
@@ -2229,7 +2229,7 @@ def build_time_line(dates: list[float],
         time_line[i] = time_line[i - 1] + delta
 
         if verbose:
-            print(f"raw image N° : {numeros[i]:04d} | time_line {time_line[i]:.3f} s{saut_txt}")
+            print(f"raw image {Path(list_file_path[i]).name} (no. {numeros[i] + 1}) | time_line {time_line[i]:.3f} s{saut_txt}")
 
     if verbose:
         print("---------------------------------\n")

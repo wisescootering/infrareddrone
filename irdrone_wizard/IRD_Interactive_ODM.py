@@ -156,12 +156,19 @@ def _load_json(path: Path) -> Any:
         ) from error
 
 
+def _point_label(shoot_point: Dict[str, Any], index: int) -> str:
+    """How a shoot point is named in a message: its VIS file, else its place
+    in shoot_points.json counted from 1 (as the user counts)."""
+    name = shoot_point.get("FileName")
+    return f"Shoot point {name}" if isinstance(name, str) else f"Shoot point no. {index + 1} of shoot_points.json"
+
+
 def _image_number(filename: str, shoot_point_index: int) -> str:
     """Extract the capture number from a VIS DNG filename."""
     match = VIS_FILENAME_PATTERN.fullmatch(Path(filename).name)
     if match is None:
         raise ODMMappingError(
-            f"Shoot point {shoot_point_index} has an unexpected VIS filename: {filename!r}"
+            f"Shoot point {filename!r}: unexpected VIS filename (VIS_<number>.dng expected)"
         )
     return match.group(1)
 
@@ -629,7 +636,7 @@ def select_mapping_pairs(
                 is_failed = bool(failed)
             else:
                 raise ODMMappingError(
-                    f"Shoot point {shoot_point_index} has an invalid 'failed' status."
+                    f"{_point_label(shoot_point, shoot_point_index)} has an invalid 'failed' status."
                 )
             if is_failed:
                 continue
@@ -637,7 +644,7 @@ def select_mapping_pairs(
             dt = shoot_point.get("dt")
             if not isinstance(vis_filename, str):
                 raise ODMMappingError(
-                    f"Shoot point {shoot_point_index} has no valid 'FileName'."
+                    f"{_point_label(shoot_point, shoot_point_index)} has no valid 'FileName'."
                 )
             normalized_points.append(
                 {
