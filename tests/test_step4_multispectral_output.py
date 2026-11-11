@@ -195,6 +195,61 @@ class Step4MultispectralOutputTests(unittest.TestCase):
             )
 
 
+class MovedMissionImagesTests(unittest.TestCase):
+    """shoot_points.json written before the mission folder was renamed or moved:
+    the images are taken from the mission's AerialPhotography folders."""
+
+    def test_image_path_falls_back_to_the_mission_folder(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            mission = Path(temporary)
+            (mission / "AerialPhotography" / "VIS").mkdir(parents=True)
+            image = mission / "AerialPhotography" / "VIS" / "VIS_0100.dng"
+            image.write_bytes(b"dng")
+            gone = {"FileName": "VIS_0100.dng", "Directory": "/old/place/AerialPhotography/VIS"}
+            self.assertEqual(run_after_preprocessing.image_path(gone, mission, "VIS"), image)
+            here = {"FileName": "VIS_0100.dng", "Directory": str(image.parent)}
+            self.assertEqual(run_after_preprocessing.image_path(here, mission, "VIS"), image)
+            missing = {"FileName": "VIS_0101.dng", "Directory": "/old/place/AerialPhotography/VIS"}
+            self.assertEqual(run_after_preprocessing.image_path(missing, mission, "VIS"),
+                             Path("/old/place/AerialPhotography/VIS/VIS_0101.dng"))
+
+    def test_step4_aligns_the_images_of_a_moved_mission(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            mission = Path(temporary)
+            aerial = mission / "AerialPhotography"
+            for band, name in (("VIS", "VIS_0100.dng"), ("NIR", "NIR_0100.RAW"), ("NIR", "NIR_0101.RAW")):
+                (aerial / band).mkdir(parents=True, exist_ok=True)
+                (aerial / band / name).write_bytes(b"raw")
+            old = "/old/computer/FLY-20250919-1418-Somewhere/AerialPhotography"
+            point = {
+                "VIS": {"FileName": "VIS_0100.dng", "DateTimeOriginal": "2025-09-19T14:18:00",
+                        "RelativeTimeLine": 0.0, "Directory": old + "/VIS"},
+                "NIR": [
+                    {"FileName": "NIR_0100.RAW", "rank": 1, "dt": 0.1,
+                     "DateTimeOriginal": "2025-09-19T14:18:00", "Directory": old + "/NIR"},
+                    {"FileName": "NIR_0101.RAW", "rank": 2, "dt": 0.3,
+                     "DateTimeOriginal": "2025-09-19T14:18:00", "Directory": old + "/NIR"},
+                ],
+            }
+            (aerial / "shoot_points.json").write_text(
+                json.dumps({"mission_path": old, "shoot_points": [point]}), encoding="utf-8")
+            seen = {}
+
+            def process_raw_pairs(sync_pairs, **kwargs):
+                seen["pairs"] = sync_pairs
+                seen["redo"] = kwargs.get("redo_nir_candidates")
+
+            with patch("run_after_preprocessing.create_odm_folder"), \
+                    patch("run_after_preprocessing.automatic_registration.process_raw_pairs",
+                          side_effect=process_raw_pairs):
+                run_after_preprocessing.run_postprocessing(mission)
+
+            self.assertEqual(seen["pairs"], [(aerial / "VIS" / "VIS_0100.dng",
+                                              aerial / "NIR" / "NIR_0100.RAW")])
+            self.assertEqual(seen["redo"], [[(aerial / "NIR" / "NIR_0100.RAW", 1),
+                                             (aerial / "NIR" / "NIR_0101.RAW", 2)]])
+
+
 class TheoreticalAnglesTests(unittest.TestCase):
     @staticmethod
     def _points(east=0.0, north=0.0):
