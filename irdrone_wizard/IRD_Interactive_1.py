@@ -1579,14 +1579,20 @@ class Window_create_file_structure(QDialog):
         # ----------------------------------------------------------
         # Construction du dictionnaire nouveau (MÀJ potentielle)
         # ----------------------------------------------------------
+        # The take-off image number, as in its name (VIS_0161.dng -> 161), like
+        # the idMin / idMax of the other phases (not a position in a list).
+        try:
+            takeoff_number = int(Path(self.mission_parameters_light["name image take-off"]).stem.split("_")[-1])
+        except ValueError:
+            takeoff_number = -1
         dic_light = {
             "spectral_band": "VIS",
             "img_suffix": "dng",
             "tkoff": {
                 "outputFolder": str(Path(self.missionFolder) / "AerialPhotography" / "VIS"),
                 "original name": self.mission_parameters_light["original name image take-off"],
-                "idMin": 1,
-                "idMax": 1,
+                "idMin": takeoff_number,
+                "idMax": takeoff_number,
                 "listCopiedImages": [
                     self.mission_parameters_light["name image take-off"]
                 ]

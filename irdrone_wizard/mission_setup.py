@@ -370,11 +370,12 @@ def create_mission(params: dict, icon_dir: Optional[Path] = None) -> Path:
     vis = base / "AerialPhotography" / "VIS"
     info = vis / "transfer_info_VIS_dng.json"
     if not info.is_file():
+        number = frame_number(Path(params["name image take-off"]))   # VIS_0161.dng -> 161
         data = {
             "spectral_band": "VIS",
             "img_suffix": "dng",
             "tkoff": {"outputFolder": str(vis), "original name": params["original name image take-off"],
-                      "idMin": 1, "idMax": 1, "listCopiedImages": [params["name image take-off"]]},
+                      "idMin": number, "idMax": number, "listCopiedImages": [params["name image take-off"]]},
             "sync": {"outputFolder": str(vis)},
             "fly": {"outputFolder": str(vis)},
         }

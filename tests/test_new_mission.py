@@ -125,6 +125,8 @@ class CreateMissionTests(unittest.TestCase):
         self.assertTrue((base / "AerialPhotography" / "VIS" / "VIS_0007.dng").is_file())
         info = json.loads((base / "AerialPhotography" / "VIS" / "transfer_info_VIS_dng.json").read_text())
         self.assertEqual(info["tkoff"]["listCopiedImages"], ["VIS_0007.dng"])
+        # the take-off image number as in its name, like the other phases (not 1)
+        self.assertEqual((info["tkoff"]["idMin"], info["tkoff"]["idMax"]), (7, 7))
         # created again (Step 1 run twice): the existing selection is kept
         info["fly"]["listCopiedImages"] = ["VIS_0100.dng"]
         (base / "AerialPhotography" / "VIS" / "transfer_info_VIS_dng.json").write_text(json.dumps(info))
