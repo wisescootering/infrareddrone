@@ -1337,6 +1337,7 @@ class Transfer_NIR(QtCore.QObject):
             if self.verbose:
                 print(f"[TRACE] WorkerTransfer_NIR: converting {n} files with max_workers={self.max_workers}")
 
+            dng_names = Uti.build_dng_names(raw_files)
             dng_results = []
             completed = 0
 
@@ -1352,7 +1353,8 @@ class Transfer_NIR(QtCore.QObject):
                         str(self.output_folder),
                         self.nb_threads,
                         self.verbose,
-                        self.exiftool_path
+                        self.exiftool_path,
+                        dng_name=dng_names[raw],
                     ): raw for raw in raw_files
                 }
 
