@@ -37,6 +37,13 @@ GEOREF_METADATA_KEYS = (
 VIS_FILENAME_PATTERN = re.compile(r"^VIS_(\d+)\.dng$", re.IGNORECASE)
 
 
+def _vis_number(vis_data: dict) -> int:
+    """Number of a VIS image as in its name (VIS_0161.dng -> 161); its place in
+    the VIS folder counted from 1 when the name has no number."""
+    match = VIS_FILENAME_PATTERN.fullmatch(Path(str(vis_data.get("FileName", ""))).name)
+    return int(match.group(1)) if match else int(vis_data.get("idx", -1)) + 1
+
+
 def build_output_traces(include_nir: bool = False, include_ndvi: bool = False) -> list[str]:
     """Return the requested output traces, with VIS and VIR as the defaults."""
     traces = ["vis", "vir"]
@@ -527,7 +534,9 @@ def run_postprocessing(
         # Enhanced initialization of ShootPoint to include more metadata
         if nir_data:
             shoot_point = ShootPoint(
-                numero=vis_data["idx"],
+                # the point is named by its VIS image number (VIS_0161.dng -> 161), the
+                # number the user sees everywhere, not its 0-based place in the VIS folder
+                numero=_vis_number(vis_data),
                 nameVis=vis_data["FileName"],
                 nameNir=nir_data["FileName"],
                 visDate=vis_data["DateTimeOriginal"],
