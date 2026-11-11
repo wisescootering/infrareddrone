@@ -81,6 +81,7 @@ from IRD_Interactive_new_mission import NewMissionDialog
 from IRD_Interactive_review import ReviewDialog
 from IRD_Interactive_mission_details import MissionDetailsDialog
 from IRD_Interactive_home import HomePage, recent_missions
+from mission_relocation import relocate_mission
 from IRD_Interactive_3 import DialogSynchroAruco
 from IRD_Interactive_4 import DialogImageProcessing
 from IRD_Interactive_5 import DialogGeoRef
@@ -585,6 +586,10 @@ class Main_Window(QMainWindow):
             mission_json = Uti.safe_path(folderMissionPath / "FlightAnalytics" / "mission_parameters.json")
             if not mission_json.exists():
                 raise FileNotFoundError("mission_parameters.json not found")
+            try:  # folder renamed or moved by hand: its JSON files follow, silently
+                relocate_mission(folderMissionPath)
+            except Exception as e:
+                print(f"Could not update the paths of the moved mission: {e}")
 
             with open(mission_json, "r", encoding="utf-8") as f:
                 self.mission_parameters = json.load(f)
