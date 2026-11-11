@@ -1898,6 +1898,10 @@ class ReviewDialog(QDialog):
         from IRD_Interactive_progress import mark_step_done
         mark_step_done(self.mission, 5)       # no end of its own: done once looked at
         super().done(r)
+        # the images in memory (a few hundred MB) go at once, not when the window is deleted
+        self._pool.clear()
+        self._cache.clear()
+        self.view.set_placeholder(None)
 
     def _continue_now(self):
         """Close the review; the main window then opens Step 6 (refused while

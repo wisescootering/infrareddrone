@@ -662,8 +662,10 @@ class Main_Window(QMainWindow):
             QMessageBox.warning(self, "Review unavailable", str(e))
             return
         dialog.exec()
+        continue_chosen = dialog.continue_chosen
+        dialog.deleteLater()      # a child of the main window: kept (thumbnails, maps…) at every opening otherwise
         self._show_current_mission()
-        if dialog.continue_chosen:
+        if continue_chosen:
             self.on_post_process_images()
 
     def on_open_recent(self, folder):
