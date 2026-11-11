@@ -223,6 +223,7 @@ class CompareView(QWidget):
     Images: "vis" (visible), "vir" (false colours), "nir" (infrared, grey),
     "ana" (red/cyan overlay), prepared in the background (view_images)."""
     hint = "wheel to zoom, drag to pan, double-click to fit"
+    overlay_tag = "Visible cyan · infrared red · doubled edges = misaligned"
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -362,7 +363,7 @@ class CompareView(QWidget):
             self._tag(p, areas[0], "Infrared" if self._blink_on else "Visible", TAG_COLOR)
         else:
             self._draw(p, areas[0], "ana")
-            self._tag(p, areas[0], "Visible cyan · infrared red · doubled edges = misaligned", TAG_COLOR)
+            self._tag(p, areas[0], self.overlay_tag, TAG_COLOR)
         if self.busy_text:
             p.fillRect(self.rect(), QColor(17, 22, 29, 140))
             f = QFont(self.font())

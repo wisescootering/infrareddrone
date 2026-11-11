@@ -587,9 +587,22 @@ def precompute_point(output: Path, number: int, width: int = 200) -> Optional[fl
     return shift
 
 
-def anaglyph(vis_bgr, vir_bgr):
-    """Visible in cyan, infrared in red: grey where both overlap, coloured
-    fringes where they do not."""
+OVERLAY_COLOURS = {  # key: (choice text, label on the image)
+    "colour_grey": ("Visible in colour, infrared in grey", "Visible colour · infrared grey"),
+    "green_grey": ("Visible in green, infrared in grey", "Visible green · infrared grey"),
+    "blue_red": ("Visible in blue, infrared in red", "Visible blue · infrared red"),
+    "cyan_red": ("Visible in cyan, infrared in red", "Visible cyan · infrared red"),
+}
+
+
+def overlay(vis_bgr, vir_bgr, colours: str = "cyan_red"):
+    """Visible and infrared on one image (OVERLAY_COLOURS), both contrasts
+    stretched: an edge seen twice shows a misalignment.
+
+    colour_grey  the visible as it is, half mixed with the infrared in grey
+    green_grey   grey infrared, the visible added in green
+    blue_red     visible in blue, infrared in red (magenta where both are bright)
+    cyan_red     visible in cyan, infrared in red (grey where both are bright)"""
     import cv2
     vis = cv2.cvtColor(vis_bgr, cv2.COLOR_BGR2GRAY)
     nir = nir_from_vir(vir_bgr)
@@ -600,7 +613,20 @@ def anaglyph(vis_bgr, vir_bgr):
         lo, hi = np.percentile(c[::4, ::4], (1, 99))
         return np.clip((c.astype(np.float32) - lo) * (255.0 / max(hi - lo, 1.0)), 0, 255).astype(np.uint8)
     v, n = stretch(vis), stretch(nir)
-    return np.dstack([v, v, n])   # B, G = visible ; R = infrared
+    if colours == "colour_grey":
+        return ((vis_bgr.astype(np.uint16) + n[:, :, None]) // 2).astype(np.uint8)
+    if colours == "green_grey":
+        half = n // 2
+        return np.dstack([half, half + v // 2, half])
+    if colours == "blue_red":
+        return np.dstack([v, np.zeros_like(v), n])
+    return np.dstack([v, v, n])   # cyan_red: B, G = visible ; R = infrared
+
+
+def anaglyph(vis_bgr, vir_bgr):
+    """Visible in cyan, infrared in red: grey where both overlap, coloured
+    fringes where they do not."""
+    return overlay(vis_bgr, vir_bgr, "cyan_red")
 
 
 def measure_all(review: Review, progress: Optional[Callable[[int, int], None]] = None,
