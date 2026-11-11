@@ -28,6 +28,10 @@ Review state
 those points). The scores and the points the user looked at and accepted
 ("checked") are kept apart, in ImgIRdrone/review.json, so the Step 4 inventory
 keeps its format.
+
+Step 4 measures each point as it writes it (precompute_point, one small file
+per point in ImgIRdrone/review_cache: its workers run apart) so that the
+review opens with every score known; the review measures only what is missing.
 """
 from __future__ import annotations
 
@@ -42,7 +46,10 @@ import numpy as np
 OUTPUT_FOLDER = "ImgIRdrone"
 INVENTORY = "shoot_points.json"
 REVIEW_FILE = "review.json"
-THUMB_FOLDER = "review_thumbnails"   # small copies of the aligned images: the time line at once
+# Made by Step 4 as it writes each point (precompute_point), else by the review:
+# a small copy of the aligned image (the time line at once) and its residual
+# misalignment (no wait for the scores).
+REVIEW_CACHE = "review_cache"
 REVIEW_VERSION = 1
 
 # Residual misalignment (pixels of the full image)
@@ -240,9 +247,13 @@ def _inventory_points(mission: Path, inventory: dict, numbers=None) -> List[Revi
                 p.redo_script = output / f"{stem}{suffix}"
                 break
         p.motion = _motion_summary(output / f"{stem}_motion_model.json")
-        cached = scores.get(p.label)
-        if p.vir_image is not None and isinstance(cached, dict) and cached.get("key") == _file_key(p.vir_image):
-            p.shift, p.shift_worst = cached.get("shift"), cached.get("worst")
+        if p.vir_image is not None:
+            key = _file_key(p.vir_image)
+            cached = scores.get(p.label)
+            if not (isinstance(cached, dict) and cached.get("key") == key):
+                cached = cached_score(output, p.vir_image, key)    # measured by Step 4
+            if cached is not None:
+                p.shift, p.shift_worst = cached.get("shift"), cached.get("worst")
         p.checked = p.label in checked
         p.realigned = p.failed and p.label in realigned
         points.append(p)
@@ -349,7 +360,10 @@ def save_state(review: Review) -> None:
 
 
 def _file_key(path: Path) -> str:
-    st = Path(path).stat()
+    return _stat_key(Path(path).stat())
+
+
+def _stat_key(st) -> str:
     return f"{st.st_size}-{int(st.st_mtime)}"
 
 
@@ -384,6 +398,9 @@ def refresh_point(review: Review, point: ReviewPoint) -> None:
     point.motion = _motion_summary(review.output / f"{point.stem}_motion_model.json")
     point.shift = point.shift_worst = None
     point.checked = False
+    cached = cached_score(review.output, point.vir_image) if point.vir_image is not None else None
+    if cached is not None:              # the redo measured its new image as it wrote it
+        point.shift, point.shift_worst = cached.get("shift"), cached.get("worst")
 
 
 # ---------------------------------------------------------------------------
@@ -477,12 +494,9 @@ def cached_thumbnail(output: Path, path: Path, width: int = 200):
     1/8 size: hundreds of them, every time the review opens, were slow).
     The copy takes the date of its image: any other date (realigned, or an
     earlier alignment put back) makes it again."""
-    import os
-    import threading
-    import cv2
-    from image_io import imread, imwrite
+    from image_io import imread
     path = Path(path)
-    copy = Path(output) / THUMB_FOLDER / path.name
+    copy = Path(output) / REVIEW_CACHE / path.name
     try:
         source = path.stat()
     except OSError:
@@ -496,15 +510,81 @@ def cached_thumbnail(output: Path, path: Path, width: int = 200):
         pass
     img = thumbnail(path, width)
     if img is not None:
-        try:
-            copy.parent.mkdir(exist_ok=True)
-            tmp = copy.with_name(f"{copy.stem}.{threading.get_ident()}.tmp{copy.suffix}")   # never read half written
-            if imwrite(tmp, img, [cv2.IMWRITE_JPEG_QUALITY, 90]):
-                os.utime(tmp, ns=(source.st_atime_ns, source.st_mtime_ns))
-                os.replace(tmp, copy)
-        except OSError:       # read-only mission: no cache, still shown
-            pass
+        _store_thumbnail(copy, img, source)
     return img
+
+
+def _tmp_name(path: Path) -> Path:
+    """Beside ``path``, unique to this process and thread: written then renamed,
+    a file is never read half written (Step 4 workers, review threads)."""
+    import os
+    import threading
+    return path.with_name(f"{path.stem}.{os.getpid()}-{threading.get_ident()}.tmp{path.suffix}")
+
+
+def _store_thumbnail(copy: Path, img, source) -> None:
+    """Keep the thumbnail ``img`` at ``copy``, dated like its image (``source``: its stat)."""
+    import os
+    import cv2
+    from image_io import imwrite
+    try:
+        copy.parent.mkdir(exist_ok=True)
+        tmp = _tmp_name(copy)
+        if imwrite(tmp, img, [cv2.IMWRITE_JPEG_QUALITY, 90]):
+            os.utime(tmp, ns=(source.st_atime_ns, source.st_mtime_ns))
+            os.replace(tmp, copy)
+    except OSError:       # read-only mission: no cache, still shown
+        pass
+
+
+def _score_file(output: Path, vir: Path) -> Path:
+    return Path(output) / REVIEW_CACHE / f"{Path(vir).stem}.score.json"
+
+
+def cached_score(output: Path, vir: Path, key: Optional[str] = None) -> Optional[dict]:
+    """{"shift", "worst"} measured by Step 4 when it wrote ``vir``; None when
+    missing or made for another version of the image."""
+    data = _read_json(_score_file(output, vir))
+    try:
+        key = key or _file_key(vir)
+    except OSError:
+        return None
+    if not isinstance(data, dict) or data.get("key") != key:
+        return None
+    return data
+
+
+def precompute_point(output: Path, number: int, width: int = 200) -> Optional[float]:
+    """What the review needs of a point Step 4 has just written: its thumbnail
+    and its residual misalignment (from the JPEGs on disk, like the review
+    measures them), in ImgIRdrone/review_cache. One decoding of each image
+    (~0.4 s), against minutes of review scan for a large mission. Returns the
+    residual (None: not measurable or no image)."""
+    import json
+    import cv2
+    from image_io import imread
+    output = Path(output)
+    vir = aligned_image(output, number)
+    vis = output / f"VIS_{number:04d}.jpg"
+    if vir is None or not vis.is_file():
+        return None
+    source = vir.stat()
+    vis_img = imread(vis, cv2.IMREAD_COLOR)
+    vir_img = imread(vir, cv2.IMREAD_COLOR)
+    if vir_img is None:
+        return None
+    small = cv2.resize(vir_img, (width, round(vir_img.shape[0] * width / vir_img.shape[1])),
+                       interpolation=cv2.INTER_AREA)
+    _store_thumbnail(output / REVIEW_CACHE / vir.name, small, source)
+    if vis_img is None:
+        return None
+    shift, worst = residual_shift(vis_img, nir_from_vir(vir_img))
+    path = _score_file(output, vir)
+    tmp = _tmp_name(path)
+    tmp.write_text(json.dumps({"key": _stat_key(source), "shift": shift, "worst": worst}),
+                   encoding="utf-8")
+    tmp.replace(path)
+    return shift
 
 
 def anaglyph(vis_bgr, vir_bgr):

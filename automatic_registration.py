@@ -417,6 +417,20 @@ def write_manual_bat_redo(
     if not batch:
         os.chmod(debug_bat_pth, 0o755)
 
+def precompute_review(out_dir, vis_number) -> None:
+    """Thumbnail and residual misalignment of a point just written, for the
+    review (Step 5): it then opens with every score known instead of measuring
+    hundreds of images. Never fails the alignment."""
+    try:
+        wizard = str(Path(__file__).resolve().parent / "irdrone_wizard")
+        if wizard not in sys.path:
+            sys.path.append(wizard)
+        import shoot_review
+        shoot_review.precompute_point(Path(out_dir), int(vis_number))
+    except Exception as exc:
+        logging.warning(f"Review cache not written for VIS_{vis_number}: {exc}")
+
+
 def _process_raw_pairs_serial(
         sync_pairs,
         cals=dict(refcalib=ut.cameracalibration(camera="DJI_RAW"), movingcalib=ut.cameracalibration(camera="M20_RAW")),
@@ -605,6 +619,8 @@ def _process_raw_pairs_serial(
                     exif=exif_dict_minimal,
                     gps=gps_vis
                 )
+        if VIR in traces and VIS in traces:
+            precompute_review(out_dir, vis_number)
         motion_model_list.append(motion_model)
         if clean_proxy:
             pr.Image(vis_pth).clean_proxy()

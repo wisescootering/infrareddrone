@@ -163,7 +163,7 @@ class MissionTests(unittest.TestCase):
         out = self.mission / "ImgIRdrone"
         vir = out / "VIR_0140_local.jpg"
         first = R.cached_thumbnail(out, vir)
-        self.assertTrue((out / R.THUMB_FOLDER / vir.name).is_file())
+        self.assertTrue((out / R.REVIEW_CACHE / vir.name).is_file())
         with mock.patch.object(R, "thumbnail", side_effect=AssertionError("decoded again")):
             self.assertEqual(R.cached_thumbnail(out, vir).shape, first.shape)   # the copy, not the image
         st = vir.stat()
@@ -171,6 +171,41 @@ class MissionTests(unittest.TestCase):
         with mock.patch.object(R, "thumbnail", return_value=first) as made:
             R.cached_thumbnail(out, vir)
         made.assert_called_once()
+
+    def test_step4_measures_each_point_as_it_writes_it(self):
+        out = self.mission / "ImgIRdrone"
+        self.assertGreater(R.precompute_point(out, 140), R.SHIFT_SUSPICIOUS)
+        self.assertIsNone(R.precompute_point(out, 143))                  # no aligned image
+        self.assertTrue((out / R.REVIEW_CACHE / "VIR_0140_local.jpg").is_file())
+        review = R.load_review(self.mission)                             # no review.json yet
+        self.assertEqual(review.by_number(140).status, R.STATUS_SUSPICIOUS)
+        self.assertIsNone(review.by_number(137).shift)                   # not precomputed: the review measures it
+        vir = out / "VIR_0140_local.jpg"
+        vir.write_bytes(vir.read_bytes() + b"\0" * 10)                  # realigned: that score is stale
+        self.assertIsNone(R.load_review(self.mission).by_number(140).shift)
+        R.precompute_point(out, 140)                                     # the redo measures its new image
+        point = review.by_number(140)
+        R.refresh_point(review, point)
+        self.assertIsNotNone(point.shift)
+
+    def test_the_review_cache_never_fails_an_alignment(self):
+        import automatic_registration as AR
+        AR.precompute_review(self.mission / "nowhere", "0140")           # logged, not raised
+
+    def test_step4_precomputes_after_writing_the_images(self):
+        import automatic_registration as AR
+        from unittest import mock
+        img = np.random.default_rng(0).random((32, 32, 3)).astype(np.float32)
+        out = self.mission / "ImgIRdrone"
+        with mock.patch.object(AR, "align_raw", return_value=(img, img, img, {"yaw": 0.0})), \
+                mock.patch.object(AR, "save_readable_motion_model"), mock.patch.object(AR.np, "save"), \
+                mock.patch.object(AR, "vir") as vir, mock.patch.object(AR.pr, "Image"), \
+                mock.patch.object(AR.ut, "contrast_stretching", return_value=(img,)), \
+                mock.patch.object(AR, "precompute_review") as pre:
+            pre.side_effect = lambda *_: self.assertTrue(vir.called)        # after the VIR image is written
+            AR._process_raw_pairs_serial([("VIS_0140.DNG", "NIR_0100.DNG")], cals=None, out_dir=str(out),
+                                         traces=[AR.VIS, AR.VIR], alignment_modes=("local",))
+        pre.assert_called_once_with(str(out), "0140")
 
     def test_by_number_follows_the_points_added(self):
         review = R.load_review(self.mission)
