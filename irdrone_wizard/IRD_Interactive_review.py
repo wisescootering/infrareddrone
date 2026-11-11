@@ -1220,7 +1220,9 @@ class ReviewDialog(QDialog):
         self._scan_refresh.stop()
         self._refresh_after_scan_news()
         self.progress.hide()
-        if not self._user_moved and self.review.points:
+        # the worst point, unless the user is already looking at something
+        # (hundreds of points: the scan lasts minutes, a jump would be a surprise)
+        if not self._user_moved and self.view.zoom <= 1.01 and self.review.points:
             self.select(self._first_to_review(), by_user=False)
         self._save_state()
         self._refresh_counts()
@@ -1343,6 +1345,7 @@ class ReviewDialog(QDialog):
             self._load(pt)
 
     def _on_strip_hover(self, i):
+        self._user_moved = True
         self._hover_index = i
         if self.map_model is not None and 0 <= i < len(self.review.points):
             self.map_model.set_hover(self.map_model.index_of(self.review.points[i].number))
@@ -1361,6 +1364,7 @@ class ReviewDialog(QDialog):
             self._show_point(self.index)
 
     def set_mode(self, mode):
+        self._user_moved = True
         keys = [m[0] for m in MODES]
         if mode == "map":
             if self.big_map is None:
