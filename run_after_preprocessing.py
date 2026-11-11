@@ -462,6 +462,18 @@ def report_angle_analysis(all_points, mission_folder, results_folder) -> None:
     except Exception as error:
         print(f"Could not save the angle analysis plots: {error}")
 
+def image_path(entry: dict, mission: Path, band: str) -> Path:
+    """Image of a shoot point entry: its recorded Directory, or the mission's
+    AerialPhotography/<band> folder when that one does not exist (mission folder
+    renamed or moved since Step 3, or a path ExifTool wrote with '?' for the
+    accented letters)."""
+    recorded = Path(entry["Directory"]) / entry["FileName"]
+    if recorded.exists():
+        return recorded
+    local = Path(mission) / "AerialPhotography" / band / entry["FileName"]
+    return local if local.exists() else recorded
+
+
 def run_postprocessing(
     preprocessed_folder: Path,
     start_image_number: int = None,
@@ -591,8 +603,8 @@ def run_postprocessing(
     # Dynamically derive paths from paired_points
     matched_paths = [
         (
-            Path(point["VIS"]["Directory"]) / point["VIS"]["FileName"],
-            Path(nir["Directory"]) / nir["FileName"],
+            image_path(point["VIS"], preprocessed_folder, "VIS"),
+            image_path(nir, preprocessed_folder, "NIR"),
         )
         for point in paired_points
         for nir in point["NIR"]
@@ -601,7 +613,7 @@ def run_postprocessing(
     redo_nir_candidates = [
         [
             (
-                Path(nir["Directory"]) / nir["FileName"],
+                image_path(nir, preprocessed_folder, "NIR"),
                 nir["rank"],
             )
             for nir in sorted(
