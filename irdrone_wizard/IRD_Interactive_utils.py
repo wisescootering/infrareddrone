@@ -1774,6 +1774,26 @@ def build_dng_name(raw_file: str) -> str:
 
     return f"NIR_{number_str}.dng"
 
+def build_dng_names(raw_files) -> dict:
+    """Target DNG name of each RAW file (``{raw: 'NIR_XXXX.dng'}``).
+
+    The usual rule is ``build_dng_name`` (SJCam M20: RAW 001, 003, 005… with
+    their JPEG under the next number, so NIR_0001, NIR_0002, NIR_0003…). When it
+    gives two RAW files the same name (consecutive RAW numbers, a counter that
+    went back to 001 during the flight…), the second one would be skipped as
+    "already converted": the images are then numbered 1, 2, 3… in shooting
+    order (the RAW names start with the date and time) so none is lost.
+    """
+    raw_files = list(raw_files)
+    names = {raw: build_dng_name(raw) for raw in raw_files}
+    if len(set(names.values())) == len(names):
+        return names
+    ordered = sorted(raw_files, key=lambda raw: Path(raw).name.lower())
+    print(Style.YELLOW + "⚠ Several infrared RAW files would get the same NIR number: "
+          "the NIR images are numbered in shooting order instead." + Style.RESET)
+    return {raw: f"NIR_{k:04d}.dng" for k, raw in enumerate(ordered, start=1)}
+
+
 def _set_exif_from_raw(dng_path: Path, raw_path: Path, exiftool_path: str, verbose: bool = False):
     """
     Set DateTimeOriginal and CreateDate in EXIF from the RAW filename using exiftool.
@@ -1827,7 +1847,8 @@ def _convert_single_raw_to_dng(raw_file: str,
                                nb_threads: str,
                                verbose: bool,
                                exiftool_path: str,
-                               show_converter_output: bool = False) -> str:
+                               show_converter_output: bool = False,
+                               dng_name: Optional[str] = None) -> str:
     """
     Internal helper: converts a single RAW file to DNG using sjcam_raw2dng.
     The output DNG filename is standardized to 'NIR_XXXX.dng'.
@@ -1852,7 +1873,7 @@ def _convert_single_raw_to_dng(raw_file: str,
         Full path to the generated DNG file.
     """
     raw_path = Path(raw_file)
-    dng_name = build_dng_name(raw_file)
+    dng_name = dng_name or build_dng_name(raw_file)
     dng_output_path = Path(output_folder) / dng_name
 
     if dng_output_path.exists():

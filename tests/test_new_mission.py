@@ -271,3 +271,29 @@ class NirPreviewTest(unittest.TestCase):
 
     def test_no_jpeg(self):
         self.assertIsNone(MS.nir_preview_jpeg(self.folder(["a.RAW"])))
+
+
+class NirDngNameTest(unittest.TestCase):
+    """Names of the infrared DNG: never two RAW files under the same name."""
+
+    @classmethod
+    def setUpClass(cls):
+        import IRD_Interactive_utils as Uti
+        cls.Uti = Uti
+
+    def test_sjcam_m20_odd_numbers_are_halved(self):
+        raws = ["2022_0125_130413_001.RAW", "2022_0125_130416_003.RAW", "2022_0125_130419_005.RAW"]
+        self.assertEqual(list(self.Uti.build_dng_names(raws).values()),
+                         ["NIR_0001.dng", "NIR_0002.dng", "NIR_0003.dng"])
+
+    def test_consecutive_numbers_are_not_merged(self):
+        raws = ["2022_0125_130413_001.RAW", "2022_0125_130415_002.RAW", "2022_0125_130417_003.RAW"]
+        names = self.Uti.build_dng_names(raws)
+        self.assertEqual(len(set(names.values())), 3)
+        self.assertEqual(names["2022_0125_130415_002.RAW"], "NIR_0002.dng")
+
+    def test_counter_back_to_one_keeps_the_shooting_order(self):
+        # the counter went back to 001 after the first two shots: _001 twice
+        raws = ["2022_0125_131000_001.RAW", "2022_0125_130000_001.RAW", "2022_0125_130002_003.RAW"]
+        names = self.Uti.build_dng_names(raws)
+        self.assertEqual([names[r] for r in sorted(raws)], ["NIR_0001.dng", "NIR_0002.dng", "NIR_0003.dng"])
