@@ -427,6 +427,54 @@ class ReviewInteractionTests(ReviewDialogTests):
         d.done(0)                                     # stops and waits for both
         self.assertFalse(any(s.isRunning() for s in d._scans))
 
+    def test_images_are_prepared_in_the_background(self):
+        import IRD_Interactive_review as RV
+        d = self.dialog()
+        d.select(0)
+        d._pool.waitForDone(10000)
+        self.app.processEvents()
+        self.assertEqual(set(d.view.images), {"vis", "vir", "nir", "ana"})
+        self.assertEqual(d.view.full_width, 400)
+        with __import__("unittest").mock.patch.object(R, "anaglyph", side_effect=AssertionError("in the window")):
+            self.assertIsNotNone(d.view.image("ana"))     # only turned into a pixmap
+        self.assertFalse(RV.view_images(None, None).get("ana"))
+        d.done(0)
+
+    def test_a_point_passed_by_is_not_loaded(self):
+        import IRD_Interactive_review as RV
+        from unittest import mock
+        review = R.load_review(self.mission)
+        job = RV.LoadJob(review.points[0], wanted=lambda n: False)
+        got = []
+        job.signals.loaded.connect(lambda n, images: got.append((n, images)))
+        with mock.patch("image_io.imread", side_effect=AssertionError("decoded for nothing")):
+            job.run()
+        self.app.processEvents()
+        self.assertEqual(got, [(137, None)])
+
+    def test_the_scan_saves_the_scores_as_it_goes(self):
+        import IRD_Interactive_review as RV
+        review = R.load_review(self.mission)
+        scan = RV.ScanThread(review, workers=2)
+        scan.CHECKPOINT_EVERY = 1
+        saves = []
+        scan.checkpoint.connect(lambda: saves.append(1))
+        scan.start()
+        scan.wait(10000)
+        self.app.processEvents()
+        self.assertEqual(len(saves), 2)                    # 137 and 140 (143: no image)
+        self.assertIsNotNone(review.by_number(140).shift)
+
+    def test_the_end_of_the_scan_leaves_the_point_looked_at(self):
+        import IRD_Interactive_review as RV
+        d = RV.ReviewDialog(self.mission)
+        first = d.current().number                         # nothing measured yet
+        d._on_strip_hover(0)                               # the user is looking along the time line
+        d.scan.wait(10000)
+        self.app.processEvents()
+        self.assertEqual(d.current().number, first)        # no jump to the worst point
+        d.done(0)
+
 
 class ReviewMapTests(ReviewDialogTests):
     """The map of the review (positions added to the pairs; offline)."""
