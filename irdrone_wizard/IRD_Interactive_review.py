@@ -255,8 +255,11 @@ class CompareView(QWidget):
         self.update()
 
     def set_images(self, images: dict, unreadable="The images of this point cannot be read."):
-        """``images``: see view_images()."""
-        self.images = {k: v for k, v in images.items() if isinstance(v, QImage) and not v.isNull()}
+        """``images``: see view_images(); a value may also be a function giving
+        the QImage, called the first time that image is painted (the alignment
+        window makes the overlay only when it is shown)."""
+        self.images = {k: v for k, v in images.items()
+                       if callable(v) or isinstance(v, QImage) and not v.isNull()}
         self.full_width = images.get("width") or 0
         self.pix = {}
         self.placeholder = None
@@ -269,7 +272,9 @@ class CompareView(QWidget):
     def image(self, key) -> Optional[QPixmap]:
         if key not in self.pix:
             img = self.images.get(key)
-            if img is None:
+            if callable(img):
+                img = self.images[key] = img()
+            if img is None or img.isNull():
                 return None
             self.pix[key] = QPixmap.fromImage(img)
         return self.pix[key]
@@ -289,6 +294,8 @@ class CompareView(QWidget):
     # ---- geometry: image (0..1 coordinates) <-> widget
     def _ref_size(self) -> QSize:
         img = self.images.get("vis") or self.images.get("vir")
+        if callable(img):
+            img = self.image("vis" if "vis" in self.images else "vir")
         if img is not None:
             return img.size()
         return self.placeholder.size() if self.placeholder is not None else QSize(4, 3)
