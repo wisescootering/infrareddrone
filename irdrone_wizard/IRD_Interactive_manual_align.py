@@ -293,7 +293,7 @@ def _compare_view_class():
             moving = (e.button() == Qt.MouseButton.RightButton or
                       (e.button() == Qt.MouseButton.LeftButton
                        and e.modifiers() & Qt.KeyboardModifier.ShiftModifier))
-            if moving and self.arrays:
+            if moving and self.has_images():
                 self._drag = ("move", e.position())
                 self.setCursor(Qt.CursorShape.SizeAllCursor)
                 self.move_started.emit()

@@ -140,6 +140,25 @@ class WindowTests(unittest.TestCase):
         self.assertAlmostEqual(items[0].angles[1], pitch - M.STEP)    # up, as everywhere
         d.done(0)
 
+    def test_right_dragging_in_the_image_moves_the_infrared(self):
+        """With the mouse, through the view (an error in a mouse handler ends the program)."""
+        from PyQt6.QtCore import QPoint, Qt
+        from PyQt6.QtTest import QTest
+        d, items = self.window()
+        d.resize(1300, 850)
+        d.show()
+        self.app.processEvents()
+        before = items[0].angles
+        centre = d.view.rect().center()
+        for button, modifier in ((Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier),
+                                 (Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ShiftModifier)):
+            QTest.mousePress(d.view, button, modifier, centre)
+            QTest.mouseMove(d.view, centre + QPoint(40, 0))
+            QTest.mouseRelease(d.view, button, modifier, centre + QPoint(40, 0))
+            self.app.processEvents()
+        self.assertNotEqual(items[0].angles, before)
+        d.done(0)
+
     def test_dragging_moves_by_the_pixels_dragged(self):
         d, items = self.window(1)
         d._on_drag_start()
