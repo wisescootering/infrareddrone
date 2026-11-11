@@ -80,6 +80,8 @@ MODES = [  # (key, button text, tooltip)
                    "of Step 6 when it is built and aerial photos (online, optional)."),
 ]
 MAX_VIEW_WIDTH = 3000     # the compare view works on copies at most this wide
+CACHE_POINTS = 4          # points whose images stay in memory (~70 MB each)
+LOAD_THREADS = 2          # images of the points prepared at once (each ~200 MB while decoding)
 
 
 # ---------------------------------------------------------------------------
@@ -122,26 +124,59 @@ class ScanThread(QThread):
 
 
 class _LoadSignals(QObject):
-    loaded = pyqtSignal(int, object)    # number, {"vis": array, "vir": array}
+    loaded = pyqtSignal(int, object)    # number, view_images() (None: no longer wanted, not loaded)
+
+
+def view_images(vis, vir) -> dict:
+    """What the compare view shows, from the two BGR arrays: QImages "vis",
+    "vir", "nir" (infrared, grey) and "ana" (red / cyan overlay), and "width",
+    the width of the original visible image. Made in a worker thread: the
+    window only turns the image it paints into a pixmap (a few ms)."""
+    import cv2
+    width = vis.shape[1] if vis is not None else (vir.shape[1] if vir is not None else 0)
+    small = []
+    for img in (vis, vir):
+        if img is not None and img.shape[1] > MAX_VIEW_WIDTH:
+            s = MAX_VIEW_WIDTH / img.shape[1]
+            img = cv2.resize(img, None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
+        small.append(img)
+    vis, vir = small
+    out = {"width": width}
+    if vis is not None:
+        out["vis"] = bgr_to_qimage(vis)
+    if vir is not None:
+        out["vir"] = bgr_to_qimage(vir)
+        out["nir"] = bgr_to_qimage(R.nir_from_vir(vir))
+        if vis is not None:
+            out["ana"] = bgr_to_qimage(R.anaglyph(vis, vir))
+    return out
 
 
 class LoadJob(QRunnable):
-    def __init__(self, point: R.ReviewPoint):
+    """Images of a point for the compare view. ``wanted(number)`` is asked
+    before the work starts: a point passed by meanwhile (the mouse ran along the
+    time line) is not loaded for nothing."""
+
+    def __init__(self, point: R.ReviewPoint, wanted=None):
         super().__init__()
         self.point = point
+        self.wanted = wanted
         self.signals = _LoadSignals()
 
     def run(self):
-        import cv2
         from image_io import imread
-        out = {}
-        for key, path in (("vis", self.point.vis_image), ("vir", self.point.vir_image)):
-            img = imread(path) if path is not None else None
-            if img is not None and img.shape[1] > MAX_VIEW_WIDTH:
-                s = MAX_VIEW_WIDTH / img.shape[1]
-                img = cv2.resize(img, None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
-            out[key] = img
-        self.signals.loaded.emit(self.point.number, out)
+        number = self.point.number
+        try:
+            if self.wanted is not None and not self.wanted(number):
+                self.signals.loaded.emit(number, None)
+                return
+            vis = imread(self.point.vis_image) if self.point.vis_image is not None else None
+            vir = imread(self.point.vir_image) if self.point.vir_image is not None else None
+            out = view_images(vis, vir)
+        except Exception as e:  # never leave the point "loading" for ever
+            print(f"Review: {self.point.stem} not shown ({e})")
+            out = {}
+        self.signals.loaded.emit(number, out)
 
 
 # ---------------------------------------------------------------------------
@@ -151,7 +186,7 @@ class CompareView(QWidget):
     """Visible / aligned infrared of one point, with zoom and pan.
 
     Images: "vis" (visible), "vir" (false colours), "nir" (infrared, grey),
-    "ana" (red/cyan overlay), made on demand from the two loaded arrays."""
+    "ana" (red/cyan overlay), prepared in the background (view_images)."""
     hint = "wheel to zoom, drag to pan, double-click to fit"
 
     def __init__(self, parent=None):
@@ -161,7 +196,8 @@ class CompareView(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.mode = DEFAULT_MODE
         self.status_color: Optional[QColor] = None    # frame in the colour of the point's status
-        self.arrays: Dict[str, np.ndarray] = {}
+        self.images: Dict[str, QImage] = {}     # see view_images()
+        self.full_width = 0                     # width of the original image (zoom in %)
         self.pix: Dict[str, QPixmap] = {}
         self.placeholder: Optional[QPixmap] = None
         self.message = ""
@@ -178,37 +214,29 @@ class CompareView(QWidget):
 
     # ---- content
     def set_placeholder(self, pix: Optional[QPixmap], message=""):
-        self.arrays, self.pix = {}, {}
+        self.images, self.pix = {}, {}
         self.placeholder = pix
         self.message = message
         self.update()
 
-    def set_images(self, arrays: dict, unreadable="The images of this point cannot be read."):
-        self.arrays = {k: v for k, v in arrays.items() if v is not None}
+    def set_images(self, images: dict, unreadable="The images of this point cannot be read."):
+        """``images``: see view_images()."""
+        self.images = {k: v for k, v in images.items() if isinstance(v, QImage) and not v.isNull()}
+        self.full_width = images.get("width") or 0
         self.pix = {}
         self.placeholder = None
-        self.message = "" if self.arrays else unreadable
+        self.message = "" if self.images else unreadable
         self.update()
 
     def has_images(self):
-        return bool(self.arrays)
+        return bool(self.images)
 
     def image(self, key) -> Optional[QPixmap]:
-        if key in self.pix:
-            return self.pix[key]
-        vis, vir = self.arrays.get("vis"), self.arrays.get("vir")
-        img = None
-        if key == "vis":
-            img = vis
-        elif key == "vir":
-            img = vir
-        elif key == "nir" and vir is not None:
-            img = R.nir_from_vir(vir)
-        elif key == "ana" and vis is not None and vir is not None:
-            img = R.anaglyph(vis, vir)
-        if img is None:
-            return None
-        self.pix[key] = QPixmap.fromImage(bgr_to_qimage(img))
+        if key not in self.pix:
+            img = self.images.get(key)
+            if img is None:
+                return None
+            self.pix[key] = QPixmap.fromImage(img)
         return self.pix[key]
 
     def set_mode(self, mode):
@@ -225,8 +253,10 @@ class CompareView(QWidget):
 
     # ---- geometry: image (0..1 coordinates) <-> widget
     def _ref_size(self) -> QSize:
-        p = self.image("vis") or self.image("vir") or self.placeholder
-        return p.size() if p is not None else QSize(4, 3)
+        img = self.images.get("vis") or self.images.get("vir")
+        if img is not None:
+            return img.size()
+        return self.placeholder.size() if self.placeholder is not None else QSize(4, 3)
 
     def _areas(self) -> List[QRectF]:
         r = QRectF(self.rect()).adjusted(4, 4, -4, -24)
@@ -253,7 +283,7 @@ class CompareView(QWidget):
         p = QPainter(self)
         p.fillRect(self.rect(), QColor("#11161D"))
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, self._drag is None)
-        if not self.arrays:
+        if not self.images:
             area = self._areas()[0]
             if self.placeholder is not None:
                 p.drawPixmap(self._image_rect(area), self.placeholder, QRectF(self.placeholder.rect()))
@@ -330,10 +360,7 @@ class CompareView(QWidget):
 
     def _fit_scale(self):
         area, size = self._areas()[0], self._ref_size()
-        full = max(size.width(), 1)
-        vis = self.arrays.get("vis")
-        if vis is not None:   # relative to the original image, not the reduced copy
-            full = size.width() * (max(vis.shape[1], 1) / max(size.width(), 1))
+        full = max(self.full_width or size.width(), 1)   # the original image, not the reduced copy
         fit = min(area.width() / size.width(), area.height() / size.height())
         return fit * size.width() / full
 
@@ -368,7 +395,7 @@ class CompareView(QWidget):
 
     # ---- interaction
     def _near_curtain(self, pos):
-        if self.mode != "swipe" or not self.arrays:
+        if self.mode != "swipe" or not self.images:
             return False
         rect = self._image_rect(self._areas()[0])
         return abs(rect.left() + self.curtain * rect.width() - pos.x()) < 12
@@ -736,6 +763,11 @@ class ReviewDialog(QDialog):
         self._scans: List[ScanThread] = []
         self._cache: "OrderedDict[int, dict]" = OrderedDict()
         self._loading = set()
+        self._wanted = frozenset()     # points whose images are worth loading now (read by the workers)
+        # A pool of its own: the map tiles keep the global one, and a run along
+        # the time line never piles up full size decodings (memory).
+        self._pool = QThreadPool(self)
+        self._pool.setMaxThreadCount(LOAD_THREADS)
         self.index = 0
         self._hover_index: Optional[int] = None
         self._redo_errors: List[str] = []
@@ -1182,24 +1214,42 @@ class ReviewDialog(QDialog):
         self.subtitle.setText("Nothing left to review: every measured point is aligned, checked or flagged.")
 
     # ---- images
+    def _update_wanted(self):
+        """The point shown, the selected one and its neighbours: the only ones
+        worth loading; a load asked for another one is dropped."""
+        numbers = set()
+        for j in (self._shown_index(), self.index, self.index - 1, self.index + 1):
+            if j is not None and 0 <= j < len(self.review.points):
+                numbers.add(self.review.points[j].number)
+        self._wanted = frozenset(numbers)
+
+    def _is_wanted(self, number) -> bool:          # called from the loading threads
+        return number in self._wanted
+
     def _load(self, point: R.ReviewPoint):
         if point.number in self._cache or point.number in self._loading:
             return
         if point.vis_image is None and point.vir_image is None:
             return
         self._loading.add(point.number)
-        job = LoadJob(point)
+        job = LoadJob(point, self._is_wanted)
         job.signals.loaded.connect(self._on_loaded)
-        QThreadPool.globalInstance().start(job)
+        self._pool.start(job)
 
-    def _on_loaded(self, number, arrays):
+    def _on_loaded(self, number, images):
         self._loading.discard(number)
-        self._cache[number] = arrays
-        while len(self._cache) > 4:
+        if images is None:            # dropped: passed by before its turn
+            pt = self.review.by_number(number)
+            if pt is not None and number in self._wanted:    # wanted again meanwhile
+                self._load(pt)
+            return
+        self._cache[number] = images
+        self._cache.move_to_end(number)
+        while len(self._cache) > CACHE_POINTS:
             self._cache.popitem(last=False)
         shown = self._shown_index()
-        if shown is not None and self.review.points[shown].number == number:
-            self.view.set_images(arrays, self._unreadable_text(number))
+        if shown is not None and 0 <= shown < len(self.review.points) and self.review.points[shown].number == number:
+            self.view.set_images(images, self._unreadable_text(number))
 
     def _unreadable_text(self, number, default="The images of this point cannot be read."):
         """Message when a point's images cannot be read: calm while its realignment is running."""
@@ -1224,6 +1274,7 @@ class ReviewDialog(QDialog):
 
     def _show_point(self, index):
         pt = self.review.points[index]
+        self._update_wanted()
         self.view.set_status_color(STATUS_COLORS[pt.status])
         self.view.caption = (f"{pt.stem}  ·  " + STATUS_TEXT[pt.status]
                              + (f"  ·  {pt.vir_image.name}" if pt.vir_image is not None else ""))
@@ -1777,6 +1828,7 @@ class ReviewDialog(QDialog):
                 return
             self._align_stopped = True
             self.point_aligner.stop()
+        self._pool.clear()                    # images not started: not needed any more
         for scan in list(self._scans):
             scan.stop()
         for scan in list(self._scans):
