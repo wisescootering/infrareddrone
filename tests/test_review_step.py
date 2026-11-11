@@ -476,6 +476,45 @@ class ReviewInteractionTests(ReviewDialogTests):
         d.done(0)
         self.assertFalse(d._cache or d.view.has_images())     # memory given back on closing
 
+    def test_a_load_from_before_a_realignment_is_not_kept(self):
+        """Realign: the images read while the point was being realigned (moved
+        aside: unreadable) must not stay on screen once the new ones are written."""
+        d = self.dialog()
+        d.select(0)
+        d._pool.waitForDone(10000)
+        self.app.processEvents()
+        number = d.current().number
+        stale = d._loading.get(number, 0)
+        d._forget_images(number)
+        d._load(d.current())                      # the load of the new images...
+        d._on_loaded(number, {}, stale)           # ...and an old failed one answering late
+        self.assertNotIn(number, d._cache)
+        d._pool.waitForDone(10000)
+        self.app.processEvents()
+        self.assertEqual(set(d.view.images), {"vis", "vir", "nir", "ana"})
+        d.done(0)
+
+    def test_a_failed_read_is_tried_again(self):
+        from unittest import mock
+        d = self.dialog()
+        number = d.review.points[0].number
+        d._pool.waitForDone(10000)
+        self.app.processEvents()
+        d.select(1)
+        d._forget_images(number)
+        with mock.patch("image_io.imread", return_value=None):      # moved aside by a realignment
+            d.select(0)
+            d._pool.waitForDone(10000)
+            self.app.processEvents()
+        self.assertFalse(d.view.has_images())
+        self.assertNotIn(number, d._cache)                           # not kept...
+        d.select(1)
+        d.select(0)                                                  # ...shown again: read again
+        d._pool.waitForDone(10000)
+        self.app.processEvents()
+        self.assertEqual(set(d.view.images), {"vis", "vir", "nir", "ana"})
+        d.done(0)
+
     def test_a_point_passed_by_is_not_loaded(self):
         import IRD_Interactive_review as RV
         from unittest import mock
