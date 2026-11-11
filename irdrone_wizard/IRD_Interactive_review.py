@@ -87,40 +87,74 @@ LOAD_THREADS = 2          # images of the points prepared at once (each ~200 MB 
 # ---------------------------------------------------------------------------
 #  Background work: thumbnails, measurements, full images
 # ---------------------------------------------------------------------------
+def scan_workers() -> int:
+    """Images read at once by the scan: a few cores, the others keep the window
+    and the image loading fluid (each worker holds ~150 MB while measuring)."""
+    import os
+    return max(1, min(3, (os.cpu_count() or 2) // 2))
+
+
 class ScanThread(QThread):
-    """Thumbnails of every point (fast), then the misalignment measurements."""
+    """Thumbnails of every point (cached on disk), then the misalignment
+    measurements, a few points at once. ``checkpoint`` asks the window to save
+    the scores measured so far: a mission of hundreds of points takes minutes,
+    and a crash or a close must not lose them."""
     thumb = pyqtSignal(int, QImage)
     measured = pyqtSignal(int)
     progress = pyqtSignal(int, int)
+    checkpoint = pyqtSignal()
+    CHECKPOINT_EVERY = 20
 
-    def __init__(self, review: R.Review, numbers=None):
+    def __init__(self, review: R.Review, numbers=None, workers=None):
         super().__init__()
         self.review = review
         self.numbers = None if numbers is None else set(numbers)
+        self.workers = workers or scan_workers()
         self._stop = False
 
     def stop(self):
         self._stop = True
 
+    def _thumb(self, p):
+        if self._stop:
+            return None
+        path = p.vir_image or p.vis_image
+        try:
+            img = R.cached_thumbnail(self.review.output, path) if path is not None else None
+        except Exception as e:  # one bad image must not stop the others
+            print(f"Review: no thumbnail for {p.stem} ({e})")
+            return None
+        return bgr_to_qimage(img) if img is not None else None
+
+    def _measure(self, p):
+        if self._stop:
+            return p
+        try:
+            R.measure_point(p)
+        except Exception as e:  # one bad image must not stop the others
+            print(f"Review: {p.stem} not measured ({e})")
+        return p
+
     def run(self):
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         points = [p for p in self.review.points if self.numbers is None or p.number in self.numbers]
-        for p in points:
-            if self._stop:
-                return
-            path = p.vir_image or p.vis_image
-            img = R.thumbnail(path) if path is not None else None
-            if img is not None:
-                self.thumb.emit(p.number, bgr_to_qimage(img))
-        todo = [p for p in points if p.shift is None and p.vir_image is not None]
-        for k, p in enumerate(todo):
-            if self._stop:
-                return
-            try:
-                R.measure_point(p)
-            except Exception as e:  # one bad image must not stop the others
-                print(f"Review: {p.stem} not measured ({e})")
-            self.measured.emit(p.number)
-            self.progress.emit(k + 1, len(todo))
+        with ThreadPoolExecutor(max_workers=self.workers) as pool:
+            for p, img in zip(points, pool.map(self._thumb, points)):
+                if self._stop:
+                    return
+                if img is not None:
+                    self.thumb.emit(p.number, img)
+            todo = [p for p in points if p.shift is None and p.vir_image is not None]
+            futures = [pool.submit(self._measure, p) for p in todo]
+            for k, future in enumerate(as_completed(futures)):
+                if self._stop:
+                    for f in futures:
+                        f.cancel()
+                    return
+                self.measured.emit(future.result().number)
+                self.progress.emit(k + 1, len(todo))
+                if (k + 1) % self.CHECKPOINT_EVERY == 0:
+                    self.checkpoint.emit()
 
 
 class _LoadSignals(QObject):
@@ -792,6 +826,10 @@ class ReviewDialog(QDialog):
         self.point_aligner.point_done.connect(lambda *_: self._on_align_progress())
         self.point_aligner.run_done.connect(self._on_points_aligned)
         self._align_from: Optional[int] = None    # point shown when the alignment was asked
+        self._scan_refresh = QTimer(self)
+        self._scan_refresh.setSingleShot(True)
+        self._scan_refresh.setInterval(250)
+        self._scan_refresh.timeout.connect(self._refresh_after_scan_news)
         self._hover_timer = QTimer(self)
         self._hover_timer.setSingleShot(True)
         self._hover_timer.timeout.connect(self._show_hovered)
@@ -1132,6 +1170,7 @@ class ReviewDialog(QDialog):
         self.scan.thumb.connect(self._on_thumb)
         self.scan.measured.connect(self._on_measured)
         self.scan.progress.connect(self._on_scan_progress)
+        self.scan.checkpoint.connect(self._save_state)
         self.scan.finished.connect(self._on_scan_finished)
         todo = sum(1 for p in self.review.points if p.shift is None and p.vir_image is not None
                    and (numbers is None or p.number in numbers))
@@ -1142,13 +1181,23 @@ class ReviewDialog(QDialog):
 
     def _on_thumb(self, number, image):
         self.thumbs[number] = QPixmap.fromImage(image)
-        self.strip.update()
+        self._schedule_refresh()
         if self.map_model is not None and self.current() is not None and self.current().number == number:
             self.map_model.changed.emit()
         if self.current() is not None and self.current().number == number and not self.view.has_images():
             self.view.set_placeholder(self.thumbs[number], "Loading…")
 
     def _on_measured(self, _number):
+        self._schedule_refresh()
+
+    def _schedule_refresh(self):
+        """Hundreds of thumbnails and scores arrive during the scan: the time
+        line, the map and the counts are redrawn a few times a second, not once
+        per point (each redraw goes through every point)."""
+        if not self._scan_refresh.isActive():
+            self._scan_refresh.start()
+
+    def _refresh_after_scan_news(self):
         if self.map_model is not None:
             self.map_model.changed.emit()      # point colours
         self._refresh_counts()
@@ -1159,16 +1208,21 @@ class ReviewDialog(QDialog):
         self.progress.setValue(k)
         self.subtitle.setText(f"Measuring the residual misalignment… {k}/{n}")
 
-    def _on_scan_finished(self):
-        if any(s.isRunning() for s in self._scans if s is not self.sender()):
-            return
-        self.progress.hide()
-        if not self._user_moved and self.review.points:
-            self.select(self._first_to_review(), by_user=False)
+    def _save_state(self):
         try:
             R.save_state(self.review)
         except OSError as e:
             print(f"Review state not saved: {e}")
+
+    def _on_scan_finished(self):
+        if any(s.isRunning() for s in self._scans if s is not self.sender()):
+            return
+        self._scan_refresh.stop()
+        self._refresh_after_scan_news()
+        self.progress.hide()
+        if not self._user_moved and self.review.points:
+            self.select(self._first_to_review(), by_user=False)
+        self._save_state()
         self._refresh_counts()
 
     # ---- selection

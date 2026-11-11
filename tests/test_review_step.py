@@ -157,6 +157,28 @@ class MissionTests(unittest.TestCase):
         R.save_state(review)
         self.assertTrue(R.load_review(self.mission).by_number(137).checked)
 
+    def test_thumbnails_are_kept_and_made_again_for_a_new_image(self):
+        import os
+        from unittest import mock
+        out = self.mission / "ImgIRdrone"
+        vir = out / "VIR_0140_local.jpg"
+        first = R.cached_thumbnail(out, vir)
+        self.assertTrue((out / R.THUMB_FOLDER / vir.name).is_file())
+        with mock.patch.object(R, "thumbnail", side_effect=AssertionError("decoded again")):
+            self.assertEqual(R.cached_thumbnail(out, vir).shape, first.shape)   # the copy, not the image
+        st = vir.stat()
+        os.utime(vir, ns=(st.st_atime_ns, st.st_mtime_ns - 10**9))   # an earlier alignment put back
+        with mock.patch.object(R, "thumbnail", return_value=first) as made:
+            R.cached_thumbnail(out, vir)
+        made.assert_called_once()
+
+    def test_by_number_follows_the_points_added(self):
+        review = R.load_review(self.mission)
+        self.assertEqual(review.by_number(140).stem, "VIS_0140")
+        review.points = review.points + [R.ReviewPoint(number=150, stem="VIS_0150")]
+        self.assertEqual(review.by_number(150).stem, "VIS_0150")
+        self.assertIsNone(review.by_number(999))
+
 
 if __name__ == "__main__":
     unittest.main()
