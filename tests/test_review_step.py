@@ -439,6 +439,7 @@ class ReviewInteractionTests(ReviewDialogTests):
             self.assertIsNotNone(d.view.image("ana"))     # only turned into a pixmap
         self.assertFalse(RV.view_images(None, None).get("ana"))
         d.done(0)
+        self.assertFalse(d._cache or d.view.has_images())     # memory given back on closing
 
     def test_a_point_passed_by_is_not_loaded(self):
         import IRD_Interactive_review as RV
