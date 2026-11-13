@@ -141,10 +141,38 @@ class ManualRedoArgumentsTests(unittest.TestCase):
         self.assertEqual(arguments[-4:], ["--manual-angles", "0.500", "-1.250", "0.000"])
         self.assertEqual(arguments[:3], self.ARGS[:3])
         self.assertIn("--redo", arguments)
-        self.assertEqual(arguments[arguments.index("--traces") + 1:][:2], ["vis", "nir"])
         again = step4.manual_redo_arguments(arguments, (1, 2, 3))     # realigned once more
         self.assertEqual(again.count("--manual-angles"), 1)
         self.assertEqual(again[-3:], ["1.000", "2.000", "3.000"])
+        self.assertEqual(again.count("--no-diagnostics"), 1)
+        self.assertEqual(again.count("--traces"), 1)
+
+    def test_aligned_by_hand_without_diagnostics_nor_images_the_point_never_had(self):
+        """The REDO script asks for everything (recovery by hand); the wizard
+        writes no diagnostic image and only the images the point has."""
+        with tempfile.TemporaryDirectory() as temporary:
+            out = Path(temporary)
+            args = [a if a != "/m/Out" else str(out) for a in self.ARGS] + ["--alignment-modes", "local", "global"]
+            arguments = step4.manual_redo_arguments(args, (0, 0, 0))
+            self.assertNotIn("--debug", arguments)
+            self.assertIn("--no-diagnostics", arguments)
+            # nothing yet for the point: the Step 4 default
+            self.assertEqual(step4._option_values(arguments, "--traces"), ["vis", "vir"])
+            self.assertEqual(step4._option_values(arguments, "--alignment-modes"), ["local"])
+            for name in ("VIR_0011_local.jpg", "NDVI_0011_local.jpg", "NDVI_0011_global.jpg",
+                         "NIR_0012_local.jpg"):                    # the last one: another point
+                (out / name).write_bytes(b"jpg")
+            self.assertEqual(step4.redo_outputs(out, "VIS_0011"), (["vir", "ndvi"], ["local", "global"]))
+            arguments = step4.manual_redo_arguments(args, (0, 0, 0))
+            self.assertEqual(step4._option_values(arguments, "--traces"), ["vis", "vir", "ndvi"])
+            self.assertEqual(step4._option_values(arguments, "--alignment-modes"), ["local", "global"])
+            self.assertEqual(step4._option_values(arguments, "--outdir"), [str(out)])
+
+    def test_aligned_by_hand_with_the_debug_detail_level_is_the_full_recovery_run(self):
+        arguments = step4.manual_redo_arguments(self.ARGS, (0, 0, 0), diagnostics=True)
+        self.assertIn("--debug", arguments)
+        self.assertNotIn("--no-diagnostics", arguments)
+        self.assertEqual(step4._option_values(arguments, "--traces"), ["vis", "nir"])
 
     def test_cli_accepts_manual_angles(self):
         """automatic_registration.py parses --manual-angles (no window: implies --manual)."""

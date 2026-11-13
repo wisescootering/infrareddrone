@@ -850,6 +850,12 @@ if __name__ == "__main__":
         action="store_true",
         help='archive existing outputs and save regenerated results with manual traces',
     )
+    parser.add_argument(
+        '--no-diagnostics',
+        action="store_true",
+        help='write no diagnostic image (alignment traces folder): only the results. '
+             'With --redo the previous results are still archived.',
+    )
     parser.add_argument('--delay', help='synchronization (in seconds)', default=0.)
     parser.add_argument('--multispectral-folder', help='multispectral TIF folder for ODM', default=None)
     parser.add_argument(
@@ -904,10 +910,10 @@ if __name__ == "__main__":
     try:
         process_raw_pairs(
             im_pairs,
-            debug_folder=out_dir,
+            debug_folder=None if args.no_diagnostics else out_dir,
             out_dir=out_dir,
             manual=args.manual,
-            debug=args.debug,
+            debug=args.debug and not args.no_diagnostics,
             extension=extension,
             crop=CROP,
             multispectral_folder=args.multispectral_folder,
@@ -923,6 +929,8 @@ if __name__ == "__main__":
                 args.multispectral_folder,
                 debug_dir,
                 archived_exif,
+                traces=args.traces,
+                alignment_modes=args.alignment_modes,
             )
     except BaseException:
         if args.redo:
