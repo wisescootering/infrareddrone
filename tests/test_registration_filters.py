@@ -81,3 +81,26 @@ def test_hessian_determinant_as_the_quadric_fit_of_each_position():
     bowl = 1. - np.exp(-((xx - 3.3)**2 + (yy + 2.6)**2) / 8.)
     displacement = minimum_cost_max_hessian(np.repeat(bowl[:, :, np.newaxis], 4, axis=-1))
     np.testing.assert_allclose(displacement, [3.3, -2.6], atol=0.15)
+
+
+@pytest.mark.parametrize("blocks, padding", [(5, (39, 29)), (4, None), (2, None), (7, (3, 5))])
+def test_vector_field_maps_as_the_spline_evaluated_everywhere(blocks, padding):
+    """The remap of a sparse vector field is the bisplrep / bisplev surface it always was."""
+    import warnings
+    from scipy.interpolate import bisplev, bisplrep
+    from registration.warp_flow import warp_from_sparse_vector_field
+    height, width = 359, 479
+    field = np.random.default_rng(4).normal(0, 3, (blocks, blocks, 2))
+    map_x, map_y = warp_from_sparse_vector_field(np.empty((height, width)), field, get_remap=True, padding=padding)
+    assert map_x.dtype == np.float32 and map_x.shape == (height, width) == map_y.shape
+    pad_x, pad_y = padding or (0, 0)
+    size_x, size_y = (width - 2*pad_x) // blocks, (height - 2*pad_y) // blocks
+    centers_x = [pad_x + (x + 0.5)*size_x for _ in range(blocks) for x in range(blocks)]
+    centers_y = [pad_y + (y + 0.5)*size_y for y in range(blocks) for _ in range(blocks)]
+    x, y = np.linspace(0, width, width), np.linspace(0, height, height)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        expected_x = x[np.newaxis, :] + bisplev(x, y, bisplrep(centers_x, centers_y, -field[:, :, 0].ravel(), kx=1, ky=1, s=0.)).T
+        expected_y = y[:, np.newaxis] + bisplev(x, y, bisplrep(centers_x, centers_y, -field[:, :, 1].ravel(), kx=1, ky=1, s=0.)).T
+    np.testing.assert_allclose(map_x, expected_x, atol=2e-4)
+    np.testing.assert_allclose(map_y, expected_y, atol=2e-4)
