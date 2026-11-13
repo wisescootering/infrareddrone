@@ -10,6 +10,27 @@ import cv2
 import irdrone.process as pr
 
 
+def linear_spline_on_grid(tck, x, y):
+    """Values (len(y), len(x)) float32 of a linear spline (bisplrep with
+    kx=ky=1) on the grid x, y: same as ``bisplev(x, y, tck).T``.
+
+    A linear spline is piecewise bilinear between its knots and bisplev holds
+    it constant outside them: it is evaluated at the knots only, then
+    interpolated along x and along y (3 times faster than bisplev on a full
+    resolution grid, in float32 instead of float64)."""
+    knots_x, knots_y = np.unique(tck[0]), np.unique(tck[1])
+    at_knots = np.asarray(bisplev(knots_x, knots_y, tck), dtype=np.float64).reshape(len(knots_x), len(knots_y))
+    rows = np.stack([np.interp(x, knots_x, at_knots[:, j]) for j in range(len(knots_y))]).astype(np.float32)
+    if len(knots_y) == 1:
+        return np.repeat(rows, len(y), axis=0)
+    below = np.clip(np.searchsorted(knots_y, y, side="right")-1, 0, len(knots_y)-2)
+    weight = np.clip((y-knots_y[below])/(knots_y[below+1]-knots_y[below]), 0., 1.).astype(np.float32)[:, np.newaxis]
+    values = rows[below]
+    values *= (1-weight)
+    values += rows[below+1]*weight
+    return values
+
+
 def warp_from_sparse_vector_field(img, vector_field, debug=False, get_remap=False, padding=None):
     """
     # @TODO: support non sampling vectors (not regular grids)
@@ -44,17 +65,18 @@ def warp_from_sparse_vector_field(img, vector_field, debug=False, get_remap=Fals
     tck_x = bisplrep(x_coords, y_coords, vf_x.ravel(), kx=1, ky=1, s=0.0)
     tck_y = bisplrep(x_coords, y_coords, vf_y.ravel(), kx=1, ky=1, s=0.0)
     coord_continuous_x, coord_continuous_y = np.linspace(0, x_s, x_s, endpoint=True), np.linspace(0, y_s, y_s, endpoint=True)
-    displacement_x = bisplev(coord_continuous_x, coord_continuous_y, tck_x).T
-    displacement_y = bisplev(coord_continuous_x, coord_continuous_y, tck_y).T
-    xx, yy = np.meshgrid(coord_continuous_x, coord_continuous_y)
+    displacement_x = linear_spline_on_grid(tck_x, coord_continuous_x, coord_continuous_y)
+    displacement_y = linear_spline_on_grid(tck_y, coord_continuous_x, coord_continuous_y)
+    map_x = displacement_x + coord_continuous_x.astype(np.float32)[np.newaxis, :]
+    map_y = displacement_y + coord_continuous_y.astype(np.float32)[:, np.newaxis]
     if get_remap:
         # import matplotlib.pyplot as plt
         # plt.plot([pad_x, x_s-pad_x, x_s-pad_x,  pad_x, pad_x], [pad_y, pad_y, y_s - pad_y, y_s-pad_y, pad_y], "b-")
         # plt.imshow(displacement_x)
         # plt.plot(x_coords, y_coords, ".r")
         # plt.show()
-        return (xx+displacement_x).astype(np.float32), (yy+displacement_y).astype(np.float32)
-    img_w = cv2.remap(img, (xx+displacement_x).astype(np.float32), (yy+displacement_y).astype(np.float32), interpolation=cv2.INTER_LINEAR)
+        return map_x, map_y
+    img_w = cv2.remap(img, map_x, map_y, interpolation=cv2.INTER_LINEAR)
     if debug:
         pr.show(
             [
