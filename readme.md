@@ -287,7 +287,7 @@ Please refer to the following tutorial (in french) on how to create [vegetation 
   - `all`: take all images, do not make a specific image selection
   - `best-synchro`: only pick pairs of images with gap < 1/4th of the TimeLapseDJI interval ~ 0.5 seconds
   - `best-mapping`: select best synchronized images + granting a decent overlap
-- `--workers` *number of alignment worker processes. `0` (default) picks it from the physical cores and the available RAM (about 6 GB per worker); `1` is the safe sequential mode*
+- `--workers` *number of alignment worker processes. `0` (default) picks it from the physical cores and the available RAM (about 3 GB per worker); `1` is the safe sequential mode*
 
 ---------------------------------------
 ## ⚙️ Configuration files

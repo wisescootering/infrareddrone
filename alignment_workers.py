@@ -8,13 +8,17 @@ import os
 
 import psutil
 
-# Peak memory of one alignment worker (RAM + swap) measured on full-resolution
-# DJI / SJCam pairs: about 5.5 GB. Rounded up to keep a margin for the system.
-ALIGNMENT_WORKER_MEMORY_GB = 6.0
-# A manual redo (wizard review) writes every diagnostic image at full
-# resolution on top of that: estimated, with a margin. Running more redos than
-# the RAM holds gets them killed by the system, mid-write.
-REDO_WORKER_MEMORY_GB = 8.0
+# Peak memory of one alignment worker measured on full-resolution DJI / SJCam
+# pairs: about 2.3 GB for Python (images in float32), or 1.8 GB for RawTherapee
+# while it converts an image for a worker that then holds about 0.6 GB.
+# Rounded up to keep a margin for the system.
+ALIGNMENT_WORKER_MEMORY_GB = 3.0
+# A manual redo (wizard review) is one alignment in its own process (2.4 GB
+# measured); with the "Debug" log detail it also writes every diagnostic image
+# at full resolution (4.4 GB measured). Running more redos than the RAM holds
+# gets them killed by the system, mid-write.
+REDO_WORKER_MEMORY_GB = 3.0
+REDO_DIAGNOSTICS_WORKER_MEMORY_GB = 5.0
 # concurrent.futures.ProcessPoolExecutor refuses more than 61 workers on Windows.
 MAX_WORKERS = 61 if os.name == "nt" else 1024
 
@@ -32,6 +36,13 @@ def available_alignment_workers(
     available_gb = psutil.virtual_memory().available / 2**30
     memory_limit = int(available_gb // memory_per_worker_gb)
     return clamp_workers(min(cores, memory_limit))
+
+
+def threads_per_worker(worker_count: int) -> int:
+    """Threads each of ``worker_count`` alignment workers may use for its image
+    operations (OpenCV): the physical cores shared between the workers."""
+    cores = psutil.cpu_count(logical=False) or 1
+    return max(1, cores // max(1, int(worker_count)))
 
 
 def memory_fitting_workers(requested: int, memory_per_worker_gb: float) -> int:
