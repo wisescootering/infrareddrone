@@ -649,6 +649,7 @@ def _initialize_alignment_worker(log_level: int = logging.WARNING, threads: int 
     # The workers share the cores: 1 thread each when there is a worker per core,
     # more when the memory allows fewer workers than cores.
     cv2.setNumThreads(threads)
+    pr.rawtherapee_threads = threads
     # Spawned workers (Windows) do not inherit the parent logging configuration.
     logging.basicConfig(level=log_level)
     logging.getLogger().setLevel(log_level)
