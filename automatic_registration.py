@@ -115,7 +115,7 @@ def vir(vis_img, nir_img, out_path=None, exif=None, gps=None, image_in=None):
         if out_path.lower().endswith("tif"):
             pr.Image(vir).save(out_path, exif=exif, gps=gps)
         else:
-            recontrasted_image = (ut.contrast_stretching(vir.clip(0., 1.))[0]*255).astype(np.uint8)
+            recontrasted_image = ut.contrast_stretching_8bit(vir.clip(0., 1.))[0]
             im = pr.Image(recontrasted_image)
             im.path = image_in
             im.save(out_path, exif=exif, gps=gps)
@@ -235,7 +235,7 @@ def report_stage(name):
 
 
 def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extension=1.4, manual=True, init_angles=[0., 0., 0.], motion_model_file = None,
-              manual_window=True):
+              manual_window=True, alignment_modes=("local", "global")):
     """
     :param vis_path: Path to visible DJI DNG image
     :param nir_path: Path to NIR SJCAM M20 RAW image
@@ -244,6 +244,8 @@ def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extens
     :param extension: extend the FOV of the NIR camera compared to the DJI camera 1.4 by default, 1.75 is ~maximum
     :param manual_window: manual mode only. False: the manual alignment was done beforehand
         (the wizard's alignment window), ``init_angles`` are its result: no slider window.
+    :param alignment_modes: aligned infrared images to compute ("local", "global");
+        the one not asked for is returned as None (each is a full resolution warp).
     :return:
     """
     cals = deepcopy(cals_dict)
@@ -313,22 +315,25 @@ def align_raw(vis_path, nir_path, cals_dict, debug_dir=None, debug=False, extens
         )  # you only warp once!
         pr.Image(mov_w_final_yowo_full).save(osp.join(debug_dir, "FULLRES_REGISTERED_REFINED_WARPED_ONCE_ONLY.jpg"))
     ts_start_yowo = time.perf_counter()
-    mov_w_linear_local = manual_warp(
-        ref_full, nir.lineardata,
-        full_motion_model["yaw"], full_motion_model["pitch"], full_motion_model["roll"],
-        refcalib=cals["refcalib"], movingcalib=cals["movingcalib"],
-        geometric_scale=None,
-        refinement_homography=full_motion_model["previous_homography"],
-        vector_field=full_motion_model["vector_field"]
-    )  # you only warp once!
+    mov_w_linear_local = mov_w_linear_global = None
+    if "local" in alignment_modes:
+        mov_w_linear_local = manual_warp(
+            ref_full, nir.lineardata,
+            full_motion_model["yaw"], full_motion_model["pitch"], full_motion_model["roll"],
+            refcalib=cals["refcalib"], movingcalib=cals["movingcalib"],
+            geometric_scale=None,
+            refinement_homography=full_motion_model["previous_homography"],
+            vector_field=full_motion_model["vector_field"]
+        )  # you only warp once!
 
-    mov_w_linear_global = manual_warp(
-        ref_full, nir.lineardata,
-        full_motion_model["yaw"], full_motion_model["pitch"], full_motion_model["roll"],
-        refcalib=cals["refcalib"], movingcalib=cals["movingcalib"],
-        geometric_scale=None,
-        refinement_homography=full_motion_model["homography"],
-    )  # global warp!
+    if "global" in alignment_modes:
+        mov_w_linear_global = manual_warp(
+            ref_full, nir.lineardata,
+            full_motion_model["yaw"], full_motion_model["pitch"], full_motion_model["roll"],
+            refcalib=cals["refcalib"], movingcalib=cals["movingcalib"],
+            geometric_scale=None,
+            refinement_homography=full_motion_model["homography"],
+        )  # global warp!
     ts_end = time.perf_counter()
     logging.info("{:.2f}s elapsed in global and local unique warp".format(ts_end - ts_start_yowo))
     logging.info("{:.2f}s elapsed in total alignment".format(ts_end - ts_start))
@@ -556,14 +561,18 @@ def _process_raw_pairs_serial(
             init_angles=[yaw_init, pitch_init, roll_init],
             motion_model_file=motion_model_file,
             manual_window=manual_window,
+            # the multispectral export uses the locally aligned infrared
+            alignment_modes=tuple(alignment_modes) + (("local",) if multispectral_folder is not None else ()),
         )
         
         # AGGREGATED RESULTS!
         if manual:
             report_stage("write")
         if crop is not None:
-            aligned_full = aligned_full[crop:-crop, crop:-crop, :]
-            align_full_global = align_full_global[crop:-crop, crop:-crop, :]
+            if aligned_full is not None:
+                aligned_full = aligned_full[crop:-crop, crop:-crop, :]
+            if align_full_global is not None:
+                align_full_global = align_full_global[crop:-crop, crop:-crop, :]
             ref_full = ref_full[crop:-crop, crop:-crop, :]
         # Systematically write motion model!
         if motion_model is not None:
@@ -577,48 +586,50 @@ def _process_raw_pairs_serial(
             listPts[index_pair].rollCoarseAlign = motion_model["roll"]
             listPts[index_pair].motion_model = motion_model
         vis_number = Path(vis_pth).stem.removeprefix("VIS_")
-        if multispectral_folder is not None:
-            #----------------------------------------------------------------------------------------------- MULTISPECTRAL EXPORT
-            img = pr.Image(vis_pth)
-            ms_img = np.zeros((ref_full.shape[0], ref_full.shape[1], 4))
-            ms_img[:, :, :3] = ref_full
-            ms_img[:, :, 3] = np.average(aligned_full, axis=-1)
-            img._data = ms_img
-            out_name = f"IRD_{vis_number}"
-            img.save_multispectral(Path(multispectral_folder)/out_name)
-            #--------------------------------------------------------------------------------------------------------------------
-        if VIS in traces:
-            vis_img = pr.Image((ut.contrast_stretching(ref_full)[0]*255).astype(np.uint8))
-            vis_img.path = vis_pth
-            vis_img.save(
-                osp.join(out_dir, f"VIS_{vis_number}.jpg"), gps=gps_vis, exif=exif_dict_minimal)
+        # One ExifTool process writes the metadata of all the images of the point
+        with pr.metadata_batch():
+            if multispectral_folder is not None:
+                #----------------------------------------------------------------------------------------------- MULTISPECTRAL EXPORT
+                img = pr.Image(vis_pth)
+                ms_img = np.empty((ref_full.shape[0], ref_full.shape[1], 4), dtype=np.float32)
+                ms_img[:, :, :3] = ref_full
+                ms_img[:, :, 3] = np.average(aligned_full, axis=-1)
+                img._data = ms_img
+                out_name = f"IRD_{vis_number}"
+                img.save_multispectral(Path(multispectral_folder)/out_name)
+                #--------------------------------------------------------------------------------------------------------------------
+            if VIS in traces:
+                vis_img = pr.Image(ut.contrast_stretching_8bit(ref_full)[0])
+                vis_img.path = vis_pth
+                vis_img.save(
+                    osp.join(out_dir, f"VIS_{vis_number}.jpg"), gps=gps_vis, exif=exif_dict_minimal)
         
-        aligned_images = {
-            "local": aligned_full,
-            "global": align_full_global,
-        }
-        for mode in alignment_modes:
-            ali = aligned_images[mode]
-            if NDVI in traces:
-                ndvi(ref_full, ali, out_path=osp.join(out_dir, f"NDVI_{vis_number}_{mode}.jpg"),
-                    gps=gps_vis, exif=exif_dict_minimal, image_in=vis_pth)
-            if VIR in traces:
-                vir(
-                    ref_full,
-                    ali,
-                    out_path=osp.join(out_dir, f"VIR_{vis_number}_{mode}.jpg"),
-                    gps=gps_vis,
-                    exif=exif_dict_minimal,
-                    image_in=vis_pth,
-                )
-            if NIR in traces:
-                nir_out = pr.Image((ut.contrast_stretching(ali)[0]*255).astype(np.uint8))
-                nir_out.path = vis_pth
-                nir_out.save(
-                    osp.join(out_dir, f"NIR_{vis_number}_{mode}.jpg"),
-                    exif=exif_dict_minimal,
-                    gps=gps_vis
-                )
+            aligned_images = {
+                "local": aligned_full,
+                "global": align_full_global,
+            }
+            for mode in alignment_modes:
+                ali = aligned_images[mode]
+                if NDVI in traces:
+                    ndvi(ref_full, ali, out_path=osp.join(out_dir, f"NDVI_{vis_number}_{mode}.jpg"),
+                        gps=gps_vis, exif=exif_dict_minimal, image_in=vis_pth)
+                if VIR in traces:
+                    vir(
+                        ref_full,
+                        ali,
+                        out_path=osp.join(out_dir, f"VIR_{vis_number}_{mode}.jpg"),
+                        gps=gps_vis,
+                        exif=exif_dict_minimal,
+                        image_in=vis_pth,
+                    )
+                if NIR in traces:
+                    nir_out = pr.Image(ut.contrast_stretching_8bit(ali)[0])
+                    nir_out.path = vis_pth
+                    nir_out.save(
+                        osp.join(out_dir, f"NIR_{vis_number}_{mode}.jpg"),
+                        exif=exif_dict_minimal,
+                        gps=gps_vis
+                    )
         if VIR in traces and VIS in traces:
             precompute_review(out_dir, vis_number)
         motion_model_list.append(motion_model)

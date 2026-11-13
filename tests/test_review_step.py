@@ -200,7 +200,7 @@ class MissionTests(unittest.TestCase):
         with mock.patch.object(AR, "align_raw", return_value=(img, img, img, {"yaw": 0.0})), \
                 mock.patch.object(AR, "save_readable_motion_model"), mock.patch.object(AR.np, "save"), \
                 mock.patch.object(AR, "vir") as vir, mock.patch.object(AR.pr, "Image"), \
-                mock.patch.object(AR.ut, "contrast_stretching", return_value=(img,)), \
+                mock.patch.object(AR.ut, "contrast_stretching_8bit", return_value=(img,)), \
                 mock.patch.object(AR, "precompute_review") as pre:
             pre.side_effect = lambda *_: self.assertTrue(vir.called)        # after the VIR image is written
             AR._process_raw_pairs_serial([("VIS_0140.DNG", "NIR_0100.DNG")], cals=None, out_dir=str(out),

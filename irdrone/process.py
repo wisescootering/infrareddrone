@@ -16,12 +16,13 @@ from pathlib import Path
 import logging
 from os import mkdir
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
-from irdrone.utils import Style, conversionGPSdms2dd, get_polar_shading_map, contrast_stretching
+from irdrone.utils import Style, conversionGPSdms2dd, get_polar_shading_map, contrast_stretching, contrast_stretching_8bit  # noqa: F401
 from irdrone.file_utils import has_suffix, with_suffix_ci
 import config as cf
 import image_io
 import subprocess
 import json
+from contextlib import contextmanager
 
 
 # External tool paths: one lookup for the whole project, see config.py.
@@ -53,7 +54,8 @@ def load_tif(in_file):
             cv_logging.setLogLevel(previous_level)
     if image is None:
         raise OSError(f"Could not read TIFF image: {in_file}")
-    return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)/(2.**16-1)
+    # float32: half the memory of float64 and faster, far more precise than the 16 bits read
+    return np.divide(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), np.float32(2.**16-1), dtype=np.float32)
 
 def cached_tif(path):
     return path[:-4]+"_RawTherapee.tif"
@@ -158,9 +160,60 @@ def copy_metadata(pth_src, pth_dst):
            f'-Artist={cf.ARTIST}',
            pth_dst, "-overwrite_original",  "-fast"]
 
-    subprocess.run(cmd)
+    _run_exiftool(cmd)
 
     return
+
+
+# ExifTool commands waiting for the end of a metadata_batch(), None outside.
+_exiftool_batch = None
+
+
+def _run_exiftool(cmd):
+    """Run an ExifTool command ([EXIFTOOLPATH, arguments...]), or keep it for
+    the end of the current metadata_batch()."""
+    if _exiftool_batch is not None:
+        _exiftool_batch.append(list(cmd))
+    else:
+        subprocess.run(cmd)
+
+
+def _exiftool_batch_command(commands):
+    """One ExifTool command line running all ``commands`` in turn (-execute
+    between them): ExifTool is started once, not once per command (0.2 to 1 s
+    each). -config has to be the first argument: the one a command asks for is
+    moved there (it only adds tag definitions)."""
+    config = []
+    merged = []
+    for index, cmd in enumerate(commands):
+        arguments = [str(argument) for argument in cmd[1:]]
+        if "-config" in arguments:
+            at = arguments.index("-config")
+            config = arguments[at:at + 2]
+            del arguments[at:at + 2]
+        merged += arguments
+        if index < len(commands) - 1:
+            merged.append("-execute")
+    return [commands[0][0], *config, *merged]
+
+
+@contextmanager
+def metadata_batch():
+    """Inside the block, the metadata written by copy_metadata and
+    xmp_band_metadata waits for the end of the block, where one ExifTool
+    process writes everything (same commands, same order). The image files
+    have to exist at the end of the block."""
+    global _exiftool_batch
+    if _exiftool_batch is not None:  # already batching: the outer block writes
+        yield
+        return
+    _exiftool_batch = []
+    try:
+        yield
+    finally:
+        commands, _exiftool_batch = _exiftool_batch, None
+        if commands:
+            subprocess.run(_exiftool_batch_command(commands))
 
 
 
@@ -187,7 +240,14 @@ def xmp_band_metadata(pth_src, band_index=1):
         "-overwrite_original",
         pth_src
     ]
-    subprocess.run(cmd)
+    _run_exiftool(cmd)
+
+def to_16bit(data):
+    """[0, 1] image to uint16 (clipped), without float64 temporaries."""
+    scaled = np.multiply(data, np.float32(2**16-1), dtype=np.float32)
+    np.clip(scaled, 0, 2**16-1, out=scaled)
+    return scaled.astype(np.uint16)
+
 
 class Image:
     """
@@ -258,10 +318,7 @@ class Image:
             #     image_io.imwrite(path, cv2.cvtColor(self._data, cv2.COLOR_RGB2BGR))
             image_io.imwrite(path, cv2.cvtColor(self._data, cv2.COLOR_RGB2BGR))
         elif path.lower().endswith("tif"):
-            image_io.imwrite(path, cv2.cvtColor(
-                ((2**16-1)*(self._data.clip(0, 1))).astype(np.uint16),
-                cv2.COLOR_RGB2BGR)
-            )
+            image_io.imwrite(path, cv2.cvtColor(to_16bit(self._data), cv2.COLOR_RGB2BGR))
         if self.path is not None:
             logging.info(f"copy metadata from {self.path} to {path}")
             copy_metadata(self.path, path)
@@ -277,7 +334,7 @@ class Image:
         for ch in range(self._data.shape[2]):
             file_name =  str(path.stem) + f"_{ch+1}"
             pth_channel = (path.parent/ file_name).with_suffix(".tif")
-            image_io.imwrite(str(pth_channel), ((2**16-1)*(self._data[:, :, ch].clip(0, 1))).astype(np.uint16))
+            image_io.imwrite(str(pth_channel), to_16bit(self._data[:, :, ch]))
             copy_metadata(self.path, pth_channel)
             xmp_band_metadata(pth_channel, band_index=bands[ch])
 
@@ -403,20 +460,21 @@ class Image:
     def convert_sjcam_dng(self, dng_file):
         rawimg, proxypth = load_dng(dng_file, template="SJCAM.pp3")
         self.proxy = [dng_file, proxypth]
-        bp_sjcam = 0.255
-        rawimg = rawimg - bp_sjcam
+        bp_sjcam = np.float32(0.255)
+        rawimg -= bp_sjcam
         if self.shading_correction:
             global shading_correction_M20
             if shading_correction_M20 is None:
                 shading_correction_M20 = get_polar_shading_map(
                     img_shape=rawimg.shape,
                     calib=SJCAM_M20_PROFILE_CONTROL_POINTS
-                )
+                ).astype(np.float32)
                 # print("LOADING SHADING CALIB")
-            rawimg = (rawimg * shading_correction_M20)
+            rawimg *= shading_correction_M20
+        np.clip(rawimg, 0., 1., out=rawimg)
         # self._data = ((rawimg.clip(0., 1.)**(gamma)).clip(0., 1.)*255).astype(np.uint8)
-        self._data = (contrast_stretching(rawimg.clip(0., 1.))[0]*255).astype(np.uint8)
-        self._lineardata = rawimg.clip(0., 1.)
+        self._data = contrast_stretching_8bit(rawimg)[0]
+        self._lineardata = rawimg
     
     def get_data(self):
         if self._data is None:
@@ -436,10 +494,12 @@ class Image:
                                 osp.abspath(osp.join(osp.dirname(__file__), "..", "calibration", "DJI_RAW",
                                                     "shading_calibration.npy"))
                             )
-                            shading_correction_DJI = cv2.resize(shading_correction_DJI, (rawimg.shape[1], rawimg.shape[0]))
-                        rawimg = (shading_correction_DJI*rawimg).clip(0., 1.)
+                            shading_correction_DJI = cv2.resize(
+                                shading_correction_DJI, (rawimg.shape[1], rawimg.shape[0])).astype(np.float32)
+                        rawimg *= shading_correction_DJI
+                        np.clip(rawimg, 0., 1., out=rawimg)
                     # self._data = ((rawimg**(gamma)).clip(0., 1.)*255).astype(np.uint8)
-                    self._data = (contrast_stretching(rawimg.clip(0., 1.))[0]*255).astype(np.uint8)
+                    self._data = contrast_stretching_8bit(rawimg.clip(0., 1.))[0]
                     self._lineardata = rawimg
 # -------------------------------------------------------------------------------------------------------- SJCAM M20 RAW
             elif str.lower(osp.basename(self.path)).endswith("raw"):
@@ -456,7 +516,7 @@ class Image:
             elif str.lower(osp.basename(self.path)).endswith("tif") or str.lower(osp.basename(self.path)).endswith("tiff"):
                 linear_data = load_tif(self.path)
                 self._lineardata = linear_data
-                self._data = (contrast_stretching(linear_data.clip(0., 1.))[0]*255).astype(np.uint8)
+                self._data = contrast_stretching_8bit(linear_data.clip(0., 1.))[0]
                 # self._data = ((linear_data**(gamma)).clip(0., 1.)*255).astype(np.uint8)
             else:
                 self._data = cv2.cvtColor(image_io.imread(self.path), cv2.COLOR_BGR2RGB)/(2**8-1)  #LOAD AS A RGB CLASSIC ARRAY

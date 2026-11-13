@@ -13,6 +13,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pytest  # noqa: E402
+import unittest  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import interactive.imagepipe as imagepipe  # noqa: E402
@@ -142,3 +143,61 @@ def test_imagepipe_on_signals():
     pipe.set(Amplification=[2.])
     result = pipe.getbuffer()
     np.testing.assert_allclose(result.y, 2. * x + np.sin(x))
+
+
+class ContrastStretching8bitTests(unittest.TestCase):
+    def test_same_image_as_the_float_version(self):
+        import numpy as np
+        import irdrone.utils as ut
+        image = np.random.default_rng(0).random((60, 1000, 3)) ** 2
+        for data in (image, image.astype(np.float32)):
+            expected = (ut.contrast_stretching(data)[0] * 255).astype(np.uint8)
+            stretched, (low, high) = ut.contrast_stretching_8bit(data)
+            self.assertEqual(stretched.dtype, np.uint8)
+            self.assertLessEqual(np.abs(stretched.astype(int) - expected.astype(int)).max(), 1)
+            self.assertLess(low, high)
+
+    def test_given_percentiles_and_flat_image(self):
+        import numpy as np
+        import irdrone.utils as ut
+        image = np.full((4, 4, 3), 0.5, dtype=np.float32)
+        stretched, _ = ut.contrast_stretching_8bit(image, percentiles=(0.25, 0.75))
+        self.assertTrue((stretched == 127).all())
+        flat, _ = ut.contrast_stretching_8bit(image, crop_black_circle=None)
+        self.assertTrue((flat == 127).all())
+
+
+class MetadataBatchTests(unittest.TestCase):
+    def test_commands_of_a_batch_run_in_one_exiftool_process(self):
+        from unittest import mock
+        import irdrone.process as pr
+        with mock.patch.object(pr.subprocess, "run") as run:
+            with pr.metadata_batch():
+                pr._run_exiftool(["exiftool", "-TagsFromFile", "a.dng", "a.jpg"])
+                pr._run_exiftool(["exiftool", "-config", "xmp.config", "-m", "b.tif"])
+                with pr.metadata_batch():            # nested: the outer block writes
+                    pr._run_exiftool(["exiftool", "c.tif"])
+                run.assert_not_called()
+            run.assert_called_once_with([
+                "exiftool", "-config", "xmp.config",
+                "-TagsFromFile", "a.dng", "a.jpg", "-execute",
+                "-m", "b.tif", "-execute",
+                "c.tif",
+            ])
+            run.reset_mock()
+            with pr.metadata_batch():
+                pass
+            run.assert_not_called()                  # nothing to write: ExifTool not started
+            pr._run_exiftool(["exiftool", "d.jpg"])  # outside a batch: at once
+            run.assert_called_once_with(["exiftool", "d.jpg"])
+
+    def test_the_batch_is_written_when_the_block_fails(self):
+        from unittest import mock
+        import irdrone.process as pr
+        with mock.patch.object(pr.subprocess, "run") as run:
+            with self.assertRaises(RuntimeError):
+                with pr.metadata_batch():
+                    pr._run_exiftool(["exiftool", "a.jpg"])
+                    raise RuntimeError("write failed")
+            run.assert_called_once_with(["exiftool", "a.jpg"])
+            self.assertIsNone(pr._exiftool_batch)
