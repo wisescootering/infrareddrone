@@ -95,13 +95,14 @@ def multispectral_representation(_img, sigma_gaussian=None, mode=LAPLACIAN_ENERG
         img_filt = c2g(img.astype(np.float32)) #float32 otherwise cv2 cannot convert RGB to GRAY
         if sigma_gaussian is not None:
             img_filt = gaussian_blur(img_filt, sigma_gaussian, border=cv2.BORDER_REPLICATE)
-        ms_img = np.empty((shp[0], shp[1], 4), dtype=np.float32)
         border = cv2.BORDER_REFLECT
-        ms_img[:, :, 0] = cv2.Scharr(img_filt, cv2.CV_32F, 0, 1, scale=1/16., borderType=border)
-        ms_img[:, :, 1] = cv2.Scharr(img_filt, cv2.CV_32F, 1, 0, scale=1/16., borderType=border)
-        ms_img[:, :, 2] = cv2.filter2D(img_filt, cv2.CV_32F, ROBERTS_POS_DIAG, anchor=(0, 0), borderType=border)
-        ms_img[:, :, 3] = cv2.filter2D(img_filt, cv2.CV_32F, ROBERTS_NEG_DIAG, anchor=(0, 0), borderType=border)
-        np.square(ms_img, out=ms_img)
+        edges = [
+            cv2.Scharr(img_filt, cv2.CV_32F, 0, 1, scale=1/16., borderType=border),
+            cv2.Scharr(img_filt, cv2.CV_32F, 1, 0, scale=1/16., borderType=border),
+            cv2.filter2D(img_filt, cv2.CV_32F, ROBERTS_POS_DIAG, anchor=(0, 0), borderType=border),
+            cv2.filter2D(img_filt, cv2.CV_32F, ROBERTS_NEG_DIAG, anchor=(0, 0), borderType=border),
+        ]
+        ms_img = cv2.merge([cv2.multiply(edge, edge) for edge in edges])
     elif mode == GRAY_SCALE:
         ms_img = np.empty((shp[0], shp[1], 1))
         ms_img[:, :, 0] = 0.299*img[:, :, 0] + 0.587*img[:, :, 1] + 0.114*img[:, :, 2]

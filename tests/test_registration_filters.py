@@ -62,3 +62,22 @@ def test_laplacian_energies_as_scikit_image(sigma):
     energies = multispectral_representation(image, sigma_gaussian=sigma, mode=LAPLACIAN_ENERGIES)
     assert energies.dtype == np.float32 and energies.shape == (120, 160, 4)
     np.testing.assert_allclose(energies, expected, rtol=1e-3, atol=1e-3 * expected.max())
+
+
+def test_hessian_determinant_as_the_quadric_fit_of_each_position():
+    from registration.newton import quadric_approximation
+    from registration.rigid import hessian_determinant, minimum_cost_max_hessian
+    rng = np.random.default_rng(3)
+    cost = rng.random((15, 17, 4))
+    determinant = hessian_determinant(cost[:, :, -1])
+    expected = np.zeros((15, 17))
+    for y in range(2, 13):
+        for x in range(2, 15):
+            hessian, _, _ = quadric_approximation(cost[y-1:y+2, x-1:x+2])
+            expected[y, x] = np.linalg.det(hessian[-1])
+    np.testing.assert_allclose(determinant, expected, atol=1e-12)
+    # a cost with one clear minimum: found with its sub-pixel position
+    yy, xx = np.mgrid[-10:11, -12:13]
+    bowl = 1. - np.exp(-((xx - 3.3)**2 + (yy + 2.6)**2) / 8.)
+    displacement = minimum_cost_max_hessian(np.repeat(bowl[:, :, np.newaxis], 4, axis=-1))
+    np.testing.assert_allclose(displacement, [3.3, -2.6], atol=0.15)

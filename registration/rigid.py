@@ -18,6 +18,18 @@ from os import mkdir
 import time
 
 
+HESS_XX_KERNEL = np.array([
+    [1., -2., 1.],
+    [2., -4., 2.],
+    [1., -2., 1.],
+])/4.
+HESS_XY_KERNEL = np.array([
+    [1., 0., -1.],
+    [0., 0., 0.],
+    [-1., 0., 1.]
+])/4.
+
+
 def minimum_cost(cost, amin_index=None):
     """Find the argmin in a single cost area (multichannel) and refine with quadratic form subpixel search
     :param cost:
@@ -46,14 +58,23 @@ def minimum_cost(cost, amin_index=None):
     return new_val+init_position, hessi, gradi
 
 
+def hessian_determinant(cost):
+    """Determinant of the Hessian of the quadric fitted on the 3x3 neighborhood
+    of each position of a 2D cost (see newton.quadric_approximation), zero on
+    the 2 positions wide border."""
+    cost = np.ascontiguousarray(cost, dtype=np.float64)
+    hess_xx = cv2.filter2D(cost, cv2.CV_64F, HESS_XX_KERNEL)
+    hess_yy = cv2.filter2D(cost, cv2.CV_64F, HESS_XX_KERNEL.T.copy())
+    hess_xy = cv2.filter2D(cost, cv2.CV_64F, HESS_XY_KERNEL)
+    determinant = np.zeros_like(cost)
+    determinant[2:-2, 2:-2] = (hess_xx*hess_yy - hess_xy*hess_xy)[2:-2, 2:-2]
+    return determinant
+
+
 def minimum_cost_max_hessian(cost, debug=False):
-    concavity = np.zeros_like(cost)
-    for id_y in range(2, cost.shape[0]-2):
-        for id_x in range(2, cost.shape[1]-2):
-            cost_patch = cost[id_y-1:id_y+2, id_x-1:id_x+2]
-            hessi, grads, constants = quadric_approximation(cost_patch)
-            for ch in range(cost.shape[-1]):
-                concavity[id_y, id_x, :] = np.linalg.det(hessi[ch, :, :])
+    # Concavity of the last channel, as the former loop over the positions kept
+    # (each channel overwrote the previous one): computed for all positions at once.
+    concavity = np.repeat(hessian_determinant(cost[:, :, -1])[:, :, np.newaxis], cost.shape[-1], axis=-1)
     amax_index = np.unravel_index(np.argmax(concavity.sum(axis=-1)), (cost.shape[0], cost.shape[1]))
     init_position = np.array([amax_index[1]-cost.shape[1]//2, amax_index[0]-cost.shape[0]//2])
     refinement_neighborhood = 3
@@ -341,7 +362,9 @@ def pyramidal_search(
             # --------------------------------------------------------------------------------------- Debug Vector field
             ax_vector_field = None
             img_mov_reg = None
-            if debug or (id_iter == len(iter_list)-1 and id_scheme==len(iterative_scheme)-1):
+            # Full resolution local warp: a trace of the last iteration, only made when it is saved
+            if debug or (forced_debug_dir is not None
+                         and id_iter == len(iter_list)-1 and id_scheme==len(iterative_scheme)-1):
                 img_mov_reg = motion_model.warp(img_mov, downscale=1)
                 # debug_trace(img_mov_reg, ds, iter, prefix="FLOW_", suffix="ALIGNED_GLOBALLY", debug_flag=True)
                 displaced_image = warp_from_sparse_vector_field(img_mov_reg, vector_field)
