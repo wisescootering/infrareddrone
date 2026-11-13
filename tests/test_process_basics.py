@@ -201,3 +201,20 @@ class MetadataBatchTests(unittest.TestCase):
                     raise RuntimeError("write failed")
             run.assert_called_once_with(["exiftool", "a.jpg"])
             self.assertIsNone(pr._exiftool_batch)
+
+
+def test_multispectral_bands_are_written_uncompressed(tmp_path, monkeypatch):
+    """One uncompressed 16 bit TIFF per band (LZW made these noisy images larger and slow to write)."""
+    import cv2
+    monkeypatch.setattr(process, "copy_metadata", lambda *a, **k: None)
+    monkeypatch.setattr(process, "xmp_band_metadata", lambda *a, **k: None)
+    data = np.random.default_rng(0).random((40, 60, 4)).astype(np.float32) * 1.2 - 0.1
+    image = process.Image(data)
+    image.save_multispectral(tmp_path / "IRD_0001")
+    for band in range(4):
+        path = tmp_path / f"IRD_0001_{band + 1}.tif"
+        written = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+        assert written.dtype == np.uint16 and written.shape == (40, 60)
+        expected = (65535 * data[:, :, band].clip(0, 1)).astype(np.uint16)
+        assert np.abs(written.astype(int) - expected.astype(int)).max() <= 1
+        assert path.stat().st_size >= 40 * 60 * 2        # not compressed

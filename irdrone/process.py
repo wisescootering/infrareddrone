@@ -242,6 +242,12 @@ def xmp_band_metadata(pth_src, band_index=1):
     ]
     _run_exiftool(cmd)
 
+# 16 bit images are written without compression: the LZW compression OpenCV
+# applies by default makes these noisy images 25% larger than uncompressed
+# (28.7 MB instead of 22.5 MB per band) and takes 15 times longer to write.
+TIFF_UNCOMPRESSED = [cv2.IMWRITE_TIFF_COMPRESSION, 1]
+
+
 def to_16bit(data):
     """[0, 1] image to uint16 (clipped), without float64 temporaries."""
     scaled = np.multiply(data, np.float32(2**16-1), dtype=np.float32)
@@ -318,7 +324,7 @@ class Image:
             #     image_io.imwrite(path, cv2.cvtColor(self._data, cv2.COLOR_RGB2BGR))
             image_io.imwrite(path, cv2.cvtColor(self._data, cv2.COLOR_RGB2BGR))
         elif path.lower().endswith("tif"):
-            image_io.imwrite(path, cv2.cvtColor(to_16bit(self._data), cv2.COLOR_RGB2BGR))
+            image_io.imwrite(path, cv2.cvtColor(to_16bit(self._data), cv2.COLOR_RGB2BGR), TIFF_UNCOMPRESSED)
         if self.path is not None:
             logging.info(f"copy metadata from {self.path} to {path}")
             copy_metadata(self.path, path)
@@ -334,7 +340,7 @@ class Image:
         for ch in range(self._data.shape[2]):
             file_name =  str(path.stem) + f"_{ch+1}"
             pth_channel = (path.parent/ file_name).with_suffix(".tif")
-            image_io.imwrite(str(pth_channel), to_16bit(self._data[:, :, ch]))
+            image_io.imwrite(str(pth_channel), to_16bit(self._data[:, :, ch]), TIFF_UNCOMPRESSED)
             copy_metadata(self.path, pth_channel)
             xmp_band_metadata(pth_channel, band_index=bands[ch])
 
