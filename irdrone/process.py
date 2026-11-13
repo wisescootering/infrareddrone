@@ -60,6 +60,34 @@ def load_tif(in_file):
 def cached_tif(path):
     return path[:-4]+"_RawTherapee.tif"
 
+# Threads RawTherapee may use for one conversion; None: the physical cores.
+# The alignment workers lower it to their share of the cores.
+rawtherapee_threads = None
+
+
+def rawtherapee_environment():
+    """Environment of a RawTherapee conversion: as many threads as physical
+    cores (not logical ones) and threads that sleep while they wait.
+
+    By default RawTherapee (OpenMP) starts one thread per logical core and its
+    idle threads spin: next to other busy processes (the alignment workers)
+    a conversion takes twice as long and twice the CPU time for the same
+    image. The image written does not depend on the number of threads.
+    A value already set by the user (OMP_NUM_THREADS, OMP_WAIT_POLICY) is kept."""
+    environment = dict(os.environ)
+    threads = rawtherapee_threads
+    if threads is None:
+        try:
+            import psutil
+            threads = psutil.cpu_count(logical=False)
+        except Exception:
+            threads = None
+    if threads:
+        environment.setdefault("OMP_NUM_THREADS", str(max(1, int(threads))))
+    environment.setdefault("OMP_WAIT_POLICY", "PASSIVE")
+    return environment
+
+
 def load_dng(path, template="DJI_neutral.pp3"):
     out_file = cached_tif(path)
     if osp.isfile(out_file):
@@ -75,7 +103,7 @@ def load_dng(path, template="DJI_neutral.pp3"):
         "-c", path
     ]
 
-    completed = subprocess.run(cmd, check=False)
+    completed = subprocess.run(cmd, check=False, env=rawtherapee_environment())
     if completed.returncode != 0:
         raise RuntimeError(
             f"RawTherapee failed to convert {path} (exit code {completed.returncode})."

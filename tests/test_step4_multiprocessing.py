@@ -177,8 +177,9 @@ class Step4MultiprocessingTests(unittest.TestCase):
             proxy.write_bytes(b"incomplete TIFF")
             valid_image = np.zeros((2, 2, 3), dtype=np.uint16)
 
-            def convert(command, check):
+            def convert(command, check, env):
                 self.assertFalse(check)
+                self.assertEqual(env["OMP_WAIT_POLICY"], "PASSIVE")
                 proxy.write_bytes(b"regenerated TIFF")
                 return type("Completed", (), {"returncode": 0})()
 
@@ -191,6 +192,23 @@ class Step4MultiprocessingTests(unittest.TestCase):
             self.assertEqual(output_path, str(proxy))
             self.assertEqual(image.shape, valid_image.shape)
             run.assert_called_once()
+
+    def test_rawtherapee_uses_the_physical_cores_or_the_share_of_a_worker(self):
+        cpu_patch, memory_patch = self._patch_resources(6, 64)
+        with cpu_patch, memory_patch, patch.dict(image_process.os.environ, clear=False) as environ, \
+                patch.object(image_process, "rawtherapee_threads", None):
+            environ.pop("OMP_NUM_THREADS", None)
+            environ.pop("OMP_WAIT_POLICY", None)
+            environment = image_process.rawtherapee_environment()
+            self.assertEqual(environment["OMP_NUM_THREADS"], "6")       # not the logical cores
+            self.assertEqual(environment["OMP_WAIT_POLICY"], "PASSIVE")  # idle threads do not spin
+            with patch.object(automatic_registration, "logging"), \
+                    patch.object(automatic_registration.cv2, "setNumThreads") as opencv_threads:
+                automatic_registration._initialize_alignment_worker(threads=2)
+            opencv_threads.assert_called_once_with(2)
+            self.assertEqual(image_process.rawtherapee_environment()["OMP_NUM_THREADS"], "2")
+            environ["OMP_NUM_THREADS"] = "3"                            # the user's choice is kept
+            self.assertEqual(image_process.rawtherapee_environment()["OMP_NUM_THREADS"], "3")
 
     @staticmethod
     def _completed_future(result):
