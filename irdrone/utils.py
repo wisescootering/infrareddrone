@@ -252,7 +252,10 @@ def contrast_stretching_8bit(img, percentiles=None, crop_black_circle=450, p_val
     stretched = np.clip(img, low, high, dtype=np.float32)
     if high > low:
         stretched -= low
-        stretched *= np.float32(255.) / (high - low)
+        # divided then multiplied (not one multiplication by 255 / range):
+        # a value at the high percentile gives exactly 255, not 254.99998
+        stretched /= (high - low)
+        stretched *= np.float32(255.)
     else:  # flat image: kept as it is (as contrast_stretching does)
         stretched *= np.float32(255.)
         np.clip(stretched, 0, 255, out=stretched)

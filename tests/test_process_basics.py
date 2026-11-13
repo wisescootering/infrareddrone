@@ -156,6 +156,9 @@ class ContrastStretching8bitTests(unittest.TestCase):
             self.assertEqual(stretched.dtype, np.uint8)
             self.assertLessEqual(np.abs(stretched.astype(int) - expected.astype(int)).max(), 1)
             self.assertLess(low, high)
+            # the 2% of pixels above the high percentile are white, as before
+            self.assertTrue((stretched[data >= high] == 255).all())
+            self.assertEqual((stretched == 255).sum(), (expected == 255).sum())
 
     def test_given_percentiles_and_flat_image(self):
         import numpy as np
