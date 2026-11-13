@@ -1012,7 +1012,7 @@ During the computation, \bouton{Run alignment} becomes \bouton{Stop}. After conf
 \section{\bouton{⚙} button: settings}\label{btn:step4_settings}
 The gear wheel opens the computation settings, which are kept for later sessions:
 \begin{itemize}
-	\item \texttt{Alignment worker processes}: number of shoot points aligned in parallel. \texttt{Auto} uses the physical cores, within the limit of the memory available at launch (about 6\,GB per process). \bouton{Safe mode (1)} keeps only one: slower, but uses the least memory. Use it if the computer freezes or if the computation is interrupted.
+	\item \texttt{Alignment worker processes}: number of shoot points aligned in parallel. \texttt{Auto} uses the physical cores, within the limit of the memory available at launch (about 3\,GB per process). \bouton{Safe mode (1)} keeps only one: slower, but uses the least memory. Use it if the computer freezes or if the computation is interrupted.
 	\item \texttt{Log detail}: amount of computation messages in the window log: warnings only, computation steps, or timing details. With the timing details (\emph{Debug}), a realignment by hand from the review (Section~\ref{btn:review_redo}) also writes all its diagnostic images: several minutes per point instead of about half a minute.
 \end{itemize}
 \bouton{Save and close} (\bouton{Close} while nothing is changed) keeps the settings. \bouton{↺}, shown when the settings differ from the default ones, goes back to \texttt{Auto} and warnings only.

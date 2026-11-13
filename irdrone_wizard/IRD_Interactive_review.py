@@ -1731,6 +1731,9 @@ class ReviewDialog(QDialog):
         if not self.redo_runner.busy() and not self._redo_report_pending:
             self._redo_errors = []
         diagnostics = Step4.load_log_level_setting() == "debug"
+        if not self.redo_runner.busy():       # the diagnostic images need more memory
+            self.redo_runner.memory_per_worker_gb = (
+                Step4.REDO_DIAGNOSTICS_WORKER_MEMORY_GB if diagnostics else Step4.REDO_WORKER_MEMORY_GB)
         self.redo_runner.add([(i.number, i.stem,
                                Step4.manual_redo_arguments(i.arguments, i.angles, diagnostics=diagnostics))
                               for i in items])

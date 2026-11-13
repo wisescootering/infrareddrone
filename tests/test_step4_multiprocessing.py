@@ -33,9 +33,17 @@ class Step4MultiprocessingTests(unittest.TestCase):
         cpu_count.assert_called_once_with(logical=False)
 
     def test_worker_count_is_limited_by_available_ram(self):
-        cpu_patch, memory_patch = self._patch_resources(4, 13)
+        cpu_patch, memory_patch = self._patch_resources(4, 7)
         with cpu_patch, memory_patch:
             self.assertEqual(automatic_registration.available_alignment_workers(), 2)
+
+    def test_workers_share_the_cores_for_their_image_operations(self):
+        cpu_patch, memory_patch = self._patch_resources(8, 64)
+        with cpu_patch, memory_patch:
+            self.assertEqual(alignment_workers.threads_per_worker(8), 1)
+            self.assertEqual(alignment_workers.threads_per_worker(12), 1)
+            self.assertEqual(alignment_workers.threads_per_worker(3), 2)
+            self.assertEqual(alignment_workers.threads_per_worker(2), 4)
 
     def test_worker_count_never_drops_below_one(self):
         cpu_patch, memory_patch = self._patch_resources(4, 2)
@@ -54,13 +62,13 @@ class Step4MultiprocessingTests(unittest.TestCase):
             return alignment_workers.worker_count_report(workers)
 
     def test_worker_report_warns_when_the_ram_is_too_small(self):
-        lines = self._report(workers=4, cores=8, available_gb=13)
+        lines = self._report(workers=4, cores=8, available_gb=7)
         self.assertIn("Alignment workers: 4", lines[0])
         self.assertIn("2 recommended", lines[0])
         self.assertIn("WARNING", lines[1])
 
     def test_worker_report_tells_when_more_workers_would_fit(self):
-        lines = self._report(workers=3, cores=8, available_gb=40)
+        lines = self._report(workers=3, cores=8, available_gb=20)
         self.assertIn("Up to 6 workers", lines[1])
 
     def test_worker_report_is_one_line_at_the_recommended_count(self):

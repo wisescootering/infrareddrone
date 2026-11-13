@@ -44,6 +44,7 @@ from config import SJCONVERTERPATH
 from alignment_workers import (
     ALIGNMENT_WORKER_MEMORY_GB,
     MAX_WORKERS,
+    REDO_DIAGNOSTICS_WORKER_MEMORY_GB,  # noqa: F401 (used by the review)
     REDO_WORKER_MEMORY_GB,
     available_alignment_workers,
     clamp_workers,

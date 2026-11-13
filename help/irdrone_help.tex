@@ -1012,7 +1012,7 @@ Pendant le calcul, \bouton{Run alignment} devient \bouton{Stop}. Après confirma
 \section{Bouton \bouton{⚙} : réglages}\label{btn:step4_settings}
 La roue dentée ouvre les réglages du calcul, gardés pour les sessions suivantes :
 \begin{itemize}
-	\item \texttt{Alignment worker processes} : nombre de shoot points alignés en parallèle. \texttt{Auto} utilise les c\oe urs physiques, dans la limite de la mémoire disponible au lancement (environ 6\,Go par processus). \bouton{Safe mode (1)} n'en garde qu'un : plus lent, mais le moins de mémoire. À utiliser si l'ordinateur se fige ou si le calcul est interrompu.
+	\item \texttt{Alignment worker processes} : nombre de shoot points alignés en parallèle. \texttt{Auto} utilise les c\oe urs physiques, dans la limite de la mémoire disponible au lancement (environ 3\,Go par processus). \bouton{Safe mode (1)} n'en garde qu'un : plus lent, mais le moins de mémoire. À utiliser si l'ordinateur se fige ou si le calcul est interrompu.
 	\item \texttt{Log detail} : quantité de messages du calcul dans le journal de la fenêtre : avertissements seulement, étapes du calcul, ou détail des temps. Avec le détail des temps (\emph{Debug}), un réalignement à la main depuis la revue (section~\ref{btn:review_redo}) écrit aussi toutes ses images de diagnostic : plusieurs minutes par point au lieu d'environ une demi-minute.
 \end{itemize}
 \bouton{Save and close} (\bouton{Close} tant que rien n'a changé) garde les réglages. \bouton{↺}, affiché quand les réglages diffèrent des réglages par défaut, revient à \texttt{Auto} et aux avertissements seulement.
