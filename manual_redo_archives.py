@@ -252,10 +252,34 @@ def prepare_manual_redo_archives(vis_pth, out_dir, multispectral_folder=None):
     return debug_dir, original_dir, archived_exif
 
 
+def _asked_redo_result_names(vis_pth, traces=None, alignment_modes=None):
+    """Result names a redo run with ``--traces`` / ``--alignment-modes`` has to
+    write (None: every trace, both modes)."""
+    image_number = Path(vis_pth).stem.removeprefix("VIS_")
+    traces = None if traces is None else {str(trace).lower() for trace in traces}
+    modes = None if alignment_modes is None else set(alignment_modes)
+    names = []
+    for name in _manual_redo_result_names(vis_pth):
+        if name == f"VIS_{image_number}.jpg":
+            if traces is not None and "vis" not in traces:
+                continue
+        elif name.endswith(".jpg"):
+            trace, _, mode = name[:-len(".jpg")].split("_")
+            if (traces is not None and trace.lower() not in traces) \
+                    or (modes is not None and mode not in modes):
+                continue
+        names.append(name)
+    return names
+
+
 def finalize_manual_redo_archives(
-    vis_pth, out_dir, multispectral_folder, debug_dir, archived_exif
+    vis_pth, out_dir, multispectral_folder, debug_dir, archived_exif,
+    traces=None, alignment_modes=None,
 ):
-    """Copy the regenerated deliverables into the trace folder and file diagnostics."""
+    """Copy the regenerated deliverables into the trace folder and file diagnostics.
+
+    ``traces`` / ``alignment_modes``: the ones the redo was asked for (None:
+    all); an image of another kind is not expected."""
     vis_pth = Path(vis_pth)
     out_dir = Path(out_dir)
     debug_dir = Path(debug_dir)
@@ -268,7 +292,7 @@ def finalize_manual_redo_archives(
     result_names = _manual_redo_result_names(vis_pth)
     result_paths = [
         (Path(multispectral_folder) if name.startswith("IRD_") else out_dir) / name
-        for name in result_names
+        for name in _asked_redo_result_names(vis_pth, traces, alignment_modes)
         if not name.startswith("IRD_") or multispectral_folder is not None
     ]
 

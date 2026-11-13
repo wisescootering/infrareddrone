@@ -79,7 +79,7 @@ LOG_LEVEL_SETTING_KEY = "step4/log_level"
 LOG_LEVELS = (
     ("warning", "Warnings only"),
     ("info", "Info (processing steps)"),
-    ("debug", "Debug (detailed timings)"),
+    ("debug", "Debug (detailed timings, redo diagnostic images)"),
 )
 
 
@@ -444,18 +444,52 @@ def redo_pair(arguments) -> tuple:
     return Path(images[0]), Path(images[1]), (tuple(angles) if len(angles) == 3 else None)
 
 
-def manual_redo_arguments(arguments, angles) -> list:
+def redo_outputs(output_folder, vis_stem: str) -> tuple:
+    """``(traces, alignment modes)`` of the aligned images a shoot point has in
+    the output folder (lower case, in the order of the command line), e.g.
+    ``(["vir"], ["local"])``; the Step 4 default for a point without any."""
+    image_number = vis_stem.removeprefix("VIS_")
+    traces, modes = [], []
+    for trace in ("NIR", "VIR", "NDVI"):
+        for mode in ALIGNMENT_MODES:
+            if (Path(output_folder) / f"{trace}_{image_number}_{mode}.jpg").is_file():
+                if trace.lower() not in traces:
+                    traces.append(trace.lower())
+                if mode not in modes:
+                    modes.append(mode)
+    if not traces:
+        return ["vir"], ["local"]
+    return traces, [mode for mode in ALIGNMENT_MODES if mode in modes]
+
+
+def manual_redo_arguments(arguments, angles, diagnostics: bool = False) -> list:
     """REDO command of a point aligned by hand in the wizard: no slider window,
-    the alignment starts from the user's ``(yaw, pitch, roll)``."""
+    the alignment starts from the user's ``(yaw, pitch, roll)``.
+
+    The REDO script is a full recovery run (every image type, both alignment
+    modes, every diagnostic image: minutes of figures nobody looks at in the
+    wizard). Here the point gets back the images it has (see ``redo_outputs``)
+    and no diagnostic image, unless ``diagnostics`` (the "Debug" detail level
+    of the Step 4 settings): then the full recovery run."""
+    dropped = ("--angles", "--manual-angles")
+    if not diagnostics:
+        dropped += ("--traces", "--alignment-modes")
     out, skipping = [], False
     for value in arguments:
         if value.startswith("--"):
-            skipping = value in ("--angles", "--manual-angles")
-            if skipping or value == "--manual":
+            skipping = value in dropped
+            if skipping or value in ("--manual", "--no-diagnostics") \
+                    or (value == "--debug" and not diagnostics):
                 continue
         elif skipping:
             continue
         out.append(value)
+    if not diagnostics:
+        images = _option_values(arguments, "--images")
+        outdir = _option_values(arguments, "--outdir")
+        traces, modes = (redo_outputs(outdir[0], Path(images[0]).stem) if images and outdir
+                         else (["vir"], ["local"]))
+        out += ["--traces", "vis", *traces, "--alignment-modes", *modes, "--no-diagnostics"]
     return out + ["--manual-angles", *(f"{float(v):.3f}" for v in angles)]
 
 

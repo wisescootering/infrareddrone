@@ -1730,7 +1730,9 @@ class ReviewDialog(QDialog):
                 pt.realigned = False          # a new result is coming
         if not self.redo_runner.busy() and not self._redo_report_pending:
             self._redo_errors = []
-        self.redo_runner.add([(i.number, i.stem, Step4.manual_redo_arguments(i.arguments, i.angles))
+        diagnostics = Step4.load_log_level_setting() == "debug"
+        self.redo_runner.add([(i.number, i.stem,
+                               Step4.manual_redo_arguments(i.arguments, i.angles, diagnostics=diagnostics))
                               for i in items])
         self._redo_clock.start()
         self._after_change()

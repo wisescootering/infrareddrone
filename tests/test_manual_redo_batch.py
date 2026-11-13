@@ -175,6 +175,37 @@ class ManualRedoBatchTests(unittest.TestCase):
             )
 
 
+    def test_redo_of_some_traces_only_expects_those(self):
+        """A redo asked for the VIS / VIR images in local mode (the wizard, for a
+        point that has no other image) is complete without the others."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "ImgIRdrone"
+            multispectral = output / "imgMultispectral"
+            multispectral.mkdir(parents=True)
+            vis = root / "VIS_0103.dng"
+            (multispectral / "IRD_0103_1.exif").write_bytes(b"georef")
+            debug_dir, _, archived_exif = prepare_manual_redo_archives(vis, output, multispectral)
+            written = [output / "VIS_0103.jpg", output / "VIR_0103_local.jpg",
+                       output / "VIS_0103_motion_model.npy", output / "VIS_0103_motion_model.json"]
+            written += [multispectral / f"IRD_0103_{band}.tif" for band in range(1, 5)]
+            for path in written:
+                path.write_bytes(b"new")
+            with self.assertRaisesRegex(FileNotFoundError, "VIR_0103_global.jpg"):
+                finalize_manual_redo_archives(vis, output, multispectral, debug_dir, archived_exif)
+            (debug_dir / "REDO_IN_PROGRESS.json").write_text("{}")
+            finalize_manual_redo_archives(
+                vis, output, multispectral, debug_dir, archived_exif,
+                traces=["vis", "vir"], alignment_modes=["local"])
+            self.assertFalse((debug_dir / "REDO_IN_PROGRESS.json").exists())
+            for path in written:
+                self.assertTrue((debug_dir / path.name).is_file())
+            (output / "VIS_0103.jpg").unlink()
+            with self.assertRaisesRegex(FileNotFoundError, "VIS_0103.jpg"):
+                finalize_manual_redo_archives(
+                    vis, output, multispectral, debug_dir, archived_exif,
+                    traces=["vis", "vir"], alignment_modes=["local"])
+
     def test_redo_puts_back_a_sidecar_left_in_the_archive_by_a_failed_redo(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
