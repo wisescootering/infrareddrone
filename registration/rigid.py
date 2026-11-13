@@ -191,7 +191,8 @@ def compute_pyramid(img, scales_list):
     """Returns pyramid dictionary"""
     img_pyr = {}
 
-    for (ids, resized) in enumerate(pyramid_gaussian(img, downscale=2)):
+    max_layer = int(np.ceil(np.log2(max(scales_list))))
+    for (ids, resized) in enumerate(pyramid_gaussian(img, downscale=2, max_layer=max_layer)):
         if 2**ids in scales_list:
             img_pyr[2**ids] = resized.astype(np.float32)
             logging.info("Storing pyramid level {}".format(2**ids, ))
