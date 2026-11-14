@@ -19,6 +19,8 @@ from PyQt6.QtWidgets import QApplication, QDialog  # noqa: E402
 APP = QApplication.instance() or QApplication([])
 
 import IRD_Interactive_5 as S5  # noqa: E402
+
+S5.ODMSelectionDialog.check_engine = False      # no Docker / Docker Hub in the tests
 import IRD_Interactive_look as Look  # noqa: E402
 
 

@@ -69,6 +69,7 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QFormLayout,
     QSizePolicy,
+    QCheckBox,
 )
 
 # ----------------------------------------------------
@@ -121,12 +122,16 @@ class ODMRunWorker(QRunnable):
         dt_tolerance_s: float = 0.5,
         sample_every: int = 3,
         overlap: Optional[float] = None,
+        use_gpu: bool = False,
+        update_image: bool = False,
     ):
         super().__init__()
         self.mission_folder = mission_folder
         self.dt_tolerance_s = dt_tolerance_s
         self.sample_every = sample_every
         self.overlap = overlap
+        self.use_gpu = use_gpu
+        self.update_image = update_image
         self.signals = ODMRunSignals()
 
     def run(self) -> None:
@@ -137,6 +142,8 @@ class ODMRunWorker(QRunnable):
                 dt_tolerance_s=self.dt_tolerance_s,
                 sample_every=self.sample_every,
                 overlap=self.overlap,
+                use_gpu=self.use_gpu,
+                update_image=self.update_image,
                 log_callback=self.signals.log.emit,
                 stage_callback=self.signals.stage.emit,
             )
@@ -154,6 +161,31 @@ class ODMRunWorker(QRunnable):
             self.signals.finished.emit(result)
 
 
+class EngineStatusSignals(QObject):
+    finished = pyqtSignal(dict)
+
+
+class EngineStatusWorker(QRunnable):
+    """ODM.odm_engine_status() (Docker, Docker Hub, a GPU test container: a few
+    seconds) outside the GUI thread."""
+
+    def __init__(self):
+        super().__init__()
+        self.signals = EngineStatusSignals()
+
+    def run(self) -> None:
+        try:
+            status = ODM.odm_engine_status()
+        except Exception as error:          # a help, never a blocker
+            status = {"docker": None, "docker_error": str(error), "gpu": False, "gpu_reason": str(error)}
+        self.signals.finished.emit(status)
+
+
+def _day(timestamp: Optional[str]) -> str:
+    """2026-08-21T13:37:27Z -> 2026-08-21."""
+    return (timestamp or "")[:10] or "unknown date"
+
+
 ALL_IMAGES_DT = 6.0     # "All the aligned images": the widest tolerance, that of Step 4
 
 
@@ -163,6 +195,8 @@ class ODMSelectionDialog(QDialog):
     Default: best mapping by image overlap, with the overlap chosen in Step 2 /
     Step 4 (FlightAnalytics/best_mapping.json). Applied to images that Step 4
     already selected the same way, it keeps them all."""
+
+    check_engine = True     # the background check of OpenDroneMap (False in the tests)
 
     def __init__(self, parent=None, mission_folder: Optional[Path] = None):
         super().__init__(parent)
@@ -233,6 +267,7 @@ class ODMSelectionDialog(QDialog):
         density_layout.addLayout(sample_row)
         density_layout.addWidget(self.all_radio)
         layout.addWidget(density_group)
+        layout.addWidget(self._build_engine_group(mission_folder))
 
         note = QLabel("OpenDroneMap runs in Docker: the map can take a long time and use several "
                       "gigabytes of memory and disk space. The images are hard-linked, not copied, when "
@@ -288,6 +323,95 @@ class ODMSelectionDialog(QDialog):
                 spin.valueChanged.connect(self._map_timer.start)
             self.selection_group.buttonToggled.connect(lambda *_: self._map_timer.start())
             self.update_map()
+
+    # ---- OpenDroneMap: installed version, a newer one, the GPU
+    def _build_engine_group(self, mission_folder) -> QGroupBox:
+        """Version and GPU, filled in by a background check (Docker, Internet)."""
+        group = QGroupBox("OpenDroneMap")
+        engine_layout = QVBoxLayout(group)
+        self.engine_status_label = QLabel("Checking the installed OpenDroneMap, a newer version and the GPU…")
+        self.engine_status_label.setWordWrap(True)
+        self.engine_status_label.setStyleSheet(MESSAGE_STYLE)
+        engine_layout.addWidget(self.engine_status_label)
+        self.update_check = QCheckBox("Download the newer version before the map")
+        self.update_check.setToolTip(
+            "docker pull the newest OpenDroneMap image before the map (a few hundred MB to a few GB). "
+            "A newer version can give a slightly different map; the previous one is not kept.")
+        self.update_check.setVisible(False)
+        engine_layout.addWidget(self.update_check)
+        self.gpu_check = QCheckBox("Use the NVIDIA GPU (faster image matching)")
+        self.gpu_check.setToolTip("Checking whether Docker can use an NVIDIA GPU…")
+        self.gpu_check.setEnabled(False)
+        engine_layout.addWidget(self.gpu_check)
+        for widget in (self.update_check, self.gpu_check):
+            Help.attach_help(widget, "btn:step6_selection", widget.toolTip(), parent=self)
+        self.engine_status: Optional[dict] = None
+        self.gpu_check.toggled.connect(self._show_engine_status)
+        if mission_folder and self.check_engine:
+            self._engine_worker = EngineStatusWorker()
+            self._engine_worker.signals.finished.connect(self._on_engine_status)
+            QThreadPool.globalInstance().start(self._engine_worker)
+        return group
+
+    def _on_engine_status(self, status: dict) -> None:
+        self.engine_status = status
+        if status.get("gpu"):
+            self.gpu_check.setEnabled(True)
+            self.gpu_check.setChecked(True)
+        self.gpu_check.setToolTip(
+            "OpenDroneMap's GPU version (opendronemap/odm:gpu) detects and matches the image "
+            f"features on the graphics card.\n{status.get('gpu_reason', '')}".rstrip()
+            + "\n(F1: help on this button)")
+        self._show_engine_status()
+
+    def _show_engine_status(self) -> None:
+        """The text of the check, for the image used (GPU or CPU)."""
+        status = self.engine_status
+        if status is None:
+            return
+        if not status.get("docker"):
+            self.engine_status_label.setText(
+                "Docker is not running: OpenDroneMap is checked (and downloaded if needed) "
+                "when the map starts.")
+            return
+        gpu = self.gpu_check.isChecked()
+        local, remote, update = ((status.get("local_gpu"), status.get("remote_gpu"), status.get("update_gpu"))
+                                 if gpu else (status.get("local"), status.get("remote"), status.get("update")))
+        lines = []
+        if local is None:
+            lines.append(f"OpenDroneMap{' (GPU version)' if gpu else ''} is not downloaded yet: "
+                         "it is downloaded when the map starts (Internet needed, "
+                         f"{'about 3 GB' if gpu else 'about 600 MB'}).")
+        else:
+            lines.append(f"Installed: OpenDroneMap {local.get('version') or '(version unknown)'}"
+                         f"{' GPU' if gpu else ''}, image of {_day(local.get('created'))}.")
+            if update:
+                newer = remote.get("version") if remote else None
+                lines.append(f"A newer version is available{f' (OpenDroneMap {newer})' if newer else ''}, "
+                             f"published {_day(remote.get('published') if remote else None)}.")
+            elif remote is None:
+                lines.append("The newest version could not be checked (no Internet?).")
+            else:
+                lines.append("It is the newest version.")
+        if not status.get("gpu"):
+            reason = (status.get("gpu_reason") or "not checked").splitlines()
+            lines.append(f"GPU not used: {reason[0]}"
+                         + (" (details: tooltip of the GPU box)." if len(reason) > 1 else "."))
+        self.engine_status_label.setText("\n".join(lines))
+        self.update_check.setVisible(bool(update))
+        if not update:
+            self.update_check.setChecked(False)
+
+    def selected_use_gpu(self) -> bool:
+        return self.gpu_check.isEnabled() and self.gpu_check.isChecked()
+
+    def selected_update_image(self) -> bool:
+        return not self.update_check.isHidden() and self.update_check.isChecked()
+
+    def engine_description(self) -> str:
+        """OpenDroneMap choices in words (log)."""
+        return (("GPU" if self.selected_use_gpu() else "CPU")
+                + (", updated to the newest version first" if self.selected_update_image() else ""))
 
     # ---- map: the flight, the images selected and their footprints, live
     def _build_map(self, mission: Path):
@@ -557,6 +681,8 @@ class DialogGeoRef(QDialog):
         self.odm_dt_tolerance_s = 0.5
         self.odm_sample_every = 3
         self.odm_overlap: Optional[float] = None
+        self.odm_use_gpu = False
+        self.odm_update_image = False
 
         # Connect the logger signal to the GUI log window.
         self.log_signal.connect(self._log)
@@ -862,7 +988,10 @@ class DialogGeoRef(QDialog):
         self.odm_dt_tolerance_s = selection_dialog.selected_dt_tolerance()
         self.odm_sample_every = selection_dialog.selected_sample_every()
         self.odm_overlap = selection_dialog.selected_overlap()
+        self.odm_use_gpu = selection_dialog.selected_use_gpu()
+        self.odm_update_image = selection_dialog.selected_update_image()
         self._log(f"Image selection: {selection_dialog.description()}.")
+        self._log(f"OpenDroneMap: {selection_dialog.engine_description()}.")
         self.stages.set(0, Look.STAGE_DONE, selection_dialog.short_description())
         self.stages.set(2, Look.STAGE_PENDING, "")
 
@@ -888,6 +1017,8 @@ class DialogGeoRef(QDialog):
             dt_tolerance_s=self.odm_dt_tolerance_s,
             sample_every=self.odm_sample_every,
             overlap=self.odm_overlap,
+            use_gpu=self.odm_use_gpu,
+            update_image=self.odm_update_image,
         )
         worker.signals.log.connect(self._log)
         worker.signals.stage.connect(self._on_ODM_stage)

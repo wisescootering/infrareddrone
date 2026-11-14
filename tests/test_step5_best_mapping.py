@@ -19,6 +19,8 @@ APP = QApplication.instance() or QApplication([])
 import best_mapping  # noqa: E402
 import IRD_Interactive_5 as S5  # noqa: E402
 
+S5.ODMSelectionDialog.check_engine = False      # no Docker / Docker Hub in the tests
+
 
 class ODMSelectionDialogTest(unittest.TestCase):
     def test_default_is_overlap_at_75_percent(self):
@@ -141,6 +143,69 @@ class GeorefMessageTest(unittest.TestCase):
         self.assertIn("IRD_0121_4.tif", multi)
         self.assertNotIn("HYPERLAPSE", multi)
         self.assertNotIn("tif", G.GEOREF_VISIBLE_FILTERS.lower())
+
+class EngineChoiceTest(unittest.TestCase):
+    """The window shows the installed OpenDroneMap, offers a newer one and the GPU."""
+
+    LOCAL = {"image": "opendronemap/odm:latest", "version": "3.6.2", "created": "2026-08-21T13:37:27Z",
+             "digests": ["sha256:old"]}
+    REMOTE = {"digest": "sha256:new", "published": "2026-10-02T10:00:00Z", "size": 1, "version": "3.7.0"}
+
+    def status(self, **changes):
+        status = {"docker": "29.9", "local": self.LOCAL, "remote": self.REMOTE, "update": True,
+                  "gpu": False, "gpu_reason": "no NVIDIA GPU found on this computer",
+                  "local_gpu": None, "remote_gpu": None, "update_gpu": False}
+        status.update(changes)
+        return status
+
+    def test_a_newer_version_is_offered_not_imposed(self):
+        d = S5.ODMSelectionDialog()
+        d._on_engine_status(self.status())
+        self.assertIn("3.6.2", d.engine_status_label.text())
+        self.assertIn("3.7.0", d.engine_status_label.text())
+        self.assertFalse(d.update_check.isHidden())
+        self.assertFalse(d.selected_update_image())
+        d.update_check.setChecked(True)
+        self.assertTrue(d.selected_update_image())
+        self.assertIn("updated", d.engine_description())
+
+    def test_up_to_date_no_update_offered(self):
+        d = S5.ODMSelectionDialog()
+        d._on_engine_status(self.status(update=False, remote=dict(self.REMOTE, digest="sha256:old")))
+        self.assertTrue(d.update_check.isHidden())
+        self.assertIn("newest version", d.engine_status_label.text())
+
+    def test_no_gpu_disabled_with_the_reason(self):
+        d = S5.ODMSelectionDialog()
+        d._on_engine_status(self.status())
+        self.assertFalse(d.gpu_check.isEnabled())
+        self.assertFalse(d.selected_use_gpu())
+        self.assertIn("no NVIDIA GPU", d.engine_status_label.text())
+
+    def test_gpu_checked_when_docker_can_use_it(self):
+        d = S5.ODMSelectionDialog()
+        d._on_engine_status(self.status(gpu=True, gpu_reason="NVIDIA GPU available to Docker"))
+        self.assertTrue(d.selected_use_gpu())
+        # the GPU image is not downloaded yet: said, no update of the CPU image offered
+        self.assertIn("GPU version", d.engine_status_label.text())
+        self.assertTrue(d.update_check.isHidden())
+        d.gpu_check.setChecked(False)
+        self.assertFalse(d.update_check.isHidden())
+
+    def test_docker_off(self):
+        d = S5.ODMSelectionDialog()
+        d._on_engine_status({"docker": None, "gpu": False, "gpu_reason": "Docker is not running"})
+        self.assertIn("Docker is not running", d.engine_status_label.text())
+        self.assertFalse(d.selected_use_gpu())
+        self.assertFalse(d.selected_update_image())
+
+    def test_worker_passes_gpu_and_update_to_odm(self):
+        worker = S5.ODMRunWorker(Path("/mission"), use_gpu=True, update_image=True)
+        with mock.patch.object(S5, "run_odm", return_value={}) as run:
+            worker.run()
+        self.assertTrue(run.call_args.kwargs["use_gpu"])
+        self.assertTrue(run.call_args.kwargs["update_image"])
+
 
 if __name__ == "__main__":
     unittest.main()
