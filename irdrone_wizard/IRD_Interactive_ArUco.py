@@ -25,7 +25,7 @@ import IRD_Interactive_utils as Uti
 from IRD_Interactive_utils import safe_path
 from IRD_Interactive_color_style import Style
 
-from config import require_tool
+from config import rawtherapee_environment, require_tool
 import image_io
 
 # ------------------------------------
@@ -118,6 +118,11 @@ def process_aruco_images(
     y_vals = []
 
     max_workers = best_thread_count(io_bound=True)
+    # RawTherapee conversions running at once share the physical cores (by
+    # default each one starts a thread per logical core).
+    rawtherapee_threads = None
+    if multi_thread:
+        rawtherapee_threads = max(1, (multiprocessing.cpu_count() // 2) // max(1, max_workers))
     if log_message is None:
         print(Style.GREEN + f"ℹ Processing {len(listImages)} images using {max_workers} threads..." + Style.CYAN)
     else:
@@ -145,7 +150,7 @@ def process_aruco_images(
         # 2) SLOW PATH : pas de cache pour les données aruco de détection d'angle → chargement image normal
         # --------------------------------------------------------------------------------------------------
         if ext == "dng" and spectral_band in ["VIS", "NIR"]:
-            img_cv, _ = load_dng_for_aruco(str(img_path), folderMissionPath.parent)
+            img_cv, _ = load_dng_for_aruco(str(img_path), folderMissionPath.parent, threads=rawtherapee_threads)
         else:
             img_cv = image_io.imread(str(img_path))
 
@@ -986,7 +991,7 @@ def cached_jpeg(path, folder_mission):
 
     return str(out_file)
 
-def load_dng_for_aruco(path, folder_mission):
+def load_dng_for_aruco(path, folder_mission, threads=None):
     """
     Load a DNG image for ArUco marker detection.
 
@@ -998,6 +1003,7 @@ def load_dng_for_aruco(path, folder_mission):
     Args:
         path: Path to the input DNG image.
         folder_mission: Root directory of the current mission.
+        threads: Threads RawTherapee may use (None: the physical cores).
 
     Returns:
         A tuple containing:
@@ -1021,7 +1027,7 @@ def load_dng_for_aruco(path, folder_mission):
             ),
             "-c", path
         ]
-        subprocess.call(cmd)
+        subprocess.call(cmd, env=rawtherapee_environment(threads))
 
     img_cv = image_io.imread(out_file, cv2.IMREAD_COLOR)
     return img_cv, out_file
