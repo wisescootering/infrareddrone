@@ -13,6 +13,7 @@ from pathlib import Path
 from PyQt6.QtCore import QObject, pyqtSignal
 
 from IRD_Interactive_diskspace import is_valid_json_file, write_json_atomic
+import mission_type
 
 PROGRESS_FILE = Path("FlightAnalytics") / "wizard_progress.json"
 # 1 mission, 2 flight timeline, 3 synchronise, 4 align, 5 review, 6 map, 7 archive
@@ -82,7 +83,10 @@ STEP_OUTPUTS = {
 def _done_from_outputs(folder, step):
     """Completion date of step guessed from its output files, or None."""
     paths = []
+    visible = mission_type.is_visible(folder)
     for name, check in STEP_OUTPUTS.get(step, ()):
+        if visible and "NIR" in Path(name).parts:
+            continue              # a visible only mission has no infrared images
         path = Path(folder) / name
         try:
             if not check(path):
