@@ -10,7 +10,8 @@ these functions; the copy itself is done by the Step 1 workers.
 * The take-off image is the first visible image (lowest number): its EXIF
   gives the date, the time and the position of the mission.
 * mission_parameters.json gets exactly the keys written by the classic Step 1
-  form (Window_create_file_structure), so the next steps see no difference.
+  form (Window_create_file_structure), so the next steps see no difference;
+  a visible only mission (mission_type.py) also gets "mission type": "visible".
 """
 from __future__ import annotations
 
@@ -23,6 +24,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
+import mission_type as MT
+
 VIS_SUFFIXES = {".dng"}
 NIR_SUFFIXES = {".raw"}
 GEO_PARAMETER_KEYS = {   # same as IRD_Interactive_1.GEO_PARAMETER_KEYS
@@ -33,6 +36,8 @@ GEO_PARAMETER_KEYS = {   # same as IRD_Interactive_1.GEO_PARAMETER_KEYS
 }
 MISSION_FOLDERS = ("AerialPhotography", "FlightAnalytics", "ImgIRdrone", "Synchro", "mapping_MULTI",
                    "cameras", "AerialPhotography/VIS", "AerialPhotography/NIR")
+# A visible only mission has no infrared images and no synchronisation
+VISIBLE_SKIPPED_FOLDERS = ("Synchro", "AerialPhotography/NIR")
 FOLDER_ICONS = {"": "IRdrone_appli.ico", "AerialPhotography": "AerialPhoto.ico",
                 "FlightAnalytics": "FlyAnalytic.ico", "ImgIRdrone": "ImgIRdrone.ico",
                 "Synchro": "synchro.ico", "mapping_MULTI": "mapping_MULTI.ico", "cameras": "camera.ico"}
@@ -288,8 +293,12 @@ def mission_folder_name(when: dt.datetime, location: str) -> str:
     return f"FLY-{when:%Y%m%d}-{when:%H%M}" + (f"-{loc}" if loc else "")
 
 
-def build_mission_parameters(light: dict, form: dict, user_dir: Path) -> dict:
-    """mission_parameters.json content (keys of the classic Step 1 form)."""
+def build_mission_parameters(light: dict, form: dict, user_dir: Path, kind: str = MT.MULTISPECTRAL) -> dict:
+    """mission_parameters.json content (keys of the classic Step 1 form).
+    kind: mission_type.MULTISPECTRAL or VISIBLE (stored only for a visible only
+    mission: a mission without the key is multispectral)."""
+    if kind not in MT.TYPES:
+        raise ValueError(f"Unknown mission type: {kind}")
     f = dict(DEFAULT_FORM)
     f.update({k: v for k, v in form.items() if v is not None})
     when = takeoff_datetime(light)
@@ -344,6 +353,8 @@ def build_mission_parameters(light: dict, form: dict, user_dir: Path) -> dict:
     for key in GEO_PARAMETER_KEYS.values():
         if key in light:
             params[key] = light[key]
+    if kind == MT.VISIBLE:
+        params[MT.KEY] = MT.VISIBLE
     return params
 
 
@@ -351,13 +362,15 @@ def create_mission(params: dict, icon_dir: Optional[Path] = None) -> Path:
     """Folders of the mission (existing ones are kept), mission_parameters.json,
     the take-off image and transfer_info_VIS_dng.json (first version)."""
     base = Path(params["File path mission"])
+    visible = MT.is_visible(params)
     for sub in MISSION_FOLDERS:
-        (base / sub).mkdir(parents=True, exist_ok=True)
+        if not (visible and sub in VISIBLE_SKIPPED_FOLDERS):
+            (base / sub).mkdir(parents=True, exist_ok=True)
     if icon_dir is not None:
         try:
             import IRD_Interactive_utils as Uti
             for sub, icon in FOLDER_ICONS.items():
-                if (Path(icon_dir) / icon).is_file():
+                if (Path(icon_dir) / icon).is_file() and (base / sub).is_dir():
                     Uti.change_icon(base / sub if sub else base, Path(icon_dir) / icon)
         except Exception as e:  # cosmetic
             print(f"Folder icons not set: {e}")
@@ -384,10 +397,10 @@ def create_mission(params: dict, icon_dir: Optional[Path] = None) -> Path:
     return base
 
 
-def copy_sizes(vis: FolderSummary, nir: FolderSummary) -> int:
+def copy_sizes(vis: FolderSummary, nir: Optional[FolderSummary]) -> int:
     """Disk space the copy needs: the visible DNG plus the converted infrared
-    (a DNG is about the size of its RAW)."""
-    return vis.size + nir.size
+    (a DNG is about the size of its RAW). nir None: visible only mission."""
+    return vis.size + (nir.size if nir is not None else 0)
 
 
 def form_from_settings(values: Dict[str, object]) -> dict:

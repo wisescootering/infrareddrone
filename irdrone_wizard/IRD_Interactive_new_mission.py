@@ -2,8 +2,9 @@
 """
 Step 1 - New mission, in one window and three pages:
 
-    1 Images   the visible (drone, DNG) and infrared (SJCam, RAW) images are
-               found on the SD cards; the first visible image is the take-off
+    1 Images   the type of mission: multispectral (the visible drone DNG and the
+               infrared SJCam RAW) or visible only (the drone DNG); the images
+               are found on the SD cards; the first visible image is the take-off
     2 Mission  date, time and place come from the take-off image (address from
                OpenStreetMap); the user adds a description, the pilot and checks
                the cameras (remembered for the next mission)
@@ -22,13 +23,14 @@ from typing import List, Optional
 from PyQt6 import QtCore
 from PyQt6.QtCore import QSettings, QStorageInfo, Qt, QThread, QUrl, pyqtSignal
 from PyQt6.QtGui import QDesktopServices, QPixmap
-from PyQt6.QtWidgets import (QApplication, QDialog, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
+from PyQt6.QtWidgets import (QApplication, QButtonGroup, QDialog, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
                              QHBoxLayout, QLabel, QLineEdit, QMessageBox, QProgressBar, QPushButton, QSizePolicy,
                              QSpinBox, QStackedWidget, QVBoxLayout, QWidget)
 
 sys.path.append(str(Path(__file__).resolve().parent))
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 import mission_setup as MS  # noqa: E402
+import mission_type as MT  # noqa: E402
 import IRD_Interactive_look as Look  # noqa: E402
 
 SETTINGS = ("IRdrone", "IRD_Interactive")
@@ -36,6 +38,22 @@ _RUNNING = set()     # location threads still running when their window is close
 FORM_KEY = "new_mission/"
 PAGES = ["Images", "Mission", "Copy"]
 COPY_STAGES = ["Copy visible", "Read visible EXIF", "Convert infrared", "Read infrared EXIF", "Ground altitude"]
+# Stages of a visible only mission: no infrared
+VISIBLE_COPY_STAGES = ["Copy visible", "Read visible EXIF", "Ground altitude"]
+KIND_KEY = "new_mission_type"       # last mission type chosen (QSettings)
+
+
+def copy_stages(kind: str) -> list:
+    return VISIBLE_COPY_STAGES if kind == MT.VISIBLE else COPY_STAGES
+
+
+def load_kind_setting() -> str:
+    value = QSettings(*SETTINGS).value(KIND_KEY)
+    return value if value in MT.TYPES else MT.MULTISPECTRAL
+
+
+def save_kind_setting(kind: str) -> None:
+    QSettings(*SETTINGS).setValue(KIND_KEY, kind)
 
 
 def mounted_volumes():
@@ -106,10 +124,14 @@ class MissionCopy(QtCore.QObject):
     finished = pyqtSignal(bool, str)        # ok, message
     prep = pyqtSignal(str, int, int)        # Step 2 prepared in the background: band, done, total
 
-    def __init__(self, params: dict, vis_folder: Path, nir_folder: Path, parent=None):
+    def __init__(self, params: dict, vis_folder: Path, nir_folder: Optional[Path], parent=None):
+        """nir_folder None: visible only mission (no infrared stages)."""
         super().__init__(parent)
         self.params = params
-        self.vis_in, self.nir_in = Path(vis_folder), Path(nir_folder)
+        self.vis_in = Path(vis_folder)
+        self.nir_in = Path(nir_folder) if nir_folder is not None else None
+        # stage names: the visible only mission jumps over the infrared ones
+        self.stages = copy_stages(MT.VISIBLE if self.nir_in is None else MT.MULTISPECTRAL)
         base = Path(params["File path mission"])
         self.vis_out = base / "AerialPhotography" / "VIS"
         self.nir_out = base / "AerialPhotography" / "NIR"
@@ -129,16 +151,17 @@ class MissionCopy(QtCore.QObject):
         if self._index >= 0:
             self.stage.emit(self._index, Look.STAGE_DONE, "")
         self._index += 1
-        if self._index >= len(COPY_STAGES):
+        if self._index >= len(self.stages):
             self.finished.emit(True, "Mission created.")
             return
         self.stage.emit(self._index, Look.STAGE_RUNNING, "")
-        self.progress.emit(0, COPY_STAGES[self._index] + "…")
+        self.progress.emit(0, self.stages[self._index] + "…")
         import IRD_Interactive_workers as Worker
-        k = self._index
+        # k: the stage of the multispectral mission (0 copy visible ... 4 ground altitude)
+        k = COPY_STAGES.index(self.stages[self._index])
         # the visible images and their EXIF are there while the infrared ones are
         # converted (the longest stage): Step 2 is prepared meanwhile, then the infrared
-        if k == 2:
+        if k == 2 or (k == 4 and self.nir_in is None):
             self._prepare("VIS")
         elif k == 4:
             self._prepare("NIR")
@@ -159,7 +182,7 @@ class MissionCopy(QtCore.QObject):
         thread = QThread()
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
-        worker.progress.connect(lambda pct: self.progress.emit(int(pct), f"{COPY_STAGES[self._index]}… {pct}%"))
+        worker.progress.connect(lambda pct: self.progress.emit(int(pct), f"{self.stages[self._index]}… {pct}%"))
         worker.error.connect(self._on_error)
         worker.error.connect(thread.quit)
         worker.finished.connect(thread.quit)
@@ -172,7 +195,7 @@ class MissionCopy(QtCore.QObject):
     def _on_error(self, message):
         self.failed = True
         self.stage.emit(self._index, Look.STAGE_FAILED, "")
-        self.finished.emit(False, f"{COPY_STAGES[self._index]}: {message}")
+        self.finished.emit(False, f"{self.stages[self._index]}: {message}")
 
     def _save_profile(self, distance, ground, drone):
         """Altitude profile of the flight (FlightAnalytics/fly_vertical_profil.png), as the classic Step 1."""
@@ -324,7 +347,9 @@ class NewMissionDialog(QDialog):
 
     mission_created = pyqtSignal(dict)
 
-    def __init__(self, user_dir: Path, parent=None, scan=True):
+    def __init__(self, user_dir: Path, parent=None, scan=True, kind: Optional[str] = None):
+        """kind: mission type shown first (mission_type.MULTISPECTRAL or VISIBLE);
+        None: the last one chosen."""
         super().__init__(parent)
         self.user_dir = Path(user_dir)
         self.action = "close"
@@ -337,13 +362,15 @@ class NewMissionDialog(QDialog):
         self.copy: Optional[MissionCopy] = None
         self.locate_thread: Optional[LocateThread] = None
         self._copy_started = 0.0
+        self.kind = kind if kind in MT.TYPES else load_kind_setting()   # mission_type.MULTISPECTRAL or VISIBLE
         self.setWindowTitle("Step 1 – New mission")
         self.setStyleSheet(Look.DIALOG_STYLE + " QLineEdit { padding: 4px; "
                            "border: 1px solid #C5CFDA; border-radius: 4px; background: white; }")
         Look.fit_to_screen(self, parent, max_w=1100, max_h=780)
         self._build()
-        self._go(0)
         self._polling = scan
+        self.set_kind(self.kind)
+        self._go(0)
         if scan:
             QtCore.QTimer.singleShot(0, self.scan_cards)
 
@@ -409,6 +436,8 @@ class NewMissionDialog(QDialog):
             Help.attach_help(card.btn, "btn:step1_images",
                              f"Choose the folder of the {band} images: an SD card or a copy on the disk. "
                              "A folder you choose is never replaced by an SD card found later.", parent=self)
+        for kind, button in self.kind_buttons.items():
+            Help.attach_help(button, "btn:step1_mission_type", button.toolTip(), parent=self)
         for widget, label, tip in (
             (self.btn_help, "sec:step1_new_mission", "Open the manual at Step 1."),
             (self.btn_classic, "sec:step1_classic", self.btn_classic.toolTip()),
@@ -426,6 +455,36 @@ class NewMissionDialog(QDialog):
         lay = QVBoxLayout(page)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(10)
+        # Type of mission: two exclusive buttons side by side
+        kind_row = QHBoxLayout()
+        kind_row.setSpacing(0)
+        kind_label = QLabel("Mission type")
+        kind_label.setStyleSheet("color: #6B7785; font-weight: bold; padding-right: 10px;")
+        kind_row.addWidget(kind_label)
+        self.kind_group = QButtonGroup(self)
+        self.kind_group.setExclusive(True)
+        self.kind_buttons = {}
+        tips = {MT.MULTISPECTRAL: "The drone (visible, DNG) and the infrared camera (SJCam, RAW): "
+                                  "synchronised, aligned, mapped in four bands with the NIR (VIR, NDVI).",
+                MT.VISIBLE: "The drone images only (DNG): no infrared camera, no synchronisation. "
+                            "The images are developed and mapped in colour (red, green, blue)."}
+        for k, kind in enumerate(MT.TYPES):
+            button = QPushButton(MT.LABELS[kind])
+            button.setCheckable(True)
+            button.setToolTip(tips[kind])
+            left = "border-top-left-radius: 6px; border-bottom-left-radius: 6px;" if k == 0 else ""
+            right = "border-top-right-radius: 6px; border-bottom-right-radius: 6px;" if k == len(MT.TYPES) - 1 else ""
+            button.setStyleSheet(
+                "QPushButton { background: white; color: #17365D; border: 1px solid #C5CFDA; padding: 6px 14px; "
+                f"border-radius: 0; {left} {right} }} "
+                "QPushButton:checked { background: #17365D; color: white; border-color: #17365D; font-weight: bold; } "
+                "QPushButton:hover:!checked { background: #EEF3F8; }")
+            button.clicked.connect(lambda _=False, kind=kind: self.set_kind(kind))
+            self.kind_group.addButton(button)
+            self.kind_buttons[kind] = button
+            kind_row.addWidget(button)
+        kind_row.addStretch(1)
+        lay.addLayout(kind_row)
         self.card_vis = SourceCard("VIS", "Visible images", "Drone camera · DNG")
         self.card_nir = SourceCard("NIR", "Infrared images", "SJCam camera · RAW")
         self.card_vis.choose.connect(self._choose_folder)
@@ -504,7 +563,7 @@ class NewMissionDialog(QDialog):
         form.addRow("Pilot", self.f_pilot)
         form.addRow("Pilot ID", self.f_pilot_id)
         right.addLayout(form)
-        self.btn_cameras = QPushButton("▸  Cameras and filter")
+        self.btn_cameras = QPushButton()
         self.btn_cameras.setCheckable(True)
         self.btn_cameras.setStyleSheet("QPushButton { text-align: left; border: none; color: #17365D; "
                                        "font-weight: bold; padding: 6px 0; } ")
@@ -530,6 +589,7 @@ class NewMissionDialog(QDialog):
                 ("Infrared format", self.f_nir_format, None),
                 ("Infrared interval · clock delta", self.f_nir_timelapse, self.f_nir_delta),
                 ("Filter maker · band", self.f_filter_maker, self.f_filter_band)]
+        self._infrared_rows = []      # hidden for a visible only mission
         for r, (label, a, b) in enumerate(rows):
             lab = QLabel(label)
             lab.setStyleSheet("color: #6B7785;")
@@ -537,6 +597,8 @@ class NewMissionDialog(QDialog):
             grid.addWidget(a, r, 1)
             if b is not None:
                 grid.addWidget(b, r, 2)
+            if label.startswith(("Infrared", "Filter")):
+                self._infrared_rows += [w for w in (lab, a, b) if w is not None]
         self.cameras_box.hide()
         right.addWidget(self.cameras_box)
         right.addStretch(1)
@@ -613,7 +675,37 @@ class NewMissionDialog(QDialog):
 
     def _toggle_cameras(self, on):
         self.cameras_box.setVisible(on)
-        self.btn_cameras.setText(("▾" if on else "▸") + "  Cameras and filter")
+        self.btn_cameras.setText(("▾" if on else "▸") + ("  Camera" if self.visible_only else "  Cameras and filter"))
+
+    # ---- type of mission
+    @property
+    def visible_only(self) -> bool:
+        return self.kind == MT.VISIBLE
+
+    def set_kind(self, kind: str):
+        """Multispectral or visible only: the infrared card, the cameras and the
+        copy follow. Only on the Images page (the copy has not started)."""
+        if kind not in MT.TYPES:
+            raise ValueError(kind)
+        self.kind = kind
+        for k, button in self.kind_buttons.items():
+            button.setChecked(k == kind)
+        self.card_nir.setVisible(not self.visible_only)
+        for widget in self._infrared_rows:
+            widget.setVisible(not self.visible_only)
+        self._toggle_cameras(self.btn_cameras.isChecked())
+        if self.stack.currentIndex() == 0:
+            self._go(0)
+            if self._polling:
+                self.scan_cards()
+
+    def _missing_camera(self) -> bool:
+        """A camera of the mission has no image yet."""
+        return not (self.vis and self.vis.count) or (not self.visible_only and not (self.nir and self.nir.count))
+
+    def _insert_cards_text(self) -> str:
+        return ("Insert the SD card of the drone: the images are found automatically." if self.visible_only else
+                "Insert the SD cards of the drone and of the infrared camera: the images are found automatically.")
 
     # ---- navigation
     def _go(self, page):
@@ -623,11 +715,12 @@ class NewMissionDialog(QDialog):
             state = Look.STAGE_DONE if k < page else Look.STAGE_RUNNING if k == page else Look.STAGE_PENDING
             self.pages_bar.set(k, state)
         self.btn_back.setVisible(page == 1)
-        self.btn_classic.setVisible(page == 0)
+        self.btn_classic.setVisible(page == 0 and not self.visible_only)   # the classic form is multispectral
+        for button in self.kind_buttons.values():
+            button.setEnabled(page == 0)
         self.btn_cancel.setVisible(page < 2)
         if page == 0:
-            self.subtitle.setText("Insert the SD cards of the drone and of the infrared camera: "
-                                  "the images are found automatically.")
+            self.subtitle.setText(self._insert_cards_text())
             self.btn_next.setText("Next  ▶")
             self.btn_next.setToolTip("Go to the mission page: date, place, description, pilot.\n(F1: help on this button)")
             self._check_page_images()
@@ -635,13 +728,17 @@ class NewMissionDialog(QDialog):
             self.subtitle.setText("Date, time and place come from the first visible image. "
                                   "Add a description and check the pilot.")
             self.btn_next.setText("Create the mission and copy the images  ▶")
-            self.btn_next.setToolTip("Create the mission folder, copy the visible images and convert the infrared ones. The SD cards are only read.\n(F1: help on this button)")
+            self.btn_next.setToolTip(("Create the mission folder and copy the visible images. " if self.visible_only else
+                                      "Create the mission folder, copy the visible images and convert the infrared ones. ")
+                                     + "The SD cards are only read.\n(F1: help on this button)")
             self.btn_next.setEnabled(self.geo is not None)
             self._update_folder_name()
         else:
             self.subtitle.setText("Copying the images to the mission folder: it takes a few minutes.")
             self.btn_next.setText("Flight timeline  ▶")
-            self.btn_next.setToolTip("Open Step 2: check the synchronisation and survey phases of the flight.\n(F1: help on this button)")
+            self.btn_next.setToolTip(("Open Step 2: check the survey phase of the flight." if self.visible_only else
+                                      "Open Step 2: check the synchronisation and survey phases of the flight.")
+                                     + "\n(F1: help on this button)")
             self.btn_next.setEnabled(False)
 
     def _on_next(self):
@@ -656,10 +753,10 @@ class NewMissionDialog(QDialog):
             self.accept()
 
     def _check_page_images(self):
-        ok = bool(self.vis and self.vis.count and self.nir and self.nir.count and self.takeoff)
+        ok = bool(not self._missing_camera() and self.takeoff)
         if self.stack.currentIndex() == 0:
             self.btn_next.setEnabled(ok)
-        gap = MS.clock_gap(self.vis, self.nir) if (self.vis and self.nir) else None
+        gap = MS.clock_gap(self.vis, self.nir) if (self.vis and self.nir and not self.visible_only) else None
         if gap is not None and abs(gap) > 120:
             hours, rest = divmod(int(abs(gap)), 3600)
             text = (f"The infrared clock is {'ahead' if gap > 0 else 'behind'} by "
@@ -674,7 +771,7 @@ class NewMissionDialog(QDialog):
 
     # ---- page 1: images
     def _poll_cards(self):
-        missing = not (self.vis and self.vis.count) or not (self.nir and self.nir.count)
+        missing = self._missing_camera()
         if self.stack.currentIndex() != 0 or not missing:
             self.card_poll.stop()
             return
@@ -682,17 +779,18 @@ class NewMissionDialog(QDialog):
 
     def scan_cards(self):
         found = MS.find_card_images(mounted_volumes())
-        for band in ("VIS", "NIR"):
+        if self.visible_only:
+            found = [c for c in found if c.band == "VIS"]
+        for band in ("VIS",) if self.visible_only else ("VIS", "NIR"):
             current = self.vis if band == "VIS" else self.nir
             if current is not None and current.count:
                 continue   # chosen by the user: kept
             hit = next((c for c in found if c.band == band), None)
             if hit is not None:
                 self._set_source(band, hit.summary, f"SD card “{hit.name}”")
-        self.subtitle.setText("Insert the SD cards of the drone and of the infrared camera: "
-                              "the images are found automatically." if not found else
+        self.subtitle.setText(self._insert_cards_text() if not found else
                               "Images found on the SD card(s). Check them, then go on.")
-        missing = not (self.vis and self.vis.count) or not (self.nir and self.nir.count)
+        missing = self._missing_camera()
         if missing and self.stack.currentIndex() == 0 and self._polling:
             if not self.card_poll.isActive():
                 self.card_poll.start()
@@ -796,7 +894,7 @@ class NewMissionDialog(QDialog):
             self.locate_thread.located.connect(self._on_located)
             self.locate_thread.start()
         free = _free_bytes(self.user_dir)
-        need = MS.copy_sizes(self.vis, self.nir)
+        need = MS.copy_sizes(self.vis, None if self.visible_only else self.nir)
         self.disk_note.setText(f"Copy: about {MS.human_size(need)}" +
                                (f" · {MS.human_size(free)} free on the disk" if free is not None else "") +
                                (" · ⚠ not enough space" if free is not None and free < need else ""))
@@ -847,17 +945,19 @@ class NewMissionDialog(QDialog):
     def _start_copy(self):
         form = self.form_values()
         try:
-            self.params = MS.build_mission_parameters(self.light, form, self.user_dir)
+            self.params = MS.build_mission_parameters(self.light, form, self.user_dir, self.kind)
         except (KeyError, ValueError) as e:
             QMessageBox.warning(self, "New mission", f"Incomplete mission information: {e}")
             return
         import IRD_Interactive_diskspace as Disk
         base = Path(self.params["File path mission"])
         base.parent.mkdir(parents=True, exist_ok=True)
-        needed = MS.copy_sizes(self.vis, self.nir) + Disk.DISK_NEARLY_FULL_BYTES
+        nir = None if self.visible_only else self.nir
+        needed = MS.copy_sizes(self.vis, nir) + Disk.DISK_NEARLY_FULL_BYTES
         if not Disk.confirm_free_space(self, base.parent, needed, "Step 1 (copy of the images)"):
             return
         save_form_settings(form)
+        save_kind_setting(self.kind)
         try:
             from IRD_Interactive_utils import Prefrence_Screen
             icon_dir = Path(Prefrence_Screen().default_app_dir) / "Icon"
@@ -873,16 +973,28 @@ class NewMissionDialog(QDialog):
             f"<span style='font-size:13pt; font-weight:bold; color:#17365D'>{base.name}</span><br>"
             f"<span style='color:#6B7785'>{base}</span><br><br>"
             f"<b style='color:#17365D'>Visible</b> {self.vis.count} images from {self.vis.folder}<br>"
-            f"<b style='color:#B03A2E'>Infrared</b> {self.nir.count} images from {self.nir.folder}, "
-            "converted from RAW to DNG<br><br>"
-            "<span style='color:#6B7785'>The SD cards are only read. Keep them in until the copy is done.</span>")
+            + ("<span style='color:#6B7785'>Visible only mission: no infrared images.</span><br><br>"
+               if nir is None else
+               f"<b style='color:#B03A2E'>Infrared</b> {nir.count} images from {nir.folder}, "
+               "converted from RAW to DNG<br><br>")
+            + "<span style='color:#6B7785'>The SD cards are only read. Keep them in until the copy is done.</span>")
         self._copy_started = time.time()
-        self.copy = MissionCopy(self.params, self.vis.folder, self.nir.folder, self)
+        self._set_copy_stages(copy_stages(self.kind))
+        self.copy = MissionCopy(self.params, self.vis.folder, nir.folder if nir is not None else None, self)
         self.copy.stage.connect(self.copy_stages.set)
         self.copy.progress.connect(self._on_copy_progress)
         self.copy.finished.connect(self._on_copy_finished)
         self.copy.prep.connect(self._on_prep)
         self.copy.start()
+
+    def _set_copy_stages(self, stages):
+        """The stage tracker of the copy page, for the stages of this mission."""
+        if self.copy_stages.titles == list(stages):
+            return
+        old = self.copy_stages.widget()
+        self.copy_stages = Look.StageTracker(stages)
+        self.stack.widget(2).layout().replaceWidget(old, self.copy_stages.widget())
+        old.deleteLater()
 
     def _on_prep(self, band, done, total):
         self._prep_state[band] = (done, total)
@@ -892,7 +1004,8 @@ class NewMissionDialog(QDialog):
             if b in self._prep_state:
                 d, n = self._prep_state[b]
                 bits.append(f"{names[b]} ✓" if d >= n else f"{names[b]} {d}/{n}")
-        ready = all(d >= n for d, n in self._prep_state.values()) and "NIR" in self._prep_state
+        last = "VIS" if self.visible_only else "NIR"
+        ready = all(d >= n for d, n in self._prep_state.values()) and last in self._prep_state
         self.prep_text.setText("✓ Flight timeline ready: it opens without waiting." if ready else
                                "Flight timeline prepared meanwhile: " + " · ".join(bits))
 
@@ -918,11 +1031,17 @@ class NewMissionDialog(QDialog):
         self.pages_bar.set(2, Look.STAGE_DONE)
         self.subtitle.setText("The mission is ready.")
         self.done_title.setText(f"✓  Mission {base.name} created")
-        self.done_text.setText(
-            f"{self.vis.count} visible and {self.nir.count} infrared images copied to "
-            f"<a href='open'>{base}</a>.<br><br>"
-            "<b>Next: the flight timeline.</b> The synchronisation and survey phases are detected "
-            "automatically; you only check them, then the rest of the processing runs on its own.")
+        if self.visible_only:
+            self.done_text.setText(
+                f"{self.vis.count} visible images copied to <a href='open'>{base}</a>.<br><br>"
+                "<b>Next: the flight timeline.</b> The survey phase is detected automatically; "
+                "you only check it. No synchronisation is needed: the images are then developed and mapped.")
+        else:
+            self.done_text.setText(
+                f"{self.vis.count} visible and {self.nir.count} infrared images copied to "
+                f"<a href='open'>{base}</a>.<br><br>"
+                "<b>Next: the flight timeline.</b> The synchronisation and survey phases are detected "
+                "automatically; you only check them, then the rest of the processing runs on its own.")
         self.done_card.show()
         self.btn_next.setEnabled(True)
         self.btn_next.setDefault(True)
