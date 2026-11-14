@@ -29,6 +29,10 @@ those points). The scores and the points the user looked at and accepted
 ("checked") are kept apart, in ImgIRdrone/review.json, so the Step 4 inventory
 keeps its format.
 
+Visible only mission (mission_type.VISIBLE): Step 4 develops the visible
+images, there is no infrared to compare: a point is to check (STATUS_UNKNOWN)
+until the user looks at it (checked) or flags it (blurred, badly exposed…).
+
 Step 4 measures each point as it writes it (precompute_point, one small file
 per point in ImgIRdrone/review_cache: its workers run apart) so that the
 review opens with every score known; the review measures only what is missing.
@@ -42,6 +46,8 @@ from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional
 
 import numpy as np
+
+import mission_type
 
 OUTPUT_FOLDER = "ImgIRdrone"
 INVENTORY = "shoot_points.json"
@@ -88,6 +94,7 @@ class ReviewPoint:
     shift_worst: Optional[float] = None    # worst textured tile (px)
     checked: bool = False
     realigned: bool = False                # flagged, realigned by hand, not confirmed yet
+    visible_only: bool = False             # visible only mission: no infrared, nothing aligned
 
     @property
     def label(self) -> str:
@@ -107,6 +114,10 @@ class ReviewPoint:
     def status(self) -> str:
         if self.failed:
             return STATUS_REALIGNED if self.realigned else STATUS_FLAGGED
+        if self.visible_only:       # nothing to measure: to check until the user looked at it
+            if self.vis_image is None:
+                return STATUS_MISSING
+            return STATUS_OK if self.checked else STATUS_UNKNOWN
         if self.vir_image is None or self.vis_image is None:
             return STATUS_MISSING
         if self.checked:            # confirmed by the user: aligned
@@ -171,6 +182,15 @@ def aligned_image(output: Path, number: int) -> Optional[Path]:
     return None
 
 
+def point_image(output: Path, number: int) -> Optional[Path]:
+    """The image that shows a point: its VIR image, else its visible image
+    (VIS_XXXX.jpg, the only one of a visible only mission)."""
+    path = aligned_image(output, number)
+    if path is None and (output / f"VIS_{number:04d}.jpg").is_file():
+        path = output / f"VIS_{number:04d}.jpg"
+    return path
+
+
 def _pairs_by_name(mission: Path) -> Dict[str, dict]:
     data = _read_json(mission / "AerialPhotography" / INVENTORY)
     pairs = {}
@@ -218,6 +238,7 @@ def _inventory_points(mission: Path, inventory: dict, numbers=None) -> List[Revi
     scores = state.get("scores", {})
     checked = set(state.get("checked", []))
     realigned = set(state.get("realigned", []))
+    visible_only = mission_type.is_visible(mission)
     points = []
     for item in inventory["shoot_points"]:
         if not isinstance(item, dict) or not isinstance(item.get("FileName"), str):
@@ -226,7 +247,8 @@ def _inventory_points(mission: Path, inventory: dict, numbers=None) -> List[Revi
         if number is None or (numbers is not None and number not in numbers):
             continue
         stem = Path(item["FileName"]).stem
-        p = ReviewPoint(number=number, stem=stem, failed=bool(item.get("failed", False)))
+        p = ReviewPoint(number=number, stem=stem, failed=bool(item.get("failed", False)),
+                        visible_only=visible_only)
         if isinstance(item.get("dt"), (int, float)):
             p.dt = float(item["dt"])
         pair = pairs.get(Path(item["FileName"]).name.casefold())
@@ -300,6 +322,7 @@ def not_aligned_pairs(review: Review) -> Dict[int, dict]:
     mapping, the time filter or the image range): number -> {"stem", "dt"
     (rank-one VIS / NIR time difference, None without infrared), "alignable"}."""
     aligned = {p.number for p in review.points}
+    visible_only = mission_type.is_visible(review.mission)    # developed, whatever the time
     out = {}
     for name, pair in _pairs_by_name(review.mission).items():
         number = vis_number(name)
@@ -309,7 +332,7 @@ def not_aligned_pairs(review: Review) -> Dict[int, dict]:
         dt = nir.get("dt") if isinstance(nir, dict) else None
         dt = float(dt) if isinstance(dt, (int, float)) and not isinstance(dt, bool) else None
         out[number] = {"stem": Path(pair["VIS"]["FileName"]).stem, "dt": dt,
-                       "alignable": dt is not None and abs(dt) < MAX_ALIGN_DT}
+                       "alignable": visible_only or (dt is not None and abs(dt) < MAX_ALIGN_DT)}
     return out
 
 

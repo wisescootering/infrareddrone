@@ -82,6 +82,7 @@ matplotlib.use("Agg")  # Non-interactive backend. Essential here when using PyQt
 import IRD_Interactive_help as Help
 from IRD_Interactive_progress import mark_step_done, notifier
 import best_mapping
+import mission_type
 import IRD_Interactive_GeoRef as GeoRef
 from IRD_Interactive_contours import DEFAULT_GRID_STEP_M, generate_ortho_dtm
 import IRD_Interactive_look as Look
@@ -181,12 +182,16 @@ class ODMSelectionDialog(QDialog):
         self.dt_tolerance.setSuffix(" s")
         criteria.addRow("Maximum |dt| (NIR rank 1):", self.dt_tolerance)
         layout.addLayout(criteria)
+        # visible only mission: no infrared, every image is synchronised
+        self.visible_only = bool(mission_folder) and mission_type.is_visible(Path(mission_folder))
+        criteria.setRowVisible(self.dt_tolerance, not self.visible_only)
 
         density_group = QGroupBox("Image density and overlap")
         density_layout = QVBoxLayout(density_group)
         self.overlap_radio = QRadioButton("Best mapping: select by image overlap (recommended)")
         self.sample_radio = QRadioButton("Select one image every n eligible images")
-        self.all_radio = QRadioButton("All the aligned images (every point of the review not flagged)")
+        self.all_radio = QRadioButton(
+            f"All the {'developed' if self.visible_only else 'aligned'} images (every point of the review not flagged)")
         self.all_radio.setToolTip(
             "Map every image Step 4 aligned and the review did not flag, whatever its time difference "
             "and the overlap: the most images, the longest mapping.")
@@ -274,18 +279,19 @@ class ODMSelectionDialog(QDialog):
     def short_description(self) -> str:
         """The selection in a few words (under the stage)."""
         if self.all_radio.isChecked():
-            return "all the aligned images"
+            return f"all the {'developed' if self.visible_only else 'aligned'} images"
         overlap = self.selected_overlap()
         return f"overlap {overlap:.0%}" if overlap is not None else f"1 image in {self.sample_every.value()}"
 
     def description(self) -> str:
         """The selection in words (confirmation and log)."""
         if self.all_radio.isChecked():
-            return "all the aligned images not flagged (no time tolerance, no thinning)"
+            return (f"all the {'developed' if self.visible_only else 'aligned'} images not flagged "
+                    "(no time tolerance, no thinning)")
         overlap = self.selected_overlap()
         rule = (f"best mapping, {overlap:.0%} overlap between successive images" if overlap is not None
                 else f"one image every {self.sample_every.value()} eligible images")
-        return f"|dt| <= {self.dt_tolerance.value():.2f} s; {rule}"
+        return rule if self.visible_only else f"|dt| <= {self.dt_tolerance.value():.2f} s; {rule}"
 
 
 def launch_buttons(dialog: QDialog, action: str, action_tip: str, help_label: str) -> QHBoxLayout:

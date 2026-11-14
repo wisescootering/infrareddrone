@@ -883,13 +883,17 @@ def review_statuses(mission: Path):
 
 
 def _aligned_thumbnails(mission: Path):
-    """number -> thumbnail of its aligned image (read once, None without one)."""
+    """number -> thumbnail of its aligned image, or of its developed visible image
+    (visible only mission); read once, None without one."""
     cache: Dict[int, Optional[QPixmap]] = {}
+    import mission_type
+    visible = mission_type.is_visible(mission)
 
     def image_of(number):
         if number not in cache:
             import shoot_review as R
-            path = R.aligned_image(mission / R.OUTPUT_FOLDER, number)
+            find = R.point_image if visible else R.aligned_image
+            path = find(mission / R.OUTPUT_FOLDER, number)
             img = R.thumbnail(path) if path is not None else None
             cache[number] = QPixmap.fromImage(Look.bgr_to_qimage(img)) if img is not None else None
         return cache[number]

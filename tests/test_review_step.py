@@ -304,7 +304,7 @@ class ReviewDialogTests(MissionTests):
     def test_no_looks_good_button_nor_space_key(self):
         from PyQt6.QtGui import QShortcut
         d = self.dialog()
-        self.assertFalse(hasattr(d, "btn_good"))
+        self.assertIsNone(getattr(d, "btn_good", None))       # only for a visible only mission
         self.assertNotIn("Space", [sc.key().toString() for sc in d.findChildren(QShortcut)])
         d.done(0)
 
