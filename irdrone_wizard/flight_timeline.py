@@ -546,11 +546,12 @@ def derived_window(vis_times: np.ndarray, vis_window: Window,
 #  Whole mission analysis
 # ---------------------------------------------------------------------------
 def scan_vis(mission: Path, vis_frames: List[Frame], frame_done: Callable[[int], None] = lambda i: None,
-             cancelled: Callable[[], bool] = lambda: False) -> Optional[Window]:
+             cancelled: Callable[[], bool] = lambda: False, detect_target: bool = True) -> Optional[Window]:
     """VIS: altitude first, marker only during the low hover. Returns the hover.
-    Results are cached: a second scan (Step 2 after Step 1) is immediate."""
+    Results are cached: a second scan (Step 2 after Step 1) is immediate.
+    detect_target False (visible only mission, no synchronisation): thumbnails only."""
     hover = low_hover_window([f.alt for f in vis_frames])
-    scan_until = hover.last if hover else len(vis_frames) - 1
+    scan_until = (hover.last if hover else len(vis_frames) - 1) if detect_target else -1
     scanner = FrameScanner(mission, "VIS")
     lost = 0
     for i, f in enumerate(vis_frames):
@@ -600,8 +601,12 @@ def prepare_band(mission: Path, band: str, cancelled: Callable[[], bool] = lambd
     """Scan a band ahead of Step 2 (run by Step 1 while it copies the next
     images): thumbnails and target detections land in the cache."""
     frames = list_frames(mission, band)
-    scan = scan_vis if band == "VIS" else scan_nir
-    scan(mission, frames, lambda i: frame_done(i, len(frames)), cancelled)
+    if band == "VIS":
+        import mission_type as MT
+        scan_vis(mission, frames, lambda i: frame_done(i, len(frames)), cancelled,
+                 detect_target=not MT.is_visible(mission))
+    else:
+        scan_nir(mission, frames, lambda i: frame_done(i, len(frames)), cancelled)
 
 
 def analyse_mission(mission: Path, progress: Progress = None,
@@ -611,11 +616,16 @@ def analyse_mission(mission: Path, progress: Progress = None,
 
     progress(percent, text) is called along the way. Marker detection runs only
     where it can matter: VIS frames of the low hover, NIR frames from the start
-    until the marker is lost for good."""
+    until the marker is lost for good.
+
+    A visible only mission (mission_type.VISIBLE) has no infrared and no
+    synchronisation: no target detection, no sync window, the survey only."""
+    import mission_type as MT
     mission = Path(mission)
+    visible_only = MT.is_visible(mission)
     report = progress or (lambda p, s: None)
     vis_frames = list_frames(mission, "VIS")
-    nir_frames = list_frames(mission, "NIR")
+    nir_frames = [] if visible_only else list_frames(mission, "NIR")
     if not vis_frames:
         raise FileNotFoundError(f"No VIS image in {band_folder(mission, 'VIS')}")
     vis = BandAnalysis("VIS", vis_frames)
@@ -623,7 +633,8 @@ def analyse_mission(mission: Path, progress: Progress = None,
     total = max(1, len(vis_frames) + len(nir_frames))
 
     vis.hover = scan_vis(mission, vis_frames, lambda i: report(
-        int(100 * (i + 1) / total), f"Reading the visible images ({i + 1}/{len(vis_frames)})"), cancelled)
+        int(100 * (i + 1) / total), f"Reading the visible images ({i + 1}/{len(vis_frames)})"), cancelled,
+        detect_target=not visible_only)
     nir.hover = scan_nir(mission, nir_frames, lambda i: report(
         int(100 * (len(vis_frames) + i + 1) / total), f"Reading the infrared images ({i + 1}/{len(nir_frames)})"),
         cancelled)
@@ -637,7 +648,9 @@ def analyse_mission(mission: Path, progress: Progress = None,
         shift, rms = coarse_time_shift(vis.times, [f.marker_angle for f in vis_frames],
                                        nir.times, [f.marker_angle for f in nir_frames])
     vis_sync, nir_sync = match_segments(vis, nir, shift) if (vis.segments or nir.segments) else (None, None)
-    if vis_sync is None:
+    if visible_only:
+        vis_sync = None             # nothing to synchronise
+    elif vis_sync is None:
         vis_sync = vis.hover
         messages.append("The rotating target was not found on the visible images: "
                         "the synchronisation window is the low hover, check it.")
