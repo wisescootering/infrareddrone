@@ -170,7 +170,7 @@ def copy_metadata(pth_src, pth_dst):
            f'-Artist={cf.ARTIST}',
            pth_dst, "-overwrite_original",  "-fast"]
 
-    _run_exiftool(cmd)
+    _run_exiftool(cmd, destination=pth_dst)
 
     return
 
@@ -179,13 +179,34 @@ def copy_metadata(pth_src, pth_dst):
 _exiftool_batch = None
 
 
-def _run_exiftool(cmd):
+def _run_exiftool(cmd, destination=None):
     """Run an ExifTool command ([EXIFTOOLPATH, arguments...]), or keep it for
-    the end of the current metadata_batch()."""
-    if _exiftool_batch is not None:
-        _exiftool_batch.append(list(cmd))
-    else:
+    the end of the current metadata_batch().
+
+    ``destination``: the image the command writes, one of its arguments. In a
+    batch, a command that only differs from an earlier one by its destination
+    is merged with it (ExifTool accepts several images: the same metadata is
+    read once from the source and written to each)."""
+    if _exiftool_batch is None:
         subprocess.run(cmd)
+        return
+    cmd = list(cmd)
+    if destination is not None and cmd.count(destination) == 1:
+        at = cmd.index(destination)
+        for earlier in _exiftool_batch:
+            if isinstance(earlier, _SharedCommand) and earlier.at == at \
+                    and earlier[:at] == cmd[:at] and earlier[at + len(earlier.destinations):] == cmd[at + 1:]:
+                earlier.insert(at + len(earlier.destinations), destination)
+                earlier.destinations.append(destination)
+                return
+        cmd = _SharedCommand(cmd)
+        cmd.at, cmd.destinations = at, [destination]
+    _exiftool_batch.append(cmd)
+
+
+class _SharedCommand(list):
+    """ExifTool command of a batch that may get other destination images
+    (``at``: index of the first one, ``destinations``: all of them)."""
 
 
 def _exiftool_batch_command(commands):
