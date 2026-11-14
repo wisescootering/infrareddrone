@@ -442,6 +442,36 @@ def precompute_review(out_dir, vis_number) -> None:
         logging.warning(f"Review cache not written for VIS_{vis_number}: {exc}")
 
 
+def shoot_point_gps(vis_pth, point=None, option_alti="takeoff"):
+    """GPS of the visible image written in the output images, its altitude
+    taken from the shoot point (``option_alti``: geo, ground, sealevel, takeoff).
+    point None (e.g. a bare pair): the EXIF altitude is kept."""
+    gps_vis = pr.Image(vis_pth).gps
+    try:
+        if point is None:
+            # No point metadata (e.g. a bare pair): keep the EXIF altitude, nothing to substitute
+            logging.info(f"No point metadata: keep the EXIF altitude {gps_vis['altitude']} m")
+        elif option_alti == 'geo':
+            # Substitutes of drone altitude to the takeoff by altitude of ground to sea level
+            gps_vis['altitude'] = point.altGeo
+            logging.info(f"Use altitude of ground to sea level : {gps_vis['altitude']} m")
+        elif option_alti == 'ground':
+            #Substitutes of drone altitude to the takeoff by drone altitude to ground.
+            gps_vis['altitude'] = point.altGround
+            logging.info(f"Use altitude of drone to ground  : {gps_vis['altitude']} m")
+        elif option_alti == 'sealevel':
+            #Substitutes of drone altitude to the takeoff by drone altitude to ground.
+            gps_vis['altitude'] = point.altGeo + point.altGround
+            logging.info(f"Use altitude of drone to sea level  : {gps_vis['altitude']} m")
+        elif option_alti == 'takeoff':
+            # altitude of droe to the takeoff.
+            logging.info(f"Use altitude of drone to takeoff  : {gps_vis['altitude']} m")
+            gps_vis['altitude'] = point.altTakeOff
+    except Exception as exc:
+        logging.warning(f"{exc} use altitude drone to takeoff instead: {gps_vis['altitude']} m")
+    return gps_vis
+
+
 def _process_raw_pairs_serial(
         sync_pairs,
         cals=dict(refcalib=ut.cameracalibration(camera="DJI_RAW"), movingcalib=ut.cameracalibration(camera="M20_RAW")),
@@ -533,31 +563,7 @@ def _process_raw_pairs_serial(
         )
 
 
-        gps_vis = pr.Image(vis_pth).gps
-        try:
-            if listPts is None:
-                # No point metadata (e.g. a bare pair): keep the EXIF altitude, nothing to substitute
-                logging.info(f"No point metadata: keep the EXIF altitude {gps_vis['altitude']} m")
-            #option_alti = 'sealevel'  #   geo, ground, sealevel, takeoff
-
-            elif option_alti == 'geo':
-                # Substitutes of drone altitude to the takeoff by altitude of ground to sea level
-                gps_vis['altitude'] = listPts[index_pair].altGeo
-                logging.info(f"Use altitude of ground to sea level : {gps_vis['altitude']} m")
-            elif option_alti == 'ground':
-                #Substitutes of drone altitude to the takeoff by drone altitude to ground.
-                gps_vis['altitude'] = listPts[index_pair].altGround
-                logging.info(f"Use altitude of drone to ground  : {gps_vis['altitude']} m")
-            elif option_alti == 'sealevel':
-                #Substitutes of drone altitude to the takeoff by drone altitude to ground.
-                gps_vis['altitude'] = listPts[index_pair].altGeo + listPts[index_pair].altGround
-                logging.info(f"Use altitude of drone to sea level  : {gps_vis['altitude']} m")
-            elif option_alti == 'takeoff':
-                # altitude of droe to the takeoff.
-                logging.info(f"Use altitude of drone to takeoff  : {gps_vis['altitude']} m")
-                gps_vis['altitude'] = listPts[index_pair].altTakeOff
-        except Exception as exc:
-            logging.warning(f"{exc} use altitude drone to takeoff instead: {gps_vis['altitude']} m")
+        gps_vis = shoot_point_gps(vis_pth, listPts[index_pair] if listPts is not None else None, option_alti)
 
         ref_full, aligned_full, align_full_global, motion_model = align_raw(
             vis_pth, nir_pth, cals,
@@ -848,6 +854,92 @@ def process_raw_pairs(
             listPts[index] = point
         motion_model_list.extend(motion_models)
     return motion_model_list
+
+
+# ------------------------------------------------------------------------------------------------
+#  Visible only missions: the visible images are developed, not aligned
+# ------------------------------------------------------------------------------------------------
+VISIBLE_BANDS = (1, 2, 3)     # red, green, blue (save_multispectral band indexes)
+
+
+def develop_visible(vis_pth, out_dir, multispectral_folder, crop=CROP, point=None, option_alti="sealevel",
+                    cals=None):
+    """One image of a visible only mission: the DNG developed, its lens distortion
+    corrected and cropped exactly as the reference of the multispectral alignment
+    (same image size and camera model for OpenDroneMap), written as
+
+        out_dir/VIS_XXXX.jpg                               the review image
+        multispectral_folder/IRD_XXXX_{1,2,3}.tif          red, green, blue bands for the map
+
+    with the metadata of the multispectral bands (copied from the DNG)."""
+    vis_pth = str(vis_pth)
+    if cals is None:
+        cals = ut.cameracalibration(camera="DJI_RAW")
+    vis = pr.Image(vis_pth)
+    ref_full = warp(vis.lineardata, cals, np.eye(3))      # linear, as align_raw returns the reference
+    if crop:
+        ref_full = ref_full[crop:-crop, crop:-crop, :]
+    gps_vis = shoot_point_gps(vis_pth, point, option_alti)
+    vis_number = Path(vis_pth).stem.removeprefix("VIS_")
+    with pr.metadata_batch():
+        img = pr.Image(vis_pth)
+        img._data = np.ascontiguousarray(ref_full[:, :, :3], dtype=np.float32)
+        img.save_multispectral(Path(multispectral_folder) / f"IRD_{vis_number}", bands=list(VISIBLE_BANDS))
+        vis_img = pr.Image(ut.contrast_stretching_8bit(ref_full)[0])
+        vis_img.path = vis_pth
+        vis_img.save(osp.join(out_dir, f"VIS_{vis_number}.jpg"), gps=gps_vis, exif=exif_dict_minimal)
+    return vis_number
+
+
+def _develop_visible_task(task):
+    develop_visible(task["vis"], task["out_dir"], task["multispectral_folder"], task["crop"], task["point"],
+                    task["option_alti"])
+    return task["index"], osp.basename(task["vis"])
+
+
+def develop_visible_images(vis_paths, out_dir, multispectral_folder, crop=CROP, listPts=None,
+                           option_alti="sealevel", progress_callback=None, max_workers=1):
+    """develop_visible for every image, in max_workers processes;
+    progress_callback(done, total, VIS file name) after each one."""
+    vis_paths = [str(p) for p in vis_paths]
+    if not vis_paths:
+        return
+    if isinstance(max_workers, bool) or not isinstance(max_workers, int) or max_workers < 1:
+        raise ValueError("max_workers must be a positive integer.")
+    os.makedirs(out_dir, exist_ok=True)
+    os.makedirs(multispectral_folder, exist_ok=True)
+    tasks = [{"index": i, "vis": p, "out_dir": str(out_dir), "multispectral_folder": str(multispectral_folder),
+              "crop": crop, "point": listPts[i] if listPts is not None else None, "option_alti": option_alti}
+             for i, p in enumerate(vis_paths)]
+    worker_count = min(clamp_workers(max_workers), len(tasks))
+    if worker_count == 1:
+        print(f"Developing {len(tasks)} visible images sequentially (1 worker).")
+        for done, task in enumerate(tasks, start=1):
+            _develop_visible_task(task)
+            if progress_callback is not None:
+                progress_callback(done, len(tasks), osp.basename(task["vis"]))
+        return
+    print(f"Developing {len(tasks)} visible images with {worker_count} worker processes.")
+    with ProcessPoolExecutor(
+        max_workers=worker_count,
+        initializer=_initialize_alignment_worker,
+        initargs=(logging.getLogger().getEffectiveLevel(), threads_per_worker(worker_count),
+                  rawtherapee_threads_per_worker(worker_count)),
+    ) as executor:
+        futures = {executor.submit(_develop_visible_task, task): task for task in tasks}
+        done = 0
+        pending = set(futures)
+        while pending:
+            finished, pending = wait(pending, return_when=FIRST_COMPLETED)
+            for future in finished:
+                task = futures[future]
+                try:
+                    future.result()
+                except Exception as exc:
+                    raise RuntimeError(f"Development failed for {osp.basename(task['vis'])}.") from exc
+                done += 1
+                if progress_callback is not None:
+                    progress_callback(done, len(tasks), osp.basename(task["vis"]))
 
 
 if __name__ == "__main__":
