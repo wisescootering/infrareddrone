@@ -3329,9 +3329,14 @@ GEOREF_IMAGE_FILTERS = ";;".join([
     "Multispectral TIFF (*.tif *.TIF *.tiff *.TIFF)",
     "All files (*)",
 ])
+# A visible only mission: the drone DNG only (no infrared, no quartets)
+GEOREF_VISIBLE_FILTERS = ";;".join([
+    "DJI RAW (*.dng *.DNG)",
+    "All files (*)",
+])
 
 
-def _select_images_dialog(initial_dir: str = ""):
+def _select_images_dialog(initial_dir: str = "", filters: str = GEOREF_IMAGE_FILTERS):
     """
     Ask for image files with the Qt file dialog used by the other steps.
 
@@ -3346,7 +3351,7 @@ def _select_images_dialog(initial_dir: str = ""):
         app.activeWindow(),
         "Select images",
         initial_dir,
-        GEOREF_IMAGE_FILTERS,
+        filters,
     )
 
     if not filepaths:
@@ -3362,14 +3367,16 @@ def _select_images_dialog(initial_dir: str = ""):
     return folder_input, list_img_name, list_img, list_path
 
 
-def choose_images(folder_mission: Path):
+def choose_images(folder_mission: Path, visible_only: bool = False):
     """
     Interactively select image files, starting in the mission folder.
 
     For multispectral images, selecting one band per shot is enough: the
     other bands are picked up from the same folder (see ``group_multispectral``).
+    A visible only mission offers the DJI DNG only.
     """
-    return _select_images_dialog(str(folder_mission))
+    return _select_images_dialog(str(folder_mission),
+                                 GEOREF_VISIBLE_FILTERS if visible_only else GEOREF_IMAGE_FILTERS)
 
 
 def choose_images_dev():
@@ -3925,8 +3932,10 @@ def georef_main(image_callback=None, mission_parameters=None, result_callback=No
             mission_parameters["File path mission"]
         )
 
+        import mission_type
+        visible_only = mission_type.is_visible(mission_parameters) or mission_type.is_visible(folder_mission)
         folder_input, list_img_name, list_img, list_path = choose_images(
-            folder_mission
+            folder_mission, visible_only=visible_only
         )
 
         # Return instead of sys.exit: this runs inside the GUI process.
@@ -3939,6 +3948,9 @@ def georef_main(image_callback=None, mission_parameters=None, result_callback=No
             mode = detect_mode(list_path, args.mode)
         except ValueError as e:
             logger.error(str(e))
+            return
+        if visible_only and mode != "raw_DJI":
+            logger.error("A visible only mission georeferences the drone DNG images only (VIS_XXXX.DNG).")
             return
 
         # Offsets are asked to the user (default 0) right after the shoot point selection.

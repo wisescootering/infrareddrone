@@ -96,5 +96,15 @@ class ODMSelectionDialogTest(unittest.TestCase):
         self.assertEqual(run.call_args.kwargs["dt_tolerance_s"], 0.4)
 
 
+class GeorefMessageTest(unittest.TestCase):
+    def test_the_message_follows_the_mission_type(self):
+        import IRD_Interactive_GeoRef as G
+        visible, multi = S5.georef_message(True), S5.georef_message(False)
+        self.assertIn("DNG", visible)
+        self.assertNotIn("TIFF", visible)
+        self.assertIn("IRD_0121_4.tif", multi)
+        self.assertNotIn("HYPERLAPSE", multi)
+        self.assertNotIn("tif", G.GEOREF_VISIBLE_FILTERS.lower())
+
 if __name__ == "__main__":
     unittest.main()

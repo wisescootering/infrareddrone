@@ -322,6 +322,18 @@ def launch_buttons(dialog: QDialog, action: str, action_tip: str, help_label: st
     return row
 
 
+def georef_message(visible_only: bool) -> str:
+    """What the image selection of Georeference images accepts, by mission type."""
+    if visible_only:
+        return ("Select one or more drone images (DJI DNG, e.g. AerialPhotography/VIS_0121.DNG).\n"
+                "A visible only mission georeferences the DNG only.")
+    return ("Select one or more images, all of the same type:\n"
+            "    - drone images: DJI DNG (e.g. VIS_0121.DNG)\n"
+            "    - multispectral images: groups of four TIFF\n"
+            "      e.g. IRD_0121_1.tif, IRD_0121_2.tif, IRD_0121_3.tif, IRD_0121_4.tif\n"
+            "      (ImgIRdrone/imgMultispectral): select all four.")
+
+
 class ODMPreviewSignals(QObject):
     """Signals of ``ODMPreviewWorker``: ``ready`` (RGB array) or ``error``."""
 
@@ -534,9 +546,11 @@ class DialogGeoRef(QDialog):
 
         for widget, label, tip in (
             (self.btn_run_GeoRef, "btn:step6_georef",
+             "Choose drone DNG images and georeference and orthorectify each one." if self._visible_only() else
              "Choose images (drone DNG, or IRD_XXXX_1..4.tif groups) and georeference and orthorectify each one."),
             (self.btn_run_Mapping, "btn:step6_mapping",
-             "Choose the images, then assemble them into one 4-band orthophoto with OpenDroneMap (Docker). "
+             f"Choose the images, then assemble them into one {3 if self._visible_only() else 4}-band orthophoto "
+             "with OpenDroneMap (Docker). "
              "The terrain model and the contour lines follow."),
             (self.btn_run_DTM, "btn:step6_dtm",
              "Build the terrain model and the contour lines over the orthophoto again, with another "
@@ -548,6 +562,9 @@ class DialogGeoRef(QDialog):
             Help.attach_help(widget, label, tip, parent=self)
 
         main_layout.addLayout(close_layout)
+
+    def _visible_only(self) -> bool:
+        return mission_type.is_visible(Path(self.folderMissionPath))
 
     def _orthophoto_path(self) -> Path:
         return Path(self.folderMissionPath) / "mapping_MULTI" / "mapping_result" / "odm_orthophoto.tif"
@@ -671,19 +688,7 @@ class DialogGeoRef(QDialog):
         """
         try:
             self.progress_bar.setValue(0)
-            QMessageBox.information(
-                self,
-                "GeoRef",
-                "Select one or more images.\n"
-                "Warning: all selected images must be of the same type.\n"
-                "Supported types:\n"
-                "    - DNG (DJI)\n"
-                "    - TIFF\n"
-                "    - Multispectral TIFF: groups of four images.\n"
-                "      Example: HYPERLAPSE_0121_1.tif, HYPERLAPSE_0121_2.tif, "
-                "               HYPERLAPSE_0121_3.tif, HYPERLAPSE_0121_4.tif\n"
-                "    In the latter case, select all four images."
-            )
+            QMessageBox.information(self, "Georeference images", georef_message(self._visible_only()))
             self.georef_results = []
             self.progress_label.setText("Geo Ref – running...")
             self._set_preview_text(
