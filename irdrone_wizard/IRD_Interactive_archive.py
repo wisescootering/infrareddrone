@@ -17,6 +17,9 @@ that would allow the mission to be processed again are kept:
   ``shoot_points.json``, ``shoot_points_failed_summary.json``;
 * ``Synchro``: ``check_time_alignment.png``, ``check_time_before_alignment.png``.
 
+A visible only mission (mission_type.VISIBLE) has no ``NIR`` folder: it is
+neither required nor scanned.
+
 ``desktop.ini`` is kept wherever it exists. All name comparisons ignore case.
 Missing folders are never created. The module has no Qt dependency:
 ``build_plan`` only reads the disk, ``execute_archive`` deletes.
@@ -262,6 +265,9 @@ def build_plan(mission) -> ArchivePlan:
     img = _find(mission, "ImgIRdrone")
     synchro = _find(mission, "Synchro")
 
+    # A visible only mission has no infrared band
+    import mission_type
+    bands = ("VIS",) if mission_type.is_visible(mission) else ("VIS", "NIR")
     # Consistency checks: without these files the mission cannot be processed again.
     required = []
     if flight is None or _find(flight, "mission_parameters.json") is None:
@@ -271,7 +277,7 @@ def build_plan(mission) -> ArchivePlan:
     else:
         if _find(aerial, "shoot_points.json") is None:
             required.append("AerialPhotography\\shoot_points.json")
-        for band in ("VIS", "NIR"):
+        for band in bands:
             band_dir = _find(aerial, band)
             if band_dir is None:
                 required.append(f"AerialPhotography\\{band}")
@@ -307,7 +313,7 @@ def build_plan(mission) -> ArchivePlan:
         plan.missing.append("Synchro")
 
     _scan_folder(plan, aerial, "AerialPhotography", KEEP_FILES_AERIAL, keep_dirs=("vis", "nir"))
-    for band in ("VIS", "NIR"):
+    for band in bands:
         _scan_folder(plan, _find(aerial, band), f"AerialPhotography\\{band}", _band_patterns(band))
     _scan_folder(plan, img, "ImgIRdrone", KEEP_FILES_IMG)
     if synchro is not None:

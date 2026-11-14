@@ -257,6 +257,23 @@ class BestMappingTests(unittest.TestCase):
             self.assertFalse(manifest["odm_started"])
             self.assertTrue((mission / "mapping_MULTI" / "img_best_mappping.json").is_file())
 
+    def test_visible_only_mission_maps_three_bands(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            mission = Path(temporary)
+            self._create_mission(mission)
+            for band4 in (mission / "ImgIRdrone" / "imgMultispectral").glob("IRD_*_4.tif"):
+                band4.unlink()
+            (mission / "FlightAnalytics").mkdir()
+            (mission / "FlightAnalytics" / "mission_parameters.json").write_text(
+                json.dumps({"mission type": "visible"}), encoding="utf-8")
+            manifest = build_best_mapping(mission)
+            self.assertEqual(manifest["counts"]["not_ready"], 0)
+            self.assertEqual(manifest["selection_rules"]["band_order"], ["red", "green", "blue"])
+            self.assertEqual(list(manifest["image_quartets"][0]["files"]), ["red", "green", "blue"])
+            images = prepare_odm_input(mission, manifest)
+            self.assertEqual(len([p for p in images.iterdir() if p.suffix == ".tif"]),
+                             3 * manifest["counts"]["ready_for_odm"])
+
     def test_mapping_uses_selected_time_tolerance_and_image_interval(self):
         with tempfile.TemporaryDirectory() as temporary:
             mission = Path(temporary)
@@ -896,6 +913,21 @@ class BestMappingTests(unittest.TestCase):
                 result["band_labels"],
                 ["Red", "Green", "Blue", "NIR", "Band 5"],
             )
+
+    def test_validates_visible_only_odm_geotiff(self):
+        """A visible only mission maps red, green, blue (+ alpha): three bands are enough."""
+        with tempfile.TemporaryDirectory() as temporary:
+            orthophoto = Path(temporary) / "odm_orthophoto.tif"
+            with rasterio.open(orthophoto, "w", driver="GTiff", width=3, height=2, count=4, dtype="uint16",
+                               crs="EPSG:32631", transform=Affine(0.033, 0, 100, 0, -0.033, 200)) as dataset:
+                for index, name in enumerate(("Red", "Green", "Blue"), 1):
+                    dataset.write(np.full((2, 3), index, dtype=np.uint16), index)
+                    dataset.set_band_description(index, name)
+                dataset.write(np.full((2, 3), 4, dtype=np.uint16), 4)
+            result = _validate_odm_outputs(orthophoto, ("red", "green", "blue"))
+            self.assertEqual(result["band_descriptions"][:3], ["Red", "Green", "Blue"])
+            with self.assertRaises(ODMMappingError):     # a multispectral mission needs the NIR
+                _validate_odm_outputs(orthophoto)
 
     def test_reads_reduced_rgb_orthophoto_preview(self):
         with tempfile.TemporaryDirectory() as temporary:
