@@ -66,26 +66,8 @@ rawtherapee_threads = None
 
 
 def rawtherapee_environment():
-    """Environment of a RawTherapee conversion: as many threads as physical
-    cores (not logical ones) and threads that sleep while they wait.
-
-    By default RawTherapee (OpenMP) starts one thread per logical core and its
-    idle threads spin: next to other busy processes (the alignment workers)
-    a conversion takes twice as long and twice the CPU time for the same
-    image. The image written does not depend on the number of threads.
-    A value already set by the user (OMP_NUM_THREADS, OMP_WAIT_POLICY) is kept."""
-    environment = dict(os.environ)
-    threads = rawtherapee_threads
-    if threads is None:
-        try:
-            import psutil
-            threads = psutil.cpu_count(logical=False)
-        except Exception:
-            threads = None
-    if threads:
-        environment.setdefault("OMP_NUM_THREADS", str(max(1, int(threads))))
-    environment.setdefault("OMP_WAIT_POLICY", "PASSIVE")
-    return environment
+    """Environment of a RawTherapee conversion (see config.rawtherapee_environment)."""
+    return cf.rawtherapee_environment(rawtherapee_threads)
 
 
 def load_dng(path, template="DJI_neutral.pp3"):

@@ -44,6 +44,12 @@ class Step4MultiprocessingTests(unittest.TestCase):
             self.assertEqual(alignment_workers.threads_per_worker(12), 1)
             self.assertEqual(alignment_workers.threads_per_worker(3), 2)
             self.assertEqual(alignment_workers.threads_per_worker(2), 4)
+            # a RawTherapee conversion: the same share, never less than 2 threads
+            self.assertEqual(alignment_workers.rawtherapee_threads_per_worker(8), 2)
+            self.assertEqual(alignment_workers.rawtherapee_threads_per_worker(2), 4)
+        cpu_patch, memory_patch = self._patch_resources(1, 64)
+        with cpu_patch, memory_patch:
+            self.assertEqual(alignment_workers.rawtherapee_threads_per_worker(1), 1)
 
     def test_worker_count_never_drops_below_one(self):
         cpu_patch, memory_patch = self._patch_resources(4, 2)
@@ -204,8 +210,8 @@ class Step4MultiprocessingTests(unittest.TestCase):
             self.assertEqual(environment["OMP_WAIT_POLICY"], "PASSIVE")  # idle threads do not spin
             with patch.object(automatic_registration, "logging"), \
                     patch.object(automatic_registration.cv2, "setNumThreads") as opencv_threads:
-                automatic_registration._initialize_alignment_worker(threads=2)
-            opencv_threads.assert_called_once_with(2)
+                automatic_registration._initialize_alignment_worker(threads=1, rawtherapee_threads=2)
+            opencv_threads.assert_called_once_with(1)
             self.assertEqual(image_process.rawtherapee_environment()["OMP_NUM_THREADS"], "2")
             environ["OMP_NUM_THREADS"] = "3"                            # the user's choice is kept
             self.assertEqual(image_process.rawtherapee_environment()["OMP_NUM_THREADS"], "3")
