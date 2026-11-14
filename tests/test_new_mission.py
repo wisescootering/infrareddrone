@@ -293,6 +293,23 @@ class MissionDetailsTest(unittest.TestCase):
         self.assertIn("Description", d.changed)
         self.assertEqual(MS.read_mission_parameters(self.folder)["Description"], "Plot 12")
 
+    def test_visible_only_mission_hides_the_infrared(self):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PyQt6.QtWidgets import QApplication
+        QApplication.instance() or QApplication([])
+        import IRD_Interactive_mission_details as D
+        self.params["mission type"] = "visible"
+        MS.mission_parameters_path(self.folder).write_text(json.dumps(self.params))
+        d = D.MissionDetailsDialog(self.folder)
+        for w in (d.f_nir_maker, d.f_nir_model, d.f_nir_timelapse, d.f_filter_band):
+            self.assertTrue(w.isHidden())
+        self.assertFalse(d.f_vis_timelapse.isHidden())
+        d.f_description.setText("Plot 12")
+        d.btn_close.click()
+        saved = MS.read_mission_parameters(self.folder)
+        self.assertEqual(saved["mission type"], "visible")         # kept
+        self.assertNotIn("camera NIR maker", saved)                 # hidden: not written
+
     def test_dialog_reset_then_close_writes_nothing(self):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         from PyQt6.QtWidgets import QApplication
