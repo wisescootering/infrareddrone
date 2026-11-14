@@ -40,6 +40,7 @@ import IRD_Interactive_look as Look
 import IRD_Interactive_help as Help
 from IRD_Interactive_progress import mark_step_done
 import best_mapping
+import mission_type
 from config import SJCONVERTERPATH
 from alignment_workers import (
     ALIGNMENT_WORKER_MEMORY_GB,
@@ -54,6 +55,7 @@ from manual_redo_archives import restore_manual_redo_originals
 
 
 STEP_NAME = "Image processing"
+VISIBLE_STEP_NAME = "Development"      # visible only mission: the images are developed, not aligned
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PROCESSING_SCRIPT = PROJECT_ROOT / "run_after_preprocessing.py"
 VIS_FILENAME_PATTERN = re.compile(r"^VIS_(\d+)\.dng$", re.IGNORECASE)
@@ -819,12 +821,21 @@ class DialogImageProcessing(QDialog):
         self.mission_folder = Path(mission_folder).expanduser().resolve()
         if not self.mission_folder.is_dir():
             raise FileNotFoundError(f"Mission folder does not exist: {self.mission_folder}")
+        # visible only mission: develop the visible images (no infrared, no alignment)
+        self.visible_only = mission_type.is_visible(self.mission_folder)
+        self.step_name = VISIBLE_STEP_NAME if self.visible_only else STEP_NAME
         if not PROCESSING_SCRIPT.is_file():
             raise FileNotFoundError(f"Processing script does not exist: {PROCESSING_SCRIPT}")
 
         shoot_points_file = (
             self.mission_folder / "AerialPhotography" / "shoot_points.json"
         )
+        if self.visible_only and not shoot_points_file.is_file():
+            import visible_mission           # written by Step 2: written again if it is missing
+            try:
+                visible_mission.write_shoot_points(self.mission_folder)
+            except OSError as error:
+                raise FileNotFoundError(f"Run Step 2 first: {error}") from error
         if not shoot_points_file.is_file():
             raise FileNotFoundError(
                 "Phase 3 output was not found. Run Step 3 first:\n"
@@ -866,7 +877,7 @@ class DialogImageProcessing(QDialog):
         self.process.errorOccurred.connect(self._on_process_error)
 
 
-        self.setWindowTitle(Look.step_window_title(4, STEP_NAME, self.mission_folder))
+        self.setWindowTitle(Look.step_window_title(4, self.step_name, self.mission_folder))
         self.setStyleSheet(DIALOG_STYLE)
         self._init_gui()
         self._fit_to_screen(parent)
@@ -930,12 +941,14 @@ class DialogImageProcessing(QDialog):
         layout = QVBoxLayout(self)
         # The labels wrap and the mission is named, its path in the tool tip:
         # nothing makes the window wider than the screen (long paths, display scaling).
-        layout.addWidget(Look.step_header(4, STEP_NAME, self.mission_folder))
+        layout.addWidget(Look.step_header(4, self.step_name, self.mission_folder))
         intro = QLabel(
+            f"{self.pair_count} visible images (visible only mission: they are developed, "
+            "there is nothing to align). " if self.visible_only else
             f"{self.pair_count} preprocessed image pairs found. "
-            "The inclusive image-number range is pre-filled from Step 2's "
-            "visible FLY frames."
         )
+        intro.setText(intro.text() + "The inclusive image-number range is pre-filled from Step 2's "
+                      "visible FLY frames.")
         intro.setWordWrap(True)
         layout.addWidget(intro)
 
@@ -956,6 +969,8 @@ class DialogImageProcessing(QDialog):
         self.max_time_difference.setSingleStep(0.1)
         self.max_time_difference.setValue(0.5)
         settings_form.addRow("Maximum VIS/NIR time difference (s):", self.max_time_difference)
+        if self.visible_only:              # nothing to synchronise
+            settings_form.setRowVisible(self.max_time_difference, False)
         settings_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
         layout.addLayout(settings_form)
 
@@ -975,6 +990,7 @@ class DialogImageProcessing(QDialog):
         traces_layout.addWidget(self.global_checkbox, 1, 1)
         traces_layout.setColumnStretch(2, 1)
         layout.addWidget(traces_group)
+        traces_group.setVisible(not self.visible_only)     # visible only: VIS_XXXX.jpg and the bands
 
         # Best mapping: the choice of Step 2 (FlightAnalytics/best_mapping.json)
         choice = best_mapping.load_choice(self.mission_folder)
@@ -985,7 +1001,8 @@ class DialogImageProcessing(QDialog):
         best_layout = QHBoxLayout()
         best_group_layout.addLayout(best_layout)
         self.best_mapping_radio = QRadioButton("Best mapping: only the images the map needs")
-        self.all_images_radio = QRadioButton("All the synchronised images")
+        self.all_images_radio = QRadioButton(
+            "All the survey images" if self.visible_only else "All the synchronised images")
         self.best_mapping_radio.setChecked(choice["enabled"])
         self.all_images_radio.setChecked(not choice["enabled"])
         best_layout.addWidget(self.best_mapping_radio)
@@ -1040,7 +1057,7 @@ class DialogImageProcessing(QDialog):
 
         # Footer: the manual (?) and settings on the left; Close, then the next step on the right
         button_layout = QHBoxLayout()
-        self.run_button = QPushButton("Run alignment")
+        self.run_button = QPushButton("Run development" if self.visible_only else "Run alignment")
         self.run_button.clicked.connect(self._start_processing)
         self.stop_button = QPushButton("\u25A0  Stop")
         self.stop_button.setStyleSheet(
@@ -1065,7 +1082,9 @@ class DialogImageProcessing(QDialog):
         self.help_button.setStyleSheet(SECONDARY_STYLE)
         self.help_button.clicked.connect(lambda: Help.show_help("ch:step4", parent=self))
         self.continue_button = Look.continue_button(
-            "the review", "Close this window and open Step 5: check the aligned images, flag the "
+            "the review", "Close this window and open Step 5: check the developed images, flag the "
+                          "bad ones (left out of the map)." if self.visible_only else
+                          "Close this window and open Step 5: check the aligned images, flag the "
                           "misaligned ones and realign them by hand.")
         self.continue_button.clicked.connect(self._continue_now)
         self.continue_button.setVisible(self._has_alignment_output())
@@ -1087,7 +1106,10 @@ class DialogImageProcessing(QDialog):
             (self.best_mapping_overlap, "btn:step4_best_mapping",
              "Overlap between the ground footprints of two successive images kept for the map "
              "(75 % recommended)."),
-            (self.run_button, "btn:step4_run_alignment", "Align the VIS and NIR images of the selected shoot points (can take a long time)."),
+            (self.run_button, "btn:step4_run_alignment",
+             "Develop the visible images of the selection (colour, lens distortion) for the review and the map."
+             if self.visible_only else
+             "Align the VIS and NIR images of the selected shoot points (can take a long time)."),
             (self.close_button, "btn:step4_close", "Close this window."),
             (self.settings_button, "btn:step4_settings", "Processing settings (worker processes / safe mode, log detail)."),
             (self.stop_button, "btn:step4_stop", self.stop_button.toolTip()),
@@ -1131,9 +1153,7 @@ class DialogImageProcessing(QDialog):
             and isinstance(point["VIS"].get("FileName"), str)
             and start <= _vis_image_number(point["VIS"]["FileName"]) <= end
         ]
-        limit = self.max_time_difference.value()
-        flags = [(dt := best_mapping.rank_one_dt(point)) is not None and abs(dt) < limit
-                 for point in in_range]
+        flags = [self._synchronised(point) for point in in_range]
         synchronised = sum(flags)
         if not self.best_mapping_radio.isChecked():
             return None, synchronised
@@ -1142,6 +1162,14 @@ class DialogImageProcessing(QDialog):
             best_mapping.mission_fov(self.mission_folder), flags)
         return kept, synchronised
 
+    def _synchronised(self, point) -> bool:
+        """The shoot point can be processed: its pair is within the time limit
+        (always, for a visible only mission: nothing to synchronise)."""
+        if self.visible_only:
+            return True
+        dt = best_mapping.rank_one_dt(point)
+        return dt is not None and abs(dt) < self.max_time_difference.value()
+
     def _update_best_mapping_count(self, *_args) -> None:
         self.best_mapping_overlap.setEnabled(self.best_mapping_radio.isChecked())
         try:
@@ -1149,26 +1177,25 @@ class DialogImageProcessing(QDialog):
         except (TypeError, ValueError) as error:
             self.best_mapping_count.setText(f"(count unavailable: {error})")
             return
+        what, done = ("survey images", "developed") if self.visible_only else \
+            ("synchronised shoot points", "aligned")
         if kept is not None:
-            self.best_mapping_count.setText(
-                f"{len(kept)} of {synchronised} synchronised shoot points will be aligned.")
+            self.best_mapping_count.setText(f"{len(kept)} of {synchronised} {what} will be {done}.")
         else:
-            self.best_mapping_count.setText(f"All {synchronised} synchronised shoot points will be aligned.")
+            self.best_mapping_count.setText(f"All {synchronised} {what} will be {done}.")
         self._update_map(kept)
 
     # ---- map: the shoot points aligned, live
     def _aligned_flags(self) -> dict:
         """VIS image number -> the shoot point is synchronised and in the range."""
         start, end = self.start_image_number.value(), self.end_image_number.value()
-        limit = self.max_time_difference.value()
         flags = {}
         for point in self.shoot_points:
             try:
                 number = _vis_image_number(point["VIS"]["FileName"])
             except (KeyError, TypeError, ValueError):
                 continue
-            dt = best_mapping.rank_one_dt(point)
-            flags[number] = start <= number <= end and dt is not None and abs(dt) < limit
+            flags[number] = start <= number <= end and self._synchronised(point)
         return flags
 
     def _build_map(self):
@@ -1313,7 +1340,9 @@ class DialogImageProcessing(QDialog):
             return
 
         alignment_modes = []
-        if self.local_checkbox.isChecked():
+        if self.visible_only:
+            alignment_modes.append("local")      # not used: nothing is aligned
+        if self.local_checkbox.isChecked() and not self.visible_only:
             alignment_modes.append("local")
         if self.global_checkbox.isChecked():
             alignment_modes.append("global")
@@ -1346,6 +1375,8 @@ class DialogImageProcessing(QDialog):
             load_log_level_setting(),
             "--progress",
         ]
+        if self.visible_only:
+            arguments.append("--visible-only")
         best_mapping_on = self.best_mapping_radio.isChecked()
         if best_mapping_on:
             arguments += ["--best-mapping-overlap", str(self.best_mapping_overlap.value())]
@@ -1359,9 +1390,9 @@ class DialogImageProcessing(QDialog):
             self.log_text.append(f"Best mapping choice not saved: {error}")
             kept = self._best_mapping_points()[0]
         self._start_map_progress(kept)
-        if self.ndvi_checkbox.isChecked():
+        if self.ndvi_checkbox.isChecked() and not self.visible_only:
             arguments.append("--ndvi")
-        if self.nir_checkbox.isChecked():
+        if self.nir_checkbox.isChecked() and not self.visible_only:
             arguments.append("--nir")
         self.log_text.append(
             f"Running: {sys.executable} {' '.join(arguments)}"
@@ -1394,7 +1425,8 @@ class DialogImageProcessing(QDialog):
         if self.process.state() == QProcess.ProcessState.NotRunning:
             return
         answer = QMessageBox.question(
-            self, "Stop the alignment",
+            self, "Stop the development" if self.visible_only else "Stop the alignment",
+            "Stop the development now?\n\nRun development again later." if self.visible_only else
             "Stop the alignment now?\n\nThe images already aligned are kept. "
             "Run alignment again later: the images already done reuse their motion model.")
         if answer != QMessageBox.StandardButton.Yes:
@@ -1494,9 +1526,12 @@ class DialogImageProcessing(QDialog):
             done = self.progress_bar.value() if self._progress_total else 0
             text = (f"Stopped: {done} of {self._progress_total} images aligned."
                     if self._progress_total else "Stopped.")
-            self.status_label.setText(text + " Run alignment to go on.")
+            if self.visible_only:
+                text = text.replace("aligned", "developed")
+            self.status_label.setText(text + (" Run development to go on." if self.visible_only
+                                              else " Run alignment to go on."))
             self.log_text.append("\n" + text)
-            self.run_button.setText("Run alignment again")
+            self.run_button.setText("Run development again" if self.visible_only else "Run alignment again")
             return
         if exit_code == 0 and exit_status == QProcess.ExitStatus.NormalExit:
             if self._last_elapsed_seconds is not None and self._progress_total:
