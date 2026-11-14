@@ -1236,6 +1236,8 @@ Un message rappelle les types d'images acceptés, puis une fenêtre de sélectio
 	\item des images TIFF multispectrales par \textbf{groupes de quatre} : \texttt{IRD\_XXXX\_1.tif} à \texttt{IRD\_XXXX\_4.tif} (rouge, vert, bleu, proche infrarouge). Il faut sélectionner les quatre fichiers ; un groupe incomplet est rejeté avec un avertissement.
 \end{itemize}
 
+Dans une mission visible seul, le message et la fenêtre de sélection ne proposent que les images DNG DJI.
+
 \subsection*{Décalages de géoréférencement}
 Une fois les images choisies, une fenêtre demande trois corrections, toutes égales à \textbf{0} par défaut :
 \begin{itemize}
@@ -1286,6 +1288,9 @@ En cliquant sur le bouton, une fenêtre de choix des critères s'ouvre. Une note
 \end{itemize}
 
 \figureIRD{step5_odm_selection.png}{Fenêtre des critères de sélection des images pour le mapping.}{0.4}
+
+À droite, comme à l'étape~4, la carte du vol montre les images retenues pour la carte, en vert avec leurs empreintes au sol (leur recouvrement se voit), les images éligibles écartées par la sélection en gris, et les autres en petits points. Elle est mise à jour dès qu'un réglage change ($|dt|$, recouvrement, $n$, choix) ; le compte sous la carte donne le nombre d'images retenues parmi les éligibles. Molette pour zoomer, glisser pour se déplacer, double-clic pour revoir tout le vol.
+
 
 Les images retenues (\emph{eligible images}) sont les shoot points qui vérifient simultanément :
 \begin{enumerate}

@@ -46,6 +46,7 @@ from PyQt6.QtGui import (
 from PyQt6.QtCore import (
     Qt,
     QThreadPool,
+    QTimer,
     QObject,
     QRunnable,
     pyqtSignal,
@@ -172,7 +173,11 @@ class ODMSelectionDialog(QDialog):
         settings = (ODM.selection_settings(Path(mission_folder)) if mission_folder
                     else {"dt_tolerance_s": 0.5, "sample_every": 3, "overlap": best_mapping.DEFAULT_OVERLAP})
 
-        layout = QVBoxLayout(self)
+        root = QVBoxLayout(self)
+        body = QHBoxLayout()              # the choices on the left, the map of the selection on the right
+        root.addLayout(body)
+        layout = QVBoxLayout()
+        body.addLayout(layout)
         criteria = QFormLayout()
         self.dt_tolerance = QDoubleSpinBox()
         self.dt_tolerance.setRange(0.05, 6.0)
@@ -246,7 +251,20 @@ class ODMSelectionDialog(QDialog):
             kept.setStyleSheet(MESSAGE_STYLE)
             layout.addWidget(kept)
             self.previous_map_note = kept
-        layout.addLayout(launch_buttons(
+        layout.addStretch()
+        self.map_model = None
+        self.map_view = self._build_map(Path(mission_folder)) if mission_folder else None
+        if self.map_view is not None:
+            right = QVBoxLayout()
+            right.addWidget(self.map_view, stretch=1)
+            self.map_count = QLabel("")
+            self.map_count.setWordWrap(True)
+            self.map_count.setStyleSheet(MESSAGE_STYLE)
+            right.addWidget(self.map_count)
+            body.addLayout(right, stretch=1)
+            self.setMinimumWidth(900)
+            Look.fit_to_screen(self, parent, max_w=1150, max_h=680)
+        root.addLayout(launch_buttons(
             self, "Build the map",
             "Start OpenDroneMap with these images; the terrain model and the contour lines follow.",
             "btn:step6_selection"))
@@ -260,6 +278,87 @@ class ODMSelectionDialog(QDialog):
         for radio in (self.sample_radio, self.all_radio):
             radio.toggled.connect(self._update_selection_controls)
         self._update_selection_controls()
+        if self.map_view is not None:
+            # the selection drawn again once the values stop changing (spin box held down)
+            self._map_timer = QTimer(self)
+            self._map_timer.setSingleShot(True)
+            self._map_timer.setInterval(150)
+            self._map_timer.timeout.connect(self.update_map)
+            for spin in (self.dt_tolerance, self.overlap, self.sample_every):
+                spin.valueChanged.connect(self._map_timer.start)
+            self.selection_group.buttonToggled.connect(lambda *_: self._map_timer.start())
+            self.update_map()
+
+    # ---- map: the flight, the images selected and their footprints, live
+    def _build_map(self, mission: Path):
+        """Map of the shoot points (None without positions): a help, never a blocker."""
+        try:
+            import IRD_Interactive_map as Map
+            from PyQt6.QtGui import QColor
+            self.mission_folder = mission
+            self._selected: set = set()
+            self._eligible: set = set()
+            kept, eligible, other = QColor(Look.SURVEY), QColor("#6B7785"), QColor("#C5CFDA")
+
+            def color_of(number):
+                return kept if number in self._selected else eligible if number in self._eligible else other
+            model = Map.map_model_for(mission, color_of=color_of, with_ortho=False,
+                                      shoot_points_only=True, parent=self)
+            if model is None or len(model.points) < 2:
+                return None
+            model.minor = lambda i: model.numbers[i] not in self._eligible
+            view = Map.FlightMapView(model, compact=True)
+        except Exception as error:
+            print(f"Step 6 selection map unavailable: {error}")
+            return None
+        self.map_model = model
+        view.setMinimumSize(320, 300)
+        view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        view.setToolTip(
+            f"The flight: in green the images selected for the map and their footprints (their overlap "
+            f"shows), in grey the {'developed' if self.visible_only else 'aligned'} images left out by "
+            "the selection, small dots for the others.\n"
+            "Wheel to zoom, drag to pan, double-click to see the whole flight.")
+        view.hovered.connect(model.set_hover)
+        view.picked.connect(model.set_current)
+        return view
+
+    def selection_numbers(self):
+        """(selected, eligible) image numbers with the current choices (None: unknown)."""
+        def numbers(selection):
+            out = set()
+            for _, vis, _, _ in selection["sampled_pairs"]:
+                digits = "".join(c for c in Path(str(vis.get("FileName", ""))).stem if c.isdigit())
+                if digits:
+                    out.add(int(digits))
+            return out
+        try:
+            dt = self.selected_dt_tolerance()
+            selected = numbers(ODM.select_mapping_pairs(self.mission_folder, dt, self.selected_sample_every(),
+                                                        self.selected_overlap()))
+            eligible = numbers(ODM.select_mapping_pairs(self.mission_folder, dt, 1, None))
+        except (ODM.ODMMappingError, OSError, ValueError, TypeError, KeyError) as error:
+            print(f"Step 6 selection not computed: {error}")
+            return None
+        return selected, eligible
+
+    def update_map(self) -> None:
+        if self.map_model is None:
+            return
+        found = self.selection_numbers()
+        if found is None:
+            self._selected, self._eligible = set(), set()
+            self.map_model.set_selection([])
+            self.map_count.setText("The selection cannot be computed yet (Step 4 first).")
+            return
+        self._selected, self._eligible = found
+        indices = (self.map_model.index_of(n) for n in sorted(self._selected))
+        self.map_model.set_selection([i for i in indices if i is not None])
+        done = "developed" if self.visible_only else "aligned"
+        self.map_count.setText(
+            f"{len(self._selected)} images selected for the map, of {len(self._eligible)} {done} "
+            + ("and not flagged." if self.visible_only else
+               f"within |dt| ≤ {self.selected_dt_tolerance():.2f} s and not flagged."))
 
     def _update_selection_controls(self) -> None:
         """Enable only the controls of the selected criterion."""
