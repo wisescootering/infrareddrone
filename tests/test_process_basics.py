@@ -242,3 +242,22 @@ def test_multispectral_bands_are_written_uncompressed(tmp_path, monkeypatch):
         expected = (65535 * data[:, :, band].clip(0, 1)).astype(np.uint16)
         assert np.abs(written.astype(int) - expected.astype(int)).max() <= 1
         assert path.stat().st_size >= 40 * 60 * 2        # not compressed
+
+
+def test_ndvi_image_written_directly_is_the_one_of_the_image_pipe(tmp_path):
+    """automatic_registration.ndvi writes the file without the interactive pipe: same image."""
+    import cv2
+    import automatic_registration as AR
+    rng = np.random.default_rng(6)
+    vis = rng.random((60, 80, 3)).astype(np.float32)
+    nir = rng.random((60, 80, 3)).astype(np.float32)
+    direct, piped = tmp_path / "direct.jpg", tmp_path / "piped.jpg"
+    AR.ndvi(vis, nir, out_path=str(direct))
+    block = AR.VegetationIndex("NDVI", vrange=[(-1., 1., 0)], inputs=[1, 2], outputs=[0])
+    pipe = imagepipe.ImagePipe([vis, nir], sliders=[block], floatpipe=True)
+    pipe.floatColorBar(maxColorBar=1., minColorBar=-1, colorBar=AR.colorMapNDVI())
+    pipe.set(**{"NDVI": [AR.NDVI_ALPHA]})
+    pipe.save(str(piped))
+    a, b = cv2.imread(str(direct)).astype(int), cv2.imread(str(piped)).astype(int)
+    assert a.shape == b.shape == (60, 80, 3)
+    assert np.abs(a - b).max() <= 2 and np.abs(a - b).mean() < 0.05

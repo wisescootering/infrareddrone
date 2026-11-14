@@ -10,6 +10,7 @@ import os
 import sys
 import time
 from matplotlib.colors import LinearSegmentedColormap
+import matplotlib.pyplot as plt
 import interactive.imagepipe as ipipe
 import cv2
 import argparse
@@ -66,20 +67,38 @@ def colorMapNDVI():
     return myColorMap
 
 
+def vegetation_index(vis, nir, alpha):
+    """NDVI image in [-1, 1] from the visible (its red channel) and the aligned
+    infrared, both brought to the same mean; ``alpha`` weights the infrared."""
+    red = vis[:, :, 0]
+    nir_mono = np.mean(nir, axis=-1)
+    nir_mono *= 0.5/np.mean(nir_mono)  # @TODO: correctly expose the NIR channel
+    nir_mono = (1+alpha)*nir_mono*0.5/np.average(nir_mono)
+    red = red*0.5/np.average(red)
+    ndvi = ((nir_mono - red)/(nir_mono + red)) # @TODO: enhance final constrast here
+    return ndvi
+
+
 class VegetationIndex(ipipe.ProcessBlock):
     """
     """
     def apply(self, vis, nir, alpha, **kwargs):
-        red = vis[:, :, 0]
-        nir_mono = np.mean(nir, axis=-1)
-        nir_mono *= 0.5/np.mean(nir_mono)  # @TODO: correctly expose the NIR channel
-        nir_mono = (1+alpha)*nir_mono*0.5/np.average(nir_mono)
-        red = red*0.5/np.average(red)
-        ndvi = ((nir_mono - red)/(nir_mono + red)) # @TODO: enhance final constrast here
-        return ndvi
+        return vegetation_index(vis, nir, alpha)
+
+
+NDVI_ALPHA = -0.1
 
 
 def ndvi(vis_img, nir_img, out_path=None, exif=None, gps=None, image_in=None):
+    if out_path is not None:
+        # Written directly: the same index and the same colours as the image
+        # pipe below (kept for the window), without its float64 copies of the
+        # full resolution images.
+        plt.imsave(out_path, vegetation_index(vis_img, nir_img, NDVI_ALPHA),
+                   vmin=-1., vmax=1., cmap=colorMapNDVI())
+        if image_in is not None:
+            pr.copy_metadata(image_in, out_path)
+        return
     ndvi = VegetationIndex("NDVI", vrange=[(-1., 1., 0)], inputs=[1, 2], outputs=[0,], )
     ipi = ipipe.ImagePipe(
         [vis_img, nir_img],
@@ -87,22 +106,7 @@ def ndvi(vis_img, nir_img, out_path=None, exif=None, gps=None, image_in=None):
         floatpipe=True
     )
     ipi.floatColorBar(maxColorBar=1., minColorBar=-1, colorBar=colorMapNDVI())
-    if out_path is None:
-        ipi.gui()
-    else:
-        ipi.set(
-            **{
-                "NDVI":[-0.1],
-            }
-        )
-        # ipi.gui()
-        # try:
-            # todo: fix missing exif datas in ndvi file.  La ligne en dessous ne marche pas !!!
-        ipi.save(out_path)
-        if image_in is not None:
-            pr.copy_metadata(image_in, out_path)
-
-
+    ipi.gui()
 
 
 def vir(vis_img, nir_img, out_path=None, exif=None, gps=None, image_in=None):
