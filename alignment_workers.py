@@ -9,15 +9,15 @@ import os
 import psutil
 
 # Peak memory of one alignment worker measured on full-resolution DJI / SJCam
-# pairs: about 2.3 GB for Python (images in float32), or 1.8 GB for RawTherapee
+# pairs: 2.6 GB for Python (images in float32), or 1.8 GB for RawTherapee
 # while it converts an image for a worker that then holds about 0.6 GB.
 # Rounded up to keep a margin for the system.
 ALIGNMENT_WORKER_MEMORY_GB = 3.0
-# A manual redo (wizard review) is one alignment in its own process (2.4 GB
-# measured); with the "Debug" log detail it also writes every diagnostic image
-# at full resolution (4.4 GB measured). Running more redos than the RAM holds
-# gets them killed by the system, mid-write.
-REDO_WORKER_MEMORY_GB = 3.0
+# A manual redo (wizard review) is one alignment in its own process, with all
+# the threads of the computer (2.9 GB measured); with the "Debug" log detail it
+# also writes every diagnostic image at full resolution (4.4 GB measured).
+# Running more redos than the RAM holds gets them killed by the system, mid-write.
+REDO_WORKER_MEMORY_GB = 3.5
 REDO_DIAGNOSTICS_WORKER_MEMORY_GB = 5.0
 # concurrent.futures.ProcessPoolExecutor refuses more than 61 workers on Windows.
 MAX_WORKERS = 61 if os.name == "nt" else 1024
