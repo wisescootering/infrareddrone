@@ -68,6 +68,53 @@ class MissionsOnDiskTest(unittest.TestCase):
         self.assertEqual(texts, ["1 visible · 0 infrared images", "2 pairs", "2 aligned", "⚑ 1 flagged"])
 
 
+class VisibleOnlyMissionTest(unittest.TestCase):
+    """A visible only mission: Step 3 not needed, steps named for the visible images."""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+
+    def test_step3_is_skipped(self):
+        info = Home.read_mission(make_mission(self.root, "FLY-v", done=(1, 2), **{"mission type": "visible"}))
+        self.assertEqual(info.skipped, {3})
+        self.assertEqual(info.next_step(), 4)
+        info = Home.read_mission(make_mission(self.root, "FLY-w", done=(1, 2, 4, 5, 6), **{"mission type": "visible"}))
+        self.assertIsNone(info.next_step())
+        self.assertIn("1/6", Home.progress_dots({1: "x"}, info.skipped))
+        self.assertIn("○", Home.progress_dots({1: "x"}, info.skipped))
+        self.assertIn("1/7", Home.progress_dots({1: "x"}))
+
+    def test_rail_shows_step3_not_needed(self):
+        rail = Home.StepRail()
+        rail.show_progress({1: "2026-11-08T10:12:00", 2: "2026-11-08T10:12:00"}, 4, "visible")
+        self.assertEqual(rail.tiles[3].state, Home.TILE_SKIPPED)
+        self.assertEqual(rail.tiles[3].detail.text(), "Not needed")
+        self.assertEqual(rail.tiles[4].state, Home.TILE_NEXT)
+        self.assertEqual(rail.tiles[4].name.text(), "Develop")
+        rail.show_progress({1: "2026-11-08T10:12:00"}, 2)
+        self.assertEqual(rail.tiles[3].state, Home.TILE_TODO)
+        self.assertEqual(rail.tiles[4].name.text(), "Align")
+
+    def test_figures(self):
+        m = make_mission(self.root, "FLY-z", **{"mission type": "visible"})
+        (m / "AerialPhotography" / "VIS").mkdir(parents=True)
+        (m / "AerialPhotography" / "VIS" / "VIS_0001.dng").write_bytes(b"")
+        (m / "AerialPhotography" / "shoot_points.json").write_text(json.dumps({"shoot_points": [{}, {}]}))
+        (m / "ImgIRdrone").mkdir()
+        (m / "ImgIRdrone" / "shoot_points.json").write_text(json.dumps({"shoot_points": [{"failed": False}]}))
+        self.assertEqual([t for t, _ in Home.mission_figures(m)], ["1 visible images", "1 developed"])
+
+    def test_step1_guessed_done_without_infrared(self):
+        m = make_mission(self.root, "FLY-s", **{"mission type": "visible"})
+        (m / "AerialPhotography" / "VIS").mkdir(parents=True)
+        (m / "AerialPhotography" / "VIS" / "time_line.json").write_text("{}")
+        self.assertIn(1, Progress.done_steps(m))
+        multi = make_mission(self.root, "FLY-t")
+        (multi / "AerialPhotography" / "VIS").mkdir(parents=True)
+        (multi / "AerialPhotography" / "VIS" / "time_line.json").write_text("{}")
+        self.assertNotIn(1, Progress.done_steps(multi))     # its infrared is missing
+
+
 class MainWindowHomeTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -91,6 +138,19 @@ class MainWindowHomeTest(unittest.TestCase):
         with mock.patch.object(self.window, "on_pre_process_images") as step3:
             self.window.home.btn_continue.click()
         step3.assert_called_once_with()
+
+    def test_continue_jumps_over_step3_of_a_visible_only_mission(self):
+        m = make_mission(self.root, "FLY-20220125-1159-Blassac", done=(1, 2), **{"mission type": "visible"})
+        self.window.load_mission(m)
+        self.assertIn("Step 4", self.window.home.btn_continue.text())
+        with mock.patch.object(self.window, "on_process_images") as step4:
+            self.window.home.btn_continue.click()
+        step4.assert_called_once_with()
+        with mock.patch.object(self.main.QMessageBox, "information") as info, \
+                mock.patch.object(self.main, "DialogSynchroAruco") as step3:
+            self.window.open_step(3)
+        info.assert_called_once()
+        step3.assert_not_called()
 
     def test_created_mission_becomes_current(self):
         m = make_mission(self.root, "FLY-20220125-1159-Blassac", done=(1,))

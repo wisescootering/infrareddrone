@@ -95,6 +95,7 @@ import IRD_Interactive_help as Help
 import IRD_Interactive_look as Look
 from IRD_Interactive_workdir import MissionSizeLabel, WorkingDirBar, ensure_working_dir_at_startup
 import IRD_Interactive_progress as Progress
+import mission_type as MT
 
 
 class Main_Window(QMainWindow):
@@ -347,7 +348,10 @@ class Main_Window(QMainWindow):
             return
         Progress.mark_step_done(folderMissionPath, 2)
         if dialog.action == "step3":
-            self.on_pre_process_images()    # the user starts the synchronisation
+            if MT.is_visible(folderMissionPath):
+                self.on_process_images()        # visible only: no synchronisation, the development
+            else:
+                self.on_pre_process_images()    # the user starts the synchronisation
 
     def open_window_classic_selection(self):
         """
@@ -422,6 +426,12 @@ class Main_Window(QMainWindow):
         auto_run: start the detection and the time alignment right away ("Continue with Step 3").
         """
         if not self.ensure_mission_parameters():
+            return
+        if MT.is_visible(self.mission_parameters):
+            QMessageBox.information(
+                self, "Step 3 not needed",
+                "This is a visible only mission: there is no infrared camera to synchronise.\n\n"
+                "Step 4 develops the visible images of the survey.")
             return
 
         try:
