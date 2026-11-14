@@ -55,7 +55,12 @@ The ODM module performs these steps:
    `desktop-linux` engine responds before preparing inputs. If Docker is
    unavailable, the dialog asks the user to start Docker Desktop and offers to
    retry the check. It then runs the local image `opendronemap/odm:latest`
-   against the prepared dataset. The camera file is supplied using
+   (or `opendronemap/odm:gpu` with `--gpus all` when the NVIDIA GPU is chosen
+   and Docker can use it; otherwise it falls back to the CPU image) against
+   the prepared dataset. The image is pulled first if it is missing, or if the
+   user ticked the update offered by the selection dialog: the dialog compares
+   the local image digest with Docker Hub's `latest` tag and shows the installed
+   and newest ODM versions. The camera file is supplied using
    `mapping_MULTI/camera/camera_IRdrone.json`.
 10. Checks that the expected orthophoto exists, is georeferenced, and has
     Red, Green, Blue, and NIR bands before reporting success.

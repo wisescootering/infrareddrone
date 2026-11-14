@@ -1291,6 +1291,13 @@ En cliquant sur le bouton, une fenêtre de choix des critères s'ouvre. Une note
 
 À droite, comme à l'étape~4, la carte du vol montre les images retenues pour la carte, en vert avec leurs empreintes au sol (leur recouvrement se voit), les images éligibles écartées par la sélection en gris, et les autres en petits points. Elle est mise à jour dès qu'un réglage change ($|dt|$, recouvrement, $n$, choix) ; le compte sous la carte donne le nombre d'images retenues parmi les éligibles. Molette pour zoomer, glisser pour se déplacer, double-clic pour revoir tout le vol.
 
+\textbf{OpenDroneMap : version et GPU.} Sous les choix, le cadre \texttt{OpenDroneMap} indique, après une vérification de quelques secondes (Docker, Internet), la version d'ODM installée sur l'ordinateur et si une version plus récente a été publiée sur Docker Hub :
+\begin{itemize}
+	\item \texttt{Download the newer version before the map} : affichée seulement quand une version plus récente existe, décochée par défaut. Cochée, la dernière image d'ODM est téléchargée (\texttt{docker pull}, de quelques centaines de mégaoctets à quelques gigaoctets) avant le calcul. Une nouvelle version peut donner une carte un peu différente : elle n'est donc jamais installée sans qu'on le demande. Sans Internet, le cadre indique que la dernière version n'a pas pu être vérifiée et la version installée est utilisée.
+	\item \texttt{Use the NVIDIA GPU (faster image matching)} : disponible, et cochée, seulement quand l'ordinateur a une carte graphique NVIDIA \emph{et} que Docker peut la donner à un conteneur (le logiciel lance un conteneur de test avec \texttt{--gpus all}). ODM utilise alors sa version GPU (\texttt{opendronemap/odm:gpu}, environ 3\,Go téléchargés la première fois), qui détecte et apparie les points caractéristiques des images sur la carte graphique ; le reste du calcul est le même. Sinon la case est grisée et la raison est donnée (pas de carte NVIDIA ; sous Linux, le \emph{NVIDIA Container Toolkit} manque ; sous Windows, Docker Desktop doit utiliser WSL~2 avec un pilote NVIDIA récent) ; son info-bulle donne la réponse de Docker. Si le GPU n'est pas utilisable au lancement du calcul, ODM tourne sur le processeur et le journal le dit.
+\end{itemize}
+Le journal donne la version d'ODM utilisée, et si elle a tourné sur le GPU ou sur le processeur.
+
 
 Les images retenues (\emph{eligible images}) sont les shoot points qui vérifient simultanément :
 \begin{enumerate}
@@ -1303,7 +1310,7 @@ Parmi elles, le best mapping garde les images utiles à la carte (ou, avec l'aut
 \subsection{Lancement du calcul}
 \bouton{Build the map} lance le calcul sans autre question (la sélection est écrite dans le journal) :
 \begin{enumerate}
-	\item le logiciel vérifie que Docker Desktop est disponible. Sinon un message invite à le démarrer puis à choisir \texttt{Retry} ;
+	\item le logiciel vérifie que Docker Desktop est disponible. Sinon un message invite à le démarrer puis à choisir \texttt{Retry}. ODM est ensuite téléchargé s'il n'est pas encore sur l'ordinateur, ou mis à jour si on l'a demandé (voir plus haut) ;
 	\item la liste des images retenues est enregistrée dans \texttt{mapping\_MULTI\textbackslash img\_best\_mappping.json} ;
 	\item la résolution de l'orthophoto est estimée automatiquement : c'est la taille au sol d'un pixel (GSD, en cm) obtenue à partir de l'altitude de vol au-dessus du sol et de la focale de la caméra, médiane sur les images retenues, arrondie au dixième de cm supérieur ;
 	\item les images TIFF retenues sont rendues accessibles à ODM dans \texttt{mapping\_MULTI\textbackslash images} par des \emph{liens physiques} (hard links) : aucune image n'est copiée et l'espace disque n'est donc pas doublé. Si le disque ne gère pas les liens physiques (disque externe en exFAT ou FAT32, certains partages réseau), les images sont copiées, ce qui utilise davantage d'espace disque ; le journal l'indique ;
