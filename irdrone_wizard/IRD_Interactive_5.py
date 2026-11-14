@@ -46,6 +46,7 @@ from PyQt6.QtGui import (
 from PyQt6.QtCore import (
     Qt,
     QThreadPool,
+    QTimer,
     QObject,
     QRunnable,
     pyqtSignal,
@@ -82,6 +83,7 @@ matplotlib.use("Agg")  # Non-interactive backend. Essential here when using PyQt
 import IRD_Interactive_help as Help
 from IRD_Interactive_progress import mark_step_done, notifier
 import best_mapping
+import mission_type
 import IRD_Interactive_GeoRef as GeoRef
 from IRD_Interactive_contours import DEFAULT_GRID_STEP_M, generate_ortho_dtm
 import IRD_Interactive_look as Look
@@ -171,7 +173,11 @@ class ODMSelectionDialog(QDialog):
         settings = (ODM.selection_settings(Path(mission_folder)) if mission_folder
                     else {"dt_tolerance_s": 0.5, "sample_every": 3, "overlap": best_mapping.DEFAULT_OVERLAP})
 
-        layout = QVBoxLayout(self)
+        root = QVBoxLayout(self)
+        body = QHBoxLayout()              # the choices on the left, the map of the selection on the right
+        root.addLayout(body)
+        layout = QVBoxLayout()
+        body.addLayout(layout)
         criteria = QFormLayout()
         self.dt_tolerance = QDoubleSpinBox()
         self.dt_tolerance.setRange(0.05, 6.0)
@@ -181,12 +187,16 @@ class ODMSelectionDialog(QDialog):
         self.dt_tolerance.setSuffix(" s")
         criteria.addRow("Maximum |dt| (NIR rank 1):", self.dt_tolerance)
         layout.addLayout(criteria)
+        # visible only mission: no infrared, every image is synchronised
+        self.visible_only = bool(mission_folder) and mission_type.is_visible(Path(mission_folder))
+        criteria.setRowVisible(self.dt_tolerance, not self.visible_only)
 
         density_group = QGroupBox("Image density and overlap")
         density_layout = QVBoxLayout(density_group)
         self.overlap_radio = QRadioButton("Best mapping: select by image overlap (recommended)")
         self.sample_radio = QRadioButton("Select one image every n eligible images")
-        self.all_radio = QRadioButton("All the aligned images (every point of the review not flagged)")
+        self.all_radio = QRadioButton(
+            f"All the {'developed' if self.visible_only else 'aligned'} images (every point of the review not flagged)")
         self.all_radio.setToolTip(
             "Map every image Step 4 aligned and the review did not flag, whatever its time difference "
             "and the overlap: the most images, the longest mapping.")
@@ -231,14 +241,30 @@ class ODMSelectionDialog(QDialog):
         note.setStyleSheet(MESSAGE_STYLE)
         layout.addWidget(note)
         if mission_folder and ODM.previous_mapping_details(Path(mission_folder) / ODM.ODM_PROJECT_NAME):
-            kept = QLabel(f"A map is already built: it is kept, renamed {ODM.ODM_PROJECT_NAME}_<date of its run>, "
+            built = (Path(mission_folder) / ODM.ODM_PROJECT_NAME / ODM.ODM_RESULTS_FOLDER
+                     / "odm_orthophoto.tif").is_file()
+            kept = QLabel(f"{'A map is already built' if built else 'A previous run did not finish'}: "
+                          f"it is kept, renamed {ODM.ODM_PROJECT_NAME}_<date of its run>, "
                           "and the new one is built in its place (the previous one comes back if the new "
                           "one fails).")
             kept.setWordWrap(True)
             kept.setStyleSheet(MESSAGE_STYLE)
             layout.addWidget(kept)
             self.previous_map_note = kept
-        layout.addLayout(launch_buttons(
+        layout.addStretch()
+        self.map_model = None
+        self.map_view = self._build_map(Path(mission_folder)) if mission_folder else None
+        if self.map_view is not None:
+            right = QVBoxLayout()
+            right.addWidget(self.map_view, stretch=1)
+            self.map_count = QLabel("")
+            self.map_count.setWordWrap(True)
+            self.map_count.setStyleSheet(MESSAGE_STYLE)
+            right.addWidget(self.map_count)
+            body.addLayout(right, stretch=1)
+            self.setMinimumWidth(900)
+            Look.fit_to_screen(self, parent, max_w=1150, max_h=680)
+        root.addLayout(launch_buttons(
             self, "Build the map",
             "Start OpenDroneMap with these images; the terrain model and the contour lines follow.",
             "btn:step6_selection"))
@@ -252,6 +278,87 @@ class ODMSelectionDialog(QDialog):
         for radio in (self.sample_radio, self.all_radio):
             radio.toggled.connect(self._update_selection_controls)
         self._update_selection_controls()
+        if self.map_view is not None:
+            # the selection drawn again once the values stop changing (spin box held down)
+            self._map_timer = QTimer(self)
+            self._map_timer.setSingleShot(True)
+            self._map_timer.setInterval(150)
+            self._map_timer.timeout.connect(self.update_map)
+            for spin in (self.dt_tolerance, self.overlap, self.sample_every):
+                spin.valueChanged.connect(self._map_timer.start)
+            self.selection_group.buttonToggled.connect(lambda *_: self._map_timer.start())
+            self.update_map()
+
+    # ---- map: the flight, the images selected and their footprints, live
+    def _build_map(self, mission: Path):
+        """Map of the shoot points (None without positions): a help, never a blocker."""
+        try:
+            import IRD_Interactive_map as Map
+            from PyQt6.QtGui import QColor
+            self.mission_folder = mission
+            self._selected: set = set()
+            self._eligible: set = set()
+            kept, eligible, other = QColor(Look.SURVEY), QColor("#6B7785"), QColor("#C5CFDA")
+
+            def color_of(number):
+                return kept if number in self._selected else eligible if number in self._eligible else other
+            model = Map.map_model_for(mission, color_of=color_of, with_ortho=False,
+                                      shoot_points_only=True, parent=self)
+            if model is None or len(model.points) < 2:
+                return None
+            model.minor = lambda i: model.numbers[i] not in self._eligible
+            view = Map.FlightMapView(model, compact=True)
+        except Exception as error:
+            print(f"Step 6 selection map unavailable: {error}")
+            return None
+        self.map_model = model
+        view.setMinimumSize(320, 300)
+        view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        view.setToolTip(
+            f"The flight: in green the images selected for the map and their footprints (their overlap "
+            f"shows), in grey the {'developed' if self.visible_only else 'aligned'} images left out by "
+            "the selection, small dots for the others.\n"
+            "Wheel to zoom, drag to pan, double-click to see the whole flight.")
+        view.hovered.connect(model.set_hover)
+        view.picked.connect(model.set_current)
+        return view
+
+    def selection_numbers(self):
+        """(selected, eligible) image numbers with the current choices (None: unknown)."""
+        def numbers(selection):
+            out = set()
+            for _, vis, _, _ in selection["sampled_pairs"]:
+                digits = "".join(c for c in Path(str(vis.get("FileName", ""))).stem if c.isdigit())
+                if digits:
+                    out.add(int(digits))
+            return out
+        try:
+            dt = self.selected_dt_tolerance()
+            selected = numbers(ODM.select_mapping_pairs(self.mission_folder, dt, self.selected_sample_every(),
+                                                        self.selected_overlap()))
+            eligible = numbers(ODM.select_mapping_pairs(self.mission_folder, dt, 1, None))
+        except (ODM.ODMMappingError, OSError, ValueError, TypeError, KeyError) as error:
+            print(f"Step 6 selection not computed: {error}")
+            return None
+        return selected, eligible
+
+    def update_map(self) -> None:
+        if self.map_model is None:
+            return
+        found = self.selection_numbers()
+        if found is None:
+            self._selected, self._eligible = set(), set()
+            self.map_model.set_selection([])
+            self.map_count.setText("The selection cannot be computed yet (Step 4 first).")
+            return
+        self._selected, self._eligible = found
+        indices = (self.map_model.index_of(n) for n in sorted(self._selected))
+        self.map_model.set_selection([i for i in indices if i is not None])
+        done = "developed" if self.visible_only else "aligned"
+        self.map_count.setText(
+            f"{len(self._selected)} images selected for the map, of {len(self._eligible)} {done} "
+            + ("and not flagged." if self.visible_only else
+               f"within |dt| ≤ {self.selected_dt_tolerance():.2f} s and not flagged."))
 
     def _update_selection_controls(self) -> None:
         """Enable only the controls of the selected criterion."""
@@ -274,18 +381,19 @@ class ODMSelectionDialog(QDialog):
     def short_description(self) -> str:
         """The selection in a few words (under the stage)."""
         if self.all_radio.isChecked():
-            return "all the aligned images"
+            return f"all the {'developed' if self.visible_only else 'aligned'} images"
         overlap = self.selected_overlap()
         return f"overlap {overlap:.0%}" if overlap is not None else f"1 image in {self.sample_every.value()}"
 
     def description(self) -> str:
         """The selection in words (confirmation and log)."""
         if self.all_radio.isChecked():
-            return "all the aligned images not flagged (no time tolerance, no thinning)"
+            return (f"all the {'developed' if self.visible_only else 'aligned'} images not flagged "
+                    "(no time tolerance, no thinning)")
         overlap = self.selected_overlap()
         rule = (f"best mapping, {overlap:.0%} overlap between successive images" if overlap is not None
                 else f"one image every {self.sample_every.value()} eligible images")
-        return f"|dt| <= {self.dt_tolerance.value():.2f} s; {rule}"
+        return rule if self.visible_only else f"|dt| <= {self.dt_tolerance.value():.2f} s; {rule}"
 
 
 def launch_buttons(dialog: QDialog, action: str, action_tip: str, help_label: str) -> QHBoxLayout:
@@ -311,6 +419,18 @@ def launch_buttons(dialog: QDialog, action: str, action_tip: str, help_label: st
                         (dialog.btn_start, action_tip)):
         Help.attach_help(widget, help_label, tip, parent=dialog)
     return row
+
+
+def georef_message(visible_only: bool) -> str:
+    """What the image selection of Georeference images accepts, by mission type."""
+    if visible_only:
+        return ("Select one or more drone images (DJI DNG, e.g. AerialPhotography/VIS_0121.DNG).\n"
+                "A visible only mission georeferences the DNG only.")
+    return ("Select one or more images, all of the same type:\n"
+            "    - drone images: DJI DNG (e.g. VIS_0121.DNG)\n"
+            "    - multispectral images: groups of four TIFF\n"
+            "      e.g. IRD_0121_1.tif, IRD_0121_2.tif, IRD_0121_3.tif, IRD_0121_4.tif\n"
+            "      (ImgIRdrone/imgMultispectral): select all four.")
 
 
 class ODMPreviewSignals(QObject):
@@ -525,9 +645,11 @@ class DialogGeoRef(QDialog):
 
         for widget, label, tip in (
             (self.btn_run_GeoRef, "btn:step6_georef",
+             "Choose drone DNG images and georeference and orthorectify each one." if self._visible_only() else
              "Choose images (drone DNG, or IRD_XXXX_1..4.tif groups) and georeference and orthorectify each one."),
             (self.btn_run_Mapping, "btn:step6_mapping",
-             "Choose the images, then assemble them into one 4-band orthophoto with OpenDroneMap (Docker). "
+             f"Choose the images, then assemble them into one {3 if self._visible_only() else 4}-band orthophoto "
+             "with OpenDroneMap (Docker). "
              "The terrain model and the contour lines follow."),
             (self.btn_run_DTM, "btn:step6_dtm",
              "Build the terrain model and the contour lines over the orthophoto again, with another "
@@ -539,6 +661,9 @@ class DialogGeoRef(QDialog):
             Help.attach_help(widget, label, tip, parent=self)
 
         main_layout.addLayout(close_layout)
+
+    def _visible_only(self) -> bool:
+        return mission_type.is_visible(Path(self.folderMissionPath))
 
     def _orthophoto_path(self) -> Path:
         return Path(self.folderMissionPath) / "mapping_MULTI" / "mapping_result" / "odm_orthophoto.tif"
@@ -662,19 +787,7 @@ class DialogGeoRef(QDialog):
         """
         try:
             self.progress_bar.setValue(0)
-            QMessageBox.information(
-                self,
-                "GeoRef",
-                "Select one or more images.\n"
-                "Warning: all selected images must be of the same type.\n"
-                "Supported types:\n"
-                "    - DNG (DJI)\n"
-                "    - TIFF\n"
-                "    - Multispectral TIFF: groups of four images.\n"
-                "      Example: HYPERLAPSE_0121_1.tif, HYPERLAPSE_0121_2.tif, "
-                "               HYPERLAPSE_0121_3.tif, HYPERLAPSE_0121_4.tif\n"
-                "    In the latter case, select all four images."
-            )
+            QMessageBox.information(self, "Georeference images", georef_message(self._visible_only()))
             self.georef_results = []
             self.progress_label.setText("Geo Ref – running...")
             self._set_preview_text(

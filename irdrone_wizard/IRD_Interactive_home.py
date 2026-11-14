@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QPushButton, QSizePoli
 
 import IRD_Interactive_look as Look
 import IRD_Interactive_progress as Progress
+import mission_type as MT
 
 STEP_TITLES = {
     1: ("Mission", "Copy the images from the SD cards"),
@@ -51,6 +52,39 @@ STEP_TIPS = {
     7: "Archive the mission (cleans the mission folder).",
 }
 LAST_STEP = 7           # archiving, optional
+# Visible only mission (mission_type.VISIBLE): no infrared, Step 3 not needed,
+# the images are developed instead of aligned
+VISIBLE_STEP_TITLES = {
+    2: ("Flight timeline", "Check the survey phase"),
+    3: ("Synchronise", "Not needed: visible only mission"),
+    4: ("Develop", "Develop the visible images"),
+    5: ("Review", "Check the developed images"),
+}
+VISIBLE_WHAT_NEXT = {
+    2: "The survey phase is detected automatically: check it, then the images are developed.",
+    4: "Develop the visible images of the survey for the map.",
+    5: "Check every developed image on a time line, flag the bad ones (blurred, over-exposed…): "
+       "they are left out of the map.",
+}
+VISIBLE_STEP_TIPS = {
+    2: "Check the automatically detected survey phase.",
+    3: "Not needed for a visible only mission: there is no infrared camera to synchronise.",
+    4: "Develop the visible DNG images of the survey (colour, lens distortion) for the map.",
+    5: "Review the developed images: flag the bad ones, they are left out of the map.",
+}
+
+
+def step_title(step: int, kind: str = MT.MULTISPECTRAL) -> tuple:
+    """(name, what it does) of a step for a mission type."""
+    return (VISIBLE_STEP_TITLES.get(step) if kind == MT.VISIBLE else None) or STEP_TITLES[step]
+
+
+def what_next(step: int, kind: str = MT.MULTISPECTRAL) -> str:
+    return (VISIBLE_WHAT_NEXT.get(step) if kind == MT.VISIBLE else None) or WHAT_NEXT[step]
+
+
+def step_tip(step: int, kind: str = MT.MULTISPECTRAL) -> str:
+    return (VISIBLE_STEP_TIPS.get(step) if kind == MT.VISIBLE else None) or STEP_TIPS[step]
 
 
 # ---------------------------------------------------------------------------
@@ -66,9 +100,19 @@ class MissionInfo:
     def name(self) -> str:
         return self.folder.name
 
+    @property
+    def kind(self) -> str:
+        """mission_type.MULTISPECTRAL or VISIBLE."""
+        return MT.of_parameters(self.params)
+
+    @property
+    def skipped(self) -> frozenset:
+        """Steps this type of mission does not need (Step 3 of a visible only mission)."""
+        return MT.SKIPPED_STEPS[self.kind]
+
     def next_step(self) -> Optional[int]:
         """First step not done (Step 7, archiving, is optional: None once 1-6 are done)."""
-        return next((s for s in range(1, LAST_STEP) if s not in self.done), None)
+        return next((s for s in range(1, LAST_STEP) if s not in self.done and s not in self.skipped), None)
 
     def subtitle(self) -> str:
         bits = []
@@ -127,23 +171,25 @@ def recent_missions(working_dir: Path, limit: int = 6) -> List[MissionInfo]:
 def mission_figures(folder: Path) -> List[tuple]:
     """(text, colour) facts about the mission, read from its files."""
     folder = Path(folder)
+    visible = MT.is_visible(folder)
     out = []
     counts = []
-    for band in ("VIS", "NIR"):
+    for band in ("VIS",) if visible else ("VIS", "NIR"):
         try:
             n = sum(1 for p in (folder / "AerialPhotography" / band).iterdir() if p.suffix.lower() == ".dng")
         except OSError:
             n = 0
         counts.append(n)
     if any(counts):
-        out.append((f"{counts[0]} visible · {counts[1]} infrared images", Look.BLUE))
+        out.append((f"{counts[0]} visible images" if visible else
+                    f"{counts[0]} visible · {counts[1]} infrared images", Look.BLUE))
     pairs = _points(folder / "AerialPhotography" / "shoot_points.json")
-    if pairs is not None:
+    if pairs is not None and not visible:
         out.append((f"{len(pairs)} pairs", Look.SYNC))
     aligned = _points(folder / "ImgIRdrone" / "shoot_points.json")
     if aligned is not None:
         flagged = sum(1 for p in aligned if isinstance(p, dict) and p.get("failed"))
-        out.append((f"{len(aligned)} aligned", Look.SURVEY))
+        out.append((f"{len(aligned)} {'developed' if visible else 'aligned'}", Look.SURVEY))
         if flagged:
             out.append((f"⚑ {flagged} flagged", Look.NIR_ACCENT))
     if (folder / "mapping_MULTI" / "mapping_result" / "odm_orthophoto.tif").is_file():
@@ -213,7 +259,7 @@ class RecentRow(QPushButton):
         sub.setStyleSheet("color: #6B7785; background: transparent;")
         col.addWidget(name)
         col.addWidget(sub)
-        dots = QLabel(progress_dots(info.done))
+        dots = QLabel(progress_dots(info.done, info.skipped))
         dots.setTextFormat(Qt.TextFormat.RichText)
         dots.setToolTip(", ".join(f"Step {s} done" for s in sorted(info.done)) or "Nothing done yet")
         for w in (name, sub, dots):
@@ -224,19 +270,24 @@ class RecentRow(QPushButton):
         self.setToolTip(f"Open this mission\n{info.folder}")
 
 
-def progress_dots(done) -> str:
-    return "".join(f"<span style='color:{'#2E7D32' if s in done else '#C5CFDA'}; font-size: 12pt'>●</span>"
-                   for s in range(1, LAST_STEP + 1)) + "&nbsp;<span style='color:#6B7785'>" + \
-        (f"{len([s for s in done if s <= LAST_STEP])}/{LAST_STEP}" if done else "new") + "</span>"
+def progress_dots(done, skipped=frozenset()) -> str:
+    """One dot per step (a step not needed: hollow), then steps done / steps needed."""
+    steps = [s for s in range(1, LAST_STEP + 1)]
+    needed = [s for s in steps if s not in skipped]
+    return "".join(f"<span style='color:{'#C5CFDA' if s in skipped else '#2E7D32' if s in done else '#C5CFDA'};"
+                   f" font-size: 12pt'>{'○' if s in skipped else '●'}</span>"
+                   for s in steps) + "&nbsp;<span style='color:#6B7785'>" + \
+        (f"{len([s for s in done if s in needed])}/{len(needed)}" if done else "new") + "</span>"
 
 
-TILE_DONE, TILE_NEXT, TILE_TODO = "done", "next", "todo"
+TILE_DONE, TILE_NEXT, TILE_TODO, TILE_SKIPPED = "done", "next", "todo", "skipped"
 # Step 1 creates the mission: once done, its tile edits the mission details
 # (the SD cards are not read again)
 _TILE_LOOK = {   # background, border, badge background, badge text, title, detail, hover
     TILE_DONE: ("white", "#CFE3D0", "#2E7D32", "white", "#1F2933", "#2E7D32", "#F1F8F1"),
     TILE_NEXT: ("#EEF3F8", "#17365D", "#17365D", "white", "#17365D", "#17365D", "#E1EAF3"),
     TILE_TODO: ("white", "#E4E8EE", "#E4E8EE", "#6B7785", "#6B7785", "#A0AAB4", "#F5F7FA"),
+    TILE_SKIPPED: ("#F5F7FA", "#E4E8EE", "#F5F7FA", "#A0AAB4", "#A0AAB4", "#A0AAB4", "#F5F7FA"),
 }
 
 
@@ -246,6 +297,7 @@ class StepTile(QPushButton):
     def __init__(self, step: int, parent=None):
         super().__init__(parent)
         self.step = step
+        self.kind = MT.MULTISPECTRAL           # type of the mission shown: names and tool tips
         self.state = TILE_TODO
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -276,15 +328,16 @@ class StepTile(QPushButton):
         pad = 0 if state == TILE_NEXT else 1          # same outer size whatever the border
         self.setStyleSheet(f"StepTile {{ background: {bg}; border: {width}px solid {border}; border-radius: 8px;"
                            f" margin: {pad}px; }} StepTile:hover {{ background: {hover}; }}")
-        self.badge.setText("✓" if state == TILE_DONE else str(self.step))
+        self.name.setText(step_title(self.step, self.kind)[0])
+        self.badge.setText("✓" if state == TILE_DONE else "–" if state == TILE_SKIPPED else str(self.step))
         self.badge.setStyleSheet(f"background: {badge_bg}; color: {badge_fg}; border-radius: 13px;"
                                  " font-weight: bold;")
         self.name.setStyleSheet(f"color: {title}; font-weight: bold; background: transparent;")
         self.detail.setStyleSheet(f"color: {sub}; font-size: 8.5pt; background: transparent;")
         self.detail.setText(detail)
-        what = STEP_TIPS[self.step]
+        what = step_tip(self.step, self.kind)
         action = {TILE_DONE: "Done. Click to run it again.", TILE_NEXT: "Next step: click to start it.",
-                  TILE_TODO: "Click to open it."}[state]
+                  TILE_TODO: "Click to open it.", TILE_SKIPPED: "Nothing to do."}[state]
         if state == TILE_DONE and self.step == 1:
             what = "Mission created."
             action = ("Click to edit its details (description, pilot, cameras): the SD cards are not read again.\n"
@@ -314,9 +367,13 @@ class StepRail(QWidget):
             row.addWidget(tile, 1)
             self.tiles[s] = tile
 
-    def show_progress(self, done: Dict[int, str], nxt: Optional[int]):
+    def show_progress(self, done: Dict[int, str], nxt: Optional[int], kind: str = MT.MULTISPECTRAL):
+        """kind: type of the mission (mission_type): names of the steps, steps not needed."""
         for s, tile in self.tiles.items():
-            if s in done:
+            tile.kind = kind
+            if s in MT.SKIPPED_STEPS[kind]:
+                tile.set_state(TILE_SKIPPED, "Not needed")
+            elif s in done:
                 tile.set_state(TILE_DONE, "Done " + _short_date(done[s]) + (" · edit" if s == 1 else ""))
             elif s == nxt:
                 tile.set_state(TILE_NEXT, "Next")
@@ -563,7 +620,7 @@ class HomePage(QStackedWidget):
         self.m_title.setText(info.name)
         self.m_sub.setText(info.subtitle())
         nxt = info.next_step()
-        self.rail.show_progress(info.done, nxt)
+        self.rail.show_progress(info.done, nxt, info.kind)
         if nxt is None:
             self.next_title.setText("✓ Mission processed")
             self.next_text.setText("The orthophoto and the terrain model are in mapping_MULTI. "
@@ -573,9 +630,9 @@ class HomePage(QStackedWidget):
                                          "needed to process the mission again.\n(F1: help on this button)")
             self._next = LAST_STEP
         else:
-            name, what = STEP_TITLES[nxt]
+            name, what = step_title(nxt, info.kind)
             self.next_title.setText(f"Next: Step {nxt} · {what}")
-            self.next_text.setText(WHAT_NEXT[nxt])
+            self.next_text.setText(what_next(nxt, info.kind))
             self.btn_continue.setText(f"Continue with Step {nxt}  ▶")
             self.btn_continue.setToolTip(f"Open Step {nxt}: {what}."
                                          "\n(F1: help on this button)")

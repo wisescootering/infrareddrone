@@ -7,6 +7,7 @@ import re
 import json
 import sys
 import time
+from types import SimpleNamespace
 from utils.utils_IRdrone_Class import ShootPoint
 import automatic_registration
 from utils.utils_odm import create_odm_folder
@@ -16,6 +17,7 @@ from alignment_workers import worker_count_report
 
 sys.path.append(str(Path(__file__).resolve().parent / "irdrone_wizard"))
 import best_mapping  # noqa: E402
+import mission_type  # noqa: E402
 
 
 GEOREF_METADATA_KEYS = (
@@ -691,6 +693,110 @@ def run_postprocessing(
     )
 
 
+# ------------------------------------------------------------------------------------------------
+#  Visible only missions (mission_type.VISIBLE): the visible images are developed, not aligned
+# ------------------------------------------------------------------------------------------------
+def build_developed_shoot_points(
+    shoot_points_data: dict,
+    multispectral_folder: Path,
+    previous_inventory: dict = None,
+) -> dict:
+    """Step 4 inventory of a visible only mission: the shoot points whose three
+    bands (IRD_XXXX_{1,2,3}.tif) and side car are written. Same entries as the
+    multispectral inventory ({"FileName", "dt", "failed"}), dt 0: nothing to synchronise."""
+    bands = len(mission_type.BAND_NAMES[mission_type.VISIBLE])
+    previous_points = {}
+    for point in (previous_inventory or {}).get("shoot_points") or []:
+        if isinstance(point, dict) and isinstance(point.get("FileName"), str):
+            previous_points[Path(point["FileName"]).name.casefold()] = point
+    developed = []
+    for point in shoot_points_data.get("shoot_points", []):
+        vis_data = point.get("VIS") if isinstance(point, dict) else None
+        filename = vis_data.get("FileName") if isinstance(vis_data, dict) else None
+        match = VIS_FILENAME_PATTERN.fullmatch(Path(filename).name) if isinstance(filename, str) else None
+        if match is None:
+            continue
+        number = match.group(1)
+        required = [multispectral_folder / f"IRD_{number}_1.exif",
+                    *(multispectral_folder / f"IRD_{number}_{band}.tif" for band in range(1, bands + 1))]
+        if not all(path.is_file() for path in required):
+            continue
+        entry = dict(previous_points.get(Path(filename).name.casefold(), {}))
+        entry.update({"FileName": filename, "dt": 0.0, "failed": bool(entry.get("failed", False))})
+        developed.append(entry)
+    summary = {key: value for key, value in shoot_points_data.items() if key != "shoot_points"}
+    summary["shoot_points"] = developed
+    return summary
+
+
+def run_visible_postprocessing(
+    mission_folder: Path,
+    start_image_number: int = None,
+    end_image_number: int = None,
+    progress_callback=None,
+    max_workers: int = 1,
+    best_mapping_overlap: float = None,
+    image_numbers=None,
+):
+    """Step 4 of a visible only mission: develop the visible images of the range
+    (or the best mapping selection, or ``image_numbers``) for the review and the
+    map, then write ImgIRdrone/shoot_points.json."""
+    mission_folder = Path(mission_folder)
+    json_file = mission_folder / "AerialPhotography" / "shoot_points.json"
+    if not json_file.is_file():
+        raise FileNotFoundError(f"Visible shoot points not found (Step 2): {json_file}")
+    shoot_points = json.loads(json_file.read_text(encoding="utf-8"))
+    points = filter_shoot_points_by_image_number(
+        shoot_points["shoot_points"], start_image_number, end_image_number)
+    if image_numbers:
+        wanted = {int(n) for n in image_numbers}
+        points = [point for point in points if _vis_number(point["VIS"]) in wanted]
+    if best_mapping_overlap:
+        count = len(points)
+        overlap = best_mapping.clamp_overlap(best_mapping_overlap)
+        points = best_mapping.select_shoot_points(points, overlap, best_mapping.mission_fov(mission_folder))
+        print(f"Best mapping: retained {len(points)} of {count} shoot points "
+              f"({overlap:.0%} overlap between successive images).")
+    if not points:
+        raise ValueError("No visible image to develop in the selected range.")
+    out_dir = mission_folder / "ImgIRdrone"
+    multispectral_folder = out_dir / "imgMultispectral"
+    multispectral_folder.mkdir(parents=True, exist_ok=True)
+    create_odm_folder(mission_folder, multispectral_modality="MULTI",
+                      extra_options=["--skip-band-alignment"], create_images_directory=False)
+    if progress_callback is not None:
+        progress_callback(0, len(points), "")
+    by_name = {point["VIS"]["FileName"]: point for point in points}
+
+    def on_image_developed(current: int, total: int, vis_filename: str) -> None:
+        vis_data = by_name[vis_filename]["VIS"]
+        band_one = multispectral_folder / f"IRD_{Path(vis_filename).stem.removeprefix('VIS_')}_1.tif"
+        if not band_one.is_file():
+            raise FileNotFoundError(f"Expected band TIFF was not created: {band_one}")
+        print(f"Wrote georeferencing metadata: {write_multispectral_exif(band_one, vis_data)}")
+        if progress_callback is not None:
+            progress_callback(current, total, vis_filename)
+
+    altitudes = [SimpleNamespace(altGeo=point["VIS"].get("DroneAltitudeSeaLevel", 0.0),
+                                 altGround=point["VIS"].get("GroundAltitude", 0.0),
+                                 altTakeOff=point["VIS"].get("DroneAltitudeGround", 0.0))
+                 for point in points]
+    automatic_registration.develop_visible_images(
+        [image_path(point["VIS"], mission_folder, "VIS") for point in points],
+        out_dir, multispectral_folder, crop=CROP, listPts=altitudes, option_alti="sealevel",
+        progress_callback=on_image_developed, max_workers=max_workers)
+    inventory_path = out_dir / "shoot_points.json"
+    previous = None
+    if inventory_path.is_file():
+        previous = json.loads(inventory_path.read_text(encoding="utf-8-sig"))
+    summary = build_developed_shoot_points(shoot_points, multispectral_folder, previous)
+    temporary = inventory_path.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+    temporary.replace(inventory_path)
+    print(f"Wrote {len(summary['shoot_points'])} developed shoot points to {inventory_path}.")
+    return inventory_path
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Run post-processing after preprocessing."
@@ -776,6 +882,13 @@ if __name__ == "__main__":
         help="Console detail: warning (problems only), info (steps), debug (timings).",
     )
     parser.add_argument(
+        "--visible-only",
+        dest="visible_only",
+        action="store_true",
+        help="Visible only mission: develop the visible images (no infrared, no alignment). "
+             "Implied when the mission is a visible only mission.",
+    )
+    parser.add_argument(
         "--progress",
         action="store_true",
         help="Emit machine-readable progress updates for the interactive UI.",
@@ -812,6 +925,17 @@ if __name__ == "__main__":
         preprocessed_folder.exists()
     ), f"Mission folder does not exist: {preprocessed_folder}"
 
+    if args.visible_only or mission_type.is_visible(preprocessed_folder):
+        run_visible_postprocessing(
+            preprocessed_folder,
+            start_image_number=args.start_image_number,
+            end_image_number=args.end_image_number,
+            progress_callback=report_progress if args.progress else None,
+            max_workers=worker_count_setting,
+            best_mapping_overlap=args.best_mapping_overlap or None,
+            image_numbers=args.image_numbers,
+        )
+        sys.exit(0)
     run_postprocessing(
         preprocessed_folder,
         start_image_number=args.start_image_number,

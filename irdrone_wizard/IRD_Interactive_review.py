@@ -35,6 +35,7 @@ from PyQt6.QtWidgets import (QApplication, QButtonGroup, QDialog, QFrame, QHBoxL
 sys.path.append(str(Path(__file__).resolve().parent))
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 import shoot_review as R  # noqa: E402
+import mission_type  # noqa: E402
 import IRD_Interactive_map as MapV  # noqa: E402
 from IRD_Interactive_look import (BLUE, CURSOR, DANGER_STYLE, DIALOG_STYLE, GRID, MESSAGE_STYLE,  # noqa: E402
                                   MUTED, PANEL, PRIMARY_STYLE, PROGRESS_STYLE, SECONDARY_STYLE,
@@ -79,6 +80,18 @@ MODES = [  # (key, button text, tooltip)
     ("map", "Map", "Where the image was taken: the flight, the ground covered by the image, the orthophoto "
                    "of Step 6 when it is built and aerial photos (online, optional)."),
 ]
+# Visible only mission (mission_type.VISIBLE): the developed image alone, and the map
+VISIBLE_MODES = [
+    ("visible", "Image", "The developed visible image: check that it is sharp and well exposed; "
+                         "flag it otherwise (left out of the map)."),
+    MODES[-1],
+]
+VISIBLE_STATUS_TEXT = {
+    **STATUS_TEXT,
+    R.STATUS_OK: "Checked",
+    R.STATUS_UNKNOWN: "To check",
+    R.STATUS_MISSING: "No developed image",
+}
 MAX_VIEW_WIDTH = 3000     # the compare view works on copies at most this wide
 CACHE_POINTS = 4          # points whose images stay in memory (~70 MB each)
 LOAD_THREADS = 2          # images of the points prepared at once (each ~200 MB while decoding)
@@ -357,6 +370,9 @@ class CompareView(QWidget):
                     p.drawLine(QPointF(x + dx, grip.top() + 12), QPointF(x + dx, grip.bottom() - 12))
             self._tag(p, area, "◀ Visible", TAG_COLOR)
             self._tag(p, area, "Aligned infrared ▶", TAG_COLOR, right=True)
+        elif self.mode == "visible":         # visible only mission: the image alone
+            self._draw(p, areas[0], "vis")
+            self._tag(p, areas[0], "Visible", TAG_COLOR)
         elif self.mode == "blink":
             key = "nir" if self._blink_on else "vis"
             self._draw(p, areas[0], key)
@@ -518,10 +534,15 @@ class ReviewStrip(QWidget):
     STATUS_H = 8
     AXIS_H = 20
 
-    def __init__(self, review: R.Review, thumbs: Dict[int, QPixmap], parent=None):
+    def __init__(self, review: R.Review, thumbs: Dict[int, QPixmap], parent=None, visible_only: bool = False):
+        """visible_only: developed images of a visible only mission, no
+        misalignment chart (a thin band for the name of the selected point)."""
         super().__init__(parent)
         self.review = review
         self.thumbs = thumbs
+        self.visible_only = visible_only
+        if visible_only:
+            self.CHART_H = 22
         self.selected = 0
         self.hover: Optional[int] = None
         self._drag = None
@@ -581,7 +602,8 @@ class ReviewStrip(QWidget):
         chart, lane, status, axis = self.rows()
         p.save()
         p.setClipRect(QRectF(self.GUTTER, 0, self.plot_w(), self.height()))
-        self._paint_chart(p, chart)
+        if not self.visible_only:
+            self._paint_chart(p, chart)
         self._paint_lane(p, lane)
         self._paint_status(p, status)
         self._paint_cursor(p, chart, status)
@@ -595,17 +617,19 @@ class ReviewStrip(QWidget):
         p.setFont(f)
         al = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         p.setPen(MUTED)
-        p.drawText(QRectF(0, chart.top(), self.GUTTER - 10, 32), al | Qt.TextFlag.TextWordWrap,
-                   "Residual\nmisalignment")
-        y_ok = self._y_of(R.SHIFT_OK, chart)
-        y_bad = self._y_of(R.SHIFT_SUSPICIOUS, chart)
-        p.drawText(QRectF(0, y_ok - 8, self.GUTTER - 10, 16), al, f"{R.SHIFT_OK:g} px")
-        p.drawText(QRectF(0, y_bad - 8, self.GUTTER - 10, 16), al, f"{R.SHIFT_SUSPICIOUS:g} px")
+        if not self.visible_only:
+            p.drawText(QRectF(0, chart.top(), self.GUTTER - 10, 32), al | Qt.TextFlag.TextWordWrap,
+                       "Residual\nmisalignment")
+            y_ok = self._y_of(R.SHIFT_OK, chart)
+            y_bad = self._y_of(R.SHIFT_SUSPICIOUS, chart)
+            p.drawText(QRectF(0, y_ok - 8, self.GUTTER - 10, 16), al, f"{R.SHIFT_OK:g} px")
+            p.drawText(QRectF(0, y_bad - 8, self.GUTTER - 10, 16), al, f"{R.SHIFT_SUSPICIOUS:g} px")
         fb = QFont(f)
         fb.setBold(True)
         p.setFont(fb)
         p.setPen(TAG_COLOR)
-        p.drawText(QRectF(0, lane.top(), self.GUTTER - 10, lane.height()), al, "Aligned\nimages")
+        p.drawText(QRectF(0, lane.top(), self.GUTTER - 10, lane.height()), al,
+                   "Developed\nimages" if self.visible_only else "Aligned\nimages")
         p.setFont(self.font())
 
     CHART_MAX = 12.0
@@ -802,6 +826,11 @@ class ReviewDialog(QDialog):
         super().__init__(parent)
         self.mission = Path(mission)
         self.review = R.load_review(self.mission)   # FileNotFoundError: Step 4 not run
+        # visible only mission: developed images, nothing aligned, nothing to realign
+        self.visible_only = mission_type.is_visible(self.mission)
+        self.modes = VISIBLE_MODES if self.visible_only else MODES
+        self.status_text = VISIBLE_STATUS_TEXT if self.visible_only else STATUS_TEXT
+        self.what = "developed" if self.visible_only else "aligned"
         self.thumbs: Dict[int, QPixmap] = {}
         self._scans: List[ScanThread] = []
         self._cache: "OrderedDict[int, dict]" = OrderedDict()
@@ -815,7 +844,7 @@ class ReviewDialog(QDialog):
         self.index = 0
         self._hover_index: Optional[int] = None
         self._redo_errors: List[str] = []
-        self.setWindowTitle(step_window_title(5, "Review the aligned images", self.mission))
+        self.setWindowTitle(step_window_title(5, f"Review the {self.what} images", self.mission))
         self.continue_chosen = False          # "Continue with mapping": the main window opens Step 6
         self.setStyleSheet(DIALOG_STYLE)
         fit_to_screen(self, parent)
@@ -869,7 +898,7 @@ class ReviewDialog(QDialog):
         outer.setSpacing(8)
         head = QHBoxLayout()
         head.setSpacing(10)
-        title = QLabel("Review the aligned images")
+        title = QLabel(f"Review the {self.what} images")
         title.setStyleSheet(TITLE_STYLE)
         self.subtitle = QLabel()
         self.subtitle.setStyleSheet(SUBTITLE_STYLE)
@@ -887,6 +916,9 @@ class ReviewDialog(QDialog):
                             (R.STATUS_REALIGNED, "Realigned by hand: check the new image and confirm it "
                                                  "(skipped by Step 6 until then)."),
                             (R.STATUS_MISSING, "The alignment wrote no image for these points.")):
+            if self.visible_only:
+                tip = {R.STATUS_OK: "Looked at and kept for the map.",
+                       R.STATUS_MISSING: "The development wrote no image for these points."}.get(status, tip)
             c = chip(STATUS_COLORS[status], "", tip)
             self.chips[status] = c
             head.addWidget(c)
@@ -957,7 +989,7 @@ class ReviewDialog(QDialog):
         modes = QHBoxLayout()
         modes.setSpacing(4)
         self.mode_group = QButtonGroup(self)
-        for k, (key, text, tip) in enumerate(MODES):
+        for k, (key, text, tip) in enumerate(self.modes):
             b = QPushButton(f"{text}")
             b.setCheckable(True)
             b.setStyleSheet(SECONDARY_STYLE)
@@ -965,7 +997,8 @@ class ReviewDialog(QDialog):
             b.clicked.connect(lambda _=False, key=key: self.set_mode(key))
             self.mode_group.addButton(b, k)
             modes.addWidget(b)
-        self.mode_group.button([m[0] for m in MODES].index(DEFAULT_MODE)).setChecked(True)
+        default_mode = self.modes[0][0] if self.visible_only else DEFAULT_MODE
+        self.mode_group.button([m[0] for m in self.modes].index(default_mode)).setChecked(True)
         modes.addStretch(1)
         self.btn_open = QPushButton("Open full size")
         self.btn_open.setStyleSheet(SECONDARY_STYLE)
@@ -974,6 +1007,7 @@ class ReviewDialog(QDialog):
         modes.addWidget(self.btn_open)
         left.addLayout(modes)
         self.view = CompareView()
+        self.view.mode = default_mode
         self.view_stack = QStackedWidget()
         self.view_stack.addWidget(self.view)
         self.map_model = self._make_map_model()
@@ -986,8 +1020,8 @@ class ReviewDialog(QDialog):
             self.big_map.menu_requested.connect(self._map_menu)
             self.view_stack.addWidget(self.big_map)
         else:
-            self.mode_group.button(len(MODES) - 1).setEnabled(False)
-            self.mode_group.button(len(MODES) - 1).setToolTip("No GPS position in the shoot points: no map.")
+            self.mode_group.button(len(self.modes) - 1).setEnabled(False)
+            self.mode_group.button(len(self.modes) - 1).setToolTip("No GPS position in the shoot points: no map.")
         left.addWidget(self.view_stack, 1)
         body.addLayout(left, 1)
         # The side panel scrolls rather than set the window's minimum height: the
@@ -1003,7 +1037,7 @@ class ReviewDialog(QDialog):
         body.addWidget(side_scroll)
         outer.addLayout(body, 1)
 
-        self.strip = ReviewStrip(self.review, self.thumbs)
+        self.strip = ReviewStrip(self.review, self.thumbs, visible_only=self.visible_only)
         self.strip.setToolTip("Hover to preview · click to select · wheel to zoom · drag to pan · "
                               "double-click to see the whole survey")
         self.strip.hovered.connect(self._on_strip_hover)
@@ -1048,6 +1082,8 @@ class ReviewDialog(QDialog):
 
         try:
             import IRD_Interactive_help as Help
+            if self.btn_good is not None:
+                Help.attach_help(self.btn_good, "btn:review_decide", self.btn_good.toolTip(), parent=self)
             self.btn_close.setToolTip("Close the review. What you flagged and confirmed is already saved.")
             self.btn_prev.setToolTip("Previous point (key ←)")
             self.btn_next.setToolTip("Next point (key →)")
@@ -1067,7 +1103,7 @@ class ReviewDialog(QDialog):
                                   (self.btn_accept_all, "btn:review_redo"), (self.btn_stop_redo, "btn:review_redo")):
                 Help.attach_help(widget, label, widget.toolTip(), parent=self)
             for b in self.mode_group.buttons():
-                label = "btn:review_map" if b is self.mode_group.button(len(MODES) - 1) else "btn:review_compare"
+                label = "btn:review_map" if b is self.mode_group.button(len(self.modes) - 1) else "btn:review_compare"
                 Help.attach_help(b, label, b.toolTip(), parent=self)
             Help.attach_help(self.btn_help, "ch:review", "", parent=self)   # keeps the keys as tool tip
         except Exception as e:  # help is a convenience
@@ -1078,10 +1114,10 @@ class ReviewDialog(QDialog):
             b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         for seq, slot in (("Left", lambda: self.step(-1)), ("Right", lambda: self.step(+1)),
                           ("N", self.next_to_review), ("F", self.toggle_flag),
-                          ("1", lambda: self.set_mode("swipe")), ("2", lambda: self.set_mode("blink")),
-                          ("3", lambda: self.set_mode("overlay")), ("4", lambda: self.set_mode("side")),
-                          ("5", lambda: self.set_mode("map")), ("Y", self._confirm_key)):
+                          ("Y", self._confirm_key)):
             QShortcut(QKeySequence(seq), self, activated=slot)
+        for k, (key, _, _) in enumerate(self.modes):     # 1 swipe, 2 blink... (1 image, 2 map: visible only)
+            QShortcut(QKeySequence(str(k + 1)), self, activated=lambda key=key: self.set_mode(key))
 
     def _build_sidebar(self):
         side = QFrame()
@@ -1112,6 +1148,18 @@ class ReviewDialog(QDialog):
                                  "of the map (Step 6) until it is realigned by hand and confirmed. "
                                  "Leave it flagged if it cannot be recovered.")
         self.btn_flag.clicked.connect(self.toggle_flag)
+        # visible only mission: no misalignment to measure, the user says the image is good
+        # (a multispectral point measured aligned needs nothing: no such button)
+        self.btn_good = None
+        self.gauge.setVisible(not self.visible_only)
+        if self.visible_only:
+            self.btn_good = QPushButton("✓ Good: keep for the map   (Y)")
+            self.btn_good.setStyleSheet(PRIMARY_STYLE)
+            self.btn_good.setToolTip("The image is sharp and well exposed: checked, then the next one to review.")
+            self.btn_good.clicked.connect(self._confirm_key)
+            self.btn_flag.setToolTip("Flag this image (blurred, badly exposed, the ground hidden…): it is left "
+                                     "out of the map (Step 6). Flag it again to bring it back.")
+            lay.addWidget(self.btn_good)
         lay.addWidget(self.btn_flag)
         nav = QHBoxLayout()
         self.btn_prev = QPushButton("◀")
@@ -1156,13 +1204,14 @@ class ReviewDialog(QDialog):
         """[(colour, text, count)] of the legend under the mini map: only the
         kinds of points present."""
         counts = self.review.counts()
-        out = [(STATUS_COLORS[s], STATUS_TEXT[s], counts.get(s, 0)) for s in LEGEND_ORDER]
+        out = [(STATUS_COLORS[s], self.status_text[s], counts.get(s, 0)) for s in LEGEND_ORDER]
         if self.map_model is not None:
             aligning = self._aligning()
             reviewed = {p.number for p in self.review.points}
             outside = [n for n in self.map_model.numbers if n not in reviewed]
             out.append((ALIGNING_COLOR, "Being aligned", sum(1 for n in outside if n in aligning)))
-            out.append((NOT_ALIGNED_COLOR, "Not aligned (Step 4): right-click to align",
+            out.append((NOT_ALIGNED_COLOR, "Not developed (Step 4): right-click to develop" if self.visible_only
+                        else "Not aligned (Step 4): right-click to align",
                         sum(1 for n in outside if n not in aligning)))
         return [row for row in out if row[2]]
 
@@ -1358,7 +1407,7 @@ class ReviewDialog(QDialog):
         pt = self.review.points[index]
         self._update_wanted()
         self.view.set_status_color(STATUS_COLORS[pt.status])
-        self.view.caption = (f"{pt.stem}  ·  " + STATUS_TEXT[pt.status]
+        self.view.caption = (f"{pt.stem}  ·  " + self.status_text[pt.status]
                              + (f"  ·  {pt.vir_image.name}" if pt.vir_image is not None else ""))
         self._sync_busy()
         if pt.number in self._cache:
@@ -1391,7 +1440,9 @@ class ReviewDialog(QDialog):
 
     def set_mode(self, mode):
         self._user_moved = True
-        keys = [m[0] for m in MODES]
+        keys = [m[0] for m in self.modes]
+        if mode not in keys:
+            return
         if mode == "map":
             if self.big_map is None:
                 return
@@ -1464,7 +1515,7 @@ class ReviewDialog(QDialog):
         if here is None:
             return None
         dt = here["dt"]
-        detail = ("Not aligned by Step 4 · " +
+        detail = ("Not developed by Step 4" if self.visible_only else "Not aligned by Step 4 · " +
                   (f"infrared {dt:+.2f} s apart" if dt is not None else "no infrared image"))
         if number in self.point_aligner.running:
             return here["stem"], detail, "Being aligned…", False
@@ -1472,7 +1523,7 @@ class ReviewDialog(QDialog):
             return here["stem"], detail, "Queued: aligned after the current one", False
         if not here["alignable"]:
             return here["stem"], detail, f"Cannot be aligned (no infrared within {R.MAX_ALIGN_DT:g} s)", False
-        return here["stem"], detail, "Align this point", True
+        return here["stem"], detail, "Develop this point" if self.visible_only else "Align this point", True
 
     def map_menu(self, number):
         """The right-click menu of a map point (None: nothing to offer)."""
@@ -1586,7 +1637,7 @@ class ReviewDialog(QDialog):
             self.view.set_status_color(color)          # flagged / checked: the frame follows at once
         self.point_title.setText(pt.stem)
         self.point_status.setText(f"<span style='background:{color.name()}; color:white; border-radius:8px;'>"
-                                  f"&nbsp;{STATUS_TEXT[pt.status]}&nbsp;</span>"
+                                  f"&nbsp;{self.status_text[pt.status]}&nbsp;</span>"
                                   f"&nbsp;&nbsp;<span style='color:#6B7785'>{self.index + 1} / "
                                   f"{len(self.review.points)}</span>")
         self.gauge.set_value(pt.shift, pt.shift_worst)
@@ -1600,15 +1651,17 @@ class ReviewDialog(QDialog):
         if pt.motion and pt.motion.get("correction"):
             c = pt.motion["correction"]
             lines.append("Automatic correction: " + ", ".join(f"{k} {v:+.2f}°" for k, v in c.items() if abs(v) > 1e-6))
-        if pt.redo_script is None:
+        if pt.redo_script is None and not self.visible_only:
             lines.append("<span style='color:#B03A2E'>No REDO script: cannot be realigned by hand.</span>")
         self.point_info.setText("<br>".join(lines))
         self.btn_flag.setChecked(pt.failed)
+        if self.btn_good is not None:
+            self.btn_good.setEnabled(not pt.failed and not pt.checked)
         self.btn_flag.setText("⚑ Flagged: out of the map   (F)" if pt.failed else "⚑ Flag: leave out of the map   (F)")
-        self.btn_open.setEnabled(pt.vir_image is not None)
+        self.btn_open.setEnabled(self._full_size_image(pt) is not None)
         for b in (self.btn_flag, self.btn_prev, self.btn_next, self.btn_next_review):
             b.setEnabled(True)
-        self.view.caption = (f"{pt.stem}  ·  " + STATUS_TEXT[pt.status]
+        self.view.caption = (f"{pt.stem}  ·  " + self.status_text[pt.status]
                              + (f"  ·  {pt.vir_image.name}" if pt.vir_image is not None else ""))
         self.view.update()
 
@@ -1617,7 +1670,8 @@ class ReviewDialog(QDialog):
         counts = self.review.counts()
         ok = counts.get(R.STATUS_OK, 0)
         check = counts.get(R.STATUS_CHECK, 0) + counts.get(R.STATUS_UNKNOWN, 0)
-        set_chip(self.chips[R.STATUS_OK], f"✓ {ok} aligned" if ok else "", self.chips[R.STATUS_OK].toolTip())
+        set_chip(self.chips[R.STATUS_OK], f"✓ {ok} {'checked' if self.visible_only else 'aligned'}" if ok else "",
+                 self.chips[R.STATUS_OK].toolTip())
         set_chip(self.chips[R.STATUS_CHECK], f"? {check} to check" if check else "", self.chips[R.STATUS_CHECK].toolTip())
         sus = counts.get(R.STATUS_SUSPICIOUS, 0)
         set_chip(self.chips[R.STATUS_SUSPICIOUS], f"! {sus} probably misaligned" if sus else "",
@@ -1633,13 +1687,20 @@ class ReviewDialog(QDialog):
                  self.chips[R.STATUS_MISSING].toolTip())
         if not self.progress.isVisible():
             n = len(self.review.points)
-            self.subtitle.setText(
-                f"{n} shoot points. Check that the visible and infrared images overlap; "
-                "flag the misaligned ones, then realign them by hand." if n else
-                "No shoot point was aligned: run Step 4 first.")
+            if self.visible_only:
+                self.subtitle.setText(
+                    f"{n} developed images. Check that they are sharp and well exposed; "
+                    "flag the bad ones: they are left out of the map." if n else
+                    "No image was developed: run Step 4 first.")
+            else:
+                self.subtitle.setText(
+                    f"{n} shoot points. Check that the visible and infrared images overlap; "
+                    "flag the misaligned ones, then realign them by hand." if n else
+                    "No shoot point was aligned: run Step 4 first.")
         redoable = self._redoable()
         self.btn_redo.setText(f"Realign {len(redoable)} flagged by hand  ▶" if redoable else "Realign flagged by hand  ▶")
         self.btn_redo.setEnabled(bool(redoable))
+        self.btn_redo.setVisible(not self.visible_only)     # nothing to realign
         sus_points = [p for p in self.review.suspicious()]
         self.btn_flag_suspicious.setText(f"Flag the {len(sus_points)} probably misaligned" if sus_points
                                          else "Flag the probably misaligned")
@@ -1857,6 +1918,10 @@ class ReviewDialog(QDialog):
         pt = self.current()
         if pt is not None and pt.status == R.STATUS_REALIGNED:
             self._verdict(True)
+        elif pt is not None and self.visible_only and not pt.failed:
+            pt.checked = True                 # looked at: good for the map
+            self._after_change()
+            self.next_to_review()
 
     def _verdict(self, aligned: bool):
         pt = self.current()
@@ -1886,14 +1951,19 @@ class ReviewDialog(QDialog):
         self.subtitle.setText(f"{len(points)} realigned point(s) confirmed.")
 
     # ---- misc
+    def _full_size_image(self, pt) -> Optional[Path]:
+        """The image "Open full size" opens: the VIR image, the visible one of a visible only mission."""
+        return pt.vis_image if self.visible_only else pt.vir_image
+
     def _open_full_size(self):
         pt = self.current()
-        if pt is None or pt.vir_image is None:
+        image = self._full_size_image(pt) if pt is not None else None
+        if image is None:
             return
         try:
             import IRD_Interactive_help as Help
-            if not Help.open_with_default_app(pt.vir_image):
-                raise OSError(f"No application available to open {pt.vir_image}")
+            if not Help.open_with_default_app(image):
+                raise OSError(f"No application available to open {image}")
         except OSError as e:
             QMessageBox.warning(self, "Unable to open the image", str(e))
 

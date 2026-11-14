@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (QApplication, QDialog, QDoubleSpinBox, QFormLayout,
 
 import IRD_Interactive_look as Look
 import mission_setup as MS
+import mission_type as MT
 
 
 class MissionDetailsDialog(QDialog):
@@ -71,7 +72,8 @@ class MissionDetailsDialog(QDialog):
                          ("Pilot", self.f_pilot), ("Pilot ID", self.f_pilot_id)):
             fl.addRow(label, w)
         cl.addLayout(fl)
-        cams = QLabel("Cameras and filter")
+        visible_only = MT.is_visible(self.params)     # no infrared camera: its rows are hidden
+        cams = QLabel("Camera · visible only mission" if visible_only else "Cameras and filter")
         cams.setStyleSheet("font-weight: bold; color: #17365D; padding-top: 6px;")
         cl.addWidget(cams)
         grid = QGridLayout()
@@ -97,6 +99,10 @@ class MissionDetailsDialog(QDialog):
             grid.addWidget(a, r, 1)
             if b is not None:
                 grid.addWidget(b, r, 2)
+            if visible_only and label.startswith(("Infrared", "Filter")):
+                for w in (lab, a, b):
+                    if w is not None:
+                        w.hide()
         cl.addLayout(grid)
         lay.addWidget(card)
 

@@ -24,6 +24,9 @@
 * 🕹️ Testers: [Pépin Hugonnot](https://www.pepin-hugonnot.fr/vincent-hugonnot-florine-pepin-auvergne_fr.html) : Florine Pépin 
 
 ## Main features
+* two kinds of missions, chosen when the mission is created: **multispectral** (drone + infrared camera,
+  everything below) or **visible only** (drone DNG only: no synchronisation, the images are developed
+  and mapped in colour)
 * preprocess
   * synchronize the RGB DJI camera with the NIR camera using a "QR code"
   * best synchronized pairs: find the images pairs with lowest delay
@@ -110,6 +113,7 @@ With the environment activated (`source .venv/bin/activate`, or `.venv\Scripts\a
 python synchronization/synchro_by_aruco.py --folder FLY_test/Synchro/ --vis "*.DNG" --nir "*.RAW"
 python run.py --config FLY_test/config.json --clean-proxy --odm-multispectral --selection best-mapping
 python automatic_registration.py --images VISIBLE.DNG INFRARED.RAW --outdir aligned/  # a single pair
+python run_after_preprocessing.py -i FLY_test --visible-only  # visible only mission: develop the DNG (implied by the mission type)
 ```
 All the `run.py` options are described in *Details* below. `tests/cli_smoke.sh` checks these tools on the sample pair of `samples/`.
 

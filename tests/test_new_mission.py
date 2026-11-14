@@ -110,6 +110,38 @@ class ParametersTests(unittest.TestCase):
         self.assertEqual((form["pilot"], form["nir_timelapse"], form["filter_band"]), ("Florine", 4, 810))
 
 
+class VisibleOnlyParametersTests(unittest.TestCase):
+    def test_visible_only_mission_is_marked_multispectral_is_not(self):
+        import mission_type as MT
+        params = MS.build_mission_parameters(light(), {"location": "Blassac"}, Path("/work"), MT.VISIBLE)
+        self.assertEqual(set(params), CLASSIC_KEYS | {MT.KEY})
+        self.assertEqual(params[MT.KEY], MT.VISIBLE)
+        self.assertTrue(MT.is_visible(params))
+        multi = MS.build_mission_parameters(light(), {"location": "Blassac"}, Path("/work"), MT.MULTISPECTRAL)
+        self.assertNotIn(MT.KEY, multi)                  # missions created before: no key, multispectral
+        self.assertEqual(MT.of_parameters(multi), MT.MULTISPECTRAL)
+        with self.assertRaises(ValueError):
+            MS.build_mission_parameters(light(), {}, Path("/work"), "thermal")
+
+    def test_visible_only_tree_has_no_infrared_folders(self):
+        import mission_type as MT
+        tmp = Path(tempfile.mkdtemp())
+        params = MS.build_mission_parameters(light(str(tmp / "none.DNG")), {"location": "X"}, tmp / "w", MT.VISIBLE)
+        base = MS.create_mission(params)
+        self.assertTrue((base / "AerialPhotography" / "VIS").is_dir())
+        self.assertFalse((base / "AerialPhotography" / "NIR").exists())
+        self.assertFalse((base / "Synchro").exists())
+        self.assertEqual(MT.of_folder(base), MT.VISIBLE)
+        self.assertEqual(MT.skipped_steps(base), {3})
+        self.assertEqual(MT.band_names(base), ("red", "green", "blue"))
+        self.assertEqual(MT.of_folder(tmp / "missing"), MT.MULTISPECTRAL)
+
+    def test_copy_size_without_infrared(self):
+        vis = MS.FolderSummary(Path("."), size=10)
+        self.assertEqual(MS.copy_sizes(vis, None), 10)
+        self.assertEqual(MS.copy_sizes(vis, MS.FolderSummary(Path("."), size=5)), 15)
+
+
 class CreateMissionTests(unittest.TestCase):
     def test_tree_parameters_takeoff_and_transfer_info(self):
         tmp = Path(tempfile.mkdtemp())
@@ -147,7 +179,7 @@ class DialogTests(unittest.TestCase):
         (tmp / "card" / "DCIM").mkdir(parents=True)
         (tmp / "card" / "DCIM" / "HYPERLAPSE_0001.DNG").write_bytes(b"x")
         with mock.patch.object(NM, "mounted_volumes", return_value=[(str(tmp / "card"), "CARD")]):
-            d = NM.NewMissionDialog(tmp / "work", scan=False)
+            d = NM.NewMissionDialog(tmp / "work", scan=False, kind=NM.MT.MULTISPECTRAL)
             d.scan_cards()
         self.assertEqual(d.vis.count, 1)
         self.assertFalse(d.btn_next.isEnabled())       # no infrared yet
@@ -163,7 +195,7 @@ class DialogTests(unittest.TestCase):
         tmp = Path(tempfile.mkdtemp())
         card = tmp / "card"
         with mock.patch.object(NM, "mounted_volumes", return_value=[]):
-            d = NM.NewMissionDialog(tmp / "work", scan=True)
+            d = NM.NewMissionDialog(tmp / "work", scan=True, kind=NM.MT.MULTISPECTRAL)
             self.app.processEvents()                      # first scan: nothing
         self.assertTrue(d.card_poll.isActive())
         (card / "DCIM" / "SJ").mkdir(parents=True)
@@ -174,6 +206,34 @@ class DialogTests(unittest.TestCase):
         self.assertEqual((d.vis.count, d.nir.count), (1, 1))
         self.assertFalse(d.card_poll.isActive())          # both found: no more polling
         d.done(0)
+
+    def test_visible_only_needs_the_drone_card_only(self):
+        import IRD_Interactive_new_mission as NM
+        tmp = Path(tempfile.mkdtemp())
+        (tmp / "card" / "DCIM").mkdir(parents=True)
+        (tmp / "card" / "DCIM" / "HYPERLAPSE_0001.DNG").write_bytes(b"x")
+        with mock.patch.object(NM, "mounted_volumes", return_value=[(str(tmp / "card"), "CARD")]):
+            d = NM.NewMissionDialog(tmp / "work", scan=False, kind=NM.MT.MULTISPECTRAL)
+            d.scan_cards()
+            self.assertFalse(d.btn_next.isEnabled())       # multispectral: the infrared is missing
+            with mock.patch.object(NM, "save_kind_setting"):
+                d.kind_buttons[NM.MT.VISIBLE].click()
+        self.assertEqual(d.kind, NM.MT.VISIBLE)
+        self.assertTrue(d.btn_next.isEnabled())
+        self.assertTrue(d.card_nir.isHidden())
+        self.assertTrue(d.btn_classic.isHidden())          # the classic form is multispectral
+        self.assertTrue(all(w.isHidden() for w in d._infrared_rows))
+        d.kind_buttons[NM.MT.MULTISPECTRAL].click()
+        self.assertFalse(d.btn_next.isEnabled())
+        self.assertFalse(d.card_nir.isHidden())
+        d.done(0)
+
+    def test_visible_only_copy_stages(self):
+        import IRD_Interactive_new_mission as NM
+        copy = NM.MissionCopy({"File path mission": "/work/FLY"}, Path("/card"), None)
+        self.assertEqual(copy.stages, ["Copy visible", "Read visible EXIF", "Ground altitude"])
+        self.assertEqual(NM.MissionCopy({"File path mission": "/work/FLY"}, Path("/card"), Path("/sj")).stages,
+                         NM.COPY_STAGES)
 
     def test_previews_take_off_and_in_flight(self):
         s = MS.summarize(Path(tempfile.mkdtemp()), [".raw"])
@@ -232,6 +292,23 @@ class MissionDetailsTest(unittest.TestCase):
         d.btn_close.click()
         self.assertIn("Description", d.changed)
         self.assertEqual(MS.read_mission_parameters(self.folder)["Description"], "Plot 12")
+
+    def test_visible_only_mission_hides_the_infrared(self):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PyQt6.QtWidgets import QApplication
+        QApplication.instance() or QApplication([])
+        import IRD_Interactive_mission_details as D
+        self.params["mission type"] = "visible"
+        MS.mission_parameters_path(self.folder).write_text(json.dumps(self.params))
+        d = D.MissionDetailsDialog(self.folder)
+        for w in (d.f_nir_maker, d.f_nir_model, d.f_nir_timelapse, d.f_filter_band):
+            self.assertTrue(w.isHidden())
+        self.assertFalse(d.f_vis_timelapse.isHidden())
+        d.f_description.setText("Plot 12")
+        d.btn_close.click()
+        saved = MS.read_mission_parameters(self.folder)
+        self.assertEqual(saved["mission type"], "visible")         # kept
+        self.assertNotIn("camera NIR maker", saved)                 # hidden: not written
 
     def test_dialog_reset_then_close_writes_nothing(self):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

@@ -23,6 +23,7 @@ from rasterio.enums import Resampling
 
 from IRD_Interactive_diskspace import is_disk_full, raise_if_disk_full
 import best_mapping
+import mission_type
 
 
 MANIFEST_NAME = "img_best_mappping.json"
@@ -34,7 +35,8 @@ ODM_IMAGE = "opendronemap/odm:latest"
 # Override with environment variable IRDRONE_DOCKER_CONTEXT.
 ODM_CONTEXT = "desktop-linux"
 ODM_MAX_CONCURRENCY = 4
-BAND_NAMES = ("red", "green", "blue", "nir")
+BAND_NAMES = mission_type.BAND_NAMES[mission_type.MULTISPECTRAL]   # ("red", "green", "blue", "nir")
+# a visible only mission maps three bands: mission_type.band_names(mission)
 VIS_FILENAME_PATTERN = re.compile(r"^VIS_(\d+)\.dng$", re.IGNORECASE)
 ODM_RESULT_FILES = {
     "orthophoto": Path("odm_orthophoto") / "odm_orthophoto.tif",
@@ -174,7 +176,7 @@ def _image_number(filename: str, shoot_point_index: int) -> str:
 
 
 def _validate_quartet(paths: Dict[str, Path]) -> Tuple[bool, Optional[List[int]], List[str]]:
-    """Check that all four source TIFFs are readable single-band images of equal size."""
+    """Check that the source TIFFs (one per band) are readable single-band images of equal size."""
     errors: List[str] = []
     missing = [str(path) for path in paths.values() if not path.is_file()]
     if missing:
@@ -423,24 +425,26 @@ def build_odm_command(
     ]
 
 
-def _validate_odm_outputs(orthophoto_path: Path) -> Dict[str, Any]:
-    """Validate that ODM produced a readable, georeferenced four-band orthophoto."""
+def _validate_odm_outputs(orthophoto_path: Path, band_names=BAND_NAMES) -> Dict[str, Any]:
+    """Validate that ODM produced a readable, georeferenced orthophoto with the
+    bands of the mission (four, or three for a visible only mission)."""
     if not orthophoto_path.is_file():
         raise ODMMappingError(f"ODM completed without producing {orthophoto_path}")
     try:
         with rasterio.open(orthophoto_path) as dataset:
-            if dataset.count < 4:
+            count = len(band_names)
+            if dataset.count < count:
                 raise ODMMappingError(
-                    f"ODM orthophoto contains {dataset.count} bands; at least four are required."
+                    f"ODM orthophoto contains {dataset.count} bands; at least {count} are required."
                 )
-            expected_descriptions = ("red", "green", "blue", "nir")
+            expected_descriptions = tuple(band_names)
             actual_descriptions = tuple(
-                (description or "").casefold() for description in dataset.descriptions[:4]
+                (description or "").casefold() for description in dataset.descriptions[:count]
             )
             if actual_descriptions != expected_descriptions:
                 raise ODMMappingError(
                     "ODM orthophoto band descriptions are unexpected: "
-                    f"{dataset.descriptions[:4]}"
+                    f"{dataset.descriptions[:count]}"
                 )
             if dataset.crs is None:
                 raise ODMMappingError("ODM orthophoto has no coordinate reference system.")
@@ -818,6 +822,7 @@ def build_best_mapping(
     camera_data = _load_json(camera_path)
     if not isinstance(camera_data, dict) or not camera_data:
         raise ODMMappingError(f"{camera_path} must contain a non-empty camera configuration object.")
+    band_names = mission_type.band_names(mission_folder)
     shoot_point_records: List[Dict[str, Any]] = []
     image_quartets: List[Dict[str, Any]] = []
     for selection_index, (shoot_point_index, vis_data, nir_match, dt) in enumerate(sampled_pairs):
@@ -825,7 +830,7 @@ def build_best_mapping(
         image_number = _image_number(vis_filename, shoot_point_index)
         band_paths = {
             band_name: (images_folder / f"IRD_{image_number}_{band_index}.tif").resolve()
-            for band_index, band_name in enumerate(BAND_NAMES, start=1)
+            for band_index, band_name in enumerate(band_names, start=1)
         }
         ready, dimensions, errors = _validate_quartet(band_paths)
         record = {
@@ -870,7 +875,7 @@ def build_best_mapping(
             "sample_every_nth_eligible_pair": sample_every if overlap is None else None,
             "footprint_overlap": overlap,
             "sample_offset": 0,
-            "band_order": list(BAND_NAMES),
+            "band_order": list(band_names),
         },
         "source_files": {
             "shoot_points": str(shoot_points_path),
@@ -971,12 +976,13 @@ def prepare_odm_input(
             f"and camera calibration:\n{detail}"
         )
 
+    band_names = mission_type.band_names(mission_folder)
     expected_images: List[Tuple[str, Path]] = []
     for quartet in quartets:
         files = quartet.get("files") if isinstance(quartet, dict) else None
-        if not isinstance(files, dict) or set(files) != set(BAND_NAMES):
-            raise ODMMappingError("A selected image quartet does not define all four bands.")
-        for band_name in BAND_NAMES:
+        if not isinstance(files, dict) or set(files) != set(band_names):
+            raise ODMMappingError(f"A selected image set does not define all {len(band_names)} bands.")
+        for band_name in band_names:
             source = Path(files[band_name]).resolve()
             if not source.is_file():
                 raise ODMMappingError(f"Selected TIFF was not found: {source}")
@@ -1063,11 +1069,19 @@ def previous_mapping_details(mapping_folder: Path) -> List[str]:
     ]
     result_folder = Path(mapping_folder) / ODM_RESULTS_FOLDER
     existing_archives = [path.name for path in result_folder.iterdir()] if result_folder.is_dir() else []
+    # an unfinished run (stopped, failed without a previous map): its input images and its log
+    images_folder = Path(mapping_folder) / "images"
+    input_images = images_folder.is_dir() and any(images_folder.iterdir())
+    run_logs = sorted(path.name for path in Path(mapping_folder).glob("odm_run_*.log"))
     details = []
     if existing_odm_outputs:
         details.append(f"ODM outputs: {', '.join(existing_odm_outputs)}")
     if existing_archives:
         details.append(f"archived results: {', '.join(existing_archives)}")
+    if input_images:
+        details.append("ODM input images")
+    if run_logs:
+        details.append(f"ODM logs: {', '.join(run_logs)}")
     return details
 
 
@@ -1452,7 +1466,7 @@ def _run_odm_in(mission_folder, mapping_folder, manifest_path, worker_log, stage
 
     worker_log(
         f"Running ODM on {counts['ready_for_odm']} image quartets "
-        f"({counts['ready_for_odm'] * len(BAND_NAMES)} TIFFs)."
+        f"({counts['ready_for_odm'] * len(mission_type.band_names(mission_folder))} TIFFs)."
     )
     worker_log(f"Orthophoto resolution: {resolution_cm:.1f} cm/pixel.")
     worker_log(f"ODM command: {subprocess.list2cmdline(command)}")
@@ -1505,7 +1519,7 @@ def _run_odm_in(mission_folder, mapping_folder, manifest_path, worker_log, stage
                 f"ODM exited with code {return_code}. Review the complete log: {log_path}"
             )
         stage("Validating ODM orthophoto")
-        output = _validate_odm_outputs(orthophoto_path)
+        output = _validate_odm_outputs(orthophoto_path, mission_type.band_names(mission_folder))
         stage("Archiving selected ODM results")
         copied_results = _copy_mapping_results(mapping_folder)
         try:

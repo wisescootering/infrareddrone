@@ -482,6 +482,14 @@ On the page of the list of missions, the bottom bar shows the working folder (th
 \section{The ``New mission'' window}\label{sec:step1_new_mission}
 Step~1 creates the mission folder and stores the flight images in it. It is opened with \bouton{New mission} in the main window and takes place in a single window, in three pages: \textbf{Images}, \textbf{Mission}, \textbf{Copy}. The progress is shown at the top of the window. The SD cards are only read: nothing is written to or deleted from them.
 
+\subsection{Mission type: multispectral or visible only}\label{btn:step1_mission_type}
+The top of the ``Images'' page chooses the type of the mission (the last one chosen is proposed):
+\begin{itemize}
+	\item \bouton{Multispectral (visible + infrared)}: the drone (visible, DNG) and the infrared camera (SJCam, RAW). Everything described in this manual: synchronisation, alignment, map in four bands (red, green, blue, NIR), VIR and NDVI;
+	\item \bouton{Visible only (drone DNG)}: the drone images only, without the infrared camera. The infrared card disappears, the copy only takes the visible images, and the next steps adapt (Section~\ref{sec:visible_only}): survey phase only in Step~2, no Step~3, the images are \emph{developed} in Step~4 instead of aligned, the map of Step~6 is in colour (red, green, blue).
+\end{itemize}
+The type cannot be changed once the mission is created.
+
 \subsection{``Images'' page}\label{btn:step1_images}
 The inserted SD cards are scanned (any volume that contains a \texttt{DCIM} folder); they hold the visible images (drone DNG) and the infrared images (SJCam RAW), Figure~\ref{fig:step1_new_mission_images}. Each camera has its card:
 \begin{itemize}
@@ -1229,6 +1237,8 @@ A message recalls the accepted image types, then a file selection window opens. 
 	\item multispectral TIFF images in \textbf{groups of four}: \texttt{IRD\_XXXX\_1.tif} to \texttt{IRD\_XXXX\_4.tif} (red, green, blue, near infrared). All four files must be selected; an incomplete group is rejected with a warning.
 \end{itemize}
 
+In a visible only mission, the message and the file selection window offer the DJI DNG images only.
+
 \subsection*{Georeferencing offsets}
 Once the images are chosen, a window asks for three corrections, all equal to \textbf{0} by default:
 \begin{itemize}
@@ -1279,6 +1289,9 @@ Clicking the button opens a window for choosing the criteria. A note at the bott
 \end{itemize}
 
 \figureIRD{step5_odm_selection.png}{Window of the image selection criteria for the mapping.}{0.4}
+
+On the right, as in Step~4, the flight map shows the images selected for the map, in green with their ground footprints (their overlap shows), the eligible images left out by the selection in grey, and the others as small dots. It is updated as soon as a setting changes ($|dt|$, overlap, $n$, choice); the count below the map gives the number of images selected among the eligible ones. Wheel to zoom, drag to pan, double-click to see the whole flight again.
+
 
 The selected images (\emph{eligible images}) are the shoot points that satisfy all of the following:
 \begin{enumerate}
@@ -1460,6 +1473,20 @@ Archiving should only be run at the very end of the study. Note that the origina
 
 \section{\bouton{Close} button}\label{btn:step7_close}
 Closes the window and returns to the main dialog. The \bouton{?} button opens this help at the page of this chapter.
+
+%==========================================================
+\chapter{Visible only missions}\label{ch:visible_only}
+\section{Without the infrared camera}\label{sec:visible_only}
+A mission can be flown with the drone camera only, without the SJCam: the type \bouton{Visible only (drone DNG)} is chosen at the top of the first page of Step~1 (Section~\ref{btn:step1_mission_type}). It is stored in the mission (\texttt{"mission type": "visible"} in \texttt{FlightAnalytics/mission\_parameters.json}; the missions without this key are multispectral). The steps are the same, minus what concerns the infrared:
+\begin{itemize}
+	\item \textbf{Step 1}: only the SD card of the drone is needed; the copy has three stages (copy, EXIF, ground altitude). The mission folder has no \texttt{AerialPhotography/NIR} folder (\texttt{Synchro} only holds the thumbnails of the time line of Step~2).
+	\item \textbf{Step 2}: the time line shows the visible images only; there is no rotating target to look for and no synchronisation phase: only the survey phase is checked. The best mapping works as for a multispectral mission. \bouton{Continue with development} saves the survey and the visible shoot points (\texttt{AerialPhotography/shoot\_points.json}, one point per visible image, without infrared) and opens Step~4.
+	\item \textbf{Step 3} is not needed: its tile reads ``Not needed'' and \bouton{Continue} goes straight from Step~2 to Step~4.
+	\item \textbf{Step 4} (``Develop'') develops the visible DNG images of the survey (or the best mapping selection): colour, correction of the lens distortion and the same crop as the multispectral images, so that the camera model of OpenDroneMap is the same. Each image gives \texttt{ImgIRdrone/VIS\_XXXX.jpg} (review) and the three bands \texttt{ImgIRdrone/imgMultispectral/IRD\_XXXX\_1..3.tif} (red, green, blue) for the map.
+	\item \textbf{Step 5}: the review shows the developed visible images; there is nothing to realign. \bouton{Good: keep for the map} (key \texttt{Y}) marks the image checked and shows the next one to check; a blurred or badly exposed image is flagged (key \texttt{F}): it is left out of the map. The points that Step~4 did not develop (grey on the map) are developed with a right-click on the map.
+	\item \textbf{Step 6}: OpenDroneMap builds a three band orthophoto (red, green, blue) instead of four. There is no infrared false colour layer, no VIR nor NDVI; the terrain model is computed as usual.
+	\item \textbf{Step 7}: the archive keeps the same files, without the infrared ones.
+\end{itemize}
 
 %==========================================================
 \appendix
