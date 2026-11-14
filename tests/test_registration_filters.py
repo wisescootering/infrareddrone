@@ -104,3 +104,20 @@ def test_vector_field_maps_as_the_spline_evaluated_everywhere(blocks, padding):
         expected_y = y[:, np.newaxis] + bisplev(x, y, bisplrep(centers_x, centers_y, -field[:, :, 1].ravel(), kx=1, ky=1, s=0.)).T
     np.testing.assert_allclose(map_x, expected_x, atol=2e-4)
     np.testing.assert_allclose(map_y, expected_y, atol=2e-4)
+
+
+@pytest.mark.parametrize("with_field", [True, False])
+def test_warp_of_a_crop_is_the_crop_of_the_warp(with_field):
+    from registration.warp_flow import warp
+    rng = np.random.default_rng(5)
+    image = rng.random((120, 160, 3), dtype=np.float32)
+    calibration = {"mtx": np.array([[150., 0., 80.], [0., 150., 60.], [0., 0., 1.]]),
+                   "dist": np.array([-0.1, 0.02, 0., 0., 0.])}
+    homography = np.array([[1.01, 0.01, 20.], [-0.01, 0.99, 15.], [1e-5, 0., 1.]])
+    field = rng.normal(0, 2, (5, 5, 2)) if with_field else None
+    padding = (20, 15) if with_field else None
+    whole = warp(image, calibration, homography, outsize=(200, 150), vector_field=field, padding=padding)
+    part = warp(image, calibration, homography, outsize=(200, 150), vector_field=field, padding=padding,
+                crop=(20, 15, 160, 120))
+    assert part.shape == (120, 160, 3)
+    np.testing.assert_array_equal(part, whole[15:135, 20:180])

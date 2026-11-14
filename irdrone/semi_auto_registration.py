@@ -62,14 +62,12 @@ def manual_warp(ref: pr.Image, mov: pr.Image, yaw_main: float, pitch_main: float
         else:
             padding = None
         h = np.dot(translation_mat, h)
-        mov_u = warp(mov, mov_calib, h, outsize=(new_out_size[0], new_out_size[1]),
-                     vector_field=vector_field, padding=padding)
+        # Local warp: computed on the padded size, only its central part (the reference size) is kept
+        crop = None
         if vector_field is not None:
-            mov_u = mov_u[
-                    int(translation_mat[1, 2]): int(translation_mat[1, 2])+outsize[1],
-                    int(translation_mat[0, 2]): int(translation_mat[0, 2])+outsize[0],
-                    :
-            ]
+            crop = (int(translation_mat[0, 2]), int(translation_mat[1, 2]), outsize[0], outsize[1])
+        mov_u = warp(mov, mov_calib, h, outsize=(new_out_size[0], new_out_size[1]),
+                     vector_field=vector_field, padding=padding, crop=crop)
     else:
         mov_u = warp(mov, mov_calib, h, outsize=(ref.data.shape[1], ref.data.shape[0]), vector_field=vector_field)
     return mov_u
