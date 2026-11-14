@@ -194,6 +194,27 @@ class MetadataBatchTests(unittest.TestCase):
             pr._run_exiftool(["exiftool", "d.jpg"])  # outside a batch: at once
             run.assert_called_once_with(["exiftool", "d.jpg"])
 
+    def test_the_same_metadata_for_several_images_is_one_command(self):
+        """The copies from the DNG to the images of a point only differ by the
+        image written: ExifTool reads the DNG once; the other commands follow in order."""
+        from unittest import mock
+        import irdrone.process as pr
+        with mock.patch.object(pr.subprocess, "run") as run:
+            with pr.metadata_batch():
+                pr._run_exiftool(["exiftool", "-TagsFromFile", "a.dng", "-Make=x", "1.tif", "-fast"], destination="1.tif")
+                pr._run_exiftool(["exiftool", "-config", "c", "-Band=Red", "1.tif"])
+                pr._run_exiftool(["exiftool", "-TagsFromFile", "a.dng", "-Make=x", "2.tif", "-fast"], destination="2.tif")
+                pr._run_exiftool(["exiftool", "-config", "c", "-Band=Green", "2.tif"])
+                pr._run_exiftool(["exiftool", "-TagsFromFile", "a.dng", "-Make=x", "vis.jpg", "-fast"], destination="vis.jpg")
+                pr._run_exiftool(["exiftool", "-TagsFromFile", "b.dng", "-Make=x", "other.jpg", "-fast"], destination="other.jpg")
+            run.assert_called_once_with([
+                "exiftool", "-config", "c",
+                "-TagsFromFile", "a.dng", "-Make=x", "1.tif", "2.tif", "vis.jpg", "-fast", "-execute",
+                "-Band=Red", "1.tif", "-execute",
+                "-Band=Green", "2.tif", "-execute",
+                "-TagsFromFile", "b.dng", "-Make=x", "other.jpg", "-fast",
+            ])
+
     def test_the_batch_is_written_when_the_block_fails(self):
         from unittest import mock
         import irdrone.process as pr
