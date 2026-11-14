@@ -116,13 +116,16 @@ def warp_discontinuously_from_sparse_vector_field(img, vector_field):
     return out_img
 
 
-def warp(im, cal, homog, outsize=None, vector_field=None, padding=None):
+def warp(im, cal, homog, outsize=None, vector_field=None, padding=None, crop=None):
     """
     Global warp = 3D Rotate (homography) and undistort an image
     Local warp  = Vector field can be composed to compensate local motion on top of the global warp.
     Padding is mandatory to get a correct local warp composition.
     Please note that the padding trick applies only if the global warp is valid on a slightly larger FOV.
     This is usually the case when the reference camera has a narrower field of view than the moving one.
+
+    crop = (x, y, width, height): only this part of the output (of size outsize) is computed and returned,
+    with the same values as cropping the whole output (the padded border of a local warp is not warped for nothing).
     """
     mtx, dist = cal["mtx"], cal["dist"]
     if outsize is None:
@@ -140,6 +143,10 @@ def warp(im, cal, homog, outsize=None, vector_field=None, padding=None):
         # )
         res_mapx, res_mapy = warp_from_sparse_vector_field(np.empty(outsize[::-1]), vector_field,
                                                            get_remap=True, padding=padding)
+        if crop is not None:
+            crop_x, crop_y, crop_width, crop_height = crop
+            res_mapx = np.ascontiguousarray(res_mapx[crop_y:crop_y+crop_height, crop_x:crop_x+crop_width])
+            res_mapy = np.ascontiguousarray(res_mapy[crop_y:crop_y+crop_height, crop_x:crop_x+crop_width])
         map1x_n = cv2.remap(map1x, res_mapx, res_mapy,
                             interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0))
         map1y_n = cv2.remap(map1y, res_mapx, res_mapy,
@@ -152,6 +159,10 @@ def warp(im, cal, homog, outsize=None, vector_field=None, padding=None):
         #     ])
         map1x = map1x_n
         map1y = map1y_n
+    elif crop is not None:
+        crop_x, crop_y, crop_width, crop_height = crop
+        map1x = np.ascontiguousarray(map1x[crop_y:crop_y+crop_height, crop_x:crop_x+crop_width])
+        map1y = np.ascontiguousarray(map1y[crop_y:crop_y+crop_height, crop_x:crop_x+crop_width])
     out = cv2.remap(
         im if not isinstance(im, pr.Image) else im.data,
         map1x, map1y,
