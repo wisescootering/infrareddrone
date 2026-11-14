@@ -30,6 +30,10 @@ MANIFEST_NAME = "img_best_mappping.json"
 ODM_PROJECT_NAME = "mapping_MULTI"
 ODM_RESULTS_FOLDER = "mapping_result"
 ODM_IMAGE = "opendronemap/odm:latest"
+# NVIDIA GPU build of ODM (CUDA feature extraction), run with `docker run --gpus all`
+ODM_GPU_IMAGE = "opendronemap/odm:gpu"
+DOCKER_HUB_TAG_URL = "https://hub.docker.com/v2/repositories/{repository}/tags/{tag}"
+ODM_RELEASE_URL = "https://api.github.com/repos/OpenDroneMap/ODM/releases/latest"
 # Preferred Docker context (Docker Desktop). When it does not exist (e.g. plain
 # Docker Engine on Linux) Docker's current context is used instead.
 # Override with environment variable IRDRONE_DOCKER_CONTEXT.
@@ -143,6 +147,160 @@ def check_docker(docker_context: Any = ...) -> Tuple[str, str]:
             + (f"\nDocker response: {details}" if details else "")
         )
     return docker_executable, server_version
+
+
+def odm_image(use_gpu: bool = False) -> str:
+    """The ODM Docker image: the GPU build when the GPU is used."""
+    return ODM_GPU_IMAGE if use_gpu else ODM_IMAGE
+
+
+def _docker_output(arguments: List[str], timeout: float = 30) -> Optional[str]:
+    """stdout of a docker command, None if it fails."""
+    try:
+        result = subprocess.run(arguments, capture_output=True, text=True, encoding="utf-8",
+                                errors="replace", timeout=timeout, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout if result.returncode == 0 else None
+
+
+def local_image_info(image: str = ODM_IMAGE, docker_executable: str = "docker",
+                     docker_context: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Version, date and registry digests of the local ODM image, None if not downloaded."""
+    output = _docker_output([docker_executable, *_context_args(docker_context), "image", "inspect",
+                             "--format", "{{json .}}", image])
+    if not output:
+        return None
+    try:
+        data = json.loads(output)
+    except json.JSONDecodeError:
+        return None
+    labels = (data.get("Config") or {}).get("Labels") or {}
+    return {
+        "image": image,
+        "version": labels.get("org.opencontainers.image.version"),
+        "created": labels.get("org.opencontainers.image.created") or data.get("Created"),
+        "digests": [d.split("@", 1)[1] for d in data.get("RepoDigests") or [] if "@" in d],
+    }
+
+
+def _http_json(url: str, timeout: float) -> Any:
+    import urllib.request
+    request = urllib.request.Request(url, headers={"User-Agent": "irdrone", "Accept": "application/json"})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def remote_image_info(image: str = ODM_IMAGE, timeout: float = 10) -> Optional[Dict[str, Any]]:
+    """Digest and publication date of the image on Docker Hub, with the latest ODM
+    release (version), None without Internet."""
+    repository, _, tag = image.partition(":")
+    try:
+        data = _http_json(DOCKER_HUB_TAG_URL.format(repository=repository, tag=tag or "latest"), timeout)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or not data.get("digest"):
+        return None
+    version = None
+    try:
+        release = _http_json(ODM_RELEASE_URL, timeout)
+        version = str(release.get("tag_name") or "").lstrip("v") or None
+    except (OSError, ValueError, AttributeError):
+        pass
+    return {"digest": data["digest"], "published": data.get("last_updated"),
+            "size": data.get("full_size"), "version": version}
+
+
+def update_available(local: Optional[Dict[str, Any]], remote: Optional[Dict[str, Any]]) -> bool:
+    """A newer image is on Docker Hub: its digest is not that of the local image."""
+    return bool(local and remote and remote["digest"] not in local["digests"])
+
+
+def nvidia_gpu_present() -> bool:
+    """An NVIDIA GPU and its driver on this computer (nvidia-smi answers)."""
+    executable = shutil.which("nvidia-smi")
+    if executable is None:
+        return False
+    output = _docker_output([executable, "-L"], timeout=15)
+    return bool(output and "GPU" in output)
+
+
+def docker_gpu_available(docker_executable: str = "docker", docker_context: Optional[str] = None,
+                         probe_image: Optional[str] = None) -> Tuple[bool, str]:
+    """(usable, reason): Docker can give the NVIDIA GPU to a container.
+
+    Starts a container with --gpus all from an image already downloaded; it fails
+    without the NVIDIA Container Toolkit (Linux) or the WSL 2 GPU support (Windows)."""
+    if not nvidia_gpu_present():
+        return False, "no NVIDIA GPU found on this computer"
+    if probe_image is None:
+        probe_image = next((image for image in (ODM_GPU_IMAGE, ODM_IMAGE)
+                            if local_image_info(image, docker_executable, docker_context)), None)
+        if probe_image is None:
+            return False, "OpenDroneMap is not downloaded yet: the GPU is tested once it is"
+    try:
+        result = subprocess.run(
+            [docker_executable, *_context_args(docker_context), "run", "--rm", "--gpus", "all",
+             "--entrypoint", "true", probe_image],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120, check=False)
+    except (OSError, subprocess.SubprocessError) as error:
+        return False, f"Docker could not start a container with the GPU ({error})"
+    if result.returncode != 0:
+        details = (result.stderr or result.stdout).strip().splitlines()
+        # first line short (the window), then how to fix it and Docker's answer
+        return False, ("Docker cannot use the NVIDIA GPU\nInstall the NVIDIA Container Toolkit (Linux), "
+                       "or use Docker Desktop with WSL 2 and a recent NVIDIA driver (Windows)."
+                       + (f"\nDocker: {details[0]}" if details else ""))
+    return True, "NVIDIA GPU available to Docker"
+
+
+def odm_engine_status(check_gpu: bool = True, check_update: bool = True) -> Dict[str, Any]:
+    """What the Step 6 window shows about OpenDroneMap: Docker, the installed image,
+    a newer one on Docker Hub, the GPU. Never raises."""
+    status: Dict[str, Any] = {"docker": None, "local": None, "remote": None, "update": False,
+                              "gpu": False, "gpu_reason": "not checked", "local_gpu": None,
+                              "remote_gpu": None, "update_gpu": False}
+    try:
+        context = resolve_docker_context(shutil.which("docker") or "docker")
+        executable, version = check_docker(context)
+    except DockerUnavailableError as error:
+        status["docker_error"] = str(error)
+        status["gpu_reason"] = "Docker is not running"
+        return status
+    status["docker"] = version
+    status["local"] = local_image_info(ODM_IMAGE, executable, context)
+    status["local_gpu"] = local_image_info(ODM_GPU_IMAGE, executable, context)
+    if check_update:
+        status["remote"] = remote_image_info(ODM_IMAGE)
+        status["update"] = update_available(status["local"], status["remote"])
+        if status["local_gpu"]:
+            status["remote_gpu"] = remote_image_info(ODM_GPU_IMAGE)
+            status["update_gpu"] = update_available(status["local_gpu"], status["remote_gpu"])
+    if check_gpu:
+        status["gpu"], status["gpu_reason"] = docker_gpu_available(executable, context)
+    return status
+
+
+def pull_odm_image(image: str, docker_executable: str = "docker", docker_context: Optional[str] = None,
+                   log: Callable[[str], None] = lambda _message: None) -> None:
+    """docker pull the ODM image (download or update), its progress in the log."""
+    command = [docker_executable, *_context_args(docker_context), "pull", image]
+    log(f"Downloading {image}: {subprocess.list2cmdline(command)}")
+    try:
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                                   encoding="utf-8", errors="replace", bufsize=1)
+    except OSError as error:
+        raise ODMMappingError(f"Could not download {image}: {error}") from error
+    lines: List[str] = []
+    assert process.stdout is not None
+    for line in process.stdout:
+        line = ANSI_ESCAPE_PATTERN.sub("", line).strip()
+        lines.append(line)
+        # layer by layer lines are many: only the summary ones
+        if line.startswith(("Status:", "Digest:", "latest:", "gpu:", "Error", "error")):
+            log(line)
+    if process.wait() != 0:
+        raise ODMMappingError(f"Could not download {image}: " + (lines[-1] if lines else "docker pull failed"))
 
 
 def _load_json(path: Path) -> Any:
@@ -386,8 +544,10 @@ def build_odm_command(
     orthophoto_resolution_cm: float,
     docker_executable: str = "docker",
     docker_context: Optional[str] = ODM_CONTEXT,
+    use_gpu: bool = False,
 ) -> List[str]:
-    """Build the Docker command for the mission's mapping_MULTI project."""
+    """Build the Docker command for the mission's mapping_MULTI project
+    (use_gpu: the GPU image, given the NVIDIA GPU)."""
     resolution = _positive_number(
         orthophoto_resolution_cm,
         "Orthophoto resolution in cm per pixel",
@@ -405,9 +565,10 @@ def build_odm_command(
         *_context_args(docker_context),
         "run",
         "--rm",
+        *(["--gpus", "all"] if use_gpu else []),
         "-v",
         f"{mission_folder}:/datasets",
-        ODM_IMAGE,
+        odm_image(use_gpu),
         "--project-path",
         "/datasets",
         ODM_PROJECT_NAME,
@@ -1328,8 +1489,9 @@ def _restore_output_ownership(
     docker_executable: str,
     docker_context: Optional[str],
     log: Callable[[str], None],
+    image: str = ODM_IMAGE,
 ) -> None:
-    """Give ODM outputs back to the current user on Linux/macOS.
+    """Give ODM outputs back to the current user on Linux/macOS (image: one already downloaded).
 
     With a rootful Docker engine, the ODM container writes files as root, which
     the user can then neither clean up nor delete. Nothing is done on Windows or
@@ -1349,7 +1511,7 @@ def _restore_output_ownership(
         "chown",
         "-v",
         f"{mapping_folder.parent}:/datasets",
-        ODM_IMAGE,
+        image,
         "-R",
         f"{uid}:{gid}",
         f"/datasets/{mapping_folder.name}",
@@ -1392,8 +1554,13 @@ def run_odm(
     dt_tolerance_s: float = 0.5,
     sample_every: int = 3,
     overlap: Optional[float] = None,
+    use_gpu: bool = False,
+    update_image: bool = False,
 ) -> Dict[str, Any]:
-    """Prepare the selected dataset and run ODM through Docker."""
+    """Prepare the selected dataset and run ODM through Docker.
+
+    use_gpu: the GPU image with the NVIDIA GPU (the CPU image if Docker cannot use it);
+    update_image: download the newest image first."""
     mission_folder = Path(mission_folder).expanduser().resolve()
     mapping_folder = mission_folder / "mapping_MULTI"
     manifest_path = mapping_folder / MANIFEST_NAME
@@ -1407,7 +1574,7 @@ def run_odm(
         worker_log(f"The previous map is kept in {previous}; a new one is built in {mapping_folder}.")
     try:
         return _run_odm_in(mission_folder, mapping_folder, manifest_path, worker_log, stage,
-                           dt_tolerance_s, sample_every, overlap)
+                           dt_tolerance_s, sample_every, overlap, use_gpu, update_image)
     except BaseException:
         if previous is not None:
             try:
@@ -1420,7 +1587,8 @@ def run_odm(
 
 
 def _run_odm_in(mission_folder, mapping_folder, manifest_path, worker_log, stage,
-                dt_tolerance_s, sample_every, overlap) -> Dict[str, Any]:
+                dt_tolerance_s, sample_every, overlap, use_gpu=False,
+                update_image=False) -> Dict[str, Any]:
     """run_odm in an empty mapping folder."""
     _check_mapping_outputs_available(mapping_folder)
 
@@ -1428,6 +1596,18 @@ def _run_odm_in(mission_folder, mapping_folder, manifest_path, worker_log, stage
     docker_context = resolve_docker_context(shutil.which("docker") or "docker")
     docker_executable, docker_server_version = check_docker(docker_context)
     worker_log(f"Docker Engine {docker_server_version} is available.")
+    if use_gpu:
+        gpu_ok, reason = docker_gpu_available(docker_executable, docker_context)
+        if not gpu_ok:
+            worker_log(f"The GPU is not used: {' '.join(reason.splitlines())} OpenDroneMap runs on the CPU.")
+            use_gpu = False
+    image = odm_image(use_gpu)
+    if update_image or local_image_info(image, docker_executable, docker_context) is None:
+        stage("Downloading OpenDroneMap" if not update_image else "Updating OpenDroneMap")
+        pull_odm_image(image, docker_executable, docker_context, worker_log)
+    installed = local_image_info(image, docker_executable, docker_context) or {}
+    worker_log(f"OpenDroneMap {installed.get('version') or '(version unknown)'} ({image})"
+               + (", on the NVIDIA GPU." if use_gpu else ", on the CPU."))
 
     stage("Building image selection and estimating GSD")
     manifest = build_best_mapping(
@@ -1450,7 +1630,7 @@ def _run_odm_in(mission_folder, mapping_folder, manifest_path, worker_log, stage
     stage("Preparing selected TIFF quartets")
     images_folder = prepare_odm_input(mission_folder, manifest, log=worker_log)
     command = build_odm_command(
-        mapping_folder, resolution_cm, docker_executable, docker_context
+        mapping_folder, resolution_cm, docker_executable, docker_context, use_gpu
     )
     timestamp = datetime.now(timezone.utc)
     started_at = timestamp.isoformat()
@@ -1512,7 +1692,7 @@ def _run_odm_in(mission_folder, mapping_folder, manifest_path, worker_log, stage
             return_code = process.wait()
             elapsed_seconds = time.perf_counter() - run_started_monotonic
         _restore_output_ownership(
-            mapping_folder, docker_executable, docker_context, worker_log
+            mapping_folder, docker_executable, docker_context, worker_log, image
         )
         if return_code != 0:
             raise ODMMappingError(

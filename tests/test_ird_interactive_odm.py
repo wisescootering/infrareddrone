@@ -1060,5 +1060,119 @@ class BestMappingTests(unittest.TestCase):
             self.assertFalse((mission / "mapping_MULTI" / "images").exists())
 
 
+class ODMEngineTests(unittest.TestCase):
+    """A newer ODM image is detected; the GPU is used only if Docker can give it."""
+
+    def test_gpu_command_uses_gpu_image_and_gpus_all(self):
+        import IRD_Interactive_ODM as ODM
+        command = build_odm_command(Path("/mission/mapping_MULTI"), 3.0, "docker", None, use_gpu=True)
+        self.assertEqual(command[command.index("--gpus") + 1], "all")
+        self.assertIn(ODM.ODM_GPU_IMAGE, command)
+        self.assertLess(command.index("--gpus"), command.index(ODM.ODM_GPU_IMAGE))
+        cpu = build_odm_command(Path("/mission/mapping_MULTI"), 3.0, "docker", None)
+        self.assertNotIn("--gpus", cpu)
+        self.assertIn(ODM.ODM_IMAGE, cpu)
+
+    def test_local_image_info_reads_version_and_digest(self):
+        import IRD_Interactive_ODM as ODM
+        inspect = json.dumps({"Created": "2026-08-21T17:44:29Z",
+                              "RepoDigests": ["opendronemap/odm@sha256:abc"],
+                              "Config": {"Labels": {"org.opencontainers.image.version": "3.6.2"}}})
+        with patch.object(ODM, "_docker_output", return_value=inspect):
+            info = ODM.local_image_info()
+        self.assertEqual(info["version"], "3.6.2")
+        self.assertEqual(info["digests"], ["sha256:abc"])
+        with patch.object(ODM, "_docker_output", return_value=None):
+            self.assertIsNone(ODM.local_image_info())
+
+    def test_update_available_compares_digests(self):
+        import IRD_Interactive_ODM as ODM
+        local = {"digests": ["sha256:abc"]}
+        self.assertFalse(ODM.update_available(local, {"digest": "sha256:abc"}))
+        self.assertTrue(ODM.update_available(local, {"digest": "sha256:new"}))
+        self.assertFalse(ODM.update_available(local, None))          # offline
+        self.assertFalse(ODM.update_available(None, {"digest": "x"}))  # not downloaded: no "update"
+
+    def test_remote_image_info_offline(self):
+        import IRD_Interactive_ODM as ODM
+        with patch.object(ODM, "_http_json", side_effect=OSError("offline")):
+            self.assertIsNone(ODM.remote_image_info())
+
+    def test_remote_image_info_with_release(self):
+        import IRD_Interactive_ODM as ODM
+        answers = [{"digest": "sha256:new", "last_updated": "2026-10-02T10:00:00Z", "full_size": 5},
+                   {"tag_name": "v3.7.0"}]
+        with patch.object(ODM, "_http_json", side_effect=answers):
+            info = ODM.remote_image_info()
+        self.assertEqual((info["digest"], info["version"]), ("sha256:new", "3.7.0"))
+
+    def test_no_nvidia_gpu_no_container_started(self):
+        import IRD_Interactive_ODM as ODM
+        with patch.object(ODM, "nvidia_gpu_present", return_value=False), \
+                patch.object(ODM.subprocess, "run") as run:
+            usable, reason = ODM.docker_gpu_available()
+        self.assertFalse(usable)
+        self.assertIn("no NVIDIA GPU", reason)
+        run.assert_not_called()
+
+    def test_gpu_probe_failure_explains(self):
+        import IRD_Interactive_ODM as ODM
+        failed = subprocess.CompletedProcess(
+            args=["docker"], returncode=125, stdout="",
+            stderr='docker: Error response from daemon: could not select device driver "" with capabilities: [[gpu]]\n'
+                   "Run 'docker run --help' for more information\n")
+        with patch.object(ODM, "nvidia_gpu_present", return_value=True), \
+                patch.object(ODM.subprocess, "run", return_value=failed) as run:
+            usable, reason = ODM.docker_gpu_available(probe_image=ODM.ODM_IMAGE)
+        self.assertFalse(usable)
+        self.assertIn("could not select device driver", reason)
+        self.assertIn("--gpus", run.call_args.args[0])
+
+    def test_gpu_probe_success(self):
+        import IRD_Interactive_ODM as ODM
+        ok = subprocess.CompletedProcess(args=["docker"], returncode=0, stdout="", stderr="")
+        with patch.object(ODM, "nvidia_gpu_present", return_value=True), \
+                patch.object(ODM.subprocess, "run", return_value=ok):
+            self.assertTrue(ODM.docker_gpu_available(probe_image=ODM.ODM_IMAGE)[0])
+
+    def _engine_part_of_run(self, use_gpu, update_image, gpu_usable, local):
+        """_run_odm_in up to the image selection (stopped there): the log and the pulls."""
+        import IRD_Interactive_ODM as ODM
+        log = []
+        with patch.object(ODM, "_check_mapping_outputs_available"), \
+                patch.object(ODM, "resolve_docker_context", return_value=None), \
+                patch.object(ODM, "check_docker", return_value=("docker", "29.9")), \
+                patch.object(ODM, "docker_gpu_available", return_value=(gpu_usable, "no toolkit")), \
+                patch.object(ODM, "local_image_info", return_value=local), \
+                patch.object(ODM, "pull_odm_image") as pull, \
+                patch.object(ODM, "build_best_mapping", side_effect=ODM.ODMMappingError("stop")):
+            with self.assertRaises(ODM.ODMMappingError):
+                ODM._run_odm_in(Path("/m"), Path("/m/mapping_MULTI"), Path("/m/x.json"), log.append,
+                                lambda _s: None, 0.5, 3, None, use_gpu, update_image)
+        return log, pull
+
+    def test_gpu_refused_falls_back_to_cpu(self):
+        import IRD_Interactive_ODM as ODM
+        log, pull = self._engine_part_of_run(True, False, False, {"version": "3.6.2"})
+        self.assertTrue(any(line.startswith("The GPU is not used: no toolkit") for line in log))
+        self.assertTrue(any("OpenDroneMap 3.6.2 (opendronemap/odm:latest), on the CPU." == line for line in log))
+        pull.assert_not_called()
+
+    def test_update_pulls_the_image_used(self):
+        import IRD_Interactive_ODM as ODM
+        _, pull = self._engine_part_of_run(True, True, True, {"version": "3.7.0"})
+        self.assertEqual(pull.call_args.args[0], ODM.ODM_GPU_IMAGE)
+        _, pull = self._engine_part_of_run(False, False, False, None)       # not downloaded yet
+        self.assertEqual(pull.call_args.args[0], ODM.ODM_IMAGE)
+
+    def test_engine_status_docker_off(self):
+        import IRD_Interactive_ODM as ODM
+        with patch.object(ODM, "resolve_docker_context", return_value=None), \
+                patch.object(ODM, "check_docker", side_effect=ODM.DockerUnavailableError("off")):
+            status = ODM.odm_engine_status()
+        self.assertIsNone(status["docker"])
+        self.assertFalse(status["gpu"])
+
+
 if __name__ == "__main__":
     unittest.main()
