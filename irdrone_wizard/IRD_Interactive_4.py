@@ -994,7 +994,7 @@ class DialogImageProcessing(QDialog):
 
         # Best mapping: the choice of Step 2 (FlightAnalytics/best_mapping.json)
         choice = best_mapping.load_choice(self.mission_folder)
-        self.best_mapping_group = QGroupBox("Images aligned")
+        self.best_mapping_group = QGroupBox("Images developed" if self.visible_only else "Images aligned")
         best_row = QHBoxLayout(self.best_mapping_group)
         best_group_layout = QVBoxLayout()
         best_row.addLayout(best_group_layout, 1)
