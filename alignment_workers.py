@@ -45,6 +45,15 @@ def threads_per_worker(worker_count: int) -> int:
     return max(1, cores // max(1, int(worker_count)))
 
 
+def rawtherapee_threads_per_worker(worker_count: int) -> int:
+    """Threads of a RawTherapee conversion started by one of ``worker_count``
+    alignment workers: its share of the cores, at least 2 (a conversion is a
+    short part of an alignment: with 2 threads it takes hardly more CPU than
+    with 1 and half the time; measured best on 4 cores with 3 workers)."""
+    cores = psutil.cpu_count(logical=False) or 1
+    return min(cores, max(2, threads_per_worker(worker_count)))
+
+
 def memory_fitting_workers(requested: int, memory_per_worker_gb: float) -> int:
     """``requested`` lowered to what the available RAM holds (never less than
     one); ``memory_per_worker_gb`` <= 0: no memory limit."""

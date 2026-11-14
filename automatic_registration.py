@@ -18,7 +18,9 @@ from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from pathlib import Path
 from copy import deepcopy
 from config import CROP
-from alignment_workers import available_alignment_workers, clamp_workers, threads_per_worker  # noqa: F401 (re-exported)
+from alignment_workers import (  # noqa: F401 (re-exported)
+    available_alignment_workers, clamp_workers, rawtherapee_threads_per_worker, threads_per_worker,
+)
 from manual_redo_archives import (  # noqa: F401 (re-exported)
     _manual_redo_result_names,
     finalize_manual_redo_archives,
@@ -645,11 +647,12 @@ def _process_raw_pairs_serial(
     return motion_model_list
 
 
-def _initialize_alignment_worker(log_level: int = logging.WARNING, threads: int = 1) -> None:
+def _initialize_alignment_worker(log_level: int = logging.WARNING, threads: int = 1,
+                                 rawtherapee_threads: int = None) -> None:
     # The workers share the cores: 1 thread each when there is a worker per core,
     # more when the memory allows fewer workers than cores.
     cv2.setNumThreads(threads)
-    pr.rawtherapee_threads = threads
+    pr.rawtherapee_threads = rawtherapee_threads if rawtherapee_threads is not None else threads
     # Spawned workers (Windows) do not inherit the parent logging configuration.
     logging.basicConfig(level=log_level)
     logging.getLogger().setLevel(log_level)
@@ -813,7 +816,8 @@ def process_raw_pairs(
     with ProcessPoolExecutor(
         max_workers=worker_count,
         initializer=_initialize_alignment_worker,
-        initargs=(logging.getLogger().getEffectiveLevel(), threads_per_worker(worker_count)),
+        initargs=(logging.getLogger().getEffectiveLevel(), threads_per_worker(worker_count),
+                  rawtherapee_threads_per_worker(worker_count)),
     ) as executor:
         completed = 0
         for task, future in _run_alignment_tasks(
