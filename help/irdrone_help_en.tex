@@ -1237,6 +1237,8 @@ A message recalls the accepted image types, then a file selection window opens. 
 	\item multispectral TIFF images in \textbf{groups of four}: \texttt{IRD\_XXXX\_1.tif} to \texttt{IRD\_XXXX\_4.tif} (red, green, blue, near infrared). All four files must be selected; an incomplete group is rejected with a warning.
 \end{itemize}
 
+In a visible only mission, the message and the file selection window offer the DJI DNG images only.
+
 \subsection*{Georeferencing offsets}
 Once the images are chosen, a window asks for three corrections, all equal to \textbf{0} by default:
 \begin{itemize}
@@ -1287,6 +1289,9 @@ Clicking the button opens a window for choosing the criteria. A note at the bott
 \end{itemize}
 
 \figureIRD{step5_odm_selection.png}{Window of the image selection criteria for the mapping.}{0.4}
+
+On the right, as in Step~4, the flight map shows the images selected for the map, in green with their ground footprints (their overlap shows), the eligible images left out by the selection in grey, and the others as small dots. It is updated as soon as a setting changes ($|dt|$, overlap, $n$, choice); the count below the map gives the number of images selected among the eligible ones. Wheel to zoom, drag to pan, double-click to see the whole flight again.
+
 
 The selected images (\emph{eligible images}) are the shoot points that satisfy all of the following:
 \begin{enumerate}

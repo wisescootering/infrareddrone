@@ -9,6 +9,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "irdrone_wizard"))
+sys.path.insert(0, str(ROOT / "tests"))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtWidgets import QApplication  # noqa: E402
@@ -95,6 +96,41 @@ class ODMSelectionDialogTest(unittest.TestCase):
         self.assertEqual(run.call_args.kwargs["overlap"], 0.8)
         self.assertEqual(run.call_args.kwargs["dt_tolerance_s"], 0.4)
 
+
+class SelectionMapTest(unittest.TestCase):
+    """The window shows the flight with the images selected and their footprints, live."""
+
+    def test_the_map_follows_the_choices(self):
+        import json
+        import flight_map as F
+        from test_flight_map import make_mission
+        with mock.patch.object(F.urllib.request, "urlopen", side_effect=OSError("offline")), \
+                tempfile.TemporaryDirectory() as root:
+            m = make_mission(Path(root), n=8)
+            path = m / "AerialPhotography" / "shoot_points.json"
+            data = json.loads(path.read_text())
+            for k, point in enumerate(data["shoot_points"]):
+                point["NIR"] = [{"rank": 1, "dt": 0.9 if k == 7 else 0.1}]     # the last one: |dt| too big
+            path.write_text(json.dumps(data))
+            best_mapping.save_choice(m, enabled=False)
+            d = S5.ODMSelectionDialog(mission_folder=m)
+            self.assertIsNotNone(d.map_view)
+            self.assertTrue(d.sample_radio.isChecked())
+            d.sample_every.setValue(2)
+            d.update_map()                       # (the timer, without waiting)
+            self.assertEqual(d._eligible, set(range(137, 144)))
+            self.assertEqual(d._selected, {137, 139, 141, 143})
+            self.assertEqual(sorted(d.map_model.numbers[i] for i in d.map_model.selection), [137, 139, 141, 143])
+            self.assertIn("4 images selected for the map, of 7 aligned", d.map_count.text())
+            d.all_radio.setChecked(True)
+            d.update_map()
+            self.assertEqual(d._selected, set(range(137, 145)))
+            import IRD_Interactive_map as Map
+            Map.tile_cache().stop()
+
+    def test_no_map_without_positions(self):
+        with tempfile.TemporaryDirectory() as m:
+            self.assertIsNone(S5.ODMSelectionDialog(mission_folder=Path(m)).map_view)
 
 class GeorefMessageTest(unittest.TestCase):
     def test_the_message_follows_the_mission_type(self):
