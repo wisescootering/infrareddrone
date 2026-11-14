@@ -100,6 +100,21 @@ class ArchiveTests(unittest.TestCase):
         self.assertTrue((m / "FlightAnalytics" / "other.txt").is_file())
         self.assertTrue((m / "mapping_MULTI" / "mapping_result" / "ortho.tif").is_file())
 
+    def test_visible_only_mission_without_infrared(self):
+        import json
+        import shutil
+        shutil.rmtree(self.mission / "AerialPhotography" / "NIR")
+        plan = arc.build_plan(self.mission)                      # multispectral: the NIR is required
+        self.assertTrue(any("NIR" in b for b in plan.blockers))
+        (self.mission / "FlightAnalytics" / "mission_parameters.json").write_text(
+            json.dumps({"mission type": "visible"}))
+        plan = arc.build_plan(self.mission)
+        self.assertEqual(plan.blockers, [])
+        arc.execute_archive(plan, log=lambda m: None)
+        self.assertEqual(names(self.mission / "AerialPhotography"), {"VIS", "shoot_points.json", "desktop.ini"})
+        self.assertEqual(names(self.mission / "AerialPhotography" / "VIS"),
+                         {"VIS_0001.DNG", "VIS_0001.exif", "time_line.json", "transfer_info_VIS_dng.json"})
+
     def test_previous_maps_set_aside_by_step5_are_kept(self):
         old = self.mission / "mapping_MULTI_20261110_171700" / "mapping_result"
         old.mkdir(parents=True)
