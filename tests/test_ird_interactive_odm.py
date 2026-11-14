@@ -713,6 +713,25 @@ class BestMappingTests(unittest.TestCase):
             self._built_map(mission)                                  # a second time: another name
             self.assertNotEqual(ODM.set_previous_mapping_aside(mission), previous)
 
+    def test_an_unfinished_run_is_set_aside_too(self):
+        """A run stopped or failed with no map before it leaves its input images
+        (and its log): the next run sets them aside instead of refusing them."""
+        import IRD_Interactive_ODM as ODM
+        with tempfile.TemporaryDirectory() as temporary:
+            mission = Path(temporary)
+            self._create_mission(mission)
+            mapping_folder = mission / "mapping_MULTI"
+            (mapping_folder / "images").mkdir()
+            (mapping_folder / "images" / "IRD_0001_1.tif").write_bytes(b"old selection")
+            (mapping_folder / "odm_run_20261110_161700_000000.log").write_text("stopped", encoding="utf-8")
+            self.assertEqual(len(ODM.previous_mapping_details(mapping_folder)), 2)
+            previous = ODM.set_previous_mapping_aside(mission)
+            self.assertIsNotNone(previous)
+            self.assertTrue((previous / "images" / "IRD_0001_1.tif").is_file())
+            self.assertEqual(sorted(p.name for p in mapping_folder.iterdir()), ["camera"])
+            (mapping_folder / "images").mkdir()                   # an empty images folder: nothing to keep
+            self.assertEqual(ODM.previous_mapping_details(mapping_folder), [])
+
     def test_a_failed_run_puts_the_previous_map_back(self):
         import IRD_Interactive_ODM as ODM
         with tempfile.TemporaryDirectory() as temporary:

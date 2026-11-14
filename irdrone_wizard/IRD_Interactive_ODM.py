@@ -1069,11 +1069,19 @@ def previous_mapping_details(mapping_folder: Path) -> List[str]:
     ]
     result_folder = Path(mapping_folder) / ODM_RESULTS_FOLDER
     existing_archives = [path.name for path in result_folder.iterdir()] if result_folder.is_dir() else []
+    # an unfinished run (stopped, failed without a previous map): its input images and its log
+    images_folder = Path(mapping_folder) / "images"
+    input_images = images_folder.is_dir() and any(images_folder.iterdir())
+    run_logs = sorted(path.name for path in Path(mapping_folder).glob("odm_run_*.log"))
     details = []
     if existing_odm_outputs:
         details.append(f"ODM outputs: {', '.join(existing_odm_outputs)}")
     if existing_archives:
         details.append(f"archived results: {', '.join(existing_archives)}")
+    if input_images:
+        details.append("ODM input images")
+    if run_logs:
+        details.append(f"ODM logs: {', '.join(run_logs)}")
     return details
 
 

@@ -236,7 +236,10 @@ class ODMSelectionDialog(QDialog):
         note.setStyleSheet(MESSAGE_STYLE)
         layout.addWidget(note)
         if mission_folder and ODM.previous_mapping_details(Path(mission_folder) / ODM.ODM_PROJECT_NAME):
-            kept = QLabel(f"A map is already built: it is kept, renamed {ODM.ODM_PROJECT_NAME}_<date of its run>, "
+            built = (Path(mission_folder) / ODM.ODM_PROJECT_NAME / ODM.ODM_RESULTS_FOLDER
+                     / "odm_orthophoto.tif").is_file()
+            kept = QLabel(f"{'A map is already built' if built else 'A previous run did not finish'}: "
+                          f"it is kept, renamed {ODM.ODM_PROJECT_NAME}_<date of its run>, "
                           "and the new one is built in its place (the previous one comes back if the new "
                           "one fails).")
             kept.setWordWrap(True)
