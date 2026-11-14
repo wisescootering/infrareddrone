@@ -1292,6 +1292,13 @@ Clicking the button opens a window for choosing the criteria. A note at the bott
 
 On the right, as in Step~4, the flight map shows the images selected for the map, in green with their ground footprints (their overlap shows), the eligible images left out by the selection in grey, and the others as small dots. It is updated as soon as a setting changes ($|dt|$, overlap, $n$, choice); the count below the map gives the number of images selected among the eligible ones. Wheel to zoom, drag to pan, double-click to see the whole flight again.
 
+\textbf{OpenDroneMap: version and GPU.} Under the choices, the \texttt{OpenDroneMap} box shows, after a check of a few seconds (Docker, Internet), the version of ODM installed on the computer and whether a newer one has been published on Docker Hub:
+\begin{itemize}
+	\item \texttt{Download the newer version before the map}: shown only when a newer version exists, unticked by default. Ticked, the newest ODM image is downloaded (\texttt{docker pull}, a few hundred megabytes to a few gigabytes) before the computation. A newer version can give a slightly different map, so it is never installed without being asked. Without Internet, the box says that the newest version could not be checked and the installed one is used.
+	\item \texttt{Use the NVIDIA GPU (faster image matching)}: available, and ticked, only when the computer has an NVIDIA graphics card \emph{and} Docker can give it to a container (the software starts a test container with \texttt{--gpus all}). ODM then runs its GPU version (\texttt{opendronemap/odm:gpu}, about 3\,GB downloaded the first time), which detects and matches the image features on the graphics card; the rest of the computation is the same. Otherwise the box is greyed out and the reason is given (no NVIDIA card; on Linux the \emph{NVIDIA Container Toolkit} is missing; on Windows, Docker Desktop must use WSL~2 with a recent NVIDIA driver); its tooltip gives Docker's answer. If the GPU cannot be used when the computation starts, ODM runs on the processor and the log says so.
+\end{itemize}
+The log gives the ODM version used and whether it ran on the GPU or the processor.
+
 
 The selected images (\emph{eligible images}) are the shoot points that satisfy all of the following:
 \begin{enumerate}
@@ -1304,7 +1311,7 @@ Among them, the best mapping keeps the images the map needs (or, with the other 
 \subsection{Starting the computation}
 \bouton{Build the map} starts the computation without another question (the selection is written in the log):
 \begin{enumerate}
-	\item the software checks that Docker Desktop is available. If not, a message asks you to start it and then choose \texttt{Retry};
+	\item the software checks that Docker Desktop is available. If not, a message asks you to start it and then choose \texttt{Retry}. ODM is then downloaded if it is not yet on the computer, or updated if asked (see above);
 	\item the list of selected images is saved in \texttt{mapping\_MULTI\textbackslash img\_best\_mappping.json};
 	\item the resolution of the orthophoto is estimated automatically: it is the ground size of a pixel (GSD, in cm) obtained from the flight altitude above the ground and the focal length of the camera, median over the selected images, rounded up to the next tenth of a cm;
 	\item the selected TIFF images are made available to ODM in \texttt{mapping\_MULTI\textbackslash images} through \emph{hard links}: no image is copied, so disk space is not doubled. If the disk does not support hard links (external disk in exFAT or FAT32, some network shares), the images are copied, which uses more disk space; the log says so;
