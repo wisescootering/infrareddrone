@@ -34,6 +34,7 @@ from PyQt6.QtWidgets import (QApplication, QCheckBox, QDialog, QFrame, QGridLayo
 sys.path.append(str(Path(__file__).resolve().parent))
 import flight_timeline as FT  # noqa: E402
 import best_mapping as BM  # noqa: E402
+import mission_type as MT  # noqa: E402
 
 # ---------------------------------------------------------------------------
 #  Look (shared with the other modern windows)
@@ -60,6 +61,8 @@ class TimelineModel:
     def __init__(self, mission: Path, vis: FT.BandAnalysis, nir: FT.BandAnalysis,
                  proposal: FT.TimelineProposal):
         self.mission = Path(mission)
+        # visible only mission: no infrared, no synchronisation phase, the survey only
+        self.visible_only = MT.is_visible(self.mission)
         self.vis, self.nir, self.proposal = vis, nir, proposal
         self.t_vis = vis.times
         self.t_nir = nir.times
@@ -231,6 +234,9 @@ class TimelineView(QWidget):
         if compact:   # small screen: shorter filmstrips and chart
             self.LANE_H, self.CHART_MIN, self.CHART_H = 46, 48, 72
         self.m = model
+        # visible only mission: no target dots, no infrared filmstrip
+        self.show_nir = not model.visible_only
+        self.dots_h = 0 if model.visible_only else self.DOTS_H
         self.t0, self.t1 = model.span()
         self.hover_t: Optional[float] = None
         self.selected: Optional[tuple] = None    # (key, edge)
@@ -250,22 +256,23 @@ class TimelineView(QWidget):
         return QSize(800, self.total_height(self.CHART_H))
 
     def total_height(self, chart_h):
-        return 8 + chart_h + self.DOTS_H + self.GAP + self.LANE_H + self.DOTS_H + self.GAP + \
-            self.LANE_H + self.AXIS_H + 4
+        nir = (self.dots_h + self.GAP + self.LANE_H) if self.show_nir else 0
+        return 8 + chart_h + self.dots_h + self.GAP + self.LANE_H + nir + self.AXIS_H + 4
 
     def rows(self):
         y = 8
         chart_h = max(self.CHART_MIN, self.CHART_H - (self.total_height(self.CHART_H) - self.height()))
         chart = QRectF(self.GUTTER, y, self.plot_w(), chart_h)
         y += chart_h
-        vis_dots = QRectF(self.GUTTER, y, self.plot_w(), self.DOTS_H)
-        y += self.DOTS_H + self.GAP
+        vis_dots = QRectF(self.GUTTER, y, self.plot_w(), self.dots_h)
+        y += self.dots_h + self.GAP
         vis_lane = QRectF(self.GUTTER, y, self.plot_w(), self.LANE_H)
         y += self.LANE_H
-        nir_dots = QRectF(self.GUTTER, y, self.plot_w(), self.DOTS_H)
-        y += self.DOTS_H + self.GAP
-        nir_lane = QRectF(self.GUTTER, y, self.plot_w(), self.LANE_H)
-        y += self.LANE_H
+        nir_h = self.LANE_H if self.show_nir else 0
+        nir_dots = QRectF(self.GUTTER, y, self.plot_w(), self.dots_h if self.show_nir else 0)
+        y += (self.dots_h + self.GAP) if self.show_nir else 0
+        nir_lane = QRectF(self.GUTTER, y, self.plot_w(), nir_h)
+        y += nir_h
         axis = QRectF(self.GUTTER, y, self.plot_w(), self.AXIS_H)
         return dict(chart=chart, vis_dots=vis_dots, vis_lane=vis_lane,
                     nir_dots=nir_dots, nir_lane=nir_lane, axis=axis)
@@ -325,10 +332,12 @@ class TimelineView(QWidget):
         p.save()
         p.setClipRect(QRectF(self.GUTTER, 0, self.plot_w(), self.height()))
         self._paint_chart(p, r["chart"])
-        self._paint_dots(p, r["vis_dots"], "VIS")
+        if self.dots_h:
+            self._paint_dots(p, r["vis_dots"], "VIS")
         self._paint_lane(p, r["vis_lane"], "VIS")
-        self._paint_dots(p, r["nir_dots"], "NIR")
-        self._paint_lane(p, r["nir_lane"], "NIR")
+        if self.show_nir:
+            self._paint_dots(p, r["nir_dots"], "NIR")
+            self._paint_lane(p, r["nir_lane"], "NIR")
         self._paint_outside_veil(p, r)
         self._paint_bands(p)
         self._paint_handles(p)
@@ -351,6 +360,9 @@ class TimelineView(QWidget):
         p.setFont(fb)
         p.setPen(BLUE)
         p.drawText(QRectF(0, r["vis_lane"].top(), self.GUTTER - 10, r["vis_lane"].height()), al, "Visible")
+        if not self.show_nir:          # visible only: no target, no infrared
+            p.setFont(f)
+            return
         p.setPen(NIR_ACCENT)
         p.drawText(QRectF(0, r["nir_lane"].top(), self.GUTTER - 10, r["nir_lane"].height()), al, "Infrared")
         p.setFont(f)
@@ -437,7 +449,7 @@ class TimelineView(QWidget):
     def _paint_outside_veil(self, p, r):
         """Dim the filmstrip frames that belong to no phase: the selection stands out."""
         veil = QColor(250, 251, 252, 150)
-        for name, lane in (("VIS", r["vis_lane"]), ("NIR", r["nir_lane"])):
+        for name, lane in (("VIS", r["vis_lane"]), ("NIR", r["nir_lane"]))[:2 if self.show_nir else 1]:
             spans = sorted((self.x_of(self.edge_time(k, "first")), self.x_of(self.edge_time(k, "last")))
                            for k, w in self.m.windows.items() if w is not None and k.startswith(name))
             x = lane.left()
@@ -801,6 +813,12 @@ class KeypointCard(QFrame):
             else:
                 self.nir_tile = tile_
 
+    def hide_infrared(self):
+        """Visible only mission: the visible image only."""
+        for w in (self.nir_tile, *self.rows["NIR"]):
+            w.hide()
+        del self.rows["NIR"]
+
     def set_selected(self, on):
         border = self.color.name() if on else "#DDE3EA"
         width = 2 if on else 1
@@ -811,6 +829,8 @@ class KeypointCard(QFrame):
 
     def refresh(self, m: TimelineModel):
         for band, tile in (("VIS", self.vis_tile), ("NIR", self.nir_tile)):
+            if band not in self.rows:
+                continue
             key = f"{band} {self.phase}"
             w = m.windows.get(key)
             lab, prev, nxt = self.rows[band]
@@ -869,6 +889,7 @@ class FlightTimelineDialog(QDialog):
     def __init__(self, mission: Path, parent=None):
         super().__init__(parent)
         self.mission = Path(mission)
+        self.visible_only = MT.is_visible(self.mission)     # no synchronisation, no infrared
         self.action = "close"
         self._saved = None                # what was saved when the window opened (None: nothing)
         self.model: Optional[TimelineModel] = None
@@ -1065,6 +1086,8 @@ class FlightTimelineDialog(QDialog):
         self.btn_confirm.setToolTip("Save the phases and open Step 3 (camera synchronisation); nothing starts until you run it.")
         self.btn_confirm.clicked.connect(lambda: self._confirm("step3"))
         self.btn_confirm.setEnabled(False)
+        if self.visible_only:
+            self._visible_only_layout()
         foot.addWidget(self.btn_help)
         foot.addWidget(self.btn_reset)
         foot.addWidget(self.btn_classic)
@@ -1093,6 +1116,25 @@ class FlightTimelineDialog(QDialog):
 
         for seq, d in (("Left", -1), ("Right", +1)):
             QShortcut(QKeySequence(seq), self, activated=lambda d=d: self._nudge_selected(d))
+
+    def _visible_only_layout(self):
+        """Visible only mission: the survey only (no synchronisation cards, no
+        infrared preview, no classic selection); confirm goes to Step 4."""
+        for card in self.cards:
+            if card.phase == "sync":
+                card.hide()
+            else:
+                card.hide_infrared()
+        for w in (self.pv_nir, self.pv_nir_cap, self.btn_classic, self.chip_target, self.chip_shift):
+            w.hide()
+        self.btn_confirm.setText("Continue with development  ▶")
+        self.btn_confirm.setToolTip("Save the survey phase and open Step 4 (development of the visible images); "
+                                    "nothing starts until you run it.")
+        self.btn_close.setToolTip("Close; once the survey phase is changed (or never saved), save it first "
+                                  "(Step 4 can be run later).")
+
+    def _first_card(self):
+        return ("survey", "first") if self.visible_only else ("sync", "first")
 
     @staticmethod
     def _chip(color):
@@ -1134,9 +1176,13 @@ class FlightTimelineDialog(QDialog):
         self.view.picked.connect(lambda key, edge: self._select(key.split()[1], edge))
         self.view_holder.addWidget(self.view)
         n = len(vis.frames)
-        self.subtitle.setText(
-            f"{n} visible and {len(nir.frames)} infrared images. Phases detected from the altitude and "
-            "the rotating target: check them, adjust if needed, then confirm.")
+        if self.visible_only:
+            self.subtitle.setText(f"{n} visible images. Survey phase detected from the altitude: "
+                                  "check it, adjust if needed, then confirm.")
+        else:
+            self.subtitle.setText(
+                f"{n} visible and {len(nir.frames)} infrared images. Phases detected from the altitude and "
+                "the rotating target: check them, adjust if needed, then confirm.")
         self._fill_chips()
         if proposal.messages:
             lines = ["⚠  " + m for m in proposal.messages]
@@ -1162,7 +1208,7 @@ class FlightTimelineDialog(QDialog):
         self._build_map()
         confirmed = bool((FT.load_state(self.mission) or {}).get("confirmed"))
         self._saved = self._snapshot() if confirmed else None     # None: never saved
-        self._select("sync", "first")
+        self._select(*self._first_card())
         self._refresh()
 
     def _restore_saved(self):
@@ -1180,6 +1226,9 @@ class FlightTimelineDialog(QDialog):
 
     def _fill_chips(self):
         p, m = self.model.proposal, self.model
+        if self.visible_only:
+            self._set_chip(self.chip_target, "")
+            self._set_chip(self.chip_shift, "")
         found = m.vis.segments and (m.nir.segments or not m.nir.frames)
         self._set_chip(self.chip_target, "✓ Target found" if found else "",
                        "The rotating ArUco target was found on the visible and infrared previews.")
@@ -1236,7 +1285,7 @@ class FlightTimelineDialog(QDialog):
 
     def _on_reset(self):
         self.model.reset()
-        self._select("sync", "first")
+        self._select(*self._first_card())
         self._refresh()
 
     def _snapshot(self):
@@ -1279,13 +1328,16 @@ class FlightTimelineDialog(QDialog):
         tip = ("Preview from the positions and heights of the visible images. In Step 4, once the cameras are "
                "synchronised, the same overlap is applied to the well synchronised pairs only: the final "
                "count can differ a little.")
+        verb = "developed" if self.visible_only else "aligned"
+        if self.visible_only:
+            tip = "Preview from the positions and heights of the visible images: Step 4 develops the same images."
         if not m.bm_enabled:
-            text = f"All the {n} survey images will be aligned."
+            text = f"All the {n} survey images will be {verb}."
         elif not m.has_positions:
             text = "No position in the images: every survey image is kept."
         elif n:
             text = (f"<b style='color:#2E7D32'>{k}</b> of {n} survey images kept for the map"
-                    f" · {100 - 100 * k / n:.0f} % less to align")
+                    f" · {100 - 100 * k / n:.0f} % less to {'develop' if self.visible_only else 'align'}")
         else:
             text = ""
         self.bm_summary.setText(text)
@@ -1431,6 +1483,8 @@ class FlightTimelineDialog(QDialog):
     def _not_ready(self) -> Optional[str]:
         """Why the phases cannot be saved yet (None: they can)."""
         m = self.model
+        if m.visible_only:
+            return None if m.windows.get("VIS survey") is not None else "Please define: VIS survey"
         missing = [k for k in ("VIS sync", "VIS survey") if m.windows.get(k) is None]
         if m.nir.frames and m.windows.get("NIR sync") is None:
             missing.append("NIR sync")
@@ -1471,6 +1525,9 @@ class FlightTimelineDialog(QDialog):
             m.update_best_mapping()
             BM.save_choice(self.mission, enabled=m.bm_enabled, overlap=m.bm_overlap,
                            preview_selected=[m.vis.frames[i].name for i in m.bm_selected])
+            if m.visible_only:      # no pairing (Step 3): the visible shoot points for Steps 4 to 6
+                import visible_mission
+                visible_mission.write_shoot_points(self.mission)
         except OSError as e:
             QMessageBox.critical(self, "Flight timeline", f"Could not save the selection:\n{e}")
             return

@@ -32,6 +32,7 @@ from exiftool_reader import UTF8_FILENAME_OPTIONS
 from IRD_Interactive_diskspace import (DiskFullError, DISK_NEARLY_FULL_BYTES, free_bytes,
                                        is_valid_json_file, write_json_atomic)
 from irdrone.file_utils import glob_ci
+from visible_mission import vis_entry
 
 
 # --------------------------------------------------------------------------------------------
@@ -352,33 +353,7 @@ class ImagePairingWorker(QRunnable):
                 dic_NIR_2 = dics_NIR[i_NIR_2]
 
                 shoot_point = {
-                    "VIS": {
-                        "idx": i_VIS,
-                        "FileName": dic_VIS.get("FileName"),
-                        "Directory": dic_VIS.get("Directory"),
-                        "DateTimeOriginal": dic_VIS.get("DateTimeOriginal"),
-                        "RelativeTimeLine": dic_VIS.get("RelativeTimeLine"),
-
-                        "DroneLatitude": dic_VIS.get("DroneLatitude"),
-                        "DroneLongitude": dic_VIS.get("DroneLongitude"),
-                        "GroundAltitude": dic_VIS.get("GroundAltitude"),
-                        "DroneAltitudeSeaLevel": dic_VIS.get("DroneAltitudeSeaLevel"),
-                        "DroneAltitudeGround": dic_VIS.get("DroneAltitudeGround"),
-                        "UTM_x": dic_VIS.get("UTM_x"),
-                        "UTM_y": dic_VIS.get("UTM_y"),
-                        "UTM_zone": dic_VIS.get("UTM_zone"),
-
-                        "FlightYawDegree": dic_VIS.get("FlightYawDegree"),
-                        "FlightPitchDegree": dic_VIS.get("FlightPitchDegree"),
-                        "FlightRollDegree": dic_VIS.get("FlightRollDegree"),
-                        "GimbalYawDegree": dic_VIS.get("GimbalYawDegree"),
-                        "GimbalPitchDegree": dic_VIS.get("GimbalPitchDegree"),
-                        "GimbalRollDegree": dic_VIS.get("GimbalRollDegree"),
-
-                        "DistanceToLastPoint": dic_VIS.get("DistanceToLastPoint"),
-                        "CapToLastPoint": dic_VIS.get("CapToLastPoint"),
-                        "CumulDistance": dic_VIS.get("CumulDistance"),
-                    },
+                    "VIS": vis_entry(i_VIS, dic_VIS),
                     "NIR": [
                         {
                             "rank": 1,

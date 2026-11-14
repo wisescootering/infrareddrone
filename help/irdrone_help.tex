@@ -482,6 +482,14 @@ Sur la page de la liste des missions, la barre du bas rappelle le dossier de tra
 \section{La fenêtre \og New mission \fg}\label{sec:step1_new_mission}
 Le Step~1 cr\'ee le dossier de la mission et y range les images du vol. Il s'ouvre avec \bouton{New mission} dans la fenêtre principale et se fait dans une seule fenêtre, en trois pages : \textbf{Images}, \textbf{Mission}, \textbf{Copy}. L'avancement est rappelé en haut de la fenêtre. Les cartes SD sont seulement lues : rien n'y est écrit ni effacé.
 
+\subsection{Type de mission : multispectrale ou visible seul}\label{btn:step1_mission_type}
+Le haut de la page \og Images \fg~choisit le type de la mission (le dernier choisi est proposé) :
+\begin{itemize}
+	\item \bouton{Multispectral (visible + infrared)} : le drone (visible, DNG) et la caméra infrarouge (SJCam, RAW). Tout ce que décrit ce manuel : synchronisation, alignement, carte en quatre bandes (rouge, vert, bleu, proche infrarouge), VIR et NDVI ;
+	\item \bouton{Visible only (drone DNG)} : les images du drone seules, sans la caméra infrarouge. La carte infrarouge disparaît, la copie ne prend que les images visibles et les étapes suivantes s'adaptent (section~\ref{sec:visible_only}) : phase de relevé seule à l'étape~2, pas d'étape~3, les images sont \emph{développées} à l'étape~4 au lieu d'être alignées, la carte de l'étape~6 est en couleurs (rouge, vert, bleu).
+\end{itemize}
+Le type ne se change plus une fois la mission créée.
+
 \subsection{Page \og Images \fg}\label{btn:step1_images}
 Les cartes SD insérées sont parcourues (tout volume qui contient un dossier \texttt{DCIM}) ; on y trouve les images visibles (DNG du drone) et infrarouges (RAW de la SJCam), figure~\ref{fig:step1_new_mission_images}. Chaque caméra a sa carte :
 \begin{itemize}
@@ -1459,6 +1467,20 @@ L'archivage ne doit être lancé qu'à la toute fin de l'étude. Notez que les i
 
 \section{Bouton \bouton{Close}}\label{btn:step7_close}
 Ferme la fenêtre et rend la main au dialogue principal. Le bouton \bouton{?} ouvre cette aide à la page de ce chapitre.
+
+%==========================================================
+\chapter{Missions visible seul}\label{ch:visible_only}
+\section{Sans la caméra infrarouge}\label{sec:visible_only}
+Une mission peut être volée avec la seule caméra du drone, sans la SJCam : le type \bouton{Visible only (drone DNG)} se choisit en haut de la première page de l'étape~1 (section~\ref{btn:step1_mission_type}). Il est enregistré dans la mission (\texttt{"mission type": "visible"} dans \texttt{FlightAnalytics/mission\_parameters.json} ; les missions sans cette clé sont multispectrales). Les étapes sont les mêmes, moins ce qui concerne l'infrarouge :
+\begin{itemize}
+	\item \textbf{Étape 1} : seule la carte SD du drone est nécessaire ; la copie a trois étapes (copie, EXIF, altitude du sol). Le dossier de la mission n'a ni dossier \texttt{AerialPhotography/NIR} ni dossier \texttt{Synchro}.
+	\item \textbf{Étape 2} : la ligne de temps ne montre que les images visibles ; il n'y a pas de cible tournante à chercher ni de phase de synchronisation : seule la phase de relevé est vérifiée. Le best mapping fonctionne comme pour une mission multispectrale. \bouton{Continue with development} enregistre le relevé et les points de prise de vue visibles (\texttt{AerialPhotography/shoot\_points.json}, un point par image visible, sans infrarouge) et ouvre l'étape~4.
+	\item \textbf{Étape 3} : inutile ; sa tuile indique \og Not needed \fg~et \bouton{Continue} passe directement de l'étape~2 à l'étape~4.
+	\item \textbf{Étape 4} (\og Develop \fg) développe les images DNG visibles du relevé (ou de la sélection du best mapping) : couleurs, correction de la distorsion de l'objectif et même recadrage que les images multispectrales, pour que le modèle de caméra d'OpenDroneMap soit le même. Chaque image donne \texttt{ImgIRdrone/VIS\_XXXX.jpg} (revue) et les trois bandes \texttt{ImgIRdrone/imgMultispectral/IRD\_XXXX\_1..3.tif} (rouge, vert, bleu) pour la carte.
+	\item \textbf{Étape 5} : la revue montre les images visibles développées ; il n'y a rien à réaligner. Une image floue ou mal exposée peut être signalée : elle est écartée de la carte.
+	\item \textbf{Étape 6} : OpenDroneMap construit une orthophoto à trois bandes (rouge, vert, bleu) au lieu de quatre. Il n'y a ni couche en fausses couleurs infrarouges, ni VIR, ni NDVI ; le modèle de terrain est calculé comme d'habitude.
+	\item \textbf{Étape 7} : l'archive garde les mêmes fichiers, sans ceux de l'infrarouge.
+\end{itemize}
 
 %==========================================================
 \appendix
