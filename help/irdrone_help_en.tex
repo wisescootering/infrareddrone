@@ -1002,7 +1002,7 @@ Runs the alignment procedure on the shoot points that satisfy both constraints
 	\item $|dt|\leq \texttt{Maximum VIS/NIR time difference}$,
 \end{itemize}
 and, if \bouton{Best mapping: only the images the map needs} is chosen, only the images the map needs (Section~\ref{btn:step4_best_mapping}).
-Note that image alignment is a very time-consuming procedure. This of course depends on the computer. The computations are spread over several processors if the computer is ``multi-core''. The progress bar shows how far the computation has progressed, along with an estimate of the remaining processing time. As an example, on an HP ZBook 3 with a quad-core Intel Xeon processor, aligning the VIS and NIR images of one shoot point takes about $60\,s$. So it takes two hours to process 120 images. Running these computations at lunchtime or overnight is a good idea.
+Note that image alignment is a very time-consuming procedure. This of course depends on the computer. The computations are spread over several processors if the computer is ``multi-core''. The progress bar shows how far the computation has progressed, along with an estimate of the remaining processing time. As an example, on a laptop with a quad-core Intel Core~i7 processor and 16\,GB of memory (3 alignment workers), aligning the VIS and NIR images of one shoot point takes about $15\,s$, so 120 images take about half an hour. For a large mission, running these computations at lunchtime is still a good idea.
 
 The alignment never starts by itself, even when Step~4 is opened from Step~3. During the computation, the button becomes \bouton{Stop} (Section~\ref{btn:step4_stop}).
 
