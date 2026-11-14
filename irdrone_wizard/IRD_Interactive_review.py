@@ -534,10 +534,15 @@ class ReviewStrip(QWidget):
     STATUS_H = 8
     AXIS_H = 20
 
-    def __init__(self, review: R.Review, thumbs: Dict[int, QPixmap], parent=None):
+    def __init__(self, review: R.Review, thumbs: Dict[int, QPixmap], parent=None, visible_only: bool = False):
+        """visible_only: developed images of a visible only mission, no
+        misalignment chart (a thin band for the name of the selected point)."""
         super().__init__(parent)
         self.review = review
         self.thumbs = thumbs
+        self.visible_only = visible_only
+        if visible_only:
+            self.CHART_H = 22
         self.selected = 0
         self.hover: Optional[int] = None
         self._drag = None
@@ -597,7 +602,8 @@ class ReviewStrip(QWidget):
         chart, lane, status, axis = self.rows()
         p.save()
         p.setClipRect(QRectF(self.GUTTER, 0, self.plot_w(), self.height()))
-        self._paint_chart(p, chart)
+        if not self.visible_only:
+            self._paint_chart(p, chart)
         self._paint_lane(p, lane)
         self._paint_status(p, status)
         self._paint_cursor(p, chart, status)
@@ -611,17 +617,19 @@ class ReviewStrip(QWidget):
         p.setFont(f)
         al = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         p.setPen(MUTED)
-        p.drawText(QRectF(0, chart.top(), self.GUTTER - 10, 32), al | Qt.TextFlag.TextWordWrap,
-                   "Residual\nmisalignment")
-        y_ok = self._y_of(R.SHIFT_OK, chart)
-        y_bad = self._y_of(R.SHIFT_SUSPICIOUS, chart)
-        p.drawText(QRectF(0, y_ok - 8, self.GUTTER - 10, 16), al, f"{R.SHIFT_OK:g} px")
-        p.drawText(QRectF(0, y_bad - 8, self.GUTTER - 10, 16), al, f"{R.SHIFT_SUSPICIOUS:g} px")
+        if not self.visible_only:
+            p.drawText(QRectF(0, chart.top(), self.GUTTER - 10, 32), al | Qt.TextFlag.TextWordWrap,
+                       "Residual\nmisalignment")
+            y_ok = self._y_of(R.SHIFT_OK, chart)
+            y_bad = self._y_of(R.SHIFT_SUSPICIOUS, chart)
+            p.drawText(QRectF(0, y_ok - 8, self.GUTTER - 10, 16), al, f"{R.SHIFT_OK:g} px")
+            p.drawText(QRectF(0, y_bad - 8, self.GUTTER - 10, 16), al, f"{R.SHIFT_SUSPICIOUS:g} px")
         fb = QFont(f)
         fb.setBold(True)
         p.setFont(fb)
         p.setPen(TAG_COLOR)
-        p.drawText(QRectF(0, lane.top(), self.GUTTER - 10, lane.height()), al, "Aligned\nimages")
+        p.drawText(QRectF(0, lane.top(), self.GUTTER - 10, lane.height()), al,
+                   "Developed\nimages" if self.visible_only else "Aligned\nimages")
         p.setFont(self.font())
 
     CHART_MAX = 12.0
@@ -1029,7 +1037,7 @@ class ReviewDialog(QDialog):
         body.addWidget(side_scroll)
         outer.addLayout(body, 1)
 
-        self.strip = ReviewStrip(self.review, self.thumbs)
+        self.strip = ReviewStrip(self.review, self.thumbs, visible_only=self.visible_only)
         self.strip.setToolTip("Hover to preview · click to select · wheel to zoom · drag to pan · "
                               "double-click to see the whole survey")
         self.strip.hovered.connect(self._on_strip_hover)
