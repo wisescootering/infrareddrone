@@ -1166,7 +1166,6 @@ class ODMEngineTests(unittest.TestCase):
         return log, pull
 
     def test_gpu_refused_falls_back_to_cpu(self):
-        import IRD_Interactive_ODM as ODM
         log, pull = self._engine_part_of_run(True, False, False, {"version": "3.6.2"})
         self.assertTrue(any(line.startswith("The GPU is not used: no toolkit") for line in log))
         self.assertTrue(any("OpenDroneMap 3.6.2 (opendronemap/odm:latest), on the CPU." == line for line in log))
