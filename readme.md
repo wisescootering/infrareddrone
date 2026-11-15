@@ -19,7 +19,7 @@
 
 
 # General information
-* 🚀 Current version: 1.4
+* 🚀 Current version: 1.5
 * ⌨️ Authors : Balthazar Neveu , Alain Neveu
 * 🕹️ Testers: [Pépin Hugonnot](https://www.pepin-hugonnot.fr/vincent-hugonnot-florine-pepin-auvergne_fr.html) : Florine Pépin 
 
@@ -527,3 +527,13 @@ Refer to the calibration documents
 * Fixes: black orthophoto preview after ODM (broken JPEG overviews on 16-bit data), angle interpolation across 360°, Windows tool paths, DJI RawTherapee profile
 
 
+
+## v1.5
+* November 2026
+* 📷 **Visible only missions**: the mission type is chosen in Step 1, multispectral (as before) or visible only (drone DNG only, no infrared camera)
+  * Step 3 (synchronisation) is not needed; Step 2 only surveys the flight and writes the visible shoot points
+  * Step 4 develops the visible DNG (same reference as the alignment) instead of aligning them; Step 5 reviews the developed images; Step 6 maps them in colour with ODM (three bands); Step 7 archives without an infrared folder
+* ⚡ **Much faster Step 4 alignment**: cost search about 15 times faster, float32 images and OpenCV pyramids, local warp computed on the kept area only, RawTherapee thread sharing, about 3 GB of RAM per worker (Auto starts more workers), uncompressed multispectral TIF bands; a realignment by hand takes about 15 s instead of 2-3 min
+* 🔍 **Step 5 review**: faster scan and thumbnails cached on disk, images prepared in the loading thread, overlay colours of the manual alignment can be chosen; several fixes of the alignment window (black images, right-drag)
+* 🗺️ **Step 6 ODM**: flight map with the selected images and their footprints, OpenDroneMap version shown and a newer image offered, NVIDIA GPU option, an unfinished run is set aside, the user is asked to close a map folder in use
+* Missions renamed or moved by hand are recovered; point numbers counted like the user counts; various fixes (take-off image number, SJCam RAW numbering, white display pixels)
