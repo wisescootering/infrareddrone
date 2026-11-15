@@ -1254,26 +1254,6 @@ def _unique_folder(path: Path) -> Path:
     return candidate
 
 
-def _move_folder(source: Path, destination: Path) -> None:
-    """Rename a folder. On Windows the rename is refused when the folder is open
-    (a File Explorer window on it): then its content is moved one by one into the
-    destination (an open folder itself is not an obstacle for its files); the
-    emptied source is removed when the system lets it."""
-    try:
-        source.rename(destination)
-        return
-    except OSError:
-        if not source.is_dir():
-            raise
-    destination.mkdir(exist_ok=True)
-    for child in list(source.iterdir()):
-        shutil.move(str(child), str(destination / child.name))
-    try:
-        source.rmdir()
-    except OSError:
-        pass
-
-
 def _run_stamp(mapping_folder: Path) -> str:
     """Date of the run that built a mapping folder (its manifest), else of the folder."""
     try:
@@ -1291,8 +1271,8 @@ def set_previous_mapping_aside(mission_folder: Path) -> Optional[Path]:
     if not previous_mapping_details(mapping_folder):
         return None
     previous = _unique_folder(mapping_folder.with_name(f"{ODM_PROJECT_NAME}_{_run_stamp(mapping_folder)}"))
-    _move_folder(mapping_folder, previous)
-    mapping_folder.mkdir(exist_ok=True)
+    mapping_folder.rename(previous)
+    mapping_folder.mkdir()
     if (previous / "camera").is_dir():
         shutil.copytree(previous / "camera", mapping_folder / "camera")
     return previous
@@ -1305,8 +1285,8 @@ def _put_previous_mapping_back(mission_folder: Path, previous: Path) -> Optional
     mapping_folder = Path(mission_folder) / ODM_PROJECT_NAME
     failed = _unique_folder(mapping_folder.with_name(
         f"{ODM_PROJECT_NAME}_failed_{datetime.now().strftime('%Y%m%d_%H%M%S')}"))
-    _move_folder(mapping_folder, failed)
-    _move_folder(previous, mapping_folder)
+    mapping_folder.rename(failed)
+    previous.rename(mapping_folder)
     if all(path.name == "camera" for path in failed.iterdir()):     # nothing done (Docker off…)
         shutil.rmtree(failed)
         return None
