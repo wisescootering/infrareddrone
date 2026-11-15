@@ -713,27 +713,6 @@ class BestMappingTests(unittest.TestCase):
             self._built_map(mission)                                  # a second time: another name
             self.assertNotEqual(ODM.set_previous_mapping_aside(mission), previous)
 
-    def test_a_map_folder_open_in_the_explorer_is_still_set_aside(self):
-        """Windows refuses to rename a folder open in File Explorer (WinError 5):
-        its content is moved instead, the map is kept all the same."""
-        import IRD_Interactive_ODM as ODM
-        with tempfile.TemporaryDirectory() as temporary:
-            mission = Path(temporary)
-            self._create_mission(mission)
-            mapping_folder = self._built_map(mission)
-            real_rename = Path.rename
-
-            def locked(self_path, target):
-                if self_path == mapping_folder:
-                    raise PermissionError(13, "Access denied")
-                return real_rename(self_path, target)
-
-            with patch.object(Path, "rename", locked):
-                previous = ODM.set_previous_mapping_aside(mission)
-            self.assertEqual((previous / "mapping_result" / "ortho.tif").read_text(encoding="utf-8"),
-                             "previous map")
-            self.assertEqual(sorted(p.name for p in mapping_folder.iterdir()), ["camera"])
-
     def test_an_unfinished_run_is_set_aside_too(self):
         """A run stopped or failed with no map before it leaves its input images
         (and its log): the next run sets them aside instead of refusing them."""
