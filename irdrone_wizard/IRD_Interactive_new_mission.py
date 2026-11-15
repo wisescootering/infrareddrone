@@ -22,7 +22,7 @@ from typing import List, Optional
 
 from PyQt6 import QtCore
 from PyQt6.QtCore import QSettings, QStorageInfo, Qt, QThread, QUrl, pyqtSignal
-from PyQt6.QtGui import QDesktopServices, QPixmap
+from PyQt6.QtGui import QDesktopServices, QFontMetrics, QPixmap
 from PyQt6.QtWidgets import (QApplication, QButtonGroup, QDialog, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout,
                              QHBoxLayout, QLabel, QLineEdit, QMessageBox, QProgressBar, QPushButton, QSizePolicy,
                              QSpinBox, QStackedWidget, QVBoxLayout, QWidget)
@@ -479,6 +479,10 @@ class NewMissionDialog(QDialog):
                 f"border-radius: 0; {left} {right} }} "
                 "QPushButton:checked { background: #17365D; color: white; border-color: #17365D; font-weight: bold; } "
                 "QPushButton:hover:!checked { background: #EEF3F8; }")
+            # the checked state is bold, wider than the size hint: reserve the bold width (else the first letter is cut)
+            bold = button.font()
+            bold.setBold(True)
+            button.setMinimumWidth(QFontMetrics(bold).horizontalAdvance(button.text()) + 40)
             button.clicked.connect(lambda _=False, kind=kind: self.set_kind(kind))
             self.kind_group.addButton(button)
             self.kind_buttons[kind] = button
