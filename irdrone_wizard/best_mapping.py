@@ -203,6 +203,8 @@ def select_shoot_points(points: Sequence[Dict[str, Any]], target: float = DEFAUL
     `tolerance` (see `select`) keeps about as many images as the Step 2
     preview over the same survey, though only some pairs are eligible."""
     flags = list(eligible) if eligible is not None else [True] * len(points)
+    if all(flags):
+        tolerance = 0.0         # nothing excluded (visible only): same count as the Step 2 preview
     shots = [shot_from_vis(i, (p.get("VIS") if isinstance(p, dict) else None) or {}, ok)
              for i, (p, ok) in enumerate(zip(points, flags))]
     return [points[i] for i in select(shots, target, fov, tolerance)]

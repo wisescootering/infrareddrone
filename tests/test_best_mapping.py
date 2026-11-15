@@ -115,6 +115,14 @@ class ShootPointTests(unittest.TestCase):
         self.assertTrue(all(abs(B.rank_one_dt(p)) < 0.5 for p in kept))
         self.assertLess(len(kept), sum(flags))
 
+    def test_nothing_excluded_gives_exactly_the_preview_count(self):
+        # visible only: every image is eligible, Step 4 must keep what Step 2 shows
+        for step in (3.0, 5.5, 7.3):
+            points = [shoot_point(i, step, 0.0) for i in range(120)]
+            self.assertEqual(
+                len(B.select_shoot_points(points, 0.75, FOV, [True] * 120)),
+                len(B.select_shoot_points(points, 0.75, FOV, tolerance=0)))
+
     def test_badly_synchronised_pairs_keep_about_as_many_images_as_the_preview(self):
         # the NIR clock drifts against the VIS one: |dt| < 0.5 s for one pair in two
         # or so; without the tolerance each gap shortened the step to the last
