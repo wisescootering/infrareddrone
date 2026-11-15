@@ -713,6 +713,20 @@ class BestMappingTests(unittest.TestCase):
             self._built_map(mission)                                  # a second time: another name
             self.assertNotEqual(ODM.set_previous_mapping_aside(mission), previous)
 
+    def test_a_map_folder_in_use_asks_the_user_to_close_it(self):
+        """Windows refuses to rename a folder open in File Explorer (WinError 5):
+        the user is told to close it; nothing is changed."""
+        import IRD_Interactive_ODM as ODM
+        with tempfile.TemporaryDirectory() as temporary:
+            mission = Path(temporary)
+            self._create_mission(mission)
+            mapping_folder = self._built_map(mission)
+            with patch.object(Path, "rename", side_effect=PermissionError(13, "Access denied")):
+                with self.assertRaises(ODM.ODMMappingError) as raised:
+                    ODM.set_previous_mapping_aside(mission)
+            self.assertIn("Close the File Explorer window", str(raised.exception))
+            self.assertTrue((mapping_folder / "mapping_result" / "ortho.tif").is_file())
+
     def test_an_unfinished_run_is_set_aside_too(self):
         """A run stopped or failed with no map before it leaves its input images
         (and its log): the next run sets them aside instead of refusing them."""

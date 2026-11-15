@@ -1271,7 +1271,13 @@ def set_previous_mapping_aside(mission_folder: Path) -> Optional[Path]:
     if not previous_mapping_details(mapping_folder):
         return None
     previous = _unique_folder(mapping_folder.with_name(f"{ODM_PROJECT_NAME}_{_run_stamp(mapping_folder)}"))
-    mapping_folder.rename(previous)
+    try:
+        mapping_folder.rename(previous)
+    except PermissionError as error:        # Windows: the folder or a file in it is open
+        raise ODMMappingError(
+            f"The previous map cannot be set aside: {mapping_folder} is in use.\n\n"
+            "Close the File Explorer window (or any program, such as QGIS) that has this "
+            "folder or one of its files open, then start the map again.") from error
     mapping_folder.mkdir()
     if (previous / "camera").is_dir():
         shutil.copytree(previous / "camera", mapping_folder / "camera")
