@@ -12,8 +12,10 @@ The report holds:
 * installation: IRDrone version and commit, Python used, system, Windows code
   page (accented paths), Python packages, external tools (path, version),
   settings, working folder and free space;
-* self-tests: ArUco detection of a synthetic target (OpenCV), ExifTool and
-  image reading / writing in an accented folder;
+* self-tests (selftests.py, "Check the installation" in the wizard): every
+  link of the processing chain run on the bundled samples (DJI DNG, SJCam
+  RAW, ArUco target, alignment, 16 bits TIFF, accented folder...), each with
+  how to fix it when it fails;
 * mission (optional): steps done, time lines, Step 2 windows, Step 3 offset and
   pairs, developed images older than their DNG; every synchronisation image
   is developed again with RawTherapee in a temporary folder (the mission is
@@ -47,8 +49,7 @@ PACKAGES = ("numpy", "scipy", "opencv-contrib-python", "opencv-python", "opencv-
             "opencv-contrib-python-headless", "PyQt6", "PyQt6-Qt6", "rawpy", "scikit-image", "matplotlib",
             "imageio", "numba", "pandas", "openpyxl", "piexif", "exifread", "rasterio", "geopy",
             "requests", "psutil", "qrcode", "GDAL")
-FIXED_IDS = (5, 22, 16, 13)
-MOBILE_ID = 0
+from selftests import MOBILE_ID  # noqa: E402
 SAMPLE_IMAGES = 3          # developed images added to the zip per band (first, middle, last)
 TOOL_TIMEOUT = 30
 
@@ -175,71 +176,23 @@ def installation_report():
 
 
 # ---------------------------------------------------------------------------
-#  Self-tests
+#  Self-tests (selftests.py: the same as "Check the installation" in the wizard)
 # ---------------------------------------------------------------------------
-def synthetic_target(size=60, angle=30.0):
-    """Grey image of the synchronisation target: fixed markers 5, 22, 16, 13
-    around the rotating marker 0 (DICT_4X4_50)."""
-    import cv2
-    import numpy as np
-    dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-    generate = getattr(cv2.aruco, "generateImageMarker", None) or getattr(cv2.aruco, "drawMarker")
-
-    def marker(marker_id):
-        m = generate(dictionary, marker_id, size)
-        pad = size // 6
-        return cv2.resize(cv2.copyMakeBorder(m, pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=255), (size, size))
-
-    canvas = np.full((size * 6, size * 6), 190, np.uint8)
-    for marker_id, (x, y) in zip(FIXED_IDS, ((2.5, 0.5), (4.5, 2.5), (2.5, 4.5), (0.5, 2.5))):
-        x0, y0 = int(x * size), int(y * size)
-        canvas[y0:y0 + size, x0:x0 + size] = marker(marker_id)
-    rotation = cv2.getRotationMatrix2D((size / 2, size / 2), angle, 1.0)
-    mobile = cv2.warpAffine(marker(MOBILE_ID), rotation, (size, size), borderValue=190)
-    c0 = int(2.5 * size)
-    canvas[c0:c0 + size, c0:c0 + size] = mobile
-    return cv2.cvtColor(canvas, cv2.COLOR_GRAY2BGR)
-
-
-def marker_ids(image):
-    """Sorted ArUco ids found by the detection Step 3 uses."""
-    import IRD_Interactive_ArUco as Aru
-    data = Aru.detect_aruco_marker(image, Aru.get_aruco_dict("DICT_4X4_50"), verbose=False)
-    return sorted({int(entry[0]) for entry in data})
+from selftests import marker_ids, synthetic_target  # noqa: E402,F401  (used below and by the tests)
 
 
 def selftest_aruco():
-    found = marker_ids(synthetic_target())
-    expected = sorted((MOBILE_ID,) + FIXED_IDS)
-    return {"ok": found == expected, "found": found, "expected": expected}
+    import selftests
+    return selftests.run_checks(["aruco"], log=lambda text: None)["aruco"]
 
 
-def selftest_accented_folder():
-    """An image written, read and its EXIF read by ExifTool in a 'Démo é' folder."""
-    import numpy as np
-    import config
-    import image_io
-    result = {}
-    folder = Path(tempfile.mkdtemp(prefix="irdrone_diag_")) / "Démo Florine é"
-    try:
-        folder.mkdir(parents=True)
-        image = (np.arange(24 * 16 * 3) % 255).astype(np.uint8).reshape(24, 16, 3)
-        path = folder / "VIS_0001_é.jpg"
-        result["image_write"] = bool(image_io.imwrite(path, image))
-        read = image_io.imread(path)
-        result["image_read"] = read is not None and read.shape == image.shape
-        if config._EXIFTOOL_FOUND:
-            import exiftool_reader
-            try:
-                metadata = exiftool_reader.read_exiftool_json(config.EXIFTOOLPATH, path)
-                result["exiftool_read"] = metadata.get("FileName") == path.name and "ImageWidth" in metadata
-            except Exception as error:
-                result["exiftool_read"] = False
-                result["exiftool_error"] = str(error)
-        result["ok"] = all(v for k, v in result.items() if isinstance(v, bool))
-    finally:
-        shutil.rmtree(folder.parent, ignore_errors=True)
-    return result
+def run_selftests(progress=lambda text: None, log=lambda text: None, quick=False):
+    """Every check of selftests.py (``quick``: no image development): {name: result}."""
+    import selftests
+
+    def on_result(result):
+        progress(f"Self-test {result['title']}: {selftests.LABELS[result['status']]}")
+    return selftests.run_checks(selftests.QUICK if quick else None, log=log, on_result=on_result)
 
 
 # ---------------------------------------------------------------------------
@@ -360,14 +313,12 @@ def _verdicts(report):
     if len(cv) > 1:
         lines.append(f"Several OpenCV packages installed ({', '.join(cv)}): they overwrite each other, "
                      "keep opencv-contrib-python only.")
-    for label, tool in (install.get("tools") or {}).items():
-        if isinstance(tool, dict) and not tool.get("found"):
-            lines.append(f"{label} not found ({tool.get('path')}).")
-    tests = report.get("selftests", {})
-    if not (tests.get("aruco") or {}).get("ok"):
-        lines.append("ArUco self-test FAILED: OpenCV does not find the markers of a perfect target.")
-    if not (tests.get("accented_folder") or {}).get("ok"):
-        lines.append("Accented folder self-test FAILED (see selftests.accented_folder).")
+    for name, test in (report.get("selftests") or {}).items():
+        if not isinstance(test, dict) or test.get("status") in (None, "ok", "skipped"):
+            continue
+        detail = " ".join(str(test.get("detail", "")).split())
+        fix = f" How to fix: {test['fix']}" if test.get("fix") else ""
+        lines.append(f"Self-test \"{test.get('title', name)}\" {str(test['status']).upper()}: {detail}{fix}")
     sync = report.get("sync_images") or {}
     for band, data in sync.items():
         if not isinstance(data, dict) or "images" not in data:
@@ -410,9 +361,10 @@ def _text(report):
     for label, tool in (install.get("tools") or {}).items():
         out.append(f"    {label}: {tool}")
     out += [f"Working folder {install.get('working_folder')}", f"Settings {install.get('settings')}", ""]
-    out += ["Self-tests", "----------"]
-    out += [f"    {name}: {json.dumps(result, ensure_ascii=False, default=str)}"
-            for name, result in (report.get("selftests") or {}).items()] + [""]
+    tests = {k: v for k, v in (report.get("selftests") or {}).items() if isinstance(v, dict) and "status" in v}
+    if tests:
+        import selftests
+        out += [selftests.text(tests, title="Self-tests")]
     if report.get("mission"):
         out += ["Mission", "-------", json.dumps(report["mission"], indent=2, ensure_ascii=False, default=str), ""]
     for band, data in (report.get("sync_images") or {}).items():
@@ -432,8 +384,10 @@ def _text(report):
     return "\n".join(out) + "\n"
 
 
-def create_report(mission=None, output=None, develop=True, progress=lambda text: None) -> Path:
-    """Write irdrone_diagnostic_YYYYMMDD_HHMMSS.zip and return its path."""
+def create_report(mission=None, output=None, develop=True, progress=lambda text: None, checks=None,
+                  quick=False) -> Path:
+    """Write irdrone_diagnostic_YYYYMMDD_HHMMSS.zip and return its path.
+    ``checks``: results of selftests.run_checks already run (not run again)."""
     import config
     started = datetime.datetime.now()
     output = Path(output) if output else Path(config.OUTPUT_FOLDER_NAME)
@@ -442,7 +396,7 @@ def create_report(mission=None, output=None, develop=True, progress=lambda text:
     progress("Installation")
     report["installation"] = _safe(installation_report)
     progress("Self-tests")
-    report["selftests"] = {"aruco": _safe(selftest_aruco), "accented_folder": _safe(selftest_accented_folder)}
+    report["selftests"] = checks if checks else _safe(run_selftests, progress, quick=quick)
     work = Path(tempfile.mkdtemp(prefix="irdrone_diagnostic_"))
     try:
         samples = work / "images"
@@ -483,15 +437,16 @@ def main(argv=None):
     parser.add_argument("--output", help="folder of the zip (default: the working folder)")
     parser.add_argument("--no-develop", action="store_true",
                         help="do not develop the synchronisation images again (faster)")
+    parser.add_argument("--quick", action="store_true",
+                        help="self-tests without developing the sample images, no alignment (faster)")
     args = parser.parse_args(argv)
     if args.mission and not Path(args.mission).is_dir():
         parser.error(f"not a folder: {args.mission}")
-    zip_path = create_report(args.mission, args.output, develop=not args.no_develop,
+    zip_path = create_report(args.mission, args.output, develop=not args.no_develop, quick=args.quick,
                              progress=lambda text: print(f"  {text}", flush=True))
     with zipfile.ZipFile(zip_path) as archive:
         text = archive.read("report.txt").decode("utf-8")
-    summary = text.split("Installation\n")[0]
-    print(summary)
+    print(text)
     print(f"Diagnostic report written: {zip_path}")
     print("Send this zip file to the IRDrone developers.")
     return 0
