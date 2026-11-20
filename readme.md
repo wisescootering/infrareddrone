@@ -19,7 +19,7 @@
 
 
 # General information
-* 🚀 Current version: 1.5
+* 🚀 Current version: 1.6
 * ⌨️ Authors : Balthazar Neveu , Alain Neveu
 * 🕹️ Testers: [Pépin Hugonnot](https://www.pepin-hugonnot.fr/vincent-hugonnot-florine-pepin-auvergne_fr.html) : Florine Pépin 
 
@@ -537,3 +537,17 @@ Refer to the calibration documents
 * 🔍 **Step 5 review**: faster scan and thumbnails cached on disk, images prepared in the loading thread, overlay colours of the manual alignment can be chosen; several fixes of the alignment window (black images, right-drag)
 * 🗺️ **Step 6 ODM**: flight map with the selected images and their footprints, OpenDroneMap version shown and a newer image offered, NVIDIA GPU option, an unfinished run is set aside, the user is asked to close a map folder in use
 * Missions renamed or moved by hand are recovered; point numbers counted like the user counts; various fixes (take-off image number, SJCam RAW numbering, white display pixels)
+
+
+## v1.6
+* November 2026
+* 🩺 **Diagnostic report**: one zip file to send when something goes wrong, from the ⚙ options (*Create a diagnostic report…*) or `irdrone_diagnostic.bat` (drop a mission folder on it)
+  * installation: IRDrone version, Python used, packages (OpenCV…), ExifTool / RawTherapee / SJCam converter paths and versions, Windows code page, settings, free space; self-tests (ArUco detection, accented folders)
+  * mission: steps done, Step 2 windows, time lines, Step 3 result; every synchronisation image developed again and checked for ArUco markers, compared with the image Step 3 used; sample images; the mission is never modified
+  * each session of the wizard copies its console into a log file (the last ten kept), added to the report
+* 🕐 **Clock offset by hand** (advanced option in the ⚙ options, off by default): Step 3 pairs the images from the infrared camera clock offset typed by the user, for flights without the ArUco target
+* Fixes
+  * Step 3: an image without any ArUco marker stopped the whole detection (*'NoneType' object does not support item assignment*); it is now skipped
+  * Step 3: an image developed for an earlier run of Step 1 (another infrared image with the same name) was reused; it is developed again when its DNG is newer
+  * Step 1 (Windows): SJCam RAW conversion failed when the SD card or the mission folder had accents in its name
+* Manual: technical chapter on the image alignment
