@@ -279,7 +279,12 @@ def sync_images_check(mission: Path, work: Path, samples: Path, develop=True, pr
                 image = image_io.imread(cached, cv2.IMREAD_COLOR)
                 row["cached"] = {"stats": _image_stats(image), "markers": marker_ids(image) if image is not None else None}
             if develop and dng.is_file():
-                image, out_file = Aru.load_dng_for_aruco(str(dng), work)
+                try:
+                    image, out_file = Aru.load_dng_for_aruco(str(dng), work)
+                except Exception as error:          # RawTherapee wrote nothing: in the report
+                    row["developed"] = {"error": str(error), "markers": None}
+                    rows.append(row)
+                    continue
                 row["developed"] = {"stats": _image_stats(image),
                                     "markers": marker_ids(image) if image is not None else None}
                 if image is not None and index in keep:

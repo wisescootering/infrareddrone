@@ -853,6 +853,16 @@ Une petite fenêtre demande de combien de secondes l'horloge de la caméra infra
 \section{Bouton \bouton{Continue with image processing}}\label{btn:step3_continue}
 Apparaît en bas à droite, à côté de \bouton{Close}, une fois les images appariées. Il ferme la fenêtre et ouvre l'étape~4. L'alignement, long, n'y démarre pas tout seul : il se lance avec \bouton{Run alignment}.
 
+\section{Quand l'étape~3 échoue}\label{sec:step3_problems}
+Quand quelque chose ne va pas, une fenêtre dit \emph{ce qui s'est passé} et \emph{comment le corriger} (étapes numérotées), avec le message technique sous \bouton{Details} ; le même texte est écrit dans la console. Ses boutons : \bouton{Check the installation} (§\ref{btn:home_check}), \bouton{Open the images of the target} (\texttt{Synchro/VIS}, \texttt{Synchro/NIR} : les images telles que développées pour la détection ; \texttt{Synchro/Check\_ARUCO} : les marqueurs trouvés, dessinés), \bouton{Create a diagnostic report…} de cette mission (§\ref{btn:home_diagnostic}). Les causes habituelles :
+\begin{itemize}
+  \item la liste des images ou la ligne de temps d'une caméra manque : l'étape~1 n'est pas allée au bout, la relancer ;
+  \item pas de fenêtre de synchronisation, ou une fenêtre vide : la placer à l'étape~2 sur les images où la cible est filmée en train de tourner ;
+  \item RawTherapee manque, ou ne développe rien : la fenêtre le dit (au lieu de « pas assez de points ») ; la vérification de l'installation dit pourquoi ;
+  \item le décalage n'a pas pu être mesuré (cible trouvée sur trop peu d'images) : la fenêtre donne, pour chaque caméra, le nombre d'images de synchronisation, sur combien la cible a été trouvée et pourquoi les autres ont été écartées (manquantes, non développées, sans aucun marqueur, absentes de la ligne de temps). Si la cible n'est pas sur les images développées, la fenêtre de synchronisation de l'étape~2 est sur les mauvaises images ; si elle n'a pas été filmée, \bouton{Enter the offset by hand…}.
+\end{itemize}
+Une image absente de la ligne de temps de sa caméra est écartée (elle était comptée à $-9999$~s, ce qui faussait le décalage).
+
 \section{Bouton \bouton{Before alignment}}\label{btn:step3_before}
 Quand l'étape~3 est rouverte une fois faite, la fenêtre montre les courbes après alignement (\texttt{Synchro/check\_time\_alignment.png}). \bouton{Before alignment} montre les courbes avant correction (\texttt{check\_time\_before\_alignment.png}) ; un second clic revient aux courbes alignées.
 

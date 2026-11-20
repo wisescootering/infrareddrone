@@ -6,6 +6,7 @@
 #   2026-10-20 00:35:10   V003   *
 # ---------------------------------------------------------------------------------
 
+import os
 import os.path as osp
 from pathlib import Path
 import numpy as np
@@ -52,7 +53,8 @@ def process_aruco_images(
         max_workers: int = 4,
         progress_callback: Optional[Callable[[int], None]] = None,
         log_callback: Optional[Callable[[str], None]] = None,
-        check_image_callback: Optional[Callable[[str], None]] = None
+        check_image_callback: Optional[Callable[[str], None]] = None,
+        stats: Optional[Dict[str, Any]] = None
 ):
     """
     Multi-threaded processing of ArUco detections.
@@ -82,6 +84,16 @@ def process_aruco_images(
         Called with the path of each check image just after it has been saved
         (may be called from several threads; it must be thread-safe, e.g. a Qt
         signal ``emit``). Not called when the EXIF cache is used.
+    stats : dict, optional
+        Filled with what happened to each image (see ``new_sync_stats``): the
+        Step 3 window explains with it why the offset could not be measured.
+
+    Raises
+    ------
+    SyncDataError
+        The data of the mission do not allow the detection (Step 1 / 2 not
+        done, empty synchronisation window, no time line, no image could be
+        developed): the message says what to do.
 
     Returns
     -------
@@ -104,9 +116,10 @@ def process_aruco_images(
 
 
     # 1) Retrieve list of images
-    outputFolder, idMin, idMax, listImages = read_transfer_info(
-        folderMissionPath, spectral_band, suffix_image, key="sync"
-    )
+    stats = new_sync_stats(spectral_band) if stats is None else stats
+    stats.update(new_sync_stats(spectral_band))
+    listImages = sync_images(folderMissionPath, spectral_band, suffix_image)
+    stats["images"] = len(listImages)
 
 
     folder_images = folderMissionPath / name_folder
@@ -134,6 +147,10 @@ def process_aruco_images(
     def process_one(i, img_name, folderMissionPath):
         img_path = folder_images / img_name
         ext = img_name.lower().split('.')[-1]
+        if not img_path.is_file() and not read_aruco_cache(img_path):
+            stats["missing"].append(img_name)
+            log_message(f"⚠ {spectral_band}: synchronisation image missing: {img_path}")
+            return i, img_name, None
 
         # ------------------------------------------------------------
         # 1) FAST PATH : cache EXIF détecté → aucun chargement image
@@ -144,18 +161,31 @@ def process_aruco_images(
                 print(Style.YELLOW + f'[Warning]  ⚠  USE CACHE {use_aruco_cache}' + Style.RESET)
             else:
                 log_message(f'⚠   USE CACHE {use_aruco_cache}')
+            stats["from_cache"] += 1
+            if cached.get("relative_timeline") is None:
+                cached["relative_timeline"] = extract_relative_time_line(
+                    dic_relative_time_line, Path(img_path).name, spectral_band, suffix_image)
             return i, img_name, cached
 
         # --------------------------------------------------------------------------------------------------
         # 2) SLOW PATH : pas de cache pour les données aruco de détection d'angle → chargement image normal
         # --------------------------------------------------------------------------------------------------
         if ext == "dng" and spectral_band in ["VIS", "NIR"]:
-            img_cv, _ = load_dng_for_aruco(str(img_path), folderMissionPath.parent, threads=rawtherapee_threads)
+            try:
+                img_cv, _ = load_dng_for_aruco(str(img_path), folderMissionPath.parent, threads=rawtherapee_threads)
+            except DevelopmentError as error:
+                stats["not_developed"].append(img_name)
+                stats["errors"].append(str(error))
+                log_message(f"⚠ {error}")
+                return i, img_name, None
         else:
             img_cv = image_io.imread(str(img_path))
 
         if img_cv is None:
+            stats["not_developed"].append(img_name)
+            log_message(f"⚠ {spectral_band}: {img_name} could not be read.")
             return i, img_name, None
+        stats["developed"] += 1
 
         # --------------------------------------------------------
         # 3) ArUco detection
@@ -176,8 +206,14 @@ def process_aruco_images(
         if result is None:
             # No marker at all on this image (blurred, target out of the frame):
             # skipped, the other images are still used.
+            stats["no_marker"].append(img_name)
             return i, img_name, None
         result["relative_timeline"] = extract_relative_time_line(dic_relative_time_line, Path(img_path).name, spectral_band, suffix_image)
+        if result["relative_timeline"] is None or result["relative_timeline"] <= NO_TIME:
+            # Not in the time line: an image at -9999 s would wreck the offset
+            stats["no_time"].append(img_name)
+            log_message(f"⚠ {spectral_band}: {img_name} is not in time_line.json: skipped.")
+            return i, img_name, None
         # --------------------------------------------------------
         # Save check detection images (thread-safe and no GUI)
         # --------------------------------------------------------
@@ -262,7 +298,96 @@ def process_aruco_images(
     y_vals = [t[1] for t in ordered]
     results = [t[2] for t in ordered]
 
+    stats["detected"] = len(results)
+    stats["with_absolute_angle"] = sum(1 for r in results if r.get("angle_abs") is not None)
+    stats["with_image_angle"] = sum(1 for r in results if r.get("angle_img") is not None)
+    log_message(sync_stats_text(stats))
+    unusable = len(stats["missing"]) + len(stats["not_developed"])
+    if listImages and unusable == len(listImages):
+        raise SyncDataError(
+            f"No {band_name(spectral_band)} synchronisation image could be developed "
+            f"({len(stats['missing'])} missing, {len(stats['not_developed'])} not developed by RawTherapee"
+            + (f"; first error: {stats['errors'][0]}" if stats["errors"] else "") + ").",
+            "Click \"Check the installation\" on the first page of the wizard: it tells whether RawTherapee "
+            "develops the images on this computer, and how to fix it.\n"
+            "If the images are missing, run Step 1 again (it copies the images from the SD cards).")
     return results, x_vals, y_vals
+
+
+# ----------------------------------------------------------------------------
+#  What happened to the synchronisation images (explained by the Step 3 window)
+# ----------------------------------------------------------------------------
+NO_TIME = -9999.0      # extract_relative_time_line: image not in time_line.json
+
+
+class SyncDataError(RuntimeError):
+    """The mission does not allow the detection; ``fix`` says what to do.
+    str(): the explanation, then "How to fix:" and the fix."""
+
+    def __init__(self, what, fix):
+        super().__init__(f"{what}\nHow to fix: {fix}")
+        self.what, self.fix = what, fix
+
+
+class DevelopmentError(RuntimeError):
+    """RawTherapee did not write the developed image of one DNG."""
+
+
+def band_name(spectral_band):
+    return {"VIS": "visible", "NIR": "infrared"}.get(spectral_band, spectral_band)
+
+
+def new_sync_stats(spectral_band="VIS"):
+    return {"band": spectral_band, "images": 0, "from_cache": 0, "developed": 0, "missing": [],
+            "not_developed": [], "errors": [], "no_marker": [], "no_time": [], "detected": 0,
+            "with_absolute_angle": 0, "with_image_angle": 0}
+
+
+def sync_stats_text(stats):
+    """One paragraph: what happened to the synchronisation images of a band."""
+    band = band_name(stats["band"])
+    parts = [f"{band.capitalize()}: {stats['images']} synchronisation images, "
+             f"target found on {stats['detected']} "
+             f"({stats['with_absolute_angle']} with the four fixed markers)"]
+    if stats["from_cache"]:
+        parts.append(f"{stats['from_cache']} taken from the cache")
+    for key, label in (("missing", "missing"), ("not_developed", "not developed"),
+                       ("no_marker", "without any marker"), ("no_time", "not in the time line")):
+        names = stats[key]
+        if names:
+            shown = ", ".join(sorted(names)[:4]) + (", …" if len(names) > 4 else "")
+            parts.append(f"{len(names)} {label} ({shown})")
+    return "; ".join(parts) + "."
+
+
+def sync_images(folderMissionPath, spectral_band, suffix_image="dng"):
+    """Names of the synchronisation images chosen in Step 2 (SyncDataError if none)."""
+    json_file = Path(folderMissionPath) / spectral_band / f"transfer_info_{spectral_band}_{suffix_image}.json"
+    band = band_name(spectral_band)
+    try:
+        _, _, _, names = read_transfer_info(folderMissionPath, spectral_band, suffix_image, key="sync")
+    except FileNotFoundError:
+        raise SyncDataError(
+            f"The list of the {band} images of the mission is missing ({json_file}).",
+            "Run Step 1 for this mission (it copies the images from the SD cards and writes this list), "
+            "then Step 2.") from None
+    except KeyError:
+        raise SyncDataError(
+            f"No synchronisation window was chosen for the {band} images in Step 2 "
+            f"(no \"sync\" part in {json_file.name}).",
+            "Open Step 2 and place the synchronisation window (the images where the ArUco target is filmed "
+            "turning, before take-off), then run Step 3 again.") from None
+    except ValueError as error:
+        raise SyncDataError(f"{json_file} is damaged ({error}).",
+                            "Run Step 1 again for this mission, then Step 2.") from None
+    names = list(names or [])
+    if not names:
+        raise SyncDataError(
+            f"The synchronisation window of the {band} images is empty (Step 2).",
+            "Open Step 2 and place the synchronisation window on the images where the ArUco target is "
+            "filmed turning, then run Step 3 again. If the target was not filmed, use \"Enter the clock "
+            "offset…\" (⚙ options, advanced) to pair the images without it.")
+    return names
 
 def detect_mobile_marker_absolute(image_cv=None,
                                   img_path=None,
@@ -779,9 +904,9 @@ def load_relative_time_line(folderMissionPath, spectral_band, log_message=None):
         json_path = safe_path(Path(folderMissionPath) / spectral_band / "time_line.json")
 
         if not json_path.exists():
-            print(f"⚠️ Timeline file not found: {json_path}")
-            dic_relative_time_line = {}
-            return
+            raise SyncDataError(
+                f"The time line of the {band_name(spectral_band)} images is missing ({json_path}).",
+                "Run Step 1 again for this mission (it writes the time lines), then Steps 2 and 3.")
 
 
         with open(json_path, "r", encoding="utf-8") as f:
@@ -791,12 +916,12 @@ def load_relative_time_line(folderMissionPath, spectral_band, log_message=None):
         else:
             log_message("Relative timeline loaded successfully.")
 
+    except SyncDataError:
+        raise
     except Exception as e:
-        if log_message is None:
-            print(Style.RED + f"❌ Error loading timeline file: {e}" + Style.RESET)
-        else:
-            log_message(f"❌ Error loading timeline file: {e}")
-        dic_relative_time_line = {}
+        raise SyncDataError(
+            f"The time line of the {band_name(spectral_band)} images cannot be read ({json_path}: {e}).",
+            "Run Step 1 again for this mission (it writes the time lines), then Steps 2 and 3.") from e
     return dic_relative_time_line
 
 def extract_relative_time_line(dic_relative_time_line, file_name: str, type_img: str, ext: str) -> float:
@@ -1023,8 +1148,16 @@ def load_dng_for_aruco(path, folder_mission, threads=None):
     # The cache is named after the DNG: a DNG made again since (Step 1 run
     # again, the infrared images numbered differently) is developed again,
     # never matched with the JPEG of another image.
+    if not osp.isfile(path):
+        raise DevelopmentError(f"{Path(path).parent.name}: image missing: {path}")
     stale = osp.isfile(out_file) and osp.getmtime(out_file) < osp.getmtime(path)
     if stale or not osp.isfile(out_file):
+        if stale:
+            # Never the old image if the development fails
+            try:
+                os.remove(out_file)
+            except OSError:
+                pass
         cmd = [
             require_tool("RAWTHERAPEEPATH"),
             "-t",
@@ -1036,7 +1169,11 @@ def load_dng_for_aruco(path, folder_mission, threads=None):
             ),
             "-c", path
         ]
-        subprocess.call(cmd, env=rawtherapee_environment(threads))
+        code = subprocess.call(cmd, env=rawtherapee_environment(threads))
+        if not osp.isfile(out_file):
+            raise DevelopmentError(
+                f"RawTherapee could not develop {Path(path).parent.name}/{Path(path).name} "
+                f"(exit code {code}, no image written in {out_file}).")
 
     img_cv = image_io.imread(out_file, cv2.IMREAD_COLOR)
     return img_cv, out_file
