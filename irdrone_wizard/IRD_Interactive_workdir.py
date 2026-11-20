@@ -85,6 +85,19 @@ class WorkingDirDialog(QDialog):
                 "are paired from an offset you type, without detecting the ArUco target.")
             layout.addSpacing(6)
             layout.addWidget(self.manual_offset_box)
+            # Something went wrong: one zip with everything to send
+            self.btn_diagnostic = QPushButton("Create a diagnostic report…")
+            self.btn_diagnostic.setStyleSheet(SECONDARY_STYLE)
+            self.btn_diagnostic.setToolTip(
+                "Write a zip describing the installation (Python, packages, external tools) and, for a mission, "
+                "checking its synchronisation images, to send to the IRDrone developers.")
+            self.btn_diagnostic.clicked.connect(self._diagnostic)
+            import IRD_Interactive_help as Help
+            Help.attach_help(self.btn_diagnostic, "btn:home_diagnostic", self.btn_diagnostic.toolTip())
+            diagnostic_row = QHBoxLayout()
+            diagnostic_row.addWidget(self.btn_diagnostic)
+            diagnostic_row.addStretch()
+            layout.addLayout(diagnostic_row)
 
         settings_note = QLabel(f"Saved in {config.SETTINGS_FILE}")
         settings_note.setWordWrap(True)
@@ -100,6 +113,10 @@ class WorkingDirDialog(QDialog):
         layout.addWidget(buttons)
         # Word-wrapped labels get a wrong height otherwise (text cut at the bottom).
         layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
+
+    def _diagnostic(self):
+        import IRD_Interactive_diagnostic as Diagnostic
+        self._diagnostic_thread = Diagnostic.create_diagnostic_report(self)
 
     def _browse(self):
         start = Path(self.path_edit.text()).expanduser()
