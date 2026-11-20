@@ -473,7 +473,7 @@ The footprint is computed from the height above ground (terrain model from Step~
 
 
 \section{Bottom bar: working folder and manual}\label{btn:home_workdir}
-On the page of the list of missions, the bottom bar shows the working folder (the folder that contains the missions, \texttt{C:/Air-Mission} by default) and the free space on its disk; a click on the folder opens it in the file explorer. The \bouton{⚙} gear wheel changes the working folder: the list of missions is then read again. The folder is chosen at first launch; the \texttt{IRDRONE\_WORKING\_DIR} environment variable, if set, takes precedence. On the page of a mission, the bottom bar shows on the right the total size of the mission folder (\texttt{Mission size}), updated when a step is done and every minute.
+On the page of the list of missions, the bottom bar shows the working folder (the folder that contains the missions, \texttt{C:/Air-Mission} by default) and the free space on its disk; a click on the folder opens it in the file explorer. The \bouton{⚙} gear wheel changes the working folder: the list of missions is then read again. It also gives an advanced option, unchecked by default: entering the camera clock offset by hand in Step~3, for flights without the ArUco target (Section~\ref{btn:step3_clock_offset}). The folder is chosen at first launch; the \texttt{IRDRONE\_WORKING\_DIR} environment variable, if set, takes precedence. On the page of a mission, the bottom bar shows on the right the total size of the mission folder (\texttt{Mission size}), updated when a step is done and every minute.
 
 \bouton{?}, on the left, opens this manual (Section~\ref{sec:help}).
 
@@ -815,6 +815,11 @@ The main action of Step~3: it runs the target detection, the clock alignment and
 
 \section{\bouton{Manual mode…} button}\label{btn:step3_manual}
 Stops the chaining and shows the buttons of the three phases (Sections~\ref{btn:step3_aruco} to \ref{btn:step3_pairing}), to be run one by one, for example to correct the offset with \bouton{Adjust alignment...} before pairing.
+
+\section{\bouton{Enter the clock offset…} button}\label{btn:step3_clock_offset}
+Advanced option, for a flight without the ArUco target (former synchronisation by the dates). The button is shown only if the box \emph{Advanced – Step 3: let me enter the camera clock offset by hand} is checked in the options (\bouton{⚙} gear wheel at the bottom of the main window, Section~\ref{btn:home_workdir}). With this option, Step~3 does not start by itself when coming from Step~2: you choose between \bouton{Synchronise the cameras} (flight with the target) and this button.
+
+A small window asks by how many seconds the infrared camera clock is ahead of the drone clock (negative if it is behind, 0 if both clocks were set to the same time). This is the delay of the former synchronisation. It shows the resulting offset $\Delta t$ of the infrared time line, computed from the dates of the first images. \bouton{Pair the images} skips the target detection and runs the pairing directly (Section~\ref{btn:step3_pairing}). No curve can be checked: the quality of the pairing depends on the accuracy of the delay entered.
 
 \section{\bouton{Continue with image processing} button}\label{btn:step3_continue}
 Appears at the bottom right, next to \bouton{Close}, once the images are paired. It closes the window and opens Step~4. The alignment, which is long, does not start there by itself: it is started with \bouton{Run alignment}.
