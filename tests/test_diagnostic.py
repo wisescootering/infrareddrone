@@ -43,7 +43,7 @@ class DiagnosticTest(unittest.TestCase):
         self.assertTrue(result["ok"], result)
 
     def test_installation_only_report(self):
-        zip_path = diagnostic.create_report(output=self.tmp / "out")
+        zip_path = diagnostic.create_report(output=self.tmp / "out", quick=True)
         files = self.read_zip(zip_path)
         self.assertIn("report.txt", files)
         report = json.loads(files["report.json"])
@@ -57,7 +57,7 @@ class DiagnosticTest(unittest.TestCase):
 
     def test_two_opencv_packages_are_reported(self):
         report = {"installation": {"packages": {"opencv-python": "4.8", "opencv-contrib-python": "5.0"}},
-                  "selftests": {"aruco": {"ok": True}, "accented_folder": {"ok": True}}}
+                  "selftests": {"aruco": {"ok": True, "status": "ok"}}}
         self.assertTrue(any("Several OpenCV" in line for line in diagnostic._verdicts(report)))
 
     def test_mission_sync_images_checked_without_touching_the_mission(self):
@@ -85,7 +85,7 @@ class DiagnosticTest(unittest.TestCase):
             return target.copy(), str(Path(work) / "x.jpg")
 
         with mock.patch("IRD_Interactive_ArUco.load_dng_for_aruco", side_effect=develop):
-            zip_path = diagnostic.create_report(mission, output=self.tmp / "out")
+            zip_path = diagnostic.create_report(mission, output=self.tmp / "out", quick=True)
         self.assertEqual(sorted(p.relative_to(mission) for p in mission.rglob("*")), before)  # untouched
         files = self.read_zip(zip_path)
         report = json.loads(files["report.json"])
@@ -102,8 +102,9 @@ class DiagnosticTest(unittest.TestCase):
     def test_command_line(self):
         output = self.tmp / "cli"
         with mock.patch("sys.stdout", new=io.StringIO()) as printed:
-            self.assertEqual(diagnostic.main(["--output", str(output)]), 0)
+            self.assertEqual(diagnostic.main(["--output", str(output), "--quick"]), 0)
         self.assertIn("Diagnostic report written", printed.getvalue())
+        self.assertIn("Self-tests", printed.getvalue())         # the whole report is printed
         self.assertEqual(len(list(output.glob("irdrone_diagnostic_*.zip"))), 1)
 
 
