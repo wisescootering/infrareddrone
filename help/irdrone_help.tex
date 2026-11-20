@@ -477,6 +477,20 @@ Sur la page de la liste des missions, la barre du bas rappelle le dossier de tra
 
 \bouton{?}, à gauche, ouvre ce manuel (§\ref{sec:help}).
 
+\section{Rapport de diagnostic}\label{btn:home_diagnostic}
+Quand quelque chose ne marche pas sur un ordinateur, le rapport de diagnostic rassemble dans un seul fichier zip tout ce qu'il faut pour comprendre le problème ; il suffit d'envoyer ce zip aux développeurs. Il se crée de deux façons :
+\begin{itemize}
+  \item dans les options (roue dentée \bouton{⚙} en bas de la fenêtre principale, §\ref{btn:home_workdir}), bouton \bouton{Create a diagnostic report…} : on choisit une mission, ou l'installation seule ;
+  \item sans ouvrir le logiciel, avec \texttt{irdrone\_diagnostic.bat} (à la racine du dossier IRDrone) : double-clic pour l'installation seule, ou glisser-déposer le dossier d'une mission (\texttt{FLY-...}) sur ce fichier.
+\end{itemize}
+Le zip (\texttt{irdrone\_diagnostic\_AAAAMMJJ\_hhmmss.zip}) est écrit dans le dossier de travail. Il contient :
+\begin{itemize}
+  \item \texttt{report.txt} : un résumé de ce qui semble anormal, puis l'installation (version d'IRDrone, Python utilisé, système, page de code Windows, versions des modules Python dont OpenCV, chemins et versions d'ExifTool, RawTherapee et du convertisseur SJCam, dossier de travail, place libre) et deux auto-tests (détection ArUco d'une cible parfaite ; lecture et écriture d'images et d'EXIF dans un dossier accentué) ;
+  \item pour une mission : les étapes faites, les fenêtres de l'étape~2, les lignes de temps, le décalage et le nombre de paires de l'étape~3 ; chaque image de synchronisation est développée à nouveau avec RawTherapee dans un dossier temporaire et les marqueurs ArUco y sont cherchés, ainsi que sur l'image en cache (\texttt{Synchro}) utilisée par l'étape~3. Quelques images développées sont jointes. Cela prend environ une minute ; la mission n'est pas modifiée ;
+  \item \texttt{report.json} (tous les détails) et les journaux des dernières sessions : chaque lancement du logiciel recopie la console dans \texttt{logs\textbackslash irdrone\_AAAAMMJJ\_hhmmss.log}, à côté du fichier des réglages (les dix derniers sont gardés).
+\end{itemize}
+Rien n'est envoyé automatiquement.
+
 %==========================================================
 \chapter{Step 1 -- D\'efinir la mission}\label{ch:step1}
 \section{La fenêtre \og New mission \fg}\label{sec:step1_new_mission}
