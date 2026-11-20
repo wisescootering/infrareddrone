@@ -89,9 +89,43 @@ from IRD_Interactive_workers import ArucoWorker
 from IRD_Interactive_workers import TimeShiftWorker
 from IRD_Interactive_workers import ImagePairingWorker
 import flight_timeline as FT
+import config
 import IRD_Interactive_look as Look
 
 STEP_NAME = "Camera synchronisation"
+
+
+def timeline_origins(folderMissionPath) -> Optional[tuple]:
+    """(VIS, NIR) camera-clock dates of the time 0 of each relative time line
+    (the first image), read from the time_line.json files of Step 1. None if
+    one is missing or unreadable."""
+    from datetime import datetime
+    origins = []
+    for band in ("VIS", "NIR"):
+        try:
+            with open(Path(folderMissionPath) / "AerialPhotography" / band / "time_line.json",
+                      encoding="utf-8") as f:
+                first = json.load(f)[band][0]
+            date = datetime.fromisoformat(str(first["date_img"]))
+            origins.append(date.timestamp() - float(first.get("relative_timeline", 0.0)))
+        except (OSError, ValueError, KeyError, IndexError, TypeError):
+            return None
+    return tuple(origins)
+
+
+def time_shift_from_clock_offset(clock_offset: float, origins: tuple) -> float:
+    """Shift of the NIR time line (seconds added to the NIR relative times, as
+    computed from the ArUco target) for an infrared camera clock that is
+    ``clock_offset`` seconds ahead of the drone clock (the delay of the former,
+    date-based synchronisation)."""
+    vis_origin, nir_origin = origins
+    return (nir_origin - vis_origin) - clock_offset
+
+
+def clock_offset_from_time_shift(time_shift: float, origins: tuple) -> float:
+    """Inverse of time_shift_from_clock_offset."""
+    vis_origin, nir_origin = origins
+    return (nir_origin - vis_origin) - time_shift
 
 
 class DialogSynchroAruco(QDialog):
@@ -182,7 +216,9 @@ class DialogSynchroAruco(QDialog):
         self._plot_after = None
 
         self._log("Dialog initialized.")
-        start_now = self.auto_run
+        # With the clock offset option on, the flight may have no target: the
+        # user chooses between detection and typing the offset.
+        start_now = self.auto_run and not config.manual_clock_offset_enabled()
         self._start_timer = QTimer(self)
         self._start_timer.setSingleShot(True)
         self._start_timer.timeout.connect(self._start_synchronisation)
@@ -216,6 +252,13 @@ class DialogSynchroAruco(QDialog):
         self.btn_manual.setToolTip("Stop the automatic chaining and run each stage yourself "
                                    "(check or adjust the time alignment before pairing).")
         self.btn_manual.clicked.connect(lambda: self._set_manual_mode(True))
+        # Advanced option (⚙ of the main window): flights without the ArUco target
+        self.btn_clock_offset = QPushButton("Enter the clock offset…")
+        self.btn_clock_offset.setStyleSheet(Look.SECONDARY_STYLE)
+        self.btn_clock_offset.setToolTip("No ArUco target: type the offset between the camera clocks, "
+                                         "the images are paired without target detection.")
+        self.btn_clock_offset.clicked.connect(self.on_clock_offset)
+        self.btn_clock_offset.setVisible(config.manual_clock_offset_enabled())
         # The main action: detection, clock alignment and pairing, one after the other
         self.btn_sync_run = QPushButton("Synchronise the cameras")
         self.btn_sync_run.setStyleSheet(Look.PRIMARY_STYLE)
@@ -262,6 +305,7 @@ class DialogSynchroAruco(QDialog):
         QShortcut(QKeySequence("Y"), self, activated=lambda: self._awaiting_sync and self._confirm_sync())
         QShortcut(QKeySequence("N"), self, activated=lambda: self._awaiting_sync and self.on_adjust_time_shift())
         auto_bar.addWidget(self.auto_label, 1)
+        auto_bar.addWidget(self.btn_clock_offset)
         auto_bar.addWidget(self.btn_manual)
         auto_bar.addWidget(self.btn_sync_run)
         main_layout.addLayout(auto_bar)
@@ -382,6 +426,7 @@ class DialogSynchroAruco(QDialog):
             (self.btn_sync_ok, "btn:step3_overlap", self.btn_sync_ok.toolTip()),
             (self.btn_sync_adjust, "btn:step3_overlap", self.btn_sync_adjust.toolTip()),
             (self.btn_manual, "btn:step3_manual", self.btn_manual.toolTip()),
+            (self.btn_clock_offset, "btn:step3_clock_offset", self.btn_clock_offset.toolTip()),
             (self.btn_sync_run, "btn:step3_run", self.btn_sync_run.toolTip()),
             (self.btn_continue, "btn:step3_continue", self.btn_continue.toolTip()),
             (self.btn_before, "btn:step3_before", self.btn_before.toolTip()),
@@ -881,6 +926,45 @@ class DialogSynchroAruco(QDialog):
                 "The images were already paired with the previous time shift.\n"
                 "Run 'Pair VIS / NIR images' again to apply the new one.",
             )
+
+    def on_clock_offset(self) -> None:
+        """Advanced: pair the images from a clock offset typed by the user
+        (flights without the ArUco target), no detection."""
+        origins = timeline_origins(self.folderMissionPath)
+        if origins is None:
+            QMessageBox.warning(self, "Clock offset",
+                                "The time lines of the visible and infrared images are missing.\n"
+                                "Run Step 1 first.")
+            return
+        dialog = ClockOffsetDialog(origins, clock_offset_from_time_shift(self.time_shift, origins), parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        clock_offset = dialog.value()
+        time_shift = time_shift_from_clock_offset(clock_offset, origins)
+        self._log(f"Clock offset entered by the user: infrared clock {clock_offset:+.2f} s "
+                  f"-> time shift {time_shift:.3f} s (no target detection).")
+        self._hide_sync_confirmation()
+        self.stop_timeshift_animation()
+        # The check plots of an earlier detection show another offset
+        synchro = Path(self.folderMissionPath) / "Synchro"
+        for name in ("check_time_alignment.png", "check_time_before_alignment.png"):
+            try:
+                (synchro / name).unlink(missing_ok=True)
+            except OSError:
+                pass
+        self._plot_after = None
+        self.btn_before.hide()
+        self.time_shift = self.computed_time_shift = time_shift
+        self.time_line_VIS, self.angles_VIS, self.time_line_NIR, self.angles_NIR = [], [], [], []
+        self.btn_adjust_time_shift.setEnabled(False)
+        self.btn_image_pairing.setEnabled(True)
+        self.image_pairing_done = False
+        self.btn_continue.hide()
+        self.btn_sync_run.hide()
+        self.stages.set(0, Look.STAGE_SKIPPED, "no target")
+        self.stages.set(1, Look.STAGE_DONE, f"infrared {time_shift:+.2f} s (entered)")
+        self.auto_label.setText(f"Clock offset entered by hand: infrared clock {clock_offset:+.2f} s.")
+        self.on_image_pairing()
 
     # ------------------------------------------------------------------
     # Image pairing
@@ -1612,6 +1696,63 @@ class ArucoOrchestratorSignals(QObject):
     log = pyqtSignal(str)
     # Path of a check image (Synchro/Check_ARUCO) just saved by a worker
     check_image = pyqtSignal(str)
+
+class ClockOffsetDialog(QDialog):
+    """Clock offset typed by the user (former, date-based synchronisation):
+    seconds the infrared camera clock is ahead of the drone clock."""
+
+    def __init__(self, origins: tuple, default_value: float = 0.0, parent=None):
+        super().__init__(parent)
+        self.origins = origins
+        self.setWindowTitle("Clock offset")
+        self.setModal(True)
+        label = QLabel(
+            "Without the ArUco target, the images are paired from the dates of the two cameras.\n\n"
+            "Seconds the infrared camera clock is ahead of the drone clock\n"
+            "(negative if it is behind; 0 if both clocks were set to the same time):")
+        label.setWordWrap(True)
+        self.spinbox = QDoubleSpinBox(self)
+        self.spinbox.setDecimals(2)
+        self.spinbox.setRange(-2 * 86400.0, 2 * 86400.0)
+        self.spinbox.setSingleStep(0.1)
+        self.spinbox.setSuffix(" s")
+        self.spinbox.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.spinbox.setValue(round(default_value, 2))
+        self.result_label = QLabel()
+        self.result_label.setStyleSheet("color: #6B7785;")
+        self.result_label.setWordWrap(True)
+        self.spinbox.valueChanged.connect(self._update_result)
+        self._update_result()
+
+        btn_ok = QPushButton("Pair the images", self)
+        btn_cancel = QPushButton("Cancel", self)
+        btn_ok.setStyleSheet(Look.PRIMARY_STYLE)
+        btn_cancel.setStyleSheet(Look.SECONDARY_STYLE)
+        btn_ok.setDefault(True)
+        btn_ok.setToolTip("Pair the visible and infrared images with this clock offset.")
+        btn_cancel.setToolTip("Close without changing anything.")
+        btn_ok.clicked.connect(self.accept)
+        btn_cancel.clicked.connect(self.reject)
+        buttons = QHBoxLayout()
+        buttons.addStretch()
+        buttons.addWidget(btn_cancel)
+        buttons.addWidget(btn_ok)
+        layout = QVBoxLayout(self)
+        layout.addWidget(label)
+        layout.addWidget(self.spinbox)
+        layout.addWidget(self.result_label)
+        layout.addLayout(buttons)
+
+    def _update_result(self) -> None:
+        vis_origin, nir_origin = self.origins
+        shift = time_shift_from_clock_offset(self.value(), self.origins)
+        self.result_label.setText(
+            f"First infrared image dated {nir_origin - vis_origin:+.0f} s from the first visible one: "
+            f"the infrared time line is shifted by {shift:+.2f} s.")
+
+    def value(self) -> float:
+        return float(self.spinbox.value())
+
 
 class TimeShiftInputDialog(QDialog):
     """

@@ -473,7 +473,7 @@ L'emprise est calculée avec la hauteur au-dessus du sol (modèle de terrain de 
 
 
 \section{Barre du bas : dossier de travail et manuel}\label{btn:home_workdir}
-Sur la page de la liste des missions, la barre du bas rappelle le dossier de travail (le dossier qui contient les missions, par défaut \texttt{C:/Air-Mission}) et la place libre sur son disque ; un clic sur le dossier l'ouvre dans l'explorateur. La roue dentée \bouton{⚙} permet de changer de dossier de travail : la liste des missions est alors relue. Le dossier est choisi au premier lancement ; la variable d'environnement \texttt{IRDRONE\_WORKING\_DIR}, si elle est définie, reste prioritaire. Sur la page d'une mission, la barre du bas indique à droite la taille totale du dossier de la mission (\texttt{Mission size}), mise à jour à chaque étape terminée et toutes les minutes.
+Sur la page de la liste des missions, la barre du bas rappelle le dossier de travail (le dossier qui contient les missions, par défaut \texttt{C:/Air-Mission}) et la place libre sur son disque ; un clic sur le dossier l'ouvre dans l'explorateur. La roue dentée \bouton{⚙} permet de changer de dossier de travail : la liste des missions est alors relue. Elle donne aussi une option avancée, décochée par défaut : saisir à la main le décalage d'horloge des caméras à l'étape~3, pour les vols sans cible ArUco (§\ref{btn:step3_clock_offset}). Le dossier est choisi au premier lancement ; la variable d'environnement \texttt{IRDRONE\_WORKING\_DIR}, si elle est définie, reste prioritaire. Sur la page d'une mission, la barre du bas indique à droite la taille totale du dossier de la mission (\texttt{Mission size}), mise à jour à chaque étape terminée et toutes les minutes.
 
 \bouton{?}, à gauche, ouvre ce manuel (§\ref{sec:help}).
 
@@ -815,6 +815,11 @@ L'action principale de l'étape~3 : elle lance la détection des mires, l'aligne
 
 \section{Bouton \bouton{Manual mode…}}\label{btn:step3_manual}
 Arrête l'enchaînement et fait apparaître les boutons des trois phases (§\ref{btn:step3_aruco} à \ref{btn:step3_pairing}), à lancer un par un, par exemple pour corriger le décalage avec \bouton{Adjust alignment...} avant l'appariement.
+
+\section{Bouton \bouton{Enter the clock offset…}}\label{btn:step3_clock_offset}
+Option avancée, pour un vol sans la cible ArUco (ancienne synchronisation par les dates). Le bouton n'apparaît que si la case \emph{Advanced – Step 3: let me enter the camera clock offset by hand} est cochée dans les options (roue dentée \bouton{⚙} en bas de la fenêtre principale, §\ref{btn:home_workdir}). Avec cette option, l'étape~3 ne démarre pas d'elle-même en venant de l'étape~2 : on choisit entre \bouton{Synchronise the cameras} (vol avec cible) et ce bouton.
+
+Une petite fenêtre demande de combien de secondes l'horloge de la caméra infrarouge avance sur celle du drone (négatif si elle retarde, 0 si les deux horloges ont été réglées à la même heure). C'est le délai de l'ancienne synchronisation. Elle affiche le décalage $\Delta t$ de la ligne de temps infrarouge qui en découle, calculé à partir des dates des premières images. \bouton{Pair the images} saute la détection des cibles et lance directement l'appariement (§\ref{btn:step3_pairing}). Aucune courbe ne peut être vérifiée : la qualité de l'appariement dépend de la justesse du délai saisi.
 
 \section{Bouton \bouton{Continue with image processing}}\label{btn:step3_continue}
 Apparaît en bas à droite, à côté de \bouton{Close}, une fois les images appariées. Il ferme la fenêtre et ouvre l'étape~4. L'alignement, long, n'y démarre pas tout seul : il se lance avec \bouton{Run alignment}.
