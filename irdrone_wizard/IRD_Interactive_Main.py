@@ -176,6 +176,7 @@ class Main_Window(QMainWindow):
         self.home.new_mission.connect(self.open_window_define_mission)
         self.home.open_mission.connect(self.on_open_mission)
         self.home.open_recent.connect(self.on_open_recent)
+        self.home.check_installation.connect(self.on_check_installation)
         self.home.run_step.connect(self.run_step)
         self.home.step_clicked.connect(self.open_step)
         self.home.set_recent(recent_missions(Path(self.pref_screen.default_user_dir)))
@@ -213,6 +214,10 @@ class Main_Window(QMainWindow):
              "Create a mission from the SD cards of the drone and of the infrared camera (Step 1)."),
             (home.card_open, "btn:home_missions",
              "Choose the folder of a mission already created (FLY-YYYYMMDD-hhmm-place)."),
+            (home.card_check, "btn:home_check",
+             "Try every tool of the processing chain (Python packages, ExifTool, RawTherapee, SJCam converter, "
+             "ArUco, alignment) on sample images; what fails comes with how to fix it. A diagnostic report "
+             "can then be created."),
             (home.btn_all, "btn:home_missions", "Back to the first page: new mission, open a mission, recent missions."),
             (home.btn_continue, "btn:home_continue", ""),       # tool tip set with the next step
             (home.right_stack, "btn:home_map", ""),               # F1 over the map: its section
@@ -222,6 +227,11 @@ class Main_Window(QMainWindow):
             (self.btn_help, "sec:help", "Open this manual. F1 over any button: the manual at that button."),
         ):
             Help.attach_help(widget, label, tip, parent=self)
+
+    def on_check_installation(self):
+        """First page, "Check the installation": the self-tests, in their window."""
+        import IRD_Interactive_diagnostic as Diagnostic
+        self._check_dialog = Diagnostic.check_installation(self)
 
     def _on_working_dir_changed(self, folder):
         """New working folder chosen with the gear button."""
