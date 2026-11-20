@@ -61,5 +61,33 @@ class CheckImageWriteTests(unittest.TestCase):
         self.assertEqual(sent, [])
 
 
+class NoMarkerImageTests(unittest.TestCase):
+    """An image without any marker (blurred, target out of the frame) is skipped;
+    it used to stop the whole detection: 'NoneType' object does not support item assignment."""
+
+    def test_image_without_marker_is_skipped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mission = Path(tmp) / "mission"
+            (mission / "VIS").mkdir(parents=True)
+            img = np.zeros((10, 10, 3), np.uint8)
+            detections = {"a.jpg": dict(_RESULT), "b.jpg": None, "c.jpg": dict(_RESULT)}
+            for multi_thread in (False, True):
+                with self.subTest(multi_thread=multi_thread), \
+                        mock.patch.object(Aru, "read_transfer_info",
+                                          return_value=(None, 0, 2, ["a.jpg", "b.jpg", "c.jpg"])), \
+                        mock.patch.object(Aru, "load_relative_time_line", return_value={}), \
+                        mock.patch.object(Aru, "extract_relative_time_line",
+                                          side_effect=lambda d, name, *a: float(ord(name[0]))), \
+                        mock.patch.object(Aru, "read_aruco_cache", return_value=None), \
+                        mock.patch.object(Aru.image_io, "imread", return_value=img), \
+                        mock.patch.object(Aru, "detect_mobile_marker_absolute",
+                                          side_effect=lambda **kw: (detections[Path(kw["img_path"]).name], None, None)):
+                    results, x_vals, _ = Aru.process_aruco_images(
+                        folderMissionPath=mission, name_folder="VIS", spectral_band="VIS",
+                        suffix_image="jpg", save_check_detection_img=False, multi_thread=multi_thread)
+                self.assertEqual([r["image"] for r in results], ["a.jpg", "c.jpg"])
+                self.assertEqual(len(x_vals), 2)
+
+
 if __name__ == "__main__":
     unittest.main()
