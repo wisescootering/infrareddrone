@@ -504,6 +504,210 @@ def fig_phase_correlation(points, out):
     save(fig, out, "align_phase_correlation.png")
 
 
+def fig_shading(out):
+    """Lens shading (vignetting) gains of both cameras, as applied to the RAW images before the alignment."""
+    from irdrone.process import SJCAM_M20_PROFILE_CONTROL_POINTS
+    dji = np.load(osp.join(osp.dirname(__file__), "..", "calibration", "DJI_RAW", "shading_calibration.npy"))
+    m20_shape = (3448, 4600)  # RAW size of the SJCam M20
+    half_diag = int(np.hypot(m20_shape[0] / 2, m20_shape[1] / 2))
+    radius = np.arange(half_diag)
+    m20 = {c: ut.get_shading_profile(SJCAM_M20_PROFILE_CONTROL_POINTS[c], radius) for c in "RGB"}
+    m20_map = ut.get_polar_shading_map(img_shape=(m20_shape[0] // 8, m20_shape[1] // 8, 3), calib={
+        c: [(x / 8, y) for x, y in SJCAM_M20_PROFILE_CONTROL_POINTS[c]] for c in "RGB"})
+    # DJI: profile along the diagonal of the (10 times reduced) map, relative to the centre
+    h, w = dji.shape[:2]
+    t = np.linspace(0, 1, 200)
+    ys, xs = (h - 1) / 2 * (1 + t), (w - 1) / 2 * (1 + t)
+    dji_rel = dji / dji[h // 2, w // 2]
+    dji_diag = {c: cv2.remap(dji_rel[:, :, i].astype(np.float32), xs.astype(np.float32)[None],
+                             ys.astype(np.float32)[None], cv2.INTER_LINEAR)[0] for i, c in enumerate("RGB")}
+    colors = {"R": HOT, "G": "#2ca02c", "B": COLD}
+    fig, axes = plt.subplots(1, 3, figsize=(WIDTH, 1.95), gridspec_kw={"width_ratios": [1.25, 1, 1]})
+    ax = axes[0]
+    for c in "RGB":
+        ax.plot(radius / half_diag, m20[c], color=colors[c], lw=1.1, label="M20 (NIR) " + c)
+        ax.plot(t, dji_diag[c], color=colors[c], lw=1.1, ls="--", label="DJI (VIS) " + c)
+    ax.axhline(1, color="gray", lw=0.6)
+    ax.set_xlabel("distance to the centre / half diagonal")
+    ax.set_ylabel("gain (1 at the centre)")
+    ax.set_title("(a) radial gain of the correction")
+    ax.legend(fontsize=5, ncol=2, loc="lower left")
+    ax.grid(alpha=0.3)
+    for ax, img, title in [(axes[1], m20_map[:, :, 1], "(b) M20 gain map (G)"),
+                           (axes[2], dji_rel[:, :, 1], "(c) DJI gain map (G)")]:
+        im = ax.imshow(img, cmap="magma", vmin=0.3, vmax=1.4)
+        ax.set_title(title)
+        tidy(ax)
+    fig.colorbar(im, ax=axes[1:], fraction=0.03, pad=0.02)
+    save(fig, out, "align_shading.png")
+
+
+def smooth1d(signal, sigma):
+    return cv2.GaussianBlur(signal.astype(np.float64)[None], (0, 0), sigma, borderType=cv2.BORDER_REPLICATE)[0]
+
+
+def fig_inversion(out):
+    """Why intensities fail: a 1D cut of a field, a bare soil strip and a road, in both bands."""
+    x = np.arange(640)
+    # (start, end, material): vegetation, bare soil, road with bright verges, crop
+    layout = [(0, 90, "veg"), (90, 190, "soil"), (190, 250, "veg"), (292, 300, "verge"), (300, 350, "road"),
+              (350, 358, "verge"), (358, 460, "soil"), (460, 540, "veg2"), (540, 640, "soil")]
+
+    def scene(levels):
+        sig = np.full(x.shape, levels["soil"], dtype=float)
+        for left, right, material in layout:
+            sig[left:right] = levels[material]
+        return sig
+    vis = scene({"veg": 0.22, "soil": 0.62, "road": 0.3, "verge": 0.85, "veg2": 0.32})
+    nir = scene({"veg": 0.75, "soil": 0.45, "road": 0.25, "verge": 0.45, "veg2": 0.62})
+    rng = np.random.default_rng(1)
+    vis = smooth1d(vis, 1.5) + rng.normal(0, 0.01, x.shape)
+    nir = smooth1d(nir, 2.5) + rng.normal(0, 0.01, x.shape)
+
+    def energy(sig, sigma):
+        return np.gradient(smooth1d(sig, sigma)) ** 2
+
+    e_vis, e_nir = energy(vis, 3.), energy(nir, 2.)
+    radius, margin = 60, 70
+    shifts = np.arange(-radius, radius + 1)
+    sl = slice(margin, len(x) - margin)
+    costs = {"SSD of the intensities": [], "1 - correlation of the intensities": [],
+             "NTG of the gradient energies (IRdrone)": []}
+    for s in shifts:
+        v, n = vis[margin + s:len(x) - margin + s], nir[sl]
+        costs["SSD of the intensities"].append(np.sum((v - n) ** 2))
+        costs["1 - correlation of the intensities"].append(1 - np.corrcoef(v, n)[0, 1])
+        ev, en = e_vis[margin + s:len(x) - margin + s], e_nir[sl]
+        costs["NTG of the gradient energies (IRdrone)"].append(np.sum(np.abs(np.gradient(en - ev))))
+    fig, axes = plt.subplots(1, 3, figsize=(WIDTH, 1.95))
+    axes[0].plot(x, vis, color="#2ca02c", lw=1, label="VIS")
+    axes[0].plot(x, nir, color=HOT, lw=1, label="NIR")
+    axes[0].set_title("(a) intensities")
+    axes[0].legend(fontsize=6)
+    for name, sig in [("VIS", e_vis), ("NIR", e_nir)]:
+        axes[1].plot(x, sig / sig.max(), color="#2ca02c" if name == "VIS" else HOT, lw=1, label=name)
+    axes[1].set_title("(b) gradient energies (normalised)")
+    for (name, c), color, ls in zip(costs.items(), ["k", "#7f7f7f", HOT], ["--", ":", "-"]):
+        c = np.array(c)
+        c = (c - c.min()) / (c.max() - c.min())
+        axes[2].plot(shifts, c, color=color, ls=ls, lw=1.1, label=name)
+        print(name, "minimum at", shifts[np.argmin(c)])
+    axes[2].axvline(0, color="gray", lw=0.6)
+    axes[2].set_title("(c) cost against the shift")
+    axes[2].set_xlabel("shift (px)")
+    axes[2].legend(fontsize=5, loc="lower left")
+    for ax in axes[:2]:
+        ax.set_xlabel("position (px)")
+        for left, right, label in [(0, 90, "veg."), (90, 190, "soil"), (190, 250, "veg."), (292, 358, "road"),
+                                   (358, 460, "soil"), (460, 540, "crop"), (540, 640, "soil")]:
+            ax.text((left + right) / 2, 1.02, label, ha="center", fontsize=5,
+                    transform=ax.get_xaxis_transform())
+    for ax in axes:
+        ax.grid(alpha=0.3)
+    fig.subplots_adjust(wspace=0.28)
+    save(fig, out, "align_inversion.png")
+
+
+def fig_aperture(out):
+    """Aperture problem: NTG cost surfaces of a corner, a straight edge and a structureless block.
+    The two images of each block have independent noise and, for the meadow, independent textures
+    (the textures of two spectral bands do not correspond)."""
+    size, radius = 120, 12
+    side = size + 2 * radius + 2
+    yy, xx = np.mgrid[:side, :side]
+    centre = side / 2
+    rng = np.random.default_rng(2)
+
+    def meadow():
+        return cv2.GaussianBlur(rng.normal(0, 1, (side, side)), (0, 0), 1.5) * 0.05 + 0.5
+
+    cases = {
+        "(a) a corner (field)": lambda: ((xx > centre) & (yy > centre)).astype(float),
+        "(b) a straight edge (road)": lambda: (np.abs(xx + 0.4 * yy - 1.4 * centre) < 6).astype(float),
+        "(c) textures only (meadow)": meadow,
+    }
+
+    def msr(img):
+        img = img + rng.normal(0, 0.01, img.shape)
+        rgb = np.repeat((img * 255)[..., None], 3, axis=2).astype(np.float32)
+        return multispectral_representation(rgb, sigma_gaussian=2.).astype(np.float32)
+
+    fig, axes = plt.subplots(1, 3, figsize=(WIDTH * 0.78, 2.0))
+    for ax, (title, make) in zip(axes, cases.items()):
+        big = np.ascontiguousarray(msr(make()))
+        small = np.ascontiguousarray(msr(make())[radius:-radius, radius:-radius])
+        cost = cost_surface_NTG(big, small, radius, radius).sum(axis=-1)
+        cost = (cost - cost.min()) / (cost.max() - cost.min())
+        # rise of the cost 3 pixels away from the right position, in the best and worst directions
+        angles = np.linspace(0, np.pi, 36, endpoint=False)
+        px = (radius + 3 * np.cos(angles)).astype(np.float32)[None]
+        py = (radius + 3 * np.sin(angles)).astype(np.float32)[None]
+        rise = cv2.remap(cost.astype(np.float32), px, py, cv2.INTER_LINEAR)[0] - cost[radius, radius]
+        ax.imshow(cost, extent=[-radius - 0.5, radius + 0.5, radius + 0.5, -radius - 0.5])
+        ax.plot(0, 0, "w+", ms=6)
+        ax.set_title("%s\nrise at 3 px: %.2f to %.2f" % (title, rise.min(), rise.max()), fontsize=6.5)
+        ax.set_xlabel("shift x (px)")
+        ax.tick_params(labelsize=5.5)
+        print(title, rise.min(), rise.max())
+    axes[0].set_ylabel("shift y (px)")
+    fig.subplots_adjust(wspace=0.35)
+    save(fig, out, "align_aperture.png")
+
+
+def radial_spectrum(img, bins=60):
+    f = np.abs(np.fft.fftshift(np.fft.fft2((img - img.mean()) * np.outer(np.hanning(img.shape[0]),
+                                                                      np.hanning(img.shape[1]))))) ** 2
+    cy, cx = np.array(f.shape) // 2
+    yy, xx = np.mgrid[:f.shape[0], :f.shape[1]]
+    r = np.hypot((yy - cy) / f.shape[0], (xx - cx) / f.shape[1])
+    edges = np.linspace(0, 0.5, bins + 1)
+    idx = np.digitize(r.ravel(), edges) - 1
+    ok = (idx >= 0) & (idx < bins)
+    power = np.bincount(idx[ok], weights=f.ravel()[ok], minlength=bins) / np.maximum(
+        np.bincount(idx[ok], minlength=bins), 1)
+    return (edges[:-1] + edges[1:]) / 2, power
+
+
+def fig_warp_once(p, out, cx=0.55, cy=0.3, size=512):
+    """Four successive resamplings against a single one, on a detail of the visible image."""
+    ys, xs = crop_box(p.ref.shape, cx, cy, size + 200)
+    img = gray(p.ref)[ys, xs]
+    c = (img.shape[1] / 2, img.shape[0] / 2)
+    steps = [cv2.getRotationMatrix2D(c, 1.3, 1.01), cv2.getRotationMatrix2D(c, -0.4, 0.995),
+             np.array([[1, 0, 0.37], [0, 1, -0.61]]), cv2.getRotationMatrix2D(c, 0.7, 1.004)]
+    total = np.eye(3)
+    chained = {"bilinear": img, "bicubic": img}
+    for m in steps:
+        total = np.vstack([m, [0, 0, 1]]) @ total
+        for name, flag in [("bilinear", cv2.INTER_LINEAR), ("bicubic", cv2.INTER_CUBIC)]:
+            chained[name] = cv2.warpAffine(chained[name], m, img.shape[::-1], flags=flag,
+                                           borderMode=cv2.BORDER_REFLECT)
+    once = cv2.warpAffine(img, total[:2], img.shape[::-1], flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REFLECT)
+    inner = slice(100, 100 + size), slice(100, 100 + size)
+    panels = [("(a) 1 bicubic", "one bicubic resampling", once),
+              ("(b) 4 bilinear", "four bilinear resamplings", chained["bilinear"]),
+              ("(c) 4 bicubic", "four bicubic resamplings", chained["bicubic"])]
+    fig, axes = plt.subplots(1, 4, figsize=(WIDTH, 1.75), gridspec_kw={"width_ratios": [1, 1, 1, 1.35]})
+    zoom = slice(size // 2 - 64, size // 2 + 64)
+    ref_power = radial_spectrum(once[inner])[1]
+    for ax, (title, label, im) in zip(axes, panels):
+        ax.imshow(im[inner][zoom, zoom], cmap="gray", vmin=0, vmax=1, interpolation="nearest")
+        ax.set_title(title, fontsize=6.5)
+        tidy(ax)
+        freq, power = radial_spectrum(im[inner])
+        axes[3].plot(freq, power / ref_power, lw=1.1, label=label)
+    axes[3].set_xlabel("spatial frequency (cycles / pixel)")
+    axes[3].set_ylabel("power / power of (a)")
+    axes[3].set_title("(d) loss of fine details")
+    axes[3].legend(fontsize=5, loc="lower left")
+    axes[3].grid(alpha=0.3)
+    axes[3].tick_params(labelsize=5.5)
+    axes[3].yaxis.set_label_position("right")
+    axes[3].yaxis.tick_right()
+    fig.subplots_adjust(wspace=0.08)
+    save(fig, out, "align_warp_once.png")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--vis", required=True, help="point A (a clean case): visible DNG")
@@ -521,10 +725,21 @@ def main():
                         help="point A: block of meadow only")
     parser.add_argument("--only", nargs="*", default=None)
     args = parser.parse_args()
+    jobs = {
+        "shading": lambda: fig_shading(args.out),
+        "inversion": lambda: fig_inversion(args.out),
+        "aperture": lambda: fig_aperture(args.out),
+    }
+    for key, job in jobs.items():
+        if args.only is None or key in args.only:
+            job()
+    if args.only is not None and set(args.only) <= set(jobs):
+        return  # synthetic figures only: the shoot points are not loaded
     a = Point(args.vis, args.nir, args.traces)
     b = Point(args.vis_b, args.nir_b, args.traces_b)
     st_a, st_b = a.stages(), b.stages()
     jobs = {
+        "warp_once": lambda: fig_warp_once(a, args.out, *args.crop),
         "pair": lambda: fig_pair(b, args.out),
         "distortion": lambda: fig_distortion(a, args.out),
         "virtual": lambda: fig_virtual_camera(b, args.out),
