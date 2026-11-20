@@ -16,6 +16,10 @@ import sys
 import os
 import os.path as osp
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
+# The console of the session is also written in a log file (sent with the diagnostic report)
+import session_log  # noqa: E402
+if __name__ == "__main__":
+    session_log.start()
 from pathlib import Path
 import json
 # ------------------PyQt6 Library -----------------------------------
@@ -213,7 +217,8 @@ class Main_Window(QMainWindow):
             (home.btn_continue, "btn:home_continue", ""),       # tool tip set with the next step
             (home.right_stack, "btn:home_map", ""),               # F1 over the map: its section
             (self.working_dir_bar.gear, "btn:home_workdir",
-             "Change the working folder (the folder that holds the missions)."),
+             "Options: the working folder (the folder that holds the missions), advanced options, "
+             "diagnostic report."),
             (self.btn_help, "sec:help", "Open this manual. F1 over any button: the manual at that button."),
         ):
             Help.attach_help(widget, label, tip, parent=self)
