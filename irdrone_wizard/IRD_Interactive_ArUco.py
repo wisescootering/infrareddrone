@@ -1015,11 +1015,16 @@ def load_dng_for_aruco(path, folder_mission, threads=None):
             - out_file: Path to the cached JPEG image.
 
     Notes:
-        The conversion is skipped if the output JPEG already exists.
+        The conversion is skipped if the output JPEG already exists and is
+        newer than the DNG.
         The RawTherapee command uses JPEG quality 95.
     """
     out_file = cached_jpeg(path, folder_mission)
-    if not osp.isfile(out_file):
+    # The cache is named after the DNG: a DNG made again since (Step 1 run
+    # again, the infrared images numbered differently) is developed again,
+    # never matched with the JPEG of another image.
+    stale = osp.isfile(out_file) and osp.getmtime(out_file) < osp.getmtime(path)
+    if stale or not osp.isfile(out_file):
         cmd = [
             require_tool("RAWTHERAPEEPATH"),
             "-t",

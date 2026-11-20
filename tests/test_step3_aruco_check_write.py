@@ -89,5 +89,29 @@ class NoMarkerImageTests(unittest.TestCase):
                 self.assertEqual(len(x_vals), 2)
 
 
+class DevelopedJpegCacheTests(unittest.TestCase):
+    """Synchro/<band>/<name>_RawTherapee.jpg is reused only while it is newer
+    than its DNG: Step 1 run again may give a NIR_xxxx name to another image."""
+
+    def test_jpeg_developed_again_when_the_dng_is_newer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mission = Path(tmp) / "mission"
+            dng = mission / "AerialPhotography" / "NIR" / "NIR_0012.dng"
+            dng.parent.mkdir(parents=True)
+            dng.write_bytes(b"dng")
+            jpeg = Path(Aru.cached_jpeg(str(dng), mission))
+            jpeg.write_bytes(b"old image")
+            img = np.zeros((4, 4, 3), np.uint8)
+            with mock.patch.object(Aru, "require_tool", return_value="rawtherapee"), \
+                    mock.patch.object(Aru.subprocess, "call") as develop, \
+                    mock.patch.object(Aru.image_io, "imread", return_value=img):
+                os.utime(jpeg, (2_000_000_000, 2_000_000_000))      # cache newer than the DNG
+                Aru.load_dng_for_aruco(str(dng), mission)
+                develop.assert_not_called()
+                os.utime(dng, (2_100_000_000, 2_100_000_000))       # DNG made again since
+                Aru.load_dng_for_aruco(str(dng), mission)
+                develop.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
