@@ -1501,83 +1501,301 @@ Une mission peut être volée avec la seule caméra du drone, sans la SJCam : le
 
 %==========================================================
 \appendix
-\chapter{Alignement des images VIS et NIR (Step 4)}\label{ann:alignement}
-Cette annexe s'adresse aux utilisateurs avertis. La première section décrit l'algorithme d'alignement multispectral du Step~4, la seconde l'origine physique du désalignement des deux caméras (angles de \og pitch \fg{} et de \og yaw \fg{} théoriques).
+\chapter{Alignement des images VIS et NIR (Step 4)}\label{ann:alignement}\label{sec:ann_algorithme}
+Cette annexe explique en détail comment IRdrone superpose l'image proche infrarouge à l'image visible. Elle s'adresse à un lecteur de formation scientifique (algèbre linéaire, un peu de traitement du signal) qui n'est pas spécialiste de vision par ordinateur. Les premières sections donnent les bases de géométrie et de traitement du signal, les suivantes décrivent chaque étape de l'algorithme avec les traces de diagnostic d'alignements réels, puis viennent les méthodes essayées puis abandonnées, l'historique du développement et les limites connues. La dernière section (§\ref{sec:ann_theorique}) traite de l'origine physique du désalignement des deux caméras (angles de \og pitch \fg{} et de \og yaw \fg{} théoriques).
 
-\section{L'algorithme d'alignement multispectral}\label{sec:ann_algorithme}
-Le code est dans \texttt{automatic\_registration.py} (fonction \texttt{align\_raw}) et dans le dossier \texttt{registration}.
+Le code se trouve dans \texttt{automatic\_registration.py} (fonctions \texttt{align\_raw} et \texttt{coarse\_alignment}), dans le dossier \texttt{registration} (\texttt{rigid.py} : pyramide, \texttt{cost.py} : représentation et coût, \texttt{warp\_flow.py} : rééchantillonnage) et dans \texttt{irdrone/semi\_auto\_registration.py} (rotation de la caméra, \texttt{manual\_warp}). Les figures de cette annexe sont produites par \texttt{help/make\_alignment\_figures.py} à partir de deux shoot points :
+\begin{itemize}
+	\item \textbf{point A} : l'image \texttt{VIS\_0201} du vol du 25 janvier 2022 (Blassac, 90\,m au-dessus du sol, écart de temps entre les deux prises de vue 0,0\,s), un cas typique où l'alignement réussit ;
+	\item \textbf{point B} : la paire d'exemple du dépôt (\texttt{samples/\_visible.DNG}, \texttt{samples/\_nir.RAW}, mai 2022), un cas difficile où l'alignement automatique échoue (§\ref{sec:ann_limits}).
+\end{itemize}
+Les deux ont été alignés en ligne de commande avec l'option \texttt{--debug} (§\ref{sec:ann_traces}), c'est-à-dire avec l'élargissement de champ 1,6 de la ligne de commande au lieu de 1,4 au Step~4.
 
-\subsection{Pourquoi un algorithme spécifique ?}
-Aligner deux images d'une même bande spectrale est un problème classique, bien résolu par la mise en correspondance de points caractéristiques (SIFT, ORB) ou par corrélation de phase. Ces méthodes échouent ici : le visible et le proche infrarouge ne voient pas la même chose. La végétation est sombre en visible et claire en infrarouge, l'eau est noire en infrarouge, et les contrastes peuvent s'inverser d'une bande à l'autre. Des points caractéristiques ne se retrouvent donc pas d'une image à l'autre, et la corrélation de phase, même dans sa variante de Fourier--Mellin, n'a pas donné de résultats satisfaisants pour l'alignement grossier.
-
-Ce qui est commun aux deux bandes, ce sont les \emph{contours} : bords de routes, haies, toits, lisières. L'algorithme compare donc les images par l'intermédiaire de leurs gradients, sans jamais comparer directement les intensités.
-
-\subsection{Prétraitement}
-\begin{enumerate}
-	\item Les fichiers RAW de la SJCam M20 sont convertis en DNG (\texttt{sjcam\_raw2dng}, au Step~1).
-	\item Les DNG des deux caméras sont développés par RawTherapee en TIF RGB 16 bits \emph{linéaires} (sans courbe de tons), mis en cache (\texttt{*\_RawTherapee.tif}).
-	\item Le vignetage (assombrissement des bords) est corrigé au chargement : carte de correction mesurée pour la caméra DJI, profil radial pour la SJCam (figure~\ref{fig:annexe_shading}).
-	\item La distorsion de l'image visible est corrigée avec la calibration géométrique de la caméra DJI (méthode de Zhang, calibrations dans le dossier \texttt{calibration}).
-\end{enumerate}
-
-\figureIRD[fig:annexe_shading]{annexe_shading_sjcam.png}{Correction du vignetage de la caméra SJCam M20 au chargement : image d'origine (à gauche) et corrigée (à droite).}{0.85}
-
-\subsection{Modèle de caméra virtuelle}
-La caméra NIR est un \og fish-eye \fg{} au champ beaucoup plus large que la caméra visible. Avec sa calibration, l'image NIR est redressée dans une \emph{caméra virtuelle} qui a la même focale que la caméra visible, mais un champ plus large (1,4 fois la taille de l'image visible par défaut). Si les deux caméras visaient exactement dans la même direction, le centre de cette image NIR redressée se superposerait à l'image visible.
-
-En pratique les deux visées diffèrent (§\ref{sec:ann_theorique}) : le gimbal maintient la caméra visible vers le nadir, tandis que la caméra NIR suit l'attitude du drone. Par vent, l'écart peut atteindre une vingtaine de degrés. Le roulis du drone se traduit par un lacet (\emph{yaw}) de la caméra et le tangage par un \emph{pitch} de la caméra ; le roulis de la caméra est en général nul grâce au verrouillage du gimbal. Une rotation $R(\text{yaw},\text{pitch},\text{roll})$ de la caméra se traduit dans l'image par l'homographie
+\section{Le problème}\label{sec:ann_problem}
+\subsection{Ce que signifie \og aligner \fg}
+Le drone emporte deux caméras (figure~\ref{fig:ann_pair}) : la caméra du DJI Mavic Air~2, qui enregistre la lumière visible (VIS, rouge, vert et bleu), et une SJCam M20 dont le filtre anti-infrarouge a été retiré et remplacé par un filtre qui ne laisse passer que le proche infrarouge (NIR, au-delà d'environ 720\,nm). Les indices de végétation comme le NDVI combinent, \emph{pixel par pixel}, le rouge de l'image visible et le proche infrarouge :
 \begin{equation}
-	H = K_{VIS}\, R\, K_{NIR}^{-1},
+	\text{NDVI} = \frac{\text{NIR} - \text{R}}{\text{NIR} + \text{R}}.
 \end{equation}
-où $K_{VIS}$ et $K_{NIR}$ sont les matrices de calibration des deux caméras. Tout l'alignement consiste à trouver cette rotation, puis à l'affiner.
+Cette formule n'a de sens que si les deux valeurs d'un pixel proviennent du même point du sol. Aligner (on dit aussi \emph{recaler}) les deux images, c'est trouver, pour chaque pixel de l'image visible, la position du même point du sol dans l'image infrarouge, puis rééchantillonner l'image infrarouge sur la grille de l'image visible. Une erreur de quelques pixels suffit à créer de fausses valeurs d'indice le long de chaque bord contrasté (une haie, une route, l'ombre d'un arbre).
 
-\subsection{Représentation multispectrale}
-Les deux images sont converties en niveaux de gris, lissées par un filtre gaussien (pour l'affinage, $\sigma=5$ pixels pour le visible et 3 pour l'infrarouge, qui est moins net ; moins pour la recherche grossière), puis remplacées par quatre cartes d'énergie de gradient : les carrés des dérivées horizontale et verticale (filtres de Scharr) et des deux dérivées diagonales (filtres de Roberts). Cette représentation garde les contours et ignore le niveau et le signe des contrastes : un contour présent dans les deux bandes y produit le même motif, même si ses intensités diffèrent.
+\figureIRD[fig:ann_pair]{align_pair_raw.jpg}{Le point B tel que l'enregistrent les deux caméras. Outre des champs de vision différents et la forte distorsion de la caméra infrarouge, les contrastes diffèrent : la route est sombre dans les deux bandes mais ses bas-côtés ne sont clairs que dans le visible, la végétation est verte et plus sombre que l'herbe sèche dans le visible, claire dans le proche infrarouge.}{1}
 
-\subsection{Critère de ressemblance : le gradient total normalisé}
-Pour comparer deux représentations décalées, on calcule leur différence, puis la somme des valeurs absolues du gradient (Sobel) de cette différence. Ce critère dérive du \og Normalized Total Gradient \fg{} (NTG, Chen et al.) : quand les deux images sont bien superposées, leurs contours s'annulent dans la différence et le gradient total est minimal. On cherche donc le décalage qui \emph{minimise} ce critère.
-
-\subsection{Alignement grossier}
-L'alignement grossier compense l'essentiel de l'écart de visée :
+\subsection{Pourquoi c'est difficile}
+Trois difficultés s'additionnent :
 \begin{enumerate}
-	\item l'image NIR est redressée dans la caméra virtuelle élargie, avec les angles initiaux (nuls, ou ceux réglés à la main lors d'un réalignement, §\ref{btn:review_redo}) ;
-	\item les deux représentations multispectrales sont réduites d'un facteur 32 ;
-	\item une \emph{recherche exhaustive} teste toutes les translations de l'image visible à l'intérieur de l'image NIR élargie et calcule le critère pour chacune. Le minimum est localisé finement (maximum de courbure de la surface de coût) ;
-	\item à faible angle, une translation horizontale $t_x$ correspond à un lacet et une translation verticale $t_y$ à un pitch de la caméra : $\text{yaw} = \arctan(t_x/f)$, $\text{pitch} = \arctan(t_y/f)$, où $f$ est la focale en pixels ;
-	\item l'image NIR est redressée une nouvelle fois, à pleine résolution, avec ces angles corrigés.
+	\item \textbf{Les deux caméras ne regardent pas dans la même direction.} La caméra visible est maintenue verticale par sa nacelle (gimbal), la caméra infrarouge est fixée au corps du drone et suit ses inclinaisons (§\ref{sec:ann_theorique}). L'écart atteint plusieurs degrés, c'est-à-dire plusieurs centaines de pixels.
+	\item \textbf{Les deux optiques sont très différentes.} La caméra infrarouge a un champ très large et une forte distorsion ; les lignes droites apparaissent courbes (§\ref{sec:ann_distortion}).
+	\item \textbf{Les deux bandes ne voient pas la même chose.} La végétation, l'eau, le sol et les routes n'ont pas la même réflectance dans le visible et dans le proche infrarouge. Un contraste peut s'inverser d'une bande à l'autre (figure~\ref{fig:ann_pair}, et figure~\ref{fig:step4_pair_VIS_NIR} où la rivière est noire dans l'infrarouge). Les méthodes classiques, qui comparent des intensités ou apparient des points caractéristiques (SIFT, ORB), sont donc peu fiables.
 \end{enumerate}
-Ce résultat correspond à l'image \og globale \fg{} grossière.
+Les deux premières difficultés sont résolues par la \emph{géométrie} : un modèle de chaque caméra, obtenu par calibration, et le fait que les deux images diffèrent essentiellement d'une rotation. La troisième est résolue en \emph{comparant des bords plutôt que des intensités}.
 
-\subsection{Affinage pyramidal}
-L'image NIR grossièrement alignée est ensuite affinée sur une pyramide d'images, de la plus petite à la plus grande (réductions d'un facteur 16, 16 puis 4 dans le réglage actuel) :
+\section{Géométrie d'une caméra}\label{sec:ann_camera}
+Le livre de référence est \emph{Multiple View Geometry in Computer Vision} de Hartley et Zisserman~[\hyperref[ann_hz]{1}] (chapitres 2 et 6 pour le modèle de caméra, 7.4 pour la distorsion, 8.4 pour les caméras en rotation). Le livre de Szeliski~[\hyperref[ann_szeliski]{2}] est une introduction plus accessible (chapitre 2).
+
+\subsection{Le modèle sténopé et les coordonnées homogènes}
+En première approximation, une caméra est un \emph{sténopé} (pinhole) : tout rayon lumineux passe par le centre optique $C$ avant d'atteindre le capteur. Soient $(X,Y,Z)$ les coordonnées d'un point de la scène dans le repère de la caméra ($Z$ selon l'axe optique). Son image est au pixel
+\begin{equation}
+	u = f\,\frac{X}{Z} + c_x, \qquad v = f\,\frac{Y}{Z} + c_y,
+\end{equation}
+où $f$ est la focale \emph{exprimée en pixels} (focale physique divisée par la taille d'un pixel) et $(c_x, c_y)$ le \emph{point principal}, intersection de l'axe optique avec le capteur, proche du centre de l'image. La division par $Z$ est la perspective : un objet deux fois plus loin apparaît deux fois plus petit.
+
+Cette division n'est pas linéaire ; elle le devient en écrivant le pixel en \emph{coordonnées homogènes}, un vecteur de trois nombres défini à un facteur près : $(u, v, 1) \sim (\lambda u, \lambda v, \lambda)$. Alors
+\begin{equation}\label{eq:ann_pinhole}
+	\lambda \begin{pmatrix} u \\ v \\ 1 \end{pmatrix} = K \begin{pmatrix} X \\ Y \\ Z \end{pmatrix},
+	\qquad
+	K = \begin{pmatrix} f & 0 & c_x \\ 0 & f & c_y \\ 0 & 0 & 1 \end{pmatrix}.
+\end{equation}
+La matrice $K$ des \emph{paramètres intrinsèques} (ou matrice de calibration) décrit la caméra seule. Inversement, $K^{-1}(u, v, 1)^T$ est la \emph{direction} du rayon qui arrive sur le pixel $(u,v)$ : une image est un ensemble de directions, la profondeur $Z$ est perdue.
+
+\begin{table}[htbp]\centering
+\begin{tabular}{@{}lll@{}}
+\hline
+ & \textbf{DJI Mavic Air~2 (VIS)} & \textbf{SJCam M20 (NIR)} \\ \hline
+Taille de l'image (pixels) & $3992 \times 2992$ & $4600 \times 3448$ \\
+Focale $f$ (pixels) & 2898 & 2311 \\
+Point principal $(c_x, c_y)$ & (2032, 1511) & (2348, 1725) \\
+Champ horizontal & $68^\circ$ & plus de $110^\circ$ \\
+Distorsion $k_1, k_2, k_3$ & $0{,}185,\ -0{,}455,\ 0{,}245$ & $-0{,}337,\ 0{,}131,\ -0{,}025$ \\ \hline
+\end{tabular}
+\caption{Calibrations des deux caméras (\texttt{calibration/DJI\_RAW} et \texttt{calibration/M20\_RAW}, images RAW). À la focale de la caméra visible, une rotation de $1^\circ$ déplace l'image de $f \tan 1^\circ \approx 51$ pixels.}
+\label{tab:ann_calib}
+\end{table}
+
+\subsection{La distorsion}\label{sec:ann_distortion}
+Les objectifs réels s'écartent du modèle sténopé : l'image d'une droite est courbe, de plus en plus vers les bords. IRdrone utilise le modèle polynomial de Brown et Conrady~[\hyperref[ann_brown]{3}], celui d'OpenCV. Avec les coordonnées normalisées $x = X/Z$, $y = Y/Z$ et $r^2 = x^2 + y^2$, le point idéal $(x, y)$ est observé en
+\begin{equation}\label{eq:ann_distortion}
+	x_d = x\,(1 + k_1 r^2 + k_2 r^4 + k_3 r^6) + 2p_1 xy + p_2 (r^2 + 2x^2),
+\end{equation}
+et de même pour $y_d$ ; le pixel est alors $K\,(x_d, y_d, 1)^T$. Les coefficients $k_i$ décrivent la distorsion radiale (en barillet si $k_1 < 0$, en coussinet si $k_1 > 0$), $p_1, p_2$ un léger décentrement des lentilles.
+
+La figure~\ref{fig:ann_distortion} donne les ordres de grandeur. Pour la caméra visible la correction ne dépasse pas 40 pixels. Pour la caméra infrarouge elle atteint 210 pixels aux bords gauche et droit et 375 pixels aux coins du champ de la caméra visible, et 800 pixels à $50^\circ$ de l'axe. Son $k_1$ fortement négatif est une distorsion en barillet proche de celle d'un \og fish-eye \fg. Le polynôme n'est valable que dans la zone où des mires de calibration ont été vues : au-delà d'environ $57^\circ$ de l'axe il redécroît, le modèle n'est donc plus inversible, et les bords de l'image infrarouge (plus de $110^\circ$ de champ horizontal) sont hors de son domaine de validité. Ces zones ne sont jamais utilisées, puisque le champ visible n'atteint que $41^\circ$ dans les coins.
+
+\figureIRD[fig:ann_distortion]{align_distortion.png}{Distorsion des deux caméras. À gauche et au centre : un quadrillage de droites au sol, tel qu'il est enregistré sur le capteur (cadre noir) de chaque caméra ; en rouge, le champ de la caméra visible vu par la caméra infrarouge. À droite : décalage radial d'un point en fonction de son angle avec l'axe optique.}{1}
+
+\subsection{La calibration}
+Les paramètres intrinsèques $f, c_x, c_y$ et les coefficients de distorsion sont mesurés une fois pour chaque caméra par la méthode de Zhang~[\hyperref[ann_zhang]{4}] : une trentaine de photographies d'un damier plan dans diverses orientations ; les coins des cases sont détectés, et tous les paramètres (plus la position du damier sur chaque photo) sont estimés en minimisant la distance entre les coins observés et les coins prédits par les équations \eqref{eq:ann_pinhole} et \eqref{eq:ann_distortion} (\texttt{calibration/cameracalibration.py}, OpenCV). Cette calibration est fixe : elle ne dépend pas du vol.
+
+\section{Deux caméras qui tournent : l'homographie}\label{sec:ann_homography}
+\subsection{Une rotation de la caméra est une homographie de l'image}
+Supposons que les deux caméras aient le \emph{même centre optique} et ne diffèrent que d'une rotation $R$ (une matrice orthogonale $3 \times 3$). Le rayon qui arrive sur le pixel $p_N$ de la caméra infrarouge a la direction $K_{NIR}^{-1} p_N$ dans le repère de cette caméra, $R\, K_{NIR}^{-1} p_N$ dans celui de la caméra visible, et arrive donc sur le pixel
+\begin{equation}\label{eq:ann_rotation_homography}
+	p_V \sim K_{VIS}\, R\, K_{NIR}^{-1}\, p_N = H\, p_N
+\end{equation}
+de la caméra visible (après correction des distorsions). La matrice $3 \times 3$ $H$, définie à un facteur près, est une \emph{homographie} : la transformation la plus générale qui envoie les droites sur des droites (Hartley et Zisserman~[\hyperref[ann_hz]{1}], §2.3 et §8.4). Elle a 8 degrés de liberté. Point remarquable : l'équation \eqref{eq:ann_rotation_homography} ne fait pas intervenir la profondeur $Z$ : quel que soit le relief, une rotation pure de la caméra est une homographie de l'image. C'est le principe des panoramas réalisés en tournant sur soi-même.
+
+La rotation est paramétrée par trois angles : le \emph{lacet} (yaw, rotation autour de l'axe vertical de l'image, qui la déplace horizontalement), le \emph{tangage} (pitch, qui la déplace verticalement) et le \emph{roulis} (roll, rotation autour de l'axe optique, qui fait tourner l'image autour de son centre). Dans le code, $R$ est construite à partir du vecteur de rotation $(-\text{pitch}, \text{yaw}, \text{roll})$ (formule de Rodrigues, \texttt{manual\_warp}). Aux petits angles, un lacet $\theta$ déplace le centre de l'image de $f \tan\theta$ pixels, soit environ 51 pixels par degré ; un roulis $\varphi$ déplace un coin, à environ 2500 pixels du centre, de $2500\,\varphi$ (44 pixels par degré).
+
+\subsection{Pourquoi la rotation suffit (presque) : la parallaxe}
+Les deux centres optiques ne sont pas exactement au même endroit : ils sont à 46\,mm l'un de l'autre sur le drone (\texttt{CNIRCVIS\_0} dans \texttt{config.py}), et le drone se déplace entre les deux prises de vue. Une distance $B$ entre les centres (la \emph{base}) crée une \emph{parallaxe} : un point à la distance $Z$ est décalé de
+\begin{equation}
+	d = f\,\frac{B}{Z} \quad \text{pixels}.
+\end{equation}
+Seules les \emph{variations} de ce décalage comptent, sa partie constante étant absorbée par la rotation. Avec $B = 46$\,mm, à 90\,m : $d = 2898 \times 0{,}046 / 90 \approx 1{,}5$ pixel, et un relief de 10\,m le modifie de 0,2 pixel : négligeable. Si les deux prises de vue sont séparées de $\Delta t = 0{,}5$\,s et que le drone vole à 3\,m/s, $B = 1{,}5$\,m : $d \approx 48$ pixels, et un relief de 10\,m (une haie d'arbres, une pente) le modifie maintenant de $f B \Delta Z / Z^2 \approx 5$ pixels. C'est la raison pour laquelle le Step~4 n'aligne que les shoot points dont l'écart de temps est faible, et pour laquelle une correction \emph{locale} s'ajoute au modèle global (§\ref{sec:ann_local}). À très basse altitude (décollage, atterrissage), la parallaxe domine et l'alignement n'a pas de sens.
+
+\subsection{La caméra virtuelle}
+L'image visible est d'abord corrigée de sa distorsion : elle devient l'image d'une caméra sténopé idéale, la \emph{référence}. L'image infrarouge est ensuite rééchantillonnée directement dans cette caméra de référence, par l'équation \eqref{eq:ann_rotation_homography} et son propre modèle de distorsion, mais sur un canevas plus large que l'image visible (1,4 fois par défaut, 1,6 dans le script REDO) : c'est la \emph{caméra virtuelle} de la figure~\ref{fig:ann_virtual}. Si la rotation était l'identité, l'image visible correspondrait exactement au rectangle central ; chercher la rotation revient à trouver où elle se trouve réellement.
+
+\figureIRD[fig:ann_virtual]{align_virtual_camera.jpg}{Point B. À gauche : l'image infrarouge corrigée de sa distorsion et rééchantillonnée dans la caméra virtuelle (focale de la caméra visible, champ 1,4 fois plus large). En pointillés : position de l'image visible si les deux caméras étaient parallèles ; en rouge : position trouvée par la recherche grossière (lacet $8{,}2^\circ$, tangage $1{,}9^\circ$). À droite : la référence visible. En dehors du champ visible la correction de la distorsion est moins précise (la route s'incurve à gauche).}{1}
+
+\section{Comparer deux bandes spectrales}\label{sec:ann_similarity}
+Pour trouver la rotation, il faut un \emph{critère de similarité} : un nombre qui dit si deux images sont bien superposées, et qui est optimal pour la bonne superposition.
+
+\subsection{Pourquoi on ne peut pas comparer les intensités}
+Pour deux images d'une même bande, le critère le plus simple est la somme des carrés des différences, $\text{SSD} = \sum_p (I_1(p) - I_2(p))^2$, ou la corrélation. Tous deux supposent qu'un même objet a la même intensité (ou une intensité proportionnelle) dans les deux images. Entre le visible et le proche infrarouge c'est faux : la végétation est sombre dans le visible et claire dans l'infrarouge, les bas-côtés de la route ne sont clairs que dans le visible (figures~\ref{fig:ann_pair} et \ref{fig:ann_features}). Une réponse classique à ces problèmes \og multimodaux \fg{} est l'information mutuelle~[\hyperref[ann_viola]{5}], qui mesure une dépendance statistique au lieu d'une égalité. Une autre approche combine des points caractéristiques et une similarité de gradients~[\hyperref[ann_vayssade]{18}]. IRdrone utilise une idée plus simple et plus locale : les \emph{bords} sont communs même quand les contrastes ne le sont pas.
+
+\subsection{Les cartes de caractéristiques : énergies directionnelles du gradient}\label{sec:ann_msr}
+Chaque image est convertie en luminance (niveaux de gris), lissée par un filtre gaussien d'écart-type $\sigma$ (5 pixels pour le visible, 3 pour l'infrarouge, moins net ; 3 et 1 pour la recherche grossière), puis remplacée par quatre cartes (\texttt{multispectral\_representation}, mode \texttt{LAPLACIAN\_ENERGIES}) :
+\begin{equation}
+	E_x = (\partial_x I)^2, \quad E_y = (\partial_y I)^2, \quad E_{\nearrow} = (\partial_{\nearrow} I)^2, \quad E_{\searrow} = (\partial_{\searrow} I)^2.
+\end{equation}
+Les dérivées horizontale et verticale sont calculées avec des filtres de Scharr~[\hyperref[ann_scharr]{6}] (une dérivée $3 \times 3$ avec un lissage optimisé, plus isotrope que Sobel), les diagonales avec la croix de Roberts $2 \times 2$~[\hyperref[ann_roberts]{7}]. Ces cartes sont appelées \emph{représentation multispectrale} (MSR) dans le code. L'idée vient d'Irani et Anandan~[\hyperref[ann_irani]{9}], qui alignaient des images de capteurs différents (visible et infrarouge entre autres) au moyen de telles énergies de dérivées directionnelles.
+
+Le carré est essentiel : un bord du sombre vers le clair et un bord du clair vers le sombre donnent la même énergie. Une inversion de contraste entre les bandes devient donc invisible, tandis que la \emph{position} du bord est conservée. Les quatre directions gardent l'orientation des bords, ce qui aide à distinguer, par exemple, une route du bord perpendiculaire d'un champ. Le lissage supprime les textures fines (herbe, feuilles), différentes dans les deux bandes, et garde les grandes structures. La figure~\ref{fig:ann_features} montre ces cartes sur un détail du point B : les luminances sont très différentes, les énergies des bords de la route sont au même endroit.
+
+\figureIRD[fig:ann_features]{align_feature_maps.jpg}{Énergies directionnelles du gradient sur un détail du point B ($600 \times 600$ pixels). Les luminances des deux bandes ne sont pas comparables (bas-côtés clairs dans le visible, sombres dans l'infrarouge), mais les bords de la route produisent les mêmes lignes dans les cartes d'énergie. Certains bords n'existent que dans une bande (les quatre lignes du visible contre deux dans l'infrarouge) : le critère doit les tolérer.}{1}
+
+\subsection{Le critère de similarité : gradient total de la différence}\label{sec:ann_ntg}
+Le critère dérive du \emph{Normalized Total Gradient} (NTG) de Chen et al.~[\hyperref[ann_ntg]{8}]. Pour deux images $f$ et $g$ :
+\begin{equation}
+	\text{NTG}(f, g) = \frac{\sum_p \|\nabla (f - g)(p)\|_1}{\sum_p \|\nabla f(p)\|_1 + \sum_p \|\nabla g(p)\|_1}.
+\end{equation}
+L'idée : quand deux images sont bien superposées, leurs bords communs s'annulent dans la différence $f-g$, qui devient lisse ; son gradient total (somme des valeurs absolues des dérivées) est alors minimal. Quand elles sont décalées, chaque bord apparaît deux fois dans la différence, avec des signes opposés, et le gradient total augmente. La norme $\|\cdot\|_1$ (valeurs absolues plutôt que carrés) rend le critère robuste aux bords qui n'existent que dans une image : ils ajoutent un coût à peu près constant, qui dépend peu du décalage, au lieu de le dominer. Le dénominateur rend le critère indépendant de la quantité de texture.
+
+IRdrone l'applique aux cartes d'énergie : pour un décalage $u$ de la référence,
+\begin{equation}\label{eq:ann_cost}
+	C(u) = \sum_{c=1}^{4} \sum_p \Big( \big|S_x * (E^{NIR}_c - E^{VIS}_c(\cdot + u))\big|(p) + \big|S_y * (E^{NIR}_c - E^{VIS}_c(\cdot + u))\big|(p) \Big),
+\end{equation}
+où $S_x, S_y$ sont les filtres de dérivation de Sobel (\texttt{cost\_surface\_NTG} dans \texttt{cost.py}). Seul le numérateur du NTG est calculé. Le filtre de Sobel étant linéaire, $S * (a - b) = S*a - S*b$ : les gradients des deux images sont calculés une fois, et chaque décalage n'est plus qu'une somme de différences absolues (15 fois plus rapide, novembre 2026). Une somme des carrés des différences sur les mêmes cartes est aussi programmée (\texttt{SSD}) mais n'est pas utilisée.
+
+La figure~\ref{fig:ann_profiles} compare les critères sur le point A, en fonction d'un décalage horizontal autour du bon alignement. La SSD des luminances a une vallée large : elle situe l'alignement, mais avec peu de précision, et elle suppose des intensités comparables, ce qui est le cas sur cette scène d'hiver mais pas en été. Le NTG a un puits étroit et profond : il est très précis, mais ne \og voit \fg{} la bonne position qu'à quelques pixels près, d'où le besoin d'un bon point de départ et d'une stratégie du grossier au fin.
+
+\figureIRD[fig:ann_profiles]{align_cost_profiles.png}{Coût en fonction d'un décalage horizontal (point A, après alignement, calculé à la résolution 1/4), normalisé entre 0 et 1. (a) L'image visible contre elle-même. (b) Visible contre infrarouge sur un bloc avec des arbres et une haie. (c) Sur un bloc de prairie seule, avec peu de structures : le NTG a encore son minimum au bon endroit mais en dehors du puits étroit la courbe n'est plus informative.}{1}
+
+\section{Recherche grossière}\label{sec:ann_coarse}
+La recherche grossière trouve l'essentiel de l'écart d'orientation (fonction \texttt{coarse\_alignment}) :
 \begin{enumerate}
-	\item à chaque niveau, l'image est découpée en une grille de zones (4$\times$4 puis 5$\times$5) ;
-	\item pour chaque zone, la meilleure translation est recherchée dans un petit voisinage avec le même critère : on obtient un \emph{champ de vecteurs} de déplacements locaux ;
-	\item ce champ est régularisé par l'ajustement d'un modèle de mouvement global, une homographie, qui affine le yaw, le pitch et le roll ;
-	\item au niveau suivant, plus fin, l'image est d'abord recalée avec l'homographie trouvée, ce qui réduit l'horizon de recherche ; chaque niveau est itéré plusieurs fois.
+	\item l'image infrarouge est rééchantillonnée dans la caméra virtuelle avec les angles initiaux : nuls au Step~4, ceux réglés à la main lors d'un réalignement (§\ref{btn:review_redo}) ;
+	\item les cartes d'énergie des deux images sont réduites d'un facteur 32 ($125 \times 94$ pixels pour le visible), la carte visible est placée au centre d'un canevas de la taille de la carte infrarouge ;
+	\item une \emph{recherche exhaustive} calcule le coût \eqref{eq:ann_cost} pour chaque translation de la carte visible à l'intérieur de la carte infrarouge : avec l'élargissement de champ 1,4 du Step~4, $\pm 25$ pixels à cette échelle, soit environ $\pm 800$ pixels en pleine résolution ou $\pm 15^\circ$ ; avec l'élargissement 1,6 de la ligne de commande, $\pm 37$ pixels, $\pm 1200$ pixels ou $\pm 22^\circ$ (figure~\ref{fig:ann_coarse}) ;
+	\item la meilleure position est localisée avec une précision inférieure au pixel (ci-dessous) ;
+	\item aux petits angles une translation horizontale $t_x$ est un lacet et une translation verticale $t_y$ un tangage : $\text{yaw} = \arctan(t_x/f)$, $\text{pitch} = \arctan(t_y/f)$ ;
+	\item l'image infrarouge est rééchantillonnée une nouvelle fois, en pleine résolution, avec les angles corrigés.
 \end{enumerate}
+Le roulis n'est pas recherché : il garde sa valeur initiale (§\ref{sec:ann_fourier}).
 
-\subsection{Rééchantillonnage unique et sorties}
-Le modèle de mouvement final (angles, homographie et champ de vecteurs) est enregistré dans \texttt{VIS\_XXXX\_motion\_model.npy} ; une version lisible est écrite en \texttt{.json}. L'image NIR \emph{originale} est alors rééchantillonnée \textbf{une seule fois} sur l'image visible, ce qui évite d'accumuler le flou des interpolations successives :
+\paragraph{Choix du minimum.} Le minimum absolu de la surface de coût n'est pas toujours le bon : une zone sans texture ou le bord noir du canevas peuvent produire une vallée large et basse. La bonne superposition produit un puits étroit et profond (figure~\ref{fig:ann_coarse}). Le code cherche donc la position où la surface est la plus fortement courbée : en chaque position, une surface quadratique est ajustée sur le voisinage $3\times3$, et la position du plus grand déterminant de sa matrice hessienne (produit des deux courbures principales) est retenue (\texttt{minimum\_cost\_max\_hessian}).
+
+\paragraph{Raffinement sous-pixel.} Autour de la position retenue, le coût est approché par une forme quadratique~[\hyperref[ann_hasinoff]{10}]
+\begin{equation}
+	C(u) \approx \tfrac{1}{2}\, u^T A\, u + b^T u + c,
+\end{equation}
+dont les coefficients s'obtiennent par de petites convolutions du voisinage $3\times3$. Son minimum est en $u^* = -A^{-1} b$ (un pas de Newton), retenu s'il est à moins d'un pixel. À la résolution 1/32, un pixel vaut 32 pixels en pleine résolution : ce raffinement rend la recherche grossière précise à quelques pixels près. Pour le point A, la translation trouvée est de $(21{,}7 ; 163{,}9)$ pixels, soit un lacet de $0{,}43^\circ$ et un tangage de $3{,}24^\circ$.
+
+\figureIRD[fig:ann_coarse]{align_coarse_search.png}{Recherche grossière du point A à la résolution 1/32. À gauche : la surface de coût sur toute la plage de recherche ($\pm 1200$ pixels) : un puits net dans un paysage lisse. Au centre : zoom sur le centre du coût. À droite : déterminant de la hessienne, maximal au fond du puits.}{1}
+
+\section{Raffinement pyramidal}\label{sec:ann_pyramid}
+Après la recherche grossière, le désalignement résiduel va de quelques pixels à quelques dizaines de pixels, et il n'est pas uniforme : roulis résiduel, erreurs des calibrations, parallaxe. Le raffinement l'estime par blocs, sur une pyramide d'images (\texttt{pyramidal\_search} dans \texttt{rigid.py}).
+
+\subsection{Du grossier au fin}
+Une \emph{pyramide gaussienne}~[\hyperref[ann_burt]{11}] est la suite d'une image lissée et réduite par 2, 4, 8, 16\ldots{} Un déplacement de 100 pixels en pleine résolution fait 6 pixels à 1/16 : on le trouve avec une petite fenêtre de recherche, vite et avec peu de risque de confusion. Une fois trouvé, il est appliqué, et le niveau suivant, plus fin, n'a plus qu'à corriger le reste. C'est la stratégie classique des méthodes d'alignement de Lucas--Kanade~[\hyperref[ann_lucas]{12}, \hyperref[ann_baker]{13}]. IRdrone utilise le schéma suivant (\texttt{iterative\_scheme} dans \texttt{align\_raw}) :
+
+\begin{table}[htbp]\centering
+\begin{tabular}{@{}cccccc@{}}
+\hline
+\textbf{Échelle} & \textbf{Itérations} & \textbf{Blocs} & \textbf{Taille d'un bloc (pleine rés.)} & \textbf{Fenêtre du coût} & \textbf{Plus grand vecteur (pleine rés.)} \\ \hline
+1/16 & 2 & $4 \times 4$ & $998 \times 748$ & $\pm 8$ px & $\pm 80$ px \\
+1/16 & 2 & $5 \times 5$ & $798 \times 598$ & $\pm 6$ px & $\pm 80$ px \\
+1/4 & 3 & $5 \times 5$ & $798 \times 598$ & $\pm 6$ px & $\pm 20$ px \\ \hline
+\end{tabular}
+\caption{Schéma du raffinement pyramidal. Le coût est calculé sur la fenêtre indiquée, à l'échelle du niveau, mais le minimum est cherché à $\pm 5$ pixels du centre (\texttt{brute\_force\_vector\_field\_search}) : un vecteur de bloc ne peut pas dépasser 80 pixels à 1/16, 20 pixels à 1/4. Les itérations sont numérotées 1, 2, 4, 5, 7, 8, 9 dans les noms des fichiers de traces (le compteur est incrémenté une fois de plus à chaque changement de niveau).}
+\label{tab:ann_pyramid}
+\end{table}
+
+\subsection{Une itération}
+\begin{enumerate}
+	\item Les cartes d'énergie de l'image infrarouge sont rééchantillonnées avec le modèle courant (l'identité au départ).
+	\item L'image est découpée en une grille de blocs. Pour chaque bloc, le coût \eqref{eq:ann_cost} est calculé pour chaque décalage de la fenêtre de recherche : on obtient une \emph{surface de coût} par bloc (figures~\ref{fig:ann_blocks_first} et \ref{fig:ann_blocks_last}).
+	\item Le minimum de chaque surface (à $\pm 5$ pixels du centre), affiné au sous-pixel comme ci-dessus, donne un vecteur de déplacement par bloc : un \emph{champ de vecteurs} grossier, ou flot optique.
+	\item Une homographie est ajustée sur ces vecteurs : les 16 ou 25 couples (centre du bloc, centre + vecteur) forment un système surdéterminé pour ses 8 inconnues. Il est résolu par la transformation linéaire directe (DLT) dans une boucle RANSAC~[\hyperref[ann_ransac]{14}], qui ignore les blocs dont le vecteur s'écarte de plus de 3 pixels de la majorité (\texttt{geometric\_rigid\_transform\_estimation}, \texttt{findHomography} d'OpenCV ; Hartley et Zisserman~[\hyperref[ann_hz]{1}], chapitre 4).
+	\item Le modèle est mis à jour par composition, $H_k = \Delta H_k\, H_{k-1}$, puis l'itération suivante commence.
+\end{enumerate}
+Une homographie plutôt que trois angles : elle représente la rotation d'une caméra \emph{et} les erreurs résiduelles des calibrations (pour le point A, l'homographie finale contient un facteur d'échelle de 1,9\,\% horizontalement et 1,1\,\% verticalement, par exemple une petite erreur sur les focales).
+
+\figureIRD[fig:ann_blocks_first]{align_blocks_first.jpg}{Première itération du raffinement du point A (résolution 1/16, blocs $4\times4$, recherche $\pm 8$ pixels). À gauche : superposition après la recherche grossière (visible en vert, infrarouge en magenta ; gris là où ils concordent), avec les vecteurs mesurés (bleu, agrandis 20 fois) et les vecteurs de l'homographie ajustée (rouge). À droite : la surface de coût de chaque bloc ; le point noir est le décalage nul, la croix le minimum. Les vecteurs atteignent 50 pixels et varient régulièrement : un facteur d'échelle et un tangage résiduels, que l'homographie représente bien.}{1}
+
+\figureIRD[fig:ann_blocks_last]{align_blocks_last.jpg}{Dernière itération (résolution 1/4, blocs $5\times5$, recherche $\pm 6$ pixels), sur l'image alignée globalement. Tous les minima sont au centre : les vecteurs résiduels (agrandis 200 fois) sont inférieurs à 2 pixels, l'homographie ne change plus. Ces vecteurs résiduels forment la correction locale (§\ref{sec:ann_local}).}{1}
+
+\figureIRD[fig:ann_convergence]{align_convergence.png}{Longueur des vecteurs des blocs à chaque itération, pour les deux points. Le point A (bleu) converge : de 23 pixels en moyenne à 0,6 pixel. Les marches aux changements de niveau sont dues au changement de taille des blocs et de résolution (un pixel à 1/16 vaut 16 pixels). Le point B (rouge) ne converge pas : les vecteurs restent à leur limite, 80 pixels à 1/16 et 20 pixels à 1/4 (§\ref{sec:ann_limits}).}{0.7}
+
+\subsection{Alignement local}\label{sec:ann_local}
+Une homographie est un modèle global : elle ne peut pas représenter la parallaxe du relief ni une imperfection locale du modèle de distorsion. Le champ de vecteurs de la dernière itération ($5 \times 5$ vecteurs) est donc conservé comme \emph{correction locale} : il est interpolé bilinéairement entre les centres des blocs (constant au-delà) en un déplacement pour chaque pixel, composé avec le modèle global (\texttt{warp\_from\_sparse\_vector\_field}). Deux résultats sont produits :
 \begin{itemize}
 	\item alignement \emph{global} : rotation et homographie finale ;
-	\item alignement \emph{local} : rotation, homographie et champ de vecteurs local, en général le plus précis.
+	\item alignement \emph{local} : rotation, homographie de l'itération précédente et champ de déplacement local. C'est en général le plus précis, et celui des images multispectrales \texttt{IRD\_XXXX\_n.tif}.
 \end{itemize}
-Les quatre couches \texttt{IRD\_XXXX\_1..4.tif} (rouge, vert, bleu et proche infrarouge) viennent de l'alignement local ; les bords, où l'infrarouge peut manquer, sont rognés. Les images de contrôle \texttt{VIR}, \texttt{NDVI} et \texttt{NIR} au format jpeg sont écrites pour l'alignement local et/ou global selon les cases cochées au Step~4 (§\ref{btn:step4_options}). Quand un modèle de mouvement existe déjà, il est relu : relancer l'alignement ne refait pas la recherche (§\ref{btn:step4_stop}).
 
-\subsection{Limites et réalignement semi-automatique}
-L'alignement multispectral est un problème mal posé. L'algorithme échoue quand les deux caméras ne voient pas la même scène (rafale de vent, écart de temps important entre les deux prises de vue), quand la zone est sans texture (eau, champ uniforme), ou quand la recherche grossière tombe sur un minimum trompeur. La revue des images alignées (chapitre~\ref{ch:review}) mesure le décalage résiduel des contours pour repérer ces échecs.
+\subsection{Un seul rééchantillonnage}
+Chaque rééchantillonnage d'une image interpole entre ses pixels, et la rend donc un peu floue. Au lieu de rééchantillonner l'image infrarouge à chaque étape, la transformation finale est composée en une seule carte : pour chaque pixel de l'image visible, la position à lire dans l'image infrarouge \emph{brute} s'obtient en enchaînant le déplacement local, l'homographie, la rotation de l'équation \eqref{eq:ann_rotation_homography} et la distorsion de la caméra infrarouge ; l'image n'est ensuite interpolée qu'une fois (interpolation bicubique, \texttt{cv2.remap}). Dans le code ce principe s'appelle \og You Only Warp Once \fg{} (\texttt{FULLRES\_REGISTERED\_REFINED\_WARPED\_ONCE\_ONLY.jpg}). Le modèle de mouvement (angles, homographies, champ de vecteurs) est enregistré dans \texttt{VIS\_XXXX\_motion\_model.npy} et sa version lisible \texttt{.json} ; s'il existe, relancer le Step~4 le relit au lieu de chercher à nouveau.
 
-Le réalignement à la main (§\ref{btn:review_redo}) remplace les angles initiaux nuls par des angles choisis à l'\oe il, dans la fenêtre d'alignement de la revue (ou avec des curseurs en ligne de commande). Ces angles ne servent que de point de départ : l'alignement grossier et l'affinage pyramidal repartent de là et retrouvent en général un alignement précis. La régularisation du champ de vecteurs local reste à améliorer, de même que l'étalonnage colorimétrique des deux caméras.
+La figure~\ref{fig:ann_stages} montre la progression de l'alignement sur un détail du point A.
 
-\subsection{Références}
+\figureIRD[fig:ann_stages]{align_stages.jpg}{Les quatre étapes sur un détail du point A (visible en vert, infrarouge en magenta, gris là où ils concordent). (a) Calibrations seules : les images sont décalées d'environ 160 pixels. (b) Après la recherche grossière : il reste une dizaine de pixels (franges colorées le long des ombres). (c) Avec l'homographie. (d) Avec la correction locale : les bords coïncident.}{1}
+
+\section{Pistes explorées : corrélation de phase, Fourier--Mellin et appariement polaire}\label{sec:ann_fourier}
+\subsection{Corrélation de phase}
+Les premières versions (août--septembre 2021) estimaient la translation par \emph{corrélation de phase}~[\hyperref[ann_kuglin]{15}]. Si $g(x) = f(x - t)$, leurs transformées de Fourier vérifient $\hat g(\omega) = \hat f(\omega)\, e^{-i\omega \cdot t}$ (théorème du retard). L'interspectre normalisé
+\begin{equation}
+	\frac{\hat f\, \overline{\hat g}}{|\hat f\, \overline{\hat g}|} = e^{i\omega \cdot t}
+\end{equation}
+ne garde que la phase, et sa transformée de Fourier inverse est un pic de Dirac à la position $t$. La méthode est rapide (deux FFT), insensible à un changement global de luminosité, et trouve de grandes translations. Mais elle suppose que les deux images sont le \emph{même} signal décalé : une rotation, un changement d'échelle, une distorsion ou une inversion de contraste étalent le pic. La figure~\ref{fig:ann_phase} le montre : sur le point A, après la recherche grossière, le pic est net ; sur le point B il est noyé dans le bruit, sur les luminances comme sur les cartes d'énergie.
+
+\figureIRD[fig:ann_phase]{align_phase_correlation.png}{Surfaces de corrélation de phase entre l'image visible et l'image infrarouge après la recherche grossière (résolution 1/8, zoom sur $\pm 320$ pixels). En haut, point A : un pic net, environ 2,5 fois plus haut que les valeurs suivantes. En bas, point B (rotation résiduelle, contrastes inversés, grandes zones texturées) : le pic émerge à peine.}{0.65}
+
+\subsection{Fourier--Mellin : rotation et échelle}
+La méthode de Fourier--Mellin~[\hyperref[ann_reddy]{16}] étend la corrélation de phase aux rotations et aux changements d'échelle. Le module de la transformée de Fourier ne dépend pas de la translation ; une rotation de l'image le fait tourner, un changement d'échelle le dilate. Rééchantillonné en coordonnées \emph{log-polaires} $(\log r, \theta)$, le module transforme une rotation en translation selon $\theta$ et un changement d'échelle en translation selon $\log r$, qu'une seconde corrélation de phase retrouve. Rabatel et Labbé~[\hyperref[ann_rabatel]{17}] l'ont appliquée à des images de drone visibles et proche infrarouge. Dans IRdrone, l'échelle est connue par les calibrations, et seul le roulis était cherché de cette façon : l'alignement semi-automatique de 2021 rééchantillonnait les deux images en coordonnées polaires et estimait le roulis par corrélation de phase selon l'angle (\texttt{mellin\_transform} et \texttt{estimate\_rotation} dans \texttt{semi\_auto\_registration.py}, toujours présentes pour une démonstration mais non utilisées par le Step~4). Combinée à la translation par corrélation de phase, ou à des points SIFT, elle n'a pas donné de résultats fiables sur les images multispectrales, pour les raisons ci-dessus. À partir de septembre 2021 elle a été remplacée par la minimisation du coût \eqref{eq:ann_cost} sur les cartes d'énergie.
+
+\subsection{Appariement polaire des cartes d'énergie (essai de 2022)}
+Le roulis est le point faible de l'algorithme actuel : la recherche grossière ne trouve que le lacet et le tangage, et le raffinement pyramidal ne corrige qu'un petit roulis. Lors d'un vol à Thaumiers (novembre 2022) la caméra infrarouge était montée avec un roulis constant d'environ $-2{,}4^\circ$, soit des déplacements de 100 pixels dans les coins, trop pour le raffinement (ticket GitHub \#33). Un essai a combiné les deux approches : les cartes d'énergie sont rééchantillonnées en coordonnées polaires autour du centre de l'image, où un roulis devient une translation verticale, et le coût \eqref{eq:ann_cost} est calculé pour chaque décalage de $1^\circ$ ; une parabole ajustée sur les trois valeurs les plus basses donne le roulis à mieux qu'un degré (\texttt{coarse\_roll\_estimation}, branche \texttt{local\_alignment\_improvements}, commit \texttt{86353cb}, non intégré). La figure~\ref{fig:ann_polar} le reproduit : sur le point A, tourné d'un roulis connu de $2{,}4^\circ$, l'estimation est de $2{,}26^\circ$. Sur le point B, la route est à environ $34^\circ$ dans l'image visible et à environ $28^\circ$ dans l'image infrarouge après la recherche grossière, et l'appariement polaire trouve un roulis de $-6{,}3^\circ$, mais avec un second minimum presque aussi profond à $+5^\circ$ (figure~\ref{fig:ann_polar_b}) : le profil est beaucoup moins tranché que sur le point A.
+
+\figureIRD[fig:ann_polar]{align_polar_roll.jpg}{Appariement polaire sur le point A, dont l'image infrarouge a été tournée volontairement de $2{,}4^\circ$. À gauche : cartes d'énergie des deux images en coordonnées polaires (angle verticalement, distance au centre horizontalement) ; un roulis est un décalage vertical. À droite : coût en fonction du décalage angulaire, et parabole ajustée autour du minimum ($2{,}26^\circ$).}{1}
+
+\figureIRD[fig:ann_polar_b]{align_polar_roll_b.jpg}{La même chose sur le point B, sans roulis artificiel, après la recherche grossière : minimum à $-6{,}3^\circ$, mais un second minimum près de $+5^\circ$ est presque aussi profond.}{1}
+
+\section{Historique du développement}\label{sec:ann_history}
+L'historique git du projet donne les jalons suivants.
 \begin{itemize}
-	\item S.-J. Chen, H.-L. Shen, \emph{Normalized Total Gradient: A New Measure for Multispectral Image Registration}, \texttt{arXiv:1702.04562}.
-	\item M. Irani, P. Anandan, \emph{Robust multi-sensor image alignment}, ICCV 1998.
-	\item S. W. Hasinoff et al., \emph{Burst photography for high dynamic range and low-light imaging on mobile cameras}, SIGGRAPH Asia 2016 (alignement pyramidal par zones, matériel supplémentaire).
-	\item G. Rabatel, S. Labbé, \emph{Registration of visible and near infrared unmanned aerial vehicle images based on Fourier-Mellin transform}, Precision Agriculture, 2016.
-	\item J.-A. Vayssade, G. Jones, J.-N. Paoli, C. Gée, \emph{Two-step multi-spectral registration via key-point detector and gradient similarity}, 2020.
+	\item \textbf{Août 2021} : alignement semi-automatique. L'utilisateur tourne l'image infrarouge avec trois curseurs (lacet, tangage, roulis, équation~\eqref{eq:ann_rotation_homography}) ; le résultat est affiné par corrélation de phase, par corrélation de phase polaire pour le roulis, ou par des points SIFT ou une corrélation de phase par blocs avec un ajustement affine. Comparaison sur la valeur absolue du gradient plutôt que sur les intensités.
+	\item \textbf{Septembre 2021} : fonctions de coût (SSD, NTG) sur plusieurs représentations, recherche de Newton et ajustement quadratique du minimum (d'après le matériel supplémentaire de HDR+~[\hyperref[ann_hasinoff]{10}]), puis recherche itérative pyramidale ajustant une homographie sur les vecteurs des blocs, accélérée avec Numba.
+	\item \textbf{Octobre 2021} : déformation locale suivant le champ de vecteurs, caméra virtuelle au champ élargi pour le fish-eye, chaîne complète recherche grossière + pyramide, choix du minimum par la hessienne, rééchantillonnage unique (\og You Only Warp Once \fg), sorties locale et globale.
+	\item \textbf{Mars 2022} : ticket GitHub \#4, \og fix local alignment issues \fg{} (toujours ouvert) : utiliser la courbure du coût pour décider si un vecteur local est fiable, régulariser le champ avec ses voisins.
+	\item \textbf{Novembre--décembre 2022} : ticket \#33, roulis de la caméra infrarouge ; appariement polaire des cartes d'énergie, raffinement parabolique du minimum (branche expérimentale).
+	\item \textbf{Novembre 2026} : accélération sans changement des résultats (coût par linéarité du filtre de Sobel, pyramides en float32 avec OpenCV, réduction par 32 calculée sur les seules lignes et colonnes utiles) : environ 15\,s par shoot point ; réalignement à la main depuis la revue dans une fenêtre dédiée (§\ref{btn:review_redo}).
 \end{itemize}
+
+\section{Traces de diagnostic}\label{sec:ann_traces}
+Les figures de cette annexe proviennent des traces de diagnostic de l'alignement. Elles ne sont pas écrites par défaut au Step~4 (environ 100\,Mo de figures par point). On les obtient :
+\begin{itemize}
+	\item en lançant le script \texttt{VIS\_XXXX\_REDO.bat} (ou \texttt{.sh}) écrit à côté de chaque image alignée : un \og full recovery run \fg{} avec l'option \texttt{--debug}, qui ouvre la fenêtre à curseurs puis écrit tout ;
+	\item depuis la revue, quand le niveau de détail du journal des réglages du Step~4 (\bouton{⚙}) est \og Debug \fg{} : un réalignement à la main fait alors le calcul complet ;
+	\item en ligne de commande : \texttt{python automatic\_registration.py --images VIS\_XXXX.dng NIR\_YYYY.dng --outdir OUT --debug}.
+\end{itemize}
+Les traces sont écrites dans le dossier \texttt{VIS\_XXXX\_align\_traces} :
+\begin{itemize}
+	\item \texttt{Full Search\_\ldots} : la recherche grossière (surface de coût, tableau \texttt{.npy} des coûts) ;
+	\item \texttt{\_PADDED\_LOWRES\_*}, \texttt{\_LOWRES\_*} : cartes d'énergie à 1/32 avant et après la recherche grossière ;
+	\item \texttt{ds16\_\ldots\_cost\_surface\_Y\_X\_\_itNN.png} : les entrées et les quatre surfaces de coût du bloc $(Y, X)$ à l'itération NN ; \texttt{\ldots overview\_cost\_surfaces\ldots} : tous les blocs d'une itération ; \texttt{\ldots\_cost\_search\_\_itNN.npy} : les coûts, les centres des blocs et l'échelle, lisibles par \texttt{numpy.load(\ldots, allow\_pickle=True)} ;
+	\item \texttt{\_msr\_itNN\_dsMM\_\ldots}, \texttt{\_image\_itNN\_\ldots} : cartes d'énergie et images à chaque itération ;
+	\item \texttt{FLOW\_itNN\_\ldots} : champ de vecteurs et image déformée par celui-ci ;
+	\item \texttt{FULLRES\_REF.jpg}, \texttt{FULLRES\_REGISTERED\_COARSE.jpg}, \texttt{FULLRES\_REGISTERED\_REFINED\_WARPED\_ONCE\_ONLY.jpg} : la référence et l'image infrarouge après chaque étape, à comparer en basculant de l'une à l'autre ;
+	\item \texttt{motion\_model.npy} : le modèle de mouvement.
+\end{itemize}
+
+\section{Limites et problèmes ouverts}\label{sec:ann_limits}
+L'alignement multispectral est un problème mal posé, et l'algorithme échoue dans des situations identifiables :
+\begin{itemize}
+	\item les deux caméras ne voient pas la même scène : rafale de vent, grand écart de temps, basse altitude (parallaxe) ;
+	\item la zone a peu de structures : eau, champ uniforme, canopée forestière ; le coût est alors plat ou trompeur (figure~\ref{fig:ann_profiles}c) ;
+	\item le désalignement dépasse ce que les étapes savent corriger : un roulis de plusieurs degrés, que la recherche grossière ne modélise pas ;
+	\item la recherche grossière tombe dans un minimum trompeur.
+\end{itemize}
+Le point B cumule plusieurs de ces difficultés : grand lacet ($8{,}2^\circ$), roulis probable de plusieurs degrés, grandes zones de végétation dont les textures diffèrent entre les bandes. Les vecteurs des blocs restent à leur limite de $\pm 80$ puis $\pm 20$ pixels (figures~\ref{fig:ann_blocks_hard} et \ref{fig:ann_convergence}) ; l'ajustement RANSAC retient alors une homographie aux forts termes de perspective, qui déplace les coins de l'image de plusieurs centaines de pixels. Le résultat est acceptable près du centre et faux vers les coins (textures étirées en bas à gauche). Dans nos essais, partir du roulis estimé par appariement polaire ($\pm 6{,}3^\circ$) ne l'a pas fait converger non plus : ce point demande un réalignement à la main. De tels échecs sont détectés à la revue (chapitre~\ref{ch:review}), qui mesure le décalage résiduel des bords.
+
+\figureIRD[fig:ann_blocks_hard]{align_blocks_hard.jpg}{Première itération du raffinement du point B : les surfaces de coût des blocs de végétation n'ont pas de minimum net, les minima sont à des positions aléatoires, souvent au bord de la fenêtre de recherche (vecteurs agrandis 10 fois).}{1}
+
+Le réalignement à la main (§\ref{btn:review_redo}) remplace les angles initiaux nuls par des angles choisis à l'œil, roulis compris. Ces angles ne sont qu'un point de départ : la recherche grossière et le raffinement pyramidal repartent de là et trouvent en général un alignement précis.
+
+Améliorations possibles, en partie listées dans les tickets GitHub \#4 et \#33 :
+\begin{itemize}
+	\item utiliser la courbure de chaque surface de coût (matrice $A$ de l'ajustement quadratique) comme indice de confiance : un vecteur mesuré sur une surface plate ne devrait compter ni dans l'homographie ni dans la correction locale ;
+	\item régulariser le champ de vecteurs local (médiane des voisins, contrainte de régularité) au lieu de l'utiliser brut ;
+	\item ajouter le roulis à la recherche grossière (appariement polaire, ou recherche sur quelques valeurs de roulis) ;
+	\item normaliser le coût (dénominateur du NTG), pour ne pas favoriser un bloc moins texturé ;
+	\item calibrer les couleurs des deux caméras (calibration radiométrique) pour calculer des indices physiquement significatifs.
+\end{itemize}
+
+\section{Références}\label{sec:ann_references}
+{\renewcommand{\labelenumi}{[\arabic{enumi}]}
+\begin{enumerate}
+	\item\label{ann_hz} R. Hartley, A. Zisserman, \emph{Multiple View Geometry in Computer Vision}, 2\textsuperscript{e} édition, Cambridge University Press, 2004. Chapitres 2 (géométrie projective du plan, homographies), 4 (estimation d'une homographie, DLT, RANSAC), 6 (modèles de caméra), 7.4 (distorsion radiale), 8.4 (caméra en rotation, rotations synthétiques, mosaïques).
+	\item\label{ann_szeliski} R. Szeliski, \emph{Computer Vision: Algorithms and Applications}, 2\textsuperscript{e} édition, Springer, 2022 (chapitre 2 : formation de l'image ; chapitres 8 et 9 : alignement et estimation du mouvement). Gratuit en ligne sur \texttt{szeliski.org/Book}.
+	\item\label{ann_brown} D. C. Brown, \emph{Close-range camera calibration}, Photogrammetric Engineering 37(8), 1971.
+	\item\label{ann_zhang} Z. Zhang, \emph{A flexible new technique for camera calibration}, IEEE Transactions on Pattern Analysis and Machine Intelligence 22(11), 2000.
+	\item\label{ann_viola} P. Viola, W. M. Wells III, \emph{Alignment by maximization of mutual information}, International Journal of Computer Vision 24(2), 1997.
+	\item\label{ann_scharr} H. Scharr, \emph{Optimale Operatoren in der digitalen Bildverarbeitung}, thèse de doctorat, université de Heidelberg, 2000.
+	\item\label{ann_roberts} L. G. Roberts, \emph{Machine perception of three-dimensional solids}, thèse de doctorat, MIT, 1963.
+	\item\label{ann_ntg} S.-J. Chen, H.-L. Shen, C. Li, J. H. Xin, \emph{Normalized Total Gradient: a new measure for multispectral image registration}, IEEE Transactions on Image Processing 27(3), 2018 (\texttt{arXiv:1702.04562}).
+	\item\label{ann_irani} M. Irani, P. Anandan, \emph{Robust multi-sensor image alignment}, ICCV 1998.
+	\item\label{ann_hasinoff} S. W. Hasinoff et al., \emph{Burst photography for high dynamic range and low-light imaging on mobile cameras}, SIGGRAPH Asia 2016 (matériel supplémentaire : alignement pyramidal par blocs, raffinement sous-pixel quadratique).
+	\item\label{ann_burt} P. J. Burt, E. H. Adelson, \emph{The Laplacian pyramid as a compact image code}, IEEE Transactions on Communications 31(4), 1983.
+	\item\label{ann_lucas} B. D. Lucas, T. Kanade, \emph{An iterative image registration technique with an application to stereo vision}, IJCAI 1981.
+	\item\label{ann_baker} S. Baker, I. Matthews, \emph{Lucas-Kanade 20 years on: a unifying framework}, International Journal of Computer Vision 56(3), 2004.
+	\item\label{ann_ransac} M. A. Fischler, R. C. Bolles, \emph{Random sample consensus: a paradigm for model fitting with applications to image analysis and automated cartography}, Communications of the ACM 24(6), 1981.
+	\item\label{ann_kuglin} C. D. Kuglin, D. C. Hines, \emph{The phase correlation image alignment method}, Proceedings of the IEEE International Conference on Cybernetics and Society, 1975.
+	\item\label{ann_reddy} B. S. Reddy, B. N. Chatterji, \emph{An FFT-based technique for translation, rotation, and scale-invariant image registration}, IEEE Transactions on Image Processing 5(8), 1996.
+	\item\label{ann_rabatel} G. Rabatel, S. Labbé, \emph{Registration of visible and near infrared unmanned aerial vehicle images based on Fourier-Mellin transform}, Precision Agriculture 17, 2016.
+	\item\label{ann_vayssade} J.-A. Vayssade, G. Jones, J.-N. Paoli, C. Gée, \emph{Two-step multi-spectral registration via key-point detector and gradient similarity}, 2020.
+\end{enumerate}}
 
 \section{Détermination des \og Pitch \fg{ } et \og Yaw \fg{ } théoriques.}\label{sec:ann_theorique}
 
