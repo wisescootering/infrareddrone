@@ -140,5 +140,84 @@ class OptionsButtonTest(unittest.TestCase):
         create.assert_called_once()
 
 
+class CheckInstallationWindowTest(unittest.TestCase):
+    """First page card, "Check the installation" window, report text shown."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PyQt6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def wait(self, thread):
+        from PyQt6.QtCore import QCoreApplication
+        while not thread.wait(50):
+            QCoreApplication.processEvents()
+        for _ in range(5):
+            QCoreApplication.processEvents()
+
+    def test_home_card_asks_for_the_check(self):
+        import IRD_Interactive_home as Home
+        home = Home.HomePage()
+        emitted = []
+        home.check_installation.connect(lambda: emitted.append(True))
+        home.card_check.click()
+        self.assertEqual(emitted, [True])
+
+    def test_options_dialog_has_the_check_button(self):
+        import IRD_Interactive_workdir as Workdir
+        dialog = Workdir.WorkingDirDialog()
+        with mock.patch("IRD_Interactive_diagnostic.check_installation") as check:
+            dialog.btn_check.click()
+        check.assert_called_once()
+
+    def test_window_shows_each_check_and_the_verdict(self):
+        import IRD_Interactive_diagnostic as Diagnostic
+        dialog = Diagnostic.SelfTestDialog(names=("python", "tiff"))
+        with mock.patch("sys.stdout", new=io.StringIO()) as printed:
+            dialog.start()
+            self.wait(dialog.thread)
+        self.assertEqual(set(dialog.results), {"python", "tiff"})
+        self.assertIn("16 bits TIFF", dialog.rows["tiff"].text.text())
+        self.assertFalse(dialog.verdict.isHidden())
+        self.assertIn("Installation OK", dialog.verdict.text())
+        self.assertIn("[OK     ] 16 bits TIFF", printed.getvalue())        # printed in the console
+        dialog.btn_copy.click()
+        from PyQt6.QtGui import QGuiApplication
+        self.assertIn("16 bits TIFF", QGuiApplication.clipboard().text())
+
+    def test_failed_check_shows_how_to_fix(self):
+        import IRD_Interactive_diagnostic as Diagnostic
+        import selftests
+        checks = (("boom", "Boom", lambda ctx: (_ for _ in ()).throw(
+            selftests.CheckError("It broke.", "Do this."))),)
+        with mock.patch.object(selftests, "CHECKS", checks):
+            dialog = Diagnostic.SelfTestDialog()
+            with mock.patch("sys.stdout", new=io.StringIO()):
+                dialog.start()
+                self.wait(dialog.thread)
+        text = dialog.rows["boom"].text.text()
+        self.assertIn("It broke.", text)
+        self.assertIn("How to fix:", text)
+        self.assertIn("FAILED", dialog.verdict.text())
+
+    def test_report_text_is_shown_and_printed(self):
+        import IRD_Interactive_diagnostic as Diagnostic
+        tmp = Path(tempfile.mkdtemp())
+        zip_path = tmp / "irdrone_diagnostic_test.zip"
+        with zipfile.ZipFile(zip_path, "w") as archive:
+            archive.writestr("report.txt", "IRDrone diagnostic report\nSummary: all good")
+        shown = []
+        with mock.patch.object(config, "OUTPUT_FOLDER_NAME", str(tmp)), \
+                mock.patch.object(Diagnostic.diagnostic, "create_report", return_value=zip_path), \
+                mock.patch.object(Diagnostic.ReportTextDialog, "exec",
+                                  lambda dialog: shown.append(dialog.view.toPlainText())), \
+                mock.patch("sys.stdout", new=io.StringIO()) as printed:
+            thread = Diagnostic.create_diagnostic_report(ask=False, checks={"python": {}})
+            self.wait(thread)
+        self.assertEqual(shown, ["IRDrone diagnostic report\nSummary: all good"])
+        self.assertIn("Summary: all good", printed.getvalue())
+        self.assertEqual(thread.checks, {"python": {}})        # the checks are not run again
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -94,7 +94,14 @@ class WorkingDirDialog(QDialog):
             self.btn_diagnostic.clicked.connect(self._diagnostic)
             import IRD_Interactive_help as Help
             Help.attach_help(self.btn_diagnostic, "btn:home_diagnostic", self.btn_diagnostic.toolTip())
+            self.btn_check = QPushButton("Check the installation…")
+            self.btn_check.setStyleSheet(SECONDARY_STYLE)
+            self.btn_check.setToolTip(
+                "Try every tool of the processing chain on sample images; what fails comes with how to fix it.")
+            self.btn_check.clicked.connect(self._check)
+            Help.attach_help(self.btn_check, "btn:home_check", self.btn_check.toolTip())
             diagnostic_row = QHBoxLayout()
+            diagnostic_row.addWidget(self.btn_check)
             diagnostic_row.addWidget(self.btn_diagnostic)
             diagnostic_row.addStretch()
             layout.addLayout(diagnostic_row)
@@ -117,6 +124,10 @@ class WorkingDirDialog(QDialog):
     def _diagnostic(self):
         import IRD_Interactive_diagnostic as Diagnostic
         self._diagnostic_thread = Diagnostic.create_diagnostic_report(self)
+
+    def _check(self):
+        import IRD_Interactive_diagnostic as Diagnostic
+        self._check_dialog = Diagnostic.check_installation(self)
 
     def _browse(self):
         start = Path(self.path_edit.text()).expanduser()

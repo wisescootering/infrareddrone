@@ -420,6 +420,7 @@ class HomePage(QStackedWidget):
     new_mission = pyqtSignal()
     open_mission = pyqtSignal()
     open_recent = pyqtSignal(object)      # Path
+    check_installation = pyqtSignal()     # "Check the installation": self-tests
     run_step = pyqtSignal(int)          # "Continue": the next step, chained
     step_clicked = pyqtSignal(int)      # a step of the rail
 
@@ -460,8 +461,13 @@ class HomePage(QStackedWidget):
         self.card_open = ActionCard("📂", "Open a mission", "Continue a mission already created "
                                     "(folder FLY-YYYYMMDD-hhmm-place).")
         self.card_open.clicked.connect(self.open_mission.emit)
+        self.card_check = ActionCard("🩺", "Check the installation",
+                                     "Something does not work? Every tool is tried on sample images, "
+                                     "with how to fix what fails.")
+        self.card_check.clicked.connect(self.check_installation.emit)
         col.addWidget(self.card_new)
         col.addWidget(self.card_open)
+        col.addWidget(self.card_check)
         col.addSpacing(10)
         self.recent_title = QLabel("Recent missions")
         self.recent_title.setStyleSheet("font-weight: bold; color: #3E4C59;")

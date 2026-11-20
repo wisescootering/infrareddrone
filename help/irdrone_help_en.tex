@@ -45,6 +45,8 @@
 \DeclareUnicodeCharacter{21BB}{\ensuremath{\circlearrowright}}
 \DeclareUnicodeCharacter{25B2}{\ensuremath{\blacktriangle}}
 \DeclareUnicodeCharacter{25BC}{\ensuremath{\blacktriangledown}}
+\DeclareUnicodeCharacter{2713}{\ensuremath{\checkmark}}
+\DeclareUnicodeCharacter{2717}{\ensuremath{\times}}
 % Software button
 \DeclareRobustCommand{\bouton}[1]{\texorpdfstring{\fbox{\small\textsf{#1}}}{#1}}
 % To be completed
@@ -477,6 +479,19 @@ On the page of the list of missions, the bottom bar shows the working folder (th
 
 \bouton{?}, on the left, opens this manual (Section~\ref{sec:help}).
 
+\section{Check the installation}\label{btn:home_check}
+On the first page, the \bouton{Check the installation} card (also in the \bouton{⚙} options) tries each link of the processing chain on sample images shipped with IRDrone, the way the steps do, in a temporary folder whose name holds accents (about 20~seconds; missions are not touched):
+\begin{itemize}
+  \item Python (64~bits), Python packages (with the \texttt{pip} command to run when one is missing), OpenCV with ArUco and a single OpenCV package;
+  \item ExifTool, RawTherapee and the SJCam converter: found \emph{and} run (version);
+  \item working folder writable and free space; images and EXIF in an accented folder; 16~bits TIFF written and read back; worker processes of Step~4;
+  \item synthetic ArUco target: the five markers found, the rotation of the mobile marker measured within 3°, the absolute angle independent of the drone yaw (Step~3);
+  \item DJI DNG: date, gimbal and GPS read by ExifTool (Steps~1 and~2), developed by RawTherapee as in Step~3 (JPEG) and Step~4 (linear TIFF);
+  \item SJCam RAW: converted to DNG with its date (Step~1), developed as in Steps~3 and~4;
+  \item visible / near infrared alignment: a known shift found within 1.5~pixel (Step~4).
+\end{itemize}
+Each line turns green (\texttt{✓}), orange (warning, \texttt{!}) or red (failed, \texttt{✗}); a check needing a tool that failed is skipped (\texttt{–}). What is not green says \emph{what is wrong} and \emph{how to fix it}. \bouton{Show the details} shows everything the checks print; \bouton{Copy the results} copies the text; \bouton{Create a diagnostic report…} creates the zip below with these results. The text is also written in the console (and so in the session log). Without opening the software: \texttt{python selftests.py}.
+
 \section{Diagnostic report}\label{btn:home_diagnostic}
 When something goes wrong on a computer, the diagnostic report gathers in a single zip file everything needed to understand the problem; just send this zip to the developers. It is created in two ways:
 \begin{itemize}
@@ -485,11 +500,11 @@ When something goes wrong on a computer, the diagnostic report gathers in a sing
 \end{itemize}
 The zip (\texttt{irdrone\_diagnostic\_YYYYMMDD\_hhmmss.zip}) is written in the working folder. It contains:
 \begin{itemize}
-  \item \texttt{report.txt}: a summary of what looks abnormal, then the installation (IRDrone version, Python used, system, Windows code page, versions of the Python packages including OpenCV, paths and versions of ExifTool, RawTherapee and the SJCam converter, working folder, free space) and two self-tests (ArUco detection of a perfect target; reading and writing images and EXIF in an accented folder);
+  \item \texttt{report.txt}: a summary of what looks abnormal, then the installation (IRDrone version, Python used, system, Windows code page, versions of the Python packages including OpenCV, paths and versions of ExifTool, RawTherapee and the SJCam converter, working folder, free space) and the installation checks (Section~\ref{btn:home_check}), each with how to fix it;
   \item for a mission: the steps done, the Step~2 windows, the time lines, the Step~3 offset and number of pairs; every synchronisation image is developed again with RawTherapee in a temporary folder and the ArUco markers are searched on it, and on the cached image (\texttt{Synchro}) used by Step~3. A few developed images are attached. This takes about a minute; the mission is not modified;
   \item \texttt{report.json} (all the details) and the logs of the last sessions: each launch of the software copies the console into \texttt{logs\textbackslash irdrone\_YYYYMMDD\_hhmmss.log}, next to the settings file (the last ten are kept).
 \end{itemize}
-Nothing is sent automatically.
+Once the zip is written, the text of \texttt{report.txt} is shown in a window (to read, copy with \bouton{Copy the text} or screenshot) and printed in the console. Nothing is sent automatically.
 
 %==========================================================
 \chapter{Step 1 -- Define the mission}\label{ch:step1}

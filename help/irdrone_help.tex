@@ -45,6 +45,8 @@
 \DeclareUnicodeCharacter{21BB}{\ensuremath{\circlearrowright}}
 \DeclareUnicodeCharacter{25B2}{\ensuremath{\blacktriangle}}
 \DeclareUnicodeCharacter{25BC}{\ensuremath{\blacktriangledown}}
+\DeclareUnicodeCharacter{2713}{\ensuremath{\checkmark}}
+\DeclareUnicodeCharacter{2717}{\ensuremath{\times}}
 % Bouton du logiciel
 \DeclareRobustCommand{\bouton}[1]{\texorpdfstring{\fbox{\small\textsf{#1}}}{#1}}
 % A completer
@@ -477,6 +479,19 @@ Sur la page de la liste des missions, la barre du bas rappelle le dossier de tra
 
 \bouton{?}, à gauche, ouvre ce manuel (§\ref{sec:help}).
 
+\section{Vérifier l'installation}\label{btn:home_check}
+Sur la première page, la carte \bouton{Check the installation} (aussi dans les options \bouton{⚙}) essaie chaque maillon de la chaîne de traitement sur des images d'exemple livrées avec IRDrone, comme le font les étapes, dans un dossier temporaire au nom accentué (environ 20~secondes ; les missions ne sont pas touchées) :
+\begin{itemize}
+  \item Python (64~bits), modules Python (avec la commande \texttt{pip} à lancer s'il en manque), OpenCV avec ArUco et un seul paquet OpenCV ;
+  \item ExifTool, RawTherapee et le convertisseur SJCam : trouvés \emph{et} lancés (version) ;
+  \item dossier de travail accessible en écriture et place libre ; images et EXIF dans un dossier accentué ; TIFF 16~bits écrit et relu ; processus de calcul de l'étape~4 ;
+  \item cible ArUco synthétique : les cinq marqueurs trouvés, la rotation du marqueur mobile mesurée à moins de 3° près, l'angle absolu indépendant du cap du drone (étape~3) ;
+  \item DNG du DJI : date, nacelle et GPS lus par ExifTool (étapes~1 et~2), développé par RawTherapee comme à l'étape~3 (JPEG) et à l'étape~4 (TIFF linéaire) ;
+  \item RAW de la SJCam : converti en DNG avec sa date (étape~1), développé comme aux étapes~3 et~4 ;
+  \item alignement visible / proche infrarouge : un décalage connu retrouvé à moins de 1,5~pixel (étape~4).
+\end{itemize}
+Chaque ligne passe au vert (\texttt{✓}), à l'orange (avertissement, \texttt{!}) ou au rouge (échec, \texttt{✗}) ; une vérification qui dépend d'un outil en échec est sautée (\texttt{–}). Ce qui n'est pas vert donne \emph{ce qui ne va pas} et \emph{comment le corriger} (\textbf{How to fix}). \bouton{Show the details} montre tout ce que les vérifications écrivent ; \bouton{Copy the results} copie le texte ; \bouton{Create a diagnostic report…} crée le zip ci-dessous avec ces résultats. Le texte est aussi écrit dans la console (et donc dans le journal de la session). Sans ouvrir le logiciel : \texttt{python selftests.py}.
+
 \section{Rapport de diagnostic}\label{btn:home_diagnostic}
 Quand quelque chose ne marche pas sur un ordinateur, le rapport de diagnostic rassemble dans un seul fichier zip tout ce qu'il faut pour comprendre le problème ; il suffit d'envoyer ce zip aux développeurs. Il se crée de deux façons :
 \begin{itemize}
@@ -485,11 +500,11 @@ Quand quelque chose ne marche pas sur un ordinateur, le rapport de diagnostic ra
 \end{itemize}
 Le zip (\texttt{irdrone\_diagnostic\_AAAAMMJJ\_hhmmss.zip}) est écrit dans le dossier de travail. Il contient :
 \begin{itemize}
-  \item \texttt{report.txt} : un résumé de ce qui semble anormal, puis l'installation (version d'IRDrone, Python utilisé, système, page de code Windows, versions des modules Python dont OpenCV, chemins et versions d'ExifTool, RawTherapee et du convertisseur SJCam, dossier de travail, place libre) et deux auto-tests (détection ArUco d'une cible parfaite ; lecture et écriture d'images et d'EXIF dans un dossier accentué) ;
+  \item \texttt{report.txt} : un résumé de ce qui semble anormal, puis l'installation (version d'IRDrone, Python utilisé, système, page de code Windows, versions des modules Python dont OpenCV, chemins et versions d'ExifTool, RawTherapee et du convertisseur SJCam, dossier de travail, place libre) et les vérifications de l'installation (§\ref{btn:home_check}), chacune avec comment la corriger ;
   \item pour une mission : les étapes faites, les fenêtres de l'étape~2, les lignes de temps, le décalage et le nombre de paires de l'étape~3 ; chaque image de synchronisation est développée à nouveau avec RawTherapee dans un dossier temporaire et les marqueurs ArUco y sont cherchés, ainsi que sur l'image en cache (\texttt{Synchro}) utilisée par l'étape~3. Quelques images développées sont jointes. Cela prend environ une minute ; la mission n'est pas modifiée ;
   \item \texttt{report.json} (tous les détails) et les journaux des dernières sessions : chaque lancement du logiciel recopie la console dans \texttt{logs\textbackslash irdrone\_AAAAMMJJ\_hhmmss.log}, à côté du fichier des réglages (les dix derniers sont gardés).
 \end{itemize}
-Rien n'est envoyé automatiquement.
+Une fois le zip écrit, le texte de \texttt{report.txt} s'affiche dans une fenêtre (à lire, copier avec \bouton{Copy the text} ou photographier) et dans la console. Rien n'est envoyé automatiquement.
 
 %==========================================================
 \chapter{Step 1 -- D\'efinir la mission}\label{ch:step1}
