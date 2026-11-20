@@ -111,6 +111,19 @@ def set_working_dir(folder, remember=True):
     return folder
 
 
+MANUAL_CLOCK_OFFSET_KEY = "manual_clock_offset"
+
+
+def manual_clock_offset_enabled():
+    """Advanced option (⚙): Step 3 also offers to type the camera clock offset
+    by hand, for flights without the ArUco target. Off by default."""
+    return bool(load_user_settings().get(MANUAL_CLOCK_OFFSET_KEY, False))
+
+
+def set_manual_clock_offset_enabled(enabled):
+    save_user_settings(**{MANUAL_CLOCK_OFFSET_KEY: bool(enabled)})
+
+
 def ensure_working_dir():
     """Create the current working folder if needed; False if that fails."""
     try:
