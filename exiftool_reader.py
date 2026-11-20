@@ -46,3 +46,22 @@ def read_exiftool_json(exiftool_path, image_path, *options) -> dict:
     metadata["FileName"] = image_path.name
     metadata["Directory"] = str(image_path.parent)
     return metadata
+
+
+def write_exiftool_tags(exiftool_path, image_path, *assignments) -> None:
+    """``exiftool -TAG=value ... -overwrite_original image_path``, the file name
+    passed in UTF-8 as in read_exiftool_json (accents in the folder on Windows).
+
+    Raises RuntimeError when ExifTool fails.
+    """
+    image_path = Path(image_path)
+    arguments = [*assignments, "-overwrite_original", str(image_path)]
+    result = subprocess.run(
+        [str(exiftool_path), *UTF8_FILENAME_OPTIONS, "-@", "-"],
+        input="\n".join(arguments) + "\n",
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"ExifTool could not write {image_path}: {result.stderr.strip()}")

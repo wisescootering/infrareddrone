@@ -40,7 +40,7 @@ from IRD_interactive_geo import geo2UTM
 sys.path.append(osp.join(osp.dirname(__file__), ".."))
 from irdrone.file_utils import glob_ci
 import config as cf
-from exiftool_reader import read_exiftool_json
+from exiftool_reader import read_exiftool_json, write_exiftool_tags
 from IRD_Interactive_diskspace import DiskFullError, raise_if_disk_full, write_json_atomic
 
 
@@ -1823,23 +1823,34 @@ def _set_exif_from_raw(dng_path: Path, raw_path: Path, exiftool_path: str, verbo
         exif_dt = dt.strftime("%Y:%m:%d %H:%M:%S")
 
         # --- Call exiftool to set DateTimeOriginal and CreateDate ---
-        cmd = [
-            str(exiftool_path),
+        # (file name in UTF-8: accents in the mission folder on Windows)
+        write_exiftool_tags(
+            exiftool_path, dng_path,
             f"-DateTimeOriginal={exif_dt}",
             f"-CreateDate={exif_dt}",
             f"-XMP:DateCreated={exif_dt}",
-            str(dng_path),
-            "-overwrite_original"
-        ]
-        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        )
 
         if verbose:
             print(f"🕒 EXIF date updated for {dng_path.name} → {exif_dt}")
 
-    except subprocess.CalledProcessError as e:
-        print(f"⚠ Failed to insert EXIF for {dng_path.name}: {e.stderr.decode(errors='ignore')}")
+    except RuntimeError as e:
+        print(f"⚠ Failed to insert EXIF for {dng_path.name}: {e}")
     except Exception as e:
         print(f"⚠ Unexpected error for {dng_path.name}: {e}")
+
+def _ascii_folder_near(folder: Path) -> Path:
+    """An existing folder whose path is plain ASCII, for the SJCam converter's
+    output: the system temporary folder, else the closest ASCII parent of
+    ``folder`` (its drive at worst)."""
+    temp = Path(tempfile.gettempdir())
+    if str(temp).isascii():
+        return temp
+    for parent in Path(folder).resolve().parents:
+        if str(parent).isascii():
+            return parent
+    raise OSError(f"No folder with a plain ASCII path found to convert the RAW images near {folder}")
+
 
 def _convert_single_raw_to_dng(raw_file: str,
                                exe_path: str,
@@ -1884,14 +1895,30 @@ def _convert_single_raw_to_dng(raw_file: str,
     if verbose:
         print(f"➡ Converting: {raw_path.name}")
 
+    # sjcam_raw2dng reads its command line in the ANSI code page on Windows:
+    # an accented folder ("G:\\Démo") reaches it as "G:\\D?mo" and the
+    # conversion fails. No accented path is passed: the RAW is named relative
+    # to the working directory of the converter (the RAW folder, which also
+    # keeps the companion JPEG next to it), and an accented output folder is
+    # replaced by a temporary ASCII folder, the DNG moved afterwards.
+    if raw_path.name.isascii():
+        run_dir, raw_argument = raw_path.parent, raw_path.name
+    else:
+        run_dir, raw_argument = None, str(raw_path)
+    staging = None
+    convert_folder = Path(output_folder)
+    if not str(convert_folder).isascii():
+        staging = Path(tempfile.mkdtemp(prefix="irdrone_raw2dng_", dir=_ascii_folder_near(convert_folder)))
+        convert_folder = staging
+
     # Command for conversion
     cmd = [
         str(exe_path),
         "--no-color",
         "--thumb",
         "--threads", nb_threads,
-        "--output", str(output_folder),
-        str(raw_path)
+        "--output", str(convert_folder),
+        raw_argument
     ]
 
     # Decide where to send stdout/stderr
@@ -1903,16 +1930,20 @@ def _convert_single_raw_to_dng(raw_file: str,
         stderr_target = subprocess.DEVNULL
 
 
-    subprocess.run(cmd, check=True, stdout=stdout_target, stderr=stderr_target)
+    try:
+        subprocess.run(cmd, check=True, stdout=stdout_target, stderr=stderr_target, cwd=run_dir)
 
-    # Define original DNG path (created by sjcam_raw2dng, same stem as RAW)
-    original_dng_path = Path(output_folder) / (raw_path.stem + ".dng")
+        # Define original DNG path (created by sjcam_raw2dng, same stem as RAW)
+        original_dng_path = convert_folder / (raw_path.stem + ".dng")
 
-    # Rename to standardized name
-    if original_dng_path.exists() and original_dng_path != dng_output_path:
-        original_dng_path.rename(dng_output_path)
-        if verbose:
-            print(f"✏ Renamed {original_dng_path.name} → {dng_output_path.name}")
+        # Rename to standardized name (moved out of the temporary folder)
+        if original_dng_path.exists() and original_dng_path != dng_output_path:
+            shutil.move(str(original_dng_path), str(dng_output_path))
+            if verbose:
+                print(f"✏ Renamed {original_dng_path.name} → {dng_output_path.name}")
+    finally:
+        if staging is not None:
+            shutil.rmtree(staging, ignore_errors=True)
 
     # Update EXIF from RAW filename
     _set_exif_from_raw(dng_output_path, raw_path, exiftool_path, verbose)
