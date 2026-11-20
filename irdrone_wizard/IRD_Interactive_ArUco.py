@@ -173,6 +173,10 @@ def process_aruco_images(
             log_callback=log_callback,
             log_message=log_message,
         )
+        if result is None:
+            # No marker at all on this image (blurred, target out of the frame):
+            # skipped, the other images are still used.
+            return i, img_name, None
         result["relative_timeline"] = extract_relative_time_line(dic_relative_time_line, Path(img_path).name, spectral_band, suffix_image)
         # --------------------------------------------------------
         # Save check detection images (thread-safe and no GUI)
