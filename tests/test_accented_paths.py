@@ -16,9 +16,11 @@ sys.path.insert(0, str(ROOT / "irdrone_wizard"))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import exiftool_reader  # noqa: E402
-from config import EXIFTOOLPATH  # noqa: E402
+from config import EXIFTOOLPATH, SJCONVERTERPATH  # noqa: E402
 
 SAMPLE = ROOT / "samples" / "505-DJI-VI.JPG"
+RAW_SAMPLE = ROOT / "samples" / "_nir.RAW"
+RAW_NAME = "2022_0125_130446_023.RAW"     # as named by the SJCam camera
 
 
 class AccentedFolderTest(unittest.TestCase):
@@ -69,6 +71,60 @@ class AccentedFolderTest(unittest.TestCase):
             self.assertTrue(image_io.imwrite(path, image))
             np.testing.assert_array_equal(image_io.imread(path, cv2.IMREAD_UNCHANGED), image)
         self.assertIsNone(image_io.imread(self.folder / "missing.jpg"))
+
+
+
+class AccentedRawConversionTest(unittest.TestCase):
+    """SJCam RAW -> DNG with accents in the SD card folder or the mission folder:
+    on Windows sjcam_raw2dng and ExifTool get their command line in the ANSI
+    code page ("D?mo"), so no accented path may go through it."""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.sd_card = self.root / "Carte SD Démo" / "DCIM"
+        self.output = self.root / "Démo Florine" / "AerialPhotography" / "NIR"
+        self.sd_card.mkdir(parents=True)
+        self.output.mkdir(parents=True)
+        self.raw = self.sd_card / RAW_NAME
+
+    def test_no_accented_path_on_the_command_lines(self):
+        import IRD_Interactive_utils as Uti
+        self.raw.write_bytes(b"raw")
+        calls = []
+
+        def run(cmd, cwd=None, input=None, **kwargs):
+            calls.append(cmd)
+            if cmd[0] == "exiftool":
+                self.assertIn(str(self.output / "NIR_0001.dng"), input)    # UTF-8, on stdin
+                return mock.Mock(returncode=0, stderr="")
+            output = Path(cmd[cmd.index("--output") + 1])
+            self.assertTrue((Path(cwd) / cmd[-1]).is_file())    # the RAW, found from the working folder
+            (output / (Path(cmd[-1]).stem + ".dng")).write_bytes(b"dng")
+
+        with mock.patch("subprocess.run", side_effect=run):
+            dng = Uti._convert_single_raw_to_dng(str(self.raw), "sjcam_raw2dng", str(self.output), "0",
+                                                 False, "exiftool", dng_name="NIR_0001.dng")
+        self.assertEqual(Path(dng), self.output / "NIR_0001.dng")
+        self.assertEqual((self.output / "NIR_0001.dng").read_bytes(), b"dng")
+        self.assertEqual(len(calls), 2)
+        for cmd in calls:
+            self.assertTrue(all(str(arg).isascii() for arg in cmd), cmd)
+        self.assertEqual(list(Path(Uti._ascii_folder_near(self.output)).glob("irdrone_raw2dng_*")), [])
+
+    @unittest.skipUnless(
+        Path(str(SJCONVERTERPATH)).is_file() and EXIFTOOLPATH and Path(EXIFTOOLPATH).is_file()
+        and RAW_SAMPLE.is_file(),
+        "needs sjcam_raw2dng, ExifTool and the RAW sample",
+    )
+    def test_converts_from_and_to_accented_folders(self):
+        import IRD_Interactive_utils as Uti
+        shutil.copy(RAW_SAMPLE, self.raw)
+        dng = Uti._convert_single_raw_to_dng(str(self.raw), str(SJCONVERTERPATH), str(self.output), "0",
+                                             False, str(EXIFTOOLPATH), dng_name="NIR_0001.dng")
+        self.assertEqual(sorted(p.name for p in self.output.iterdir()), ["NIR_0001.dng"])
+        metadata = exiftool_reader.read_exiftool_json(EXIFTOOLPATH, dng)
+        self.assertEqual(metadata["DateTimeOriginal"], "2022:01:25 13:04:46")
 
 
 if __name__ == "__main__":
