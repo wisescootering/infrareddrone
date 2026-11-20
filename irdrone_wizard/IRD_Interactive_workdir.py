@@ -15,7 +15,7 @@ from pathlib import Path
 from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal, QTimer, QUrl
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
-    QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout, QLabel, QLayout, QLineEdit,
+    QCheckBox, QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout, QLabel, QLayout, QLineEdit,
     QMessageBox, QPushButton, QVBoxLayout, QWidget,
 )
 
@@ -73,6 +73,19 @@ class WorkingDirDialog(QDialog):
             note.setStyleSheet("color: #8a5a00;")
             layout.addWidget(note)
 
+        # Advanced, rarely needed: kept out of the first-run welcome
+        self.manual_offset_box = None
+        if not first_run:
+            self.manual_offset_box = QCheckBox(
+                "Advanced – Step 3: let me enter the camera clock offset by hand\n"
+                "(flights without the ArUco synchronisation target)")
+            self.manual_offset_box.setChecked(config.manual_clock_offset_enabled())
+            self.manual_offset_box.setToolTip(
+                "Adds an \"Enter the clock offset…\" button to Step 3: the visible and infrared images "
+                "are paired from an offset you type, without detecting the ArUco target.")
+            layout.addSpacing(6)
+            layout.addWidget(self.manual_offset_box)
+
         settings_note = QLabel(f"Saved in {config.SETTINGS_FILE}")
         settings_note.setWordWrap(True)
         settings_note.setStyleSheet("color: gray; font-size: 9pt;")
@@ -106,6 +119,10 @@ class WorkingDirDialog(QDialog):
         except OSError as error:
             QMessageBox.warning(self, "IRDrone", f"Cannot use this folder:\n{text}\n\n{error}")
             return
+        if self.manual_offset_box is not None:
+            enabled = self.manual_offset_box.isChecked()
+            if enabled != config.manual_clock_offset_enabled():
+                config.set_manual_clock_offset_enabled(enabled)
         self.accept()
 
 
@@ -143,7 +160,7 @@ class WorkingDirBar(QWidget):
         self.gear = QPushButton("⚙")
         self.gear.setFixedWidth(30)
         self.gear.setStyleSheet(GEAR_STYLE)
-        self.gear.setToolTip("Options: change the working folder")
+        self.gear.setToolTip("Options: change the working folder, advanced options")
         self.gear.clicked.connect(self.open_options)
         # Free space of the working folder's disk, kept up to date while processing.
         self.free_label = QLabel()
