@@ -853,6 +853,16 @@ A small window asks by how many seconds the infrared camera clock is ahead of th
 \section{\bouton{Continue with image processing} button}\label{btn:step3_continue}
 Appears at the bottom right, next to \bouton{Close}, once the images are paired. It closes the window and opens Step~4. The alignment, which is long, does not start there by itself: it is started with \bouton{Run alignment}.
 
+\section{When Step~3 fails}\label{sec:step3_problems}
+When something goes wrong, a window says \emph{what happened} and \emph{how to fix it} (numbered), with the technical message under \bouton{Details}; the same text is written in the console. Its buttons: \bouton{Check the installation} (Section~\ref{btn:home_check}), \bouton{Open the images of the target} (\texttt{Synchro/VIS}, \texttt{Synchro/NIR}: the images as developed for the detection; \texttt{Synchro/Check\_ARUCO}: the markers found, drawn), \bouton{Create a diagnostic report…} of this mission (Section~\ref{btn:home_diagnostic}). The usual causes:
+\begin{itemize}
+  \item the list of the images or the time line of a camera is missing: Step~1 was not completed, run it again;
+  \item no synchronisation window, or an empty one: place it in Step~2 on the images where the target is filmed turning;
+  \item RawTherapee is missing, or develops nothing: the window says so (instead of ``not enough points''); the installation check tells why;
+  \item the offset could not be measured (target found on too few images): the window gives, for each camera, how many synchronisation images there are, on how many the target was found, and why the others were left out (missing, not developed, without any marker, not in the time line). If the target is not on the developed images, the synchronisation window of Step~2 is on the wrong images; if it was not filmed, \bouton{Enter the offset by hand…}.
+\end{itemize}
+An image that is not in the time line of its camera is left out (it used to be counted at $-9999$~s, which made the offset wrong).
+
 \section{\bouton{Before alignment} button}\label{btn:step3_before}
 When Step~3 is reopened once done, the window shows the curves after alignment (\texttt{Synchro/check\_time\_alignment.png}). \bouton{Before alignment} shows the curves before correction (\texttt{check\_time\_before\_alignment.png}); a second click returns to the aligned curves.
 

@@ -165,9 +165,7 @@ class ImagePairingWorker(QRunnable):
             self.signals.finished.emit(pairing_result)
 
         except Exception as e:
-            import traceback
-            traceback.print_exc()
-            self.signals.error.emit(str(e))
+            self.signals.error.emit(error_text(e))
 
     def pairing_img(self):
         """
@@ -769,7 +767,7 @@ class TimeShiftWorker(QRunnable):
                                        )
 
         except Exception as e:
-            self.signals.error.emit(str(e))
+            self.signals.error.emit(error_text(e))
 
     def extract_timeline_and_angles(self, results, key="angle_abs"):
         """
@@ -814,6 +812,16 @@ class TimeShiftWorker(QRunnable):
         angles_unwrapped_rev = unwrap_func(angles_rev)
         return angles_unwrapped_rev[::-1]
 
+def error_text(error: BaseException) -> str:
+    """Message of an error sent to the window: the type is kept (a bare
+    KeyError reads 'sync'), the traceback goes to the console (session log)."""
+    import traceback
+    traceback.print_exception(type(error), error, error.__traceback__)
+    if isinstance(error, (Aru.SyncDataError, Aru.DevelopmentError)):
+        return str(error)
+    return f"{type(error).__name__}: {error}"
+
+
 class ArucoWorkerSignals(QObject):
     progress = pyqtSignal(int)  # Progress bar
     stage = pyqtSignal(str)
@@ -847,6 +855,8 @@ class ArucoWorker(QRunnable):
         self.use_aruco_cache = use_aruco_cache
         self.multi_thread = multi_thread
         self.signals = ArucoWorkerSignals()
+        # What happened to each synchronisation image (read by the Step 3 window)
+        self.stats = Aru.new_sync_stats(spectral_band)
 
     def run(self):
         try:
@@ -863,12 +873,13 @@ class ArucoWorker(QRunnable):
                 multi_thread=self.multi_thread,
                 progress_callback=self.signals.progress.emit,
                 log_callback=self.signals.log.emit,
-                check_image_callback=self.signals.check_image.emit
+                check_image_callback=self.signals.check_image.emit,
+                stats=self.stats,
             )
             self.signals.finished.emit(results, x_vals, y_vals)
 
         except Exception as e:
-            self.signals.error.emit(str(e))
+            self.signals.error.emit(error_text(e))
 
 class ExifToolPersist:
     """

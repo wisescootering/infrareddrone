@@ -22,6 +22,8 @@ class CheckImageWriteTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.mission = Path(self.tmp.name) / "mission"
         (self.mission / "VIS").mkdir(parents=True)
+        for name in ("a.jpg", "b.jpg"):
+            (self.mission / "VIS" / name).write_bytes(b"jpg")
         (Path(self.tmp.name) / "Synchro").mkdir()
 
     def tearDown(self):
@@ -69,6 +71,8 @@ class NoMarkerImageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             mission = Path(tmp) / "mission"
             (mission / "VIS").mkdir(parents=True)
+            for name in ("a.jpg", "b.jpg", "c.jpg"):
+                (mission / "VIS" / name).write_bytes(b"jpg")
             img = np.zeros((10, 10, 3), np.uint8)
             detections = {"a.jpg": dict(_RESULT), "b.jpg": None, "c.jpg": dict(_RESULT)}
             for multi_thread in (False, True):
@@ -103,7 +107,8 @@ class DevelopedJpegCacheTests(unittest.TestCase):
             jpeg.write_bytes(b"old image")
             img = np.zeros((4, 4, 3), np.uint8)
             with mock.patch.object(Aru, "require_tool", return_value="rawtherapee"), \
-                    mock.patch.object(Aru.subprocess, "call") as develop, \
+                    mock.patch.object(Aru.subprocess, "call",
+                                      side_effect=lambda *a, **k: jpeg.write_bytes(b"new image") and 0) as develop, \
                     mock.patch.object(Aru.image_io, "imread", return_value=img):
                 os.utime(jpeg, (2_000_000_000, 2_000_000_000))      # cache newer than the DNG
                 Aru.load_dng_for_aruco(str(dng), mission)

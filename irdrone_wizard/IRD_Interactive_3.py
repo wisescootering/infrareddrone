@@ -91,6 +91,7 @@ from IRD_Interactive_workers import ImagePairingWorker
 import flight_timeline as FT
 import config
 import IRD_Interactive_look as Look
+import IRD_Interactive_problem as Problem
 
 STEP_NAME = "Camera synchronisation"
 
@@ -675,17 +676,15 @@ class DialogSynchroAruco(QDialog):
             error_msg: Description of the error reported by the worker.
         """
         self.progress_bar.setValue(0)
-        self._log(f"Error during ArUco detection: {error_msg}")
         running = next((k for k, s in enumerate(self.stages.states) if s == Look.STAGE_RUNNING), 0)
-        self.stages.set(running, Look.STAGE_FAILED, "see the log")
+        stage = ("Detection of the ArUco target", "Time alignment")[min(running, 1)]
+        self._log(f"Error during {stage.lower()}: {error_msg}")
+        self.stages.set(running, Look.STAGE_FAILED, "see the message")
         if self.auto_run:
             self._set_manual_mode(True)
-
-        QMessageBox.critical(
-            self,
-            "ArUco Detection Error",
-            f"An error occurred during ArUco detection:\n{error_msg}"
-        )
+        problem = Problem.from_error(error_msg, stage)
+        self.progress_label.setText(f"{problem.title}: {problem.what.splitlines()[0]}")
+        Problem.show_problem(self, problem, mission=self.folderMissionPath)
 
     # ------------------------------------------------------------------
     # Time alignment
@@ -786,17 +785,24 @@ class DialogSynchroAruco(QDialog):
         # Manual input if automatic computation failed
         # ------------------------------------------------------------------
         if not (angle_abs_for_shift_time or angle_img_for_shift_time):
-
+            # Why, from what happened to each synchronisation image, and what to do
+            stats = getattr(getattr(self, "aruco_orchestrator", None), "stats", {}) or {}
+            problem = Problem.offset_not_measured(stats, len(self.aruco_results_vis or []),
+                                                  len(self.aruco_results_nir or []))
+            self._log(problem.text())
+            by_hand = Problem.show_problem(self, problem, mission=self.folderMissionPath,
+                                           extra="Enter the offset by hand…")
             dialog = TimeShiftInputDialog(self, default_value=0.0)
 
-            if dialog.exec() == QDialog.DialogCode.Accepted:
+            if by_hand and dialog.exec() == QDialog.DialogCode.Accepted:
                 time_shift = dialog.value()
                 self._log(f"Manual time shift entered by operator: {time_shift} s")
                 final_message = f"Manual time shift entered by operator: {time_shift} s"
             else:
                 time_shift = 0.0
-                self._log("Manual time shift cancelled. Using default value: 0.0 s")
-                final_message = "Manual time shift cancelled. Using default value: 0.0 s"
+                self._log("No offset measured nor entered: 0.0 s is used, the pairs will probably be wrong.")
+                final_message = ("Offset not measured: 0.0 s used, the pairs will probably be wrong "
+                                 "(see the message).")
         else:
             final_message = "Time shift successfully computed."
 
@@ -1057,13 +1063,10 @@ class DialogSynchroAruco(QDialog):
             message: Description of the image pairing error.
         """
         self._log(f"Image pairing error: {message}")
-        self.stages.set(2, Look.STAGE_FAILED, "see the log")
-
-        QMessageBox.critical(
-            self,
-            "Image Pairing Error",
-            message
-        )
+        self.stages.set(2, Look.STAGE_FAILED, "see the message")
+        problem = Problem.from_error(message, "Pairing of the images")
+        self.progress_label.setText(f"{problem.title}: {problem.what.splitlines()[0]}")
+        Problem.show_problem(self, problem, mission=self.folderMissionPath)
 
     # ------------------------------------------------------------------
     # Chained run (auto_run) / manual mode
@@ -1503,6 +1506,8 @@ class ArucoOrchestrator:
         self.NIR_results = []
         self.NIR_x_vals = []
         self.NIR_y_vals = []
+        # What happened to the synchronisation images of each band (ArucoWorker.stats)
+        self.stats = {}
 
         self.signals = ArucoOrchestratorSignals()
 
@@ -1560,6 +1565,7 @@ class ArucoOrchestrator:
             use_aruco_cache=self.use_aruco_cache,
             multi_thread=self.multi_thread
         )
+        self.stats[spectral_band] = worker.stats
 
         worker.signals.finished.connect(finished_callback)
         worker.signals.error.connect(self.signals.error.emit)
