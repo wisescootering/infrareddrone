@@ -25,6 +25,8 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         python-version: ["3.9", "3.12"]
     runs-on: ${{ matrix.os }}
+    # a hung job used to run until the 6 hours limit of GitHub
+    timeout-minutes: 30
     env:
       QT_QPA_PLATFORM: offscreen
       # config.py creates the working folder: keep it inside the runner.
@@ -63,4 +65,5 @@ jobs:
         run: uv pip install -r requirements-dev.txt
 
       - name: Run tests
-        run: python -m pytest -v
+        # a test blocked for 5 minutes fails and prints the stack of every thread
+        run: python -m pytest -v --timeout=300 --timeout-method=thread
