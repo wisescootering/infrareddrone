@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Makes the DNG written by sjcam_raw2dng readable by RawTherapee 5.11 and newer.
+"""Makes the DNG written by sjcam_raw2dng readable by RawTherapee 5.13 (and the versions after 5.10).
 
 The converter declares the raw image of its DNG as a colour filter array with 3 samples per pixel
 (``SamplesPerPixel`` = 3) and 3 component lossless JPEG tiles, although each pixel holds one value.
-The old dcraw reader of RawTherapee up to 5.10 rebuilt the image anyway; the LibRaw of RawTherapee 5.11 and
-newer (also rawpy) keeps one value out of three: the infrared images come out torn into shifted horizontal
-bands (RawTherapee 5.13).
+The old dcraw reader of RawTherapee 5.10 rebuilt the image anyway; the LibRaw of RawTherapee 5.13 (also rawpy,
+LibRaw 0.22) keeps one value out of three: the infrared images come out torn into shifted horizontal bands.
+Checked: 5.10 develops the original DNG correctly, 5.13 tears it; 5.11 and 5.12 were not tested.
 
 ``fix_sjcam_dng`` rewrites the raw image as a standard DNG: one 16 bits sample per pixel, uncompressed, in
 one strip (RawTherapee 5.10 and older read uncompressed data in strips only, not in tiles), made from the 12 bits
