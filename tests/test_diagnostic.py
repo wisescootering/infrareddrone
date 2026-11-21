@@ -61,7 +61,6 @@ class DiagnosticTest(unittest.TestCase):
         self.assertTrue(any("Several OpenCV" in line for line in diagnostic._verdicts(report)))
 
     def test_mission_sync_images_checked_without_touching_the_mission(self):
-        import cv2
         mission = self.tmp / "Démo" / "FLY-20220125-1159-Blassac"
         aerial = mission / "AerialPhotography"
         for band in ("VIS", "NIR"):
@@ -76,7 +75,8 @@ class DiagnosticTest(unittest.TestCase):
         import IRD_Interactive_ArUco as Aru         # the path Step 3 uses
         self.assertEqual(Path(Aru.cached_jpeg(str(aerial / "NIR" / "NIR_0001.dng"), mission)), cache)
         cache.parent.mkdir(parents=True, exist_ok=True)
-        cv2.imwrite(str(cache), np.full((60, 60, 3), 128, np.uint8))
+        import image_io            # cv2.imwrite cannot open "Démo" on Windows
+        self.assertTrue(image_io.imwrite(cache, np.full((60, 60, 3), 128, np.uint8)))
         os.utime(cache, (1_000_000_000, 1_000_000_000))
         target = diagnostic.synthetic_target()
         before = sorted(p.relative_to(mission) for p in mission.rglob("*"))
