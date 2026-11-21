@@ -11,6 +11,8 @@
 ![Windows | Linux | macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL%20v3-green)](./LICENSE)
 
+[⬇️ **Download IRDrone (zip of the latest release)**](https://github.com/wisescootering/infrareddrone/archive/refs/tags/v1.7.zip) · [All releases](https://github.com/wisescootering/infrareddrone/releases/latest)
+
 📖 Documentation website: <https://wisescootering.github.io/infrareddrone/> · [User manual](https://wisescootering.github.io/infrareddrone/manual/)
 
 ![our drone setup](./illustrations/drone.png)
@@ -19,7 +21,7 @@
 
 
 # General information
-* 🚀 Current version: 1.6
+* 🚀 Current version: 1.7
 * ⌨️ Authors : Balthazar Neveu , Alain Neveu
 * 🕹️ Testers: [Pépin Hugonnot](https://www.pepin-hugonnot.fr/vincent-hugonnot-florine-pepin-auvergne_fr.html) : Florine Pépin 
 
@@ -551,3 +553,10 @@ Refer to the calibration documents
   * Step 3: an image developed for an earlier run of Step 1 (another infrared image with the same name) was reused; it is developed again when its DNG is newer
   * Step 1 (Windows): SJCam RAW conversion failed when the SD card or the mission folder had accents in its name
 * Manual: technical chapter on the image alignment
+
+
+## v1.7
+* November 2026
+* 🌡️ **Infrared images torn with RawTherapee 5.13** (horizontal bands shifted sideways, wrong colours in Steps 3 and 4): the DNG written by the SJCam converter declares 3 values per pixel instead of one, which RawTherapee 5.10 tolerated and 5.13 does not. The raw image of each DNG is now rewritten as a standard DNG after conversion (also for DNG converted earlier), images developed by 5.10 are unchanged
+* 🩺 **Check the installation**: an infrared image torn into bands is now reported as a failure, naming the RawTherapee version
+* Tests: a hung test no longer blocks the GitHub job for 6 hours (timeouts)
