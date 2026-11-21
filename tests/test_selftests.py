@@ -146,3 +146,28 @@ class SjcamRawTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TornImageTest(unittest.TestCase):
+    """A DNG misread by RawTherapee (5.13 with the SJCam converter) gives rows shifted sideways by bands."""
+
+    @staticmethod
+    def photograph():
+        from scipy.ndimage import gaussian_filter
+        rng = np.random.default_rng(1)
+        return gaussian_filter(rng.random((400, 600)).astype(np.float32), 6.0)
+
+    def test_a_photograph_is_not_torn(self):
+        self.assertLess(selftests._tearing(self.photograph()), 2.)
+        self.assertLess(selftests._tearing(np.dstack([self.photograph()] * 3)), 2.)
+
+    def test_rows_shifted_sideways_are_detected(self):
+        image = self.photograph()
+        rng = np.random.default_rng(2)
+        torn = np.stack([np.roll(row, int(rng.integers(0, 300))) for row in image])
+        self.assertGreater(selftests._tearing(torn), selftests.TEARING_MAX)
+        with self.assertRaises(selftests.CheckError) as raised:
+            selftests._check_not_torn(torn, "The developed SJCam DNG", "fix")
+        self.assertIn("torn", str(raised.exception))
+        self.assertIn("5.10", raised.exception.fix)
+        self.assertEqual(selftests._check_not_torn(image, "The developed SJCam DNG", "fix") < 2., True)
