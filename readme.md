@@ -215,39 +215,25 @@ Notes:
 
 
 ## ▶️ Image processing *tutorial*
-* 0/ ⭐⭐⭐ Download our sample folder [📁 FLY_TEST  ](https://drive.google.com/drive/folders/1khi0WdWyZ6H7Z7Lc5Q_i-Mm0Xq2sgpd1?usp=sharing) 
-* 1/ 💾 Once finished, offload your SD cards from IR & Visible cameras into folders following the architecture below (refer to the sample example FLY_TEST)
-  * 📁`FLY_DATE`
-    * 📁`AerialPhotography` *folder where you put all pictures from the flight phase*
-    * 📁`Synchro` folder where you put all picture from the synchronization phase
-    * 📝 `config.json`
-* 2/ ❓ Configuration file can be changed (modify json or excel). *folder names can be changed for instance, if you're interested looking at the "Configuration" section*.
-* 3/ ⏰ Double click on [`bat_helpers/synchro.bat`](/bat_helpers/synchro.bat) and select the 📁 `Synchro` folder. 
-  * This will open a graph, please make sure that the black and orange curves overlap correctly. Then you can close the graph.
-  * *This will generate a `syncho.npy` binary file  in the `Synchro` folder ... which you will re-use as a configuration parameter. Don't worry, if you re-use the sample example configuration and folder naming, you won't have to change anything.*
-
-![synchronization validation](./illustrations/synchro.png)
-
-
-* 4/ ⏯️ Now you're ready to process your images. Double click on [`bat_helpers/run.bat`](/bat_helpers/run.bat) and select the configuration `config.json` file. 
-*Note .json or .xlsx will do the same.*
-* 5/ 📈 Check the altitude profile displayed (internet connection is needed here).
+* 0/ ⭐⭐⭐ Download our sample folder [📁 FLY_TEST  ](https://drive.google.com/drive/folders/1khi0WdWyZ6H7Z7Lc5Q_i-Mm0Xq2sgpd1?usp=sharing)
+* 1/ 💾 Once finished, offload your SD cards from the infrared and visible cameras into folders on your computer
+  (one for the synchronisation images shot above the ArUco target, one for the flight images).
+* 2/ 🧙 Start the wizard (`irdrone_wizard.bat` on Windows, `./irdrone_wizard.sh` on Linux / macOS) and follow the steps one after the other:
+  1. create the mission and load the visible and infrared images,
+  2. survey the flight (time line, flight map, take-off image),
+  3. synchronise the two cameras clocks from the ArUco target (a slider adjusts the time shift by hand if needed),
+  4. align and fuse the images (VIR, NDVI, NIR...),
+  5. review the results, realign by hand the points that need it,
+  6. map the results with OpenDroneMap.
+* 3/ 📈 The altitude profile is checked on the flight map (internet connection is needed here).
 
 ![flight altitude extracted from Exif data](./illustrations/flight_altitude_profile.png)
-* 6/ 💤 Confirm you want to run processing on your images. Then be very patient, your files will be processed and stored in the 📁 `ImgIRdrone` folder.
+
+The fused results (visible + NIR, NDVI for instance) are stored in the mission folder.
 
 ![Fused results visible and NIR to provided NDVI for instance](./illustrations/results.png)
 
-
-
-❌ Keep in mind that things are not perfect and there can sometimes be failures. If there's a picture which is very important, you are encouraged to re-run the processing with a manual option to assist the alignment (*next to the processed image, you can find a .bat dedicated to reprocessing your image with manual assistance : example `HYPERLAPSE_0008_REDO.bat`*). 
-* On the left, you can see that the red image has to be shifted to the left side to match the blue image. 
-* Use the yaw slider to align blue and green, see what happens on the right side? the overlap is correct!
-* then press `Q` to quit the GUI
-* process will continue the automatic processing. You have helped the initialization manually that way.
-
-![assisted alignment UI](./illustrations/manual_alignment.png)
-
+The [user manual](https://wisescootering.github.io/infrareddrone/manual/) describes each step.
 
 ### 🗺️ Third party maps software
 Original metadata from the DJI drone are copied into the output file therefore these images are ready to be re-used in thirdparty software. 
@@ -307,18 +293,11 @@ Please refer to the following tutorial (in french) on how to create [vegetation 
 - `--workers` *number of alignment worker processes. `0` (default) picks it from the physical cores and the available RAM (about 3 GB per worker); `1` is the safe sequential mode*
 
 ---------------------------------------
-## ⚙️ Configuration files
+## ⚙️ Configuration file (command line)
 
 ---------------------------------------
 
-❓ At step 2/ of the tutorial, you have probably copy pasted the config.json from the sample folder. Here are some details on how configuration works.
-
-⚙️ Create configuration file from the template ( **.xlsx** for beginers or **.json** for advanced users)
-  * based on excel on the provided template [Templates/config.xlsx](./Templates/config.xlsx), fill mandatory information in green and red.
-  * another option is to create a json configuration from the following template [Templates/config.json](./Templates/config.json). 
-
-If you want to change the configuration, you have 2 options 
-### JSON configuration approach
+The wizard needs no configuration file. [`run.py`](./run.py) reads a `config.json` (template: [Templates/config.json](./Templates/config.json)):
 
 ```
 {
@@ -330,61 +309,21 @@ If you want to change the configuration, you have 2 options
   "nir_timelapse": 3.0
 }
 ```
-* **`synchro` field  links to the synchronization file obtained when running `bat_helpers/synchro.bat` previously**
-* You can change the `output` folder here. 
-* glob regexp use are suggested in `visible` or `nir` keys to search the images. *Please not that this way you can use 2 different folders for NIR and visible images.*
-* OPTIONAL : 
-  * If you roughly know the angles between the drone & the NIR camera, you can mention the `offset_angles` key `[Yaw, Pitch,Roll]`.
-  * Usually at the end of your processing, you'll see if the estimated angles differ from the gimbal estimate (retrieved from EXIF).
-  * Example: "offset_angles": [0.86, 1.43, 0.0]
+* `synchro`: the synchronisation file (`synchro.npy`) computed from the ArUco images
+* `output`: the folder of the results
+* `visible`, `nir`: glob patterns that find the images (the two cameras can be in different folders)
+* optional: `offset_angles` `[Yaw, Pitch, Roll]` when the angles between the drone and the NIR camera are roughly known (for example `[0.86, 1.43, 0.0]`)
+* optional: `input` (or `rootdir`), a direct link to the folder of the flight
+* optional, to override what comes from `synchro.npy`: `synchro_deltatime`, `synchro_date`, `coord_GPS_take_off`
 
-### Excel configuration approach
-🚫 EXCEL CONFIG IS NOT SUGGESTED  / DEPRECATED 🚫
-* You can simply put the relative path to `synchro.npy` and you should be good to go
-
-![configuration excel](./illustrations/configuration_excel.png)
-
-
-### Link with synchro.bat is made automatically 
-* Double click on [`bat_helpers/synchro.bat](/bat_helpers/synchro.bat). *(Advanced users can use CLI obviously in case of other images format)* 
-* Unless you want to do manual manipulations, do not paste the delay result to your configuration excel in  `cameraIR` / `deltatime` . You can simply close the window, the program saved a synchro.npy file in the Synchro folder!
-
-
-### Manual fallback : forcing parameters
-* Mastering the config.json:
-  * *optional: You can use the `input` key (or `rootdir`) to provide a direct link to a specific folder (that would allow you to store all configurations at a unique place... including keeping your projects configurations under git revision).*
-  * optional fields in config.json, these fields exist to override synchronization parameters coming from synchro.npy
-    * `synchro_deltatime`
-    * `synchro_date`
-    * `coord_GPS_take_off` 
-* In the excel template, there are some fields marked in blue where you can also override the values from synchro.npy
-
-for instance, you have to copy/paste into the excel 
-  * `3894.74`  = delta time.
-  * `25/01/2022 11:59:49` = date
-  * `N 45.16954 E 3.40005` = Coord GPS Take Off
-
-
-
-## Synchronization software
-* Aruco (=QR code) chart can be downloaded [here](https://drive.google.com/file/d/1rMB6LjY2Mi3gQDq5Mr6PrtMRRrahtkRC/view?usp=sharing) and has to be printed to A4 or A3 paper
-
-* Several procedures were tested:
-  * Spinning the chart under the static drone **!RECOMMENDED!**
-    * [full procedure here](https://docs.google.com/presentation/d/1h4Z3gMXSZpbntx-dJ7GK4vR63rED0lpN/edit?usp=sharing&ouid=107424034863786906577&rtpof=true&sd=true)
-    * [arduino code for the spinning table](https://drive.google.com/file/d/1ECo0p3RrOPgs_Xkl1UeffkmGnplZRWYM/view?usp=sharing)
-  * Rotating the drone above the static chart: *more complicated to manipulate, not recommended* [description](https://drive.google.com/drive/folders/1Uk-eWBwteD2reOCdT0kngCWgcddz4C5s?usp=sharing) is available here.
-* Sample synchro data can be downloaded from [here](https://drive.google.com/drive/folders/10SCdV_wb57L6ODKlqpWORkE1B0559aUL?usp=sharing) 
-* Copy the selected synchronization images into a "Synchro" folder -> visible & NIR images (expected .RAW and .DNG files by default).
-* Double click on [bat_helpers/synchro.bat](/bat_helpers/synchro.bat). *(Advanced users can use CLI obviously in case of other images format)
-
-
-## Alignment and Fusion
-* Data can be processed by double cliking on [`bat_helpers/run.bat`](/bat_helpers/run.bat). This will use [`run.py`](./run.py) to select a given config.json or excel file.
-* Advanced users can also use CLI (command line interface) to process the batch of images. Use `--config` option to 
-* CLI users can register pairs of images [automatic_registration.py](automatic_registration.py) 
-
-
+## Synchronization target
+* The Aruco (=QR code) chart can be downloaded [here](https://drive.google.com/file/d/1rMB6LjY2Mi3gQDq5Mr6PrtMRRrahtkRC/view?usp=sharing) and has to be printed to A4 or A3 paper
+* Spinning the chart under the static drone is **recommended**
+  * [full procedure here](https://docs.google.com/presentation/d/1h4Z3gMXSZpbntx-dJ7GK4vR63rED0lpN/edit?usp=sharing&ouid=107424034863786906577&rtpof=true&sd=true)
+  * [arduino code for the spinning table](https://drive.google.com/file/d/1ECo0p3RrOPgs_Xkl1UeffkmGnplZRWYM/view?usp=sharing)
+* Rotating the drone above the static chart is more complicated to manipulate, not recommended ([description](https://drive.google.com/drive/folders/1Uk-eWBwteD2reOCdT0kngCWgcddz4C5s?usp=sharing))
+* Sample synchro data can be downloaded from [here](https://drive.google.com/drive/folders/10SCdV_wb57L6ODKlqpWORkE1B0559aUL?usp=sharing)
+* The synchronisation images are processed in Step 3 of the wizard.
 
 ---------------------------
 # 🤓 Technical details 
@@ -432,11 +371,6 @@ There's still a way to save your images.
   * In the wizard (Step 5, review): flag the misaligned points, then *Realign N flagged by hand*. A window takes every
     flagged point in turn: drag the infrared over the visible image (right mouse button, arrow keys, or *Fit*),
     then the alignments of all the points are computed together in the background and you confirm each result.
-  * From the command line: there's a .bat file (.sh on Linux / macOS) next to the results which allows you to re-run manually the images which failed. 
-  * It will open a GUI where you can simply pick the yaw, pitch & roll
-    to replace the coarse alignment & make the images overlap. 
-    This will guide the automatic system to a manual initial guess which will eventually lead to an accurate automatic alignment.
-  * If synchronization does not seem correct (or there was big wind), you can try your luck with another image by uncommenting the right line in the .bat .
 
 
 
@@ -461,17 +395,6 @@ There's still a way to save your images.
 ## 📎 Technical notes
 * Please note that feature based method did not work correctly and generally speaking. Using Phase correlation/Fourier (including Melin Fourier) didn't bring fully satisfying results either for the coarse approach.
 * The Normalized Total Gradient was retained as a cost function. Motion regularization is not implemented here and some form of regularization shall be implemented for the local estimation in the near future.
-
-
--------------------------
-# 🎮 CODE STUFF - Image processing and visualization features
--------------------------
-With this project comes a few useful tool, especially the interactive image processing GUI which makes complex pipelines easily tunable.
-
-
-## 🧱 Image processing pipeline
-
-[interactive.imagepipe.Imagepipe](interactive/imagepipe.py) class is designed to build a simple image processing pipeline with interactive sliders. If you're interested, refer to the [documentation](/interactive/readme.md)
 
 
 ----------------------------------
