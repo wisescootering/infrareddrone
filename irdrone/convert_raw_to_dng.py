@@ -103,13 +103,13 @@ def _set_exif_from_raw(dng_path: Path, raw_path: Path, exiftool_path: str, verbo
 
 
 def _fix_dng(dng_path: Path, raw_path: Path, verbose: bool = False) -> None:
-    """RawTherapee 5.11 and newer tear the DNG of sjcam_raw2dng: rewrite its raw image (irdrone/dng_fix.py).
+    """RawTherapee 5.13 tears the DNG of sjcam_raw2dng: rewrite its raw image (irdrone/dng_fix.py).
     The DNG stays as the converter wrote it when this cannot be done (the older RawTherapee read it)."""
     try:
         if dng_fix.needs_fix(dng_path) and dng_fix.fix_sjcam_dng(dng_path, raw_path) and verbose:
             print(f"🔧 {dng_path.name}: raw image rewritten (readable by every RawTherapee version)")
     except (OSError, dng_fix.DngFixError) as error:
-        print(f"⚠ {dng_path.name}: raw image left as converted ({error}); RawTherapee 5.11 or newer may tear it, "
+        print(f"⚠ {dng_path.name}: raw image left as converted ({error}); RawTherapee 5.13 may tear it, "
               "use RawTherapee 5.10.")
 
 
