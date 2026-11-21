@@ -360,7 +360,7 @@ def _child_pid(_):
 # ---------------------------------------------------------------------------
 #  ArUco (Step 3)
 # ---------------------------------------------------------------------------
-def synthetic_target(size=60, angle=30.0, frame_angle=0.0):
+def synthetic_target(size=120, angle=30.0, frame_angle=0.0):
     """Grey image of the synchronisation target: fixed markers 5, 22, 16, 13
     around the rotating marker 0 (DICT_4X4_50), turned by ``angle`` degrees;
     the whole target turned by ``frame_angle`` (drone yaw)."""
@@ -378,10 +378,16 @@ def synthetic_target(size=60, angle=30.0, frame_angle=0.0):
     for marker_id, (x, y) in zip(FIXED_IDS, ((2.5, 0.5), (4.5, 2.5), (2.5, 4.5), (0.5, 2.5))):
         x0, y0 = int(x * size), int(y * size)
         canvas[y0:y0 + size, x0:x0 + size] = marker(marker_id)
-    rotation = cv2.getRotationMatrix2D((size / 2, size / 2), angle, 1.0)
-    mobile = cv2.warpAffine(marker(MOBILE_ID), rotation, (size, size), borderValue=190)
-    c0 = int(2.5 * size)
-    canvas[c0:c0 + size, c0:c0 + size] = mobile
+    # the mobile marker is turned on a larger white square: turned inside a canvas of its own size the
+    # corners of its white quiet zone were cut, and some OpenCV versions (4.8) then lost the marker at 75 degrees
+    big = int(np.ceil(size * np.sqrt(2))) + 2
+    pad = (big - size) // 2
+    plate = cv2.copyMakeBorder(marker(MOBILE_ID), pad, big - size - pad, pad, big - size - pad,
+                               cv2.BORDER_CONSTANT, value=255)
+    rotation = cv2.getRotationMatrix2D((big / 2, big / 2), angle, 1.0)
+    plate = cv2.warpAffine(plate, rotation, (big, big), flags=cv2.INTER_LINEAR, borderValue=255)
+    c0 = int(2.5 * size) - pad
+    canvas[c0:c0 + big, c0:c0 + big] = plate
     if frame_angle:
         big = cv2.copyMakeBorder(canvas, size, size, size, size, cv2.BORDER_CONSTANT, value=190)
         center = (big.shape[1] / 2, big.shape[0] / 2)
@@ -417,22 +423,28 @@ def check_aruco(ctx):
     mobile marker is measured, and does not depend on the drone yaw."""
     fix = ("OpenCV does not detect the markers of a perfect target: install opencv-contrib-python again. "
            + REINSTALL)
+    import cv2
     found = marker_ids(synthetic_target())
     expected = sorted((MOBILE_ID,) + FIXED_IDS)
     data = {"found": found, "expected": expected}
     if found != expected:
         raise CheckError(f"ArUco markers found {found} instead of {expected} on a perfect synthetic target.",
                          fix, data)
-    reference = _angle(ctx, synthetic_target(size=80, angle=0), "angle_0")
+    reference = _angle(ctx, synthetic_target(angle=0), "angle_0")
     errors = {}
     for turn in (30, 75, 160):
-        result = _angle(ctx, synthetic_target(size=80, angle=turn), f"angle_{turn}")
+        result = _angle(ctx, synthetic_target(angle=turn), f"angle_{turn}")
         if result is None or result.get("angle_abs") is None:
-            raise CheckError(f"The angle of the mobile marker is not measured (marker turned by {turn}°).", fix, data)
+            raise CheckError(f"The angle of the mobile marker is not measured (marker turned by {turn}°): OpenCV "
+                             f"{cv2.__version__} does not detect all the markers of the synthetic target. This is "
+                             "not a problem of the installation if Step 3 works on your images; send the "
+                             "diagnostic report.", "Update OpenCV: pip install --upgrade opencv-contrib-python", data)
         errors[turn] = abs(_wrap(float(reference["angle_abs"]) - float(result["angle_abs"]) - turn))
-    yawed = _angle(ctx, synthetic_target(size=80, angle=30, frame_angle=25), "yaw_25")
-    straight = _angle(ctx, synthetic_target(size=80, angle=30), "yaw_0")
-    yaw_error = abs(_wrap(float(yawed["angle_abs"]) - float(straight["angle_abs"]))) if yawed and straight else None
+    yawed = _angle(ctx, synthetic_target(angle=30, frame_angle=25), "yaw_25")
+    straight = _angle(ctx, synthetic_target(angle=30), "yaw_0")
+    yaw_error = (abs(_wrap(float(yawed["angle_abs"]) - float(straight["angle_abs"])))
+                 if yawed and straight and yawed.get("angle_abs") is not None
+                 and straight.get("angle_abs") is not None else None)
     data.update({"angle_errors_deg": errors, "yaw_invariance_error_deg": yaw_error})
     worst = max(errors.values())
     if worst > 3:
