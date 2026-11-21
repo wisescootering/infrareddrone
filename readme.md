@@ -11,7 +11,17 @@
 ![Windows | Linux | macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL%20v3-green)](./LICENSE)
 
-[⬇️ **Download IRDrone (zip of the latest release)**](https://github.com/wisescootering/infrareddrone/archive/refs/tags/v1.7.zip) · [All releases](https://github.com/wisescootering/infrareddrone/releases/latest)
+## ⬇️ Download
+
+[**⬇️ Download IRDrone v1.7 (zip, Windows / Linux / macOS)**](https://github.com/wisescootering/infrareddrone/archive/refs/tags/v1.7.zip) · [all releases](https://github.com/wisescootering/infrareddrone/releases/latest)
+
+This single zip is the whole program (the ExifTool and SJCam converter it needs are inside). On the release page, the file to take is **Source code (zip)**: ignore the other files, they are the manuals.
+
+1. **Unzip it** in a folder without too many nested levels (for example `C:\IRDrone`), not inside the zip viewer.
+2. **Windows**: double-click `bat_helpers/install.bat` once (creates the Python environment and installs the packages; needs Python 3.9+ or [uv](https://docs.astral.sh/uv/), which downloads Python itself), then `irdrone_wizard.bat` to start. **Linux / macOS**: `./setup.sh` once, then `./irdrone_wizard.sh`.
+3. In the wizard, the **first page** has a card *Check the installation*: it tells what is missing (for example RawTherapee, to install separately).
+
+Details in the *Set up* section below.
 
 📖 Documentation website: <https://wisescootering.github.io/infrareddrone/> · [User manual](https://wisescootering.github.io/infrareddrone/manual/)
 
@@ -49,6 +59,7 @@ IRDrone runs on **Windows and Linux** (both tested on every change, Python 3.9 a
 It needs a Python environment with the packages of [requirements.txt](./requirements.txt), and a few external tools.
 
 ## 1. Get the code
+Download and unzip the [latest release](https://github.com/wisescootering/infrareddrone/archive/refs/tags/v1.7.zip), or with git:
 ```bash
 git clone https://github.com/wisescootering/infrareddrone.git
 cd infrareddrone
