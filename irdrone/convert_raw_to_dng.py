@@ -15,6 +15,7 @@ import time
 import sys
 sys.path.append(osp.join(osp.dirname(osp.abspath(__file__)), ".."))
 from irdrone.file_utils import glob_ci
+from irdrone import dng_fix
 
 
 '''
@@ -101,6 +102,17 @@ def _set_exif_from_raw(dng_path: Path, raw_path: Path, exiftool_path: str, verbo
 
 
 
+def _fix_dng(dng_path: Path, raw_path: Path, verbose: bool = False) -> None:
+    """RawTherapee 5.11 and newer tear the DNG of sjcam_raw2dng: rewrite its raw image (irdrone/dng_fix.py).
+    The DNG stays as the converter wrote it when this cannot be done (the older RawTherapee read it)."""
+    try:
+        if dng_fix.needs_fix(dng_path) and dng_fix.fix_sjcam_dng(dng_path, raw_path) and verbose:
+            print(f"🔧 {dng_path.name}: raw image rewritten (readable by every RawTherapee version)")
+    except (OSError, dng_fix.DngFixError) as error:
+        print(f"⚠ {dng_path.name}: raw image left as converted ({error}); RawTherapee 5.11 or newer may tear it, "
+              "use RawTherapee 5.10.")
+
+
 def _convert_single_raw(raw_file: str, exe_path: str, output_folder: str, nb_threads: str, verbose: bool, exiftool_path: str) -> str:
     """
     Internal helper: converts a single RAW file to DNG using sjcam_raw2dng.
@@ -132,6 +144,7 @@ def _convert_single_raw(raw_file: str, exe_path: str, output_folder: str, nb_thr
     if dng_output_path.exists():
         if verbose:
             print(f"⏭ DNG already exists, skipping: {dng_output_path.name}")
+        _fix_dng(dng_output_path, raw_path, verbose)     # converted by an earlier version of IRDrone
         return str(dng_output_path)
 
     if verbose:
@@ -156,6 +169,8 @@ def _convert_single_raw(raw_file: str, exe_path: str, output_folder: str, nb_thr
         original_dng_path.rename(dng_output_path)
         if verbose:
             print(f"✏ Renamed {original_dng_path.name} → {dng_output_path.name}")
+
+    _fix_dng(dng_output_path, raw_path, verbose)
 
     # Update EXIF from RAW filename
     # _set_exif_from_raw(dng_output_path, raw_path, verbose=verbose)
