@@ -53,6 +53,7 @@ OK, WARNING, FAILED, SKIPPED = "ok", "warning", "failed", "skipped"
 ICONS = {OK: "✔", WARNING: "⚠", FAILED: "✖", SKIPPED: "–"}
 LABELS = {OK: "OK", WARNING: "WARNING", FAILED: "FAILED", SKIPPED: "SKIPPED"}
 
+TEARING_MAX = 4.0     # see _tearing
 REINSTALL = ("Install IRDrone again: Windows bat_helpers\\install.bat, Linux / macOS ./setup.sh "
              "(they install the packages of requirements.txt in the Python used by the wizard).")
 # Python modules the wizard imports: (module, pip package, what needs it, required)
@@ -142,6 +143,39 @@ def _check_not_flat(image, name, low, high, fix):
         raise CheckError(f"{name} is {'black' if summary['mean'] < (low + high) / 2 else 'white'} "
                          f"(mean {summary['mean']}).", fix, summary)
     return summary
+
+
+def _tearing(image):
+    """Mean row-to-row over column-to-column variation: about 1 on a photograph, far more when the rows are
+    shifted sideways by bands (a DNG misread by RawTherapee 5.13 gives 40)."""
+    import numpy as np
+    gray = np.asarray(image, dtype=np.float32)
+    if gray.ndim == 3:
+        gray = gray.mean(axis=2)
+    across = float(np.abs(np.diff(gray, axis=1)).mean())
+    return float(np.abs(np.diff(gray, axis=0)).mean()) / max(across, 1e-6)
+
+
+def _rawtherapee_version():
+    import config
+    try:
+        out = subprocess.run([config.RAWTHERAPEEPATH, "-v"], capture_output=True, text=True, timeout=60).stdout
+        import re
+        found = re.search(r"version\s+([0-9][0-9.]*)", out)
+        return found.group(1) if found else "?"
+    except (OSError, subprocess.SubprocessError):
+        return "?"
+
+
+def _check_not_torn(image, name, fix):
+    """The developed image is a photograph, not rows shifted sideways by bands."""
+    ratio = _tearing(image)
+    if ratio > TEARING_MAX:
+        raise CheckError(f"{name} is torn into horizontal bands shifted sideways (row / column variation {ratio:.0f} "
+                         f"instead of about 1): RawTherapee {_rawtherapee_version()} misreads this DNG.",
+                         "Install RawTherapee 5.10 (5.8 also works): the SJCam DNG is developed correctly by them "
+                         "and torn by RawTherapee 5.13. " + fix, {"tearing": round(ratio, 1)})
+    return round(ratio, 2)
 
 
 # ---------------------------------------------------------------------------
@@ -494,6 +528,7 @@ def _develop_for_aruco(ctx, dng, name):
     if image is None:
         raise CheckError(f"RawTherapee did not write the developed {name} (JPEG for Step 3).", _rawtherapee_fix())
     summary = _check_not_flat(image, f"The developed {name}", 0, 255, _rawtherapee_fix())
+    summary["tearing"] = _check_not_torn(image, f"The developed {name}", _rawtherapee_fix())
     summary["seconds"] = round(time.perf_counter() - started, 1)
     return summary
 
@@ -507,6 +542,7 @@ def _develop_linear(ctx, dng, name, template):
     except Exception as error:
         raise CheckError(f"RawTherapee failed on {name} ({template}): {error}", _rawtherapee_fix())
     summary = _check_not_flat(image, f"The developed {name} ({template})", 0., 1., _rawtherapee_fix())
+    summary["tearing"] = _check_not_torn(image, f"The developed {name} ({template})", _rawtherapee_fix())
     summary["seconds"] = round(time.perf_counter() - started, 1)
     summary["tiff"] = Path(out_file).name
     return summary
