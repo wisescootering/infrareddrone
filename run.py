@@ -45,7 +45,7 @@ def extract_flight_data(config_file: Union[str, Path]) -> dict:
     - it retrieves the delay from the synchronization pre-phase
     --------------------------------------------------------------------------------------------------------------
     Args:
-        config_file (Union[str, Path]): path to json (or xlsx) configuration file.
+        config_file (Union[str, Path]): path to json configuration file.
 
     Returns:
         dict:
@@ -369,7 +369,7 @@ def configure(args: argparse.Namespace) -> dict:
         if args.traces is None:
             args.traces = automatic_registration.TRACES
     options = dict(
-        config_file=args.config,                        # config file (json or excel)
+        config_file=args.config,                        # config file (json)
         working_directory=os.path.dirname(args.config), # mission directory
         clean_proxy = args.clean_proxy,                 # flag to clean temporary data
         odm_multispectral=args.odm_multispectral,       # flag to save 4 multispectral tifs per pair & enable ODM multispectral mode, True by default
@@ -440,7 +440,7 @@ def main_process(args: argparse.Namespace):
     """
     Main IRDrone processing 
     -----------------------
-    - configuration based on json or xlsx + command line arguments (requires pre-synchronization phase)
+    - configuration based on json + command line arguments (requires pre-synchronization phase)
     - analyze all exifs metadata and finds image pairs, selects the best matches
     - estimated alignment between visible NIR & Visible images, warp and save multispectral tifs
 
