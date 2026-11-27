@@ -15,6 +15,9 @@ that would allow the mission to be processed again are kept:
 * ``ImgIRdrone``: ``VIS_XXXX.jpg``, ``VIR_XXXX_local.jpg``,
   ``VIS_XXXX_motion_model.npy``, ``NDVI_XXXX_local.jpg``, ``NIR_XXXX_local.jpg``,
   ``shoot_points.json``, ``shoot_points_failed_summary.json``;
+* ``ImgIRdrone/img_Bal_Multispectral``: ``spectral_balance.json`` (the settings
+  of the spectral balance of Step 6; the balanced bands are made again from
+  the images and these settings);
 * ``Synchro``: ``check_time_alignment.png``, ``check_time_before_alignment.png``.
 
 A visible only mission (mission_type.VISIBLE) has no ``NIR`` folder: it is
@@ -207,6 +210,8 @@ KEEP_FILES_IMG = [
     re.compile(r"^shoot_points_failed_summary\.json$", _FLAGS),
     _DESKTOP,
 ]
+BALANCE_DIR = "img_Bal_Multispectral"
+KEEP_FILES_BALANCE = [re.compile(r"^spectral_balance\.json$", _FLAGS), _DESKTOP]
 KEEP_FILES_SYNCHRO = [
     re.compile(r"^check_time_alignment\.png$", _FLAGS),
     re.compile(r"^check_time_before_alignment\.png$", _FLAGS),
@@ -315,7 +320,10 @@ def build_plan(mission) -> ArchivePlan:
     _scan_folder(plan, aerial, "AerialPhotography", KEEP_FILES_AERIAL, keep_dirs=("vis", "nir"))
     for band in bands:
         _scan_folder(plan, _find(aerial, band), f"AerialPhotography\\{band}", _band_patterns(band))
-    _scan_folder(plan, img, "ImgIRdrone", KEEP_FILES_IMG)
+    _scan_folder(plan, img, "ImgIRdrone", KEEP_FILES_IMG, keep_dirs=(BALANCE_DIR.lower(),))
+    balance = _find(img, BALANCE_DIR)
+    if balance is not None:
+        _scan_folder(plan, balance, f"ImgIRdrone\\{BALANCE_DIR}", KEEP_FILES_BALANCE)
     if synchro is not None:
         _scan_folder(plan, synchro, "Synchro", KEEP_FILES_SYNCHRO)
     return plan

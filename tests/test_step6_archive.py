@@ -100,6 +100,17 @@ class ArchiveTests(unittest.TestCase):
         self.assertTrue((m / "FlightAnalytics" / "other.txt").is_file())
         self.assertTrue((m / "mapping_MULTI" / "mapping_result" / "ortho.tif").is_file())
 
+    def test_spectral_balance_keeps_its_settings_only(self):
+        bal = self.mission / "ImgIRdrone" / "img_Bal_Multispectral"
+        touch(bal / "spectral_balance.json", "{}")
+        touch(bal / "IRD_0001_1.tif", "0123456789")
+        touch(bal / "IRD_0001_1.exif")
+        touch(bal / "IRD_0001_bal.json", "{}")
+        plan = arc.build_plan(self.mission)
+        self.assertNotIn(bal, [item.path for item in plan.delete_items])
+        arc.execute_archive(plan, log=lambda m: None)
+        self.assertEqual(names(bal), {"spectral_balance.json"})
+
     def test_visible_only_mission_without_infrared(self):
         import json
         import shutil

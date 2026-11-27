@@ -1502,7 +1502,7 @@ File names are compared without regard to case (\texttt{.dng} and \texttt{.DNG} 
   \item[\texttt{cameras} and \texttt{FlightAnalytics}] left as they are.
   \item[\texttt{ImgIRdrone}] the images \texttt{VIS\_XXXX.jpg} and \texttt{VIR\_XXXX\_local.jpg}, the files \texttt{VIS\_XXXX\_motion\_model.npy}, the images
         \texttt{NDVI\_XXXX\_local.jpg} and \texttt{NIR\_XXXX\_local.jpg} (if they exist), \texttt{shoot\_points.json} and \texttt{shoot\_points\_failed\_summary.json}.
-        The large \texttt{imgMultispectral} folder and the individual ``redo'' folders are deleted.
+        The large \texttt{imgMultispectral} folder and the individual ``redo'' folders are deleted. In \texttt{img\_Bal\_Multispectral} only the settings of the spectral balance (\texttt{spectral\_balance.json}) are kept: the balanced bands are deleted, the map makes them again from these settings.
   \item[\texttt{mapping\_MULTI}] left as it is: it contains the items directly usable in QGIS and has already been slimmed down in Step~6.
   \item[\texttt{Synchro}] only \texttt{check\_time\_alignment.png}, \texttt{check\_time\_before\_alignment.png} and \texttt{desktop.ini} are kept; the \texttt{VIS}, \texttt{NIR} and \texttt{Check\_ARUCO} folders are deleted.
 \end{description}

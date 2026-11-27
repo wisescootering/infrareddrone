@@ -1501,7 +1501,7 @@ La comparaison des noms de fichiers ne tient pas compte des majuscules et minusc
   \item[\texttt{cameras} et \texttt{FlightAnalytics}] laissés tels quels.
   \item[\texttt{ImgIRdrone}] les images \texttt{VIS\_XXXX.jpg} et \texttt{VIR\_XXXX\_local.jpg}, les fichiers \texttt{VIS\_XXXX\_motion\_model.npy}, les images
         \texttt{NDVI\_XXXX\_local.jpg} et \texttt{NIR\_XXXX\_local.jpg} (si elles existent), \texttt{shoot\_points.json} et \texttt{shoot\_points\_failed\_summary.json}.
-        Le dossier volumineux \texttt{imgMultispectral} et les dossiers de \og redo \fg{} individuels sont supprimés.
+        Le dossier volumineux \texttt{imgMultispectral} et les dossiers de \og redo \fg{} individuels sont supprimés. Dans \texttt{img\_Bal\_Multispectral} seuls les réglages de l'équilibre spectral (\texttt{spectral\_balance.json}) sont conservés : les bandes équilibrées sont supprimées, la carte les refait à partir de ces réglages.
   \item[\texttt{mapping\_MULTI}] laissé tel quel : il contient les éléments directement exploitables dans QGIS et a déjà été allégé à l'étape~6.
   \item[\texttt{Synchro}] seuls \texttt{check\_time\_alignment.png}, \texttt{check\_time\_before\_alignment.png} et \texttt{desktop.ini} sont conservés ; les dossiers \texttt{VIS}, \texttt{NIR} et \texttt{Check\_ARUCO} sont supprimés.
 \end{description}
