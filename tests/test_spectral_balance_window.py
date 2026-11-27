@@ -10,6 +10,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import numpy as np
+
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -128,6 +130,16 @@ class WindowTest(unittest.TestCase):
         d.accept()
         data = json.loads(SB.settings_path(self.mission).read_text())
         self.assertEqual(list(data["points"]), ["0045"])
+
+    def test_the_all_layer_changes_every_band(self):
+        d = self.dialog()
+        d.set_layer("all")
+        before = {b: h.copy() for b, h in d.hist.hists.items()}
+        d.rows["exposure"].spin.setValue(0.5)
+        settle(0.2)
+        for band in SB.BANDS:
+            self.assertFalse(np.array_equal(d.hist.hists[band], before[band]), band)
+        self.assertEqual(d.settings.mission.layer("nir").exposure, 0.0)
 
     def test_curve_handle_added_by_a_click(self):
         from PyQt6.QtCore import QPoint, Qt

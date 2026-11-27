@@ -49,9 +49,12 @@ PREVIEW_WIDTH = 1600      # the window works on copies this wide (the files are 
 CACHE_POINTS = 4
 
 BAND_COLORS = {"red": QColor("#D64541"), "green": QColor("#2E9E4F"), "blue": QColor("#2F6FD6"),
-               "nir": QColor("#7B3FA0"), "rgb": QColor("#3E4C59")}
-LAYER_TEXT = {"rgb": "RGB", "red": "R", "green": "G", "blue": "B", "nir": "NIR"}
+               "nir": QColor("#7B3FA0"), "rgb": QColor("#3E4C59"),
+               "all": QColor("#17365D")}
+LAYER_TEXT = {"all": "All", "rgb": "RGB", "red": "R", "green": "G", "blue": "B", "nir": "NIR"}
 LAYER_TIPS = {
+    "all": "The four bands together, after their own settings: a common look (the same contrast or "
+           "S curve on the visible and the NIR).",
     "rgb": "The three visible bands together.",
     "red": "The red band alone (after the RGB settings).",
     "green": "The green band alone (after the RGB settings).",
@@ -325,7 +328,8 @@ class HistogramView(QWidget):
             fill = QColor(c)
             fill.setAlpha(40)
             p.fillPath(path_of(h, True), fill)
-            hl = band == self.highlight or (self.highlight == "rgb" and band != "nir")
+            hl = (band == self.highlight or self.highlight == "all"
+                  or (self.highlight == "rgb" and band != "nir"))
             p.setPen(QPen(c, 2.0 if hl else 1.0))
             p.drawPath(path_of(h, False))
         if self.before_nir is not None:
@@ -814,6 +818,7 @@ class SpectralBalanceDialog(QDialog):
         self.layer_group = QButtonGroup(self)
         for k, key in enumerate(SB.LAYERS):
             b = self._toggle(LAYER_TEXT[key], LAYER_TIPS[key])
+            b.setStyleSheet(SECONDARY_STYLE.replace("padding: 8px 14px", "padding: 8px 4px"))
             b.clicked.connect(lambda _=False, key=key: self.set_layer(key))
             self.layer_group.addButton(b, k)
             layers.addWidget(b)
@@ -986,7 +991,7 @@ class SpectralBalanceDialog(QDialog):
         self.layer = layer
         if layer == "nir" and self.display == "vis":
             self.set_display("nir")
-        elif layer != "nir" and self.display == "nir":
+        elif layer not in ("nir", "all") and self.display == "nir":
             self.set_display("vis")
         self._show_layer()
 
@@ -1033,15 +1038,20 @@ class SpectralBalanceDialog(QDialog):
 
     def _layer_hist_before(self):
         """Histogram of what the tone curve of the layer receives: the image
-        after the other settings of the layer (and the RGB layer for a band)."""
+        after the other settings of the layer (and the RGB layer for a band;
+        the own layers of the four bands for "all")."""
         data = self._cache.get(self.current().number) if self.current() is not None else None
         if not data:
             return None
         balance = SB.effective(self.balance(), data["small"])
         before_curve = dataclasses.replace(balance.layer(self.layer), curve=SB.IDENTITY_CURVE)
+        sub = data["preview"][::2, ::2]
+        if self.layer == "all":
+            return sum(np.bincount(np.round(SB.transfer(before_curve, SB.own_transfer(balance, b, SB._X16))
+                                            * 255).astype(np.uint8)[sub[..., k]].ravel(), minlength=256)
+                       for k, b in enumerate(SB.BANDS))
         x = SB.transfer(balance.layer("rgb"), SB._X16) if self.layer in SB.VISIBLE_LAYERS else SB._X16
         lut = np.round(SB.transfer(before_curve, x) * 255).astype(np.uint8)
-        sub = data["preview"][::2, ::2]
         bands = SB.VISIBLE_LAYERS if self.layer == "rgb" else (self.layer,)
         return sum(np.bincount(lut[sub[..., SB.BANDS.index(b)]].ravel(), minlength=256) for b in bands)
 

@@ -72,6 +72,17 @@ class TransferTest(unittest.TestCase):
         self.assertAlmostEqual(float(SB.band_transfer(b, "green", x)[0]), 0.4)
         self.assertAlmostEqual(float(SB.band_transfer(b, "nir", x)[0]), 0.2)
 
+    def test_the_all_layer_applies_to_the_four_bands_after_their_own(self):
+        b = SB.Balance()
+        b.layer("all").exposure = 1.0
+        b.layer("nir").gamma = 2.0
+        x = np.array([0.04])
+        self.assertAlmostEqual(float(SB.band_transfer(b, "red", x)[0]), 0.08)
+        self.assertAlmostEqual(float(SB.band_transfer(b, "nir", x)[0]), 0.4)      # 0.04^(1/2) = 0.2, x2
+        self.assertFalse(b.is_identity())
+        old = SB.Balance.from_json({"layers": {"nir": {"exposure": 1.0}}})       # saved before "all" existed
+        self.assertTrue(old.layer("all").is_identity())
+
     def test_settings_survive_a_round_trip_and_bad_values_are_clamped(self):
         s = SB.Settings()
         s.mission.layer("nir").exposure = 1.5
@@ -100,6 +111,12 @@ class AutoNirTest(unittest.TestCase):
         vis = out[..., :3].mean(axis=-1)
         for q in SB.AUTO_PERCENTILES:
             self.assertAlmostEqual(np.percentile(out[..., 3], q), np.percentile(vis, q), delta=0.02)
+        # a common S curve on the four bands keeps the NIR matched
+        b.layer("all").curve = SB.clean_curve([(0, 0), (0.3, 0.2), (0.7, 0.8), (1, 1)])
+        out = SB.apply(SB.effective(b, small), bands).astype(np.float64) / 65535
+        vis = out[..., :3].mean(axis=-1)
+        for q in SB.AUTO_PERCENTILES:
+            self.assertAlmostEqual(np.percentile(out[..., 3], q), np.percentile(vis, q), delta=0.03)
 
 
 class WriteTest(unittest.TestCase):

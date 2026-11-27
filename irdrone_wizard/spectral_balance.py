@@ -14,8 +14,9 @@ adjusts the tones of the layers so that they match.
 
 What the user adjusts
 ---------------------
-Five layers: "rgb" (the three visible bands together), "red", "green", "blue"
-(each visible band after "rgb") and "nir". Each layer has an exposure (EV), a
+Six layers: "rgb" (the three visible bands together), "red", "green", "blue"
+(each visible band after "rgb"), "nir", and "all" (the four bands, last: a
+common look, e.g. the same S curve everywhere). Each layer has an exposure (EV), a
 gamma, a contrast, a brightness and a tone curve (a monotone spline through
 handles, the identity by default), applied in this order:
 
@@ -75,7 +76,7 @@ SETTINGS_NAME = "spectral_balance.json"
 VERSION = 1
 
 BANDS = ("red", "green", "blue", "nir")            # IRD_XXXX_1..4.tif
-LAYERS = ("rgb", "red", "green", "blue", "nir")     # what the user adjusts
+LAYERS = ("all", "rgb", "red", "green", "blue", "nir")     # what the user adjusts
 VISIBLE_LAYERS = ("red", "green", "blue")
 
 # Ranges of the settings (the window uses them for its sliders)
@@ -293,11 +294,17 @@ def transfer(adjust: Adjust, x: np.ndarray) -> np.ndarray:
 _X16 = np.arange(65536, dtype=np.float64) / 65535.0
 
 
-def band_transfer(balance: Balance, band: str, x: np.ndarray) -> np.ndarray:
-    """What a band goes through: "rgb" then its own layer for a visible band."""
+def own_transfer(balance: Balance, band: str, x: np.ndarray) -> np.ndarray:
+    """A band through its own layers: "rgb" then its layer (visible), "nir"."""
     if band == "nir":
         return transfer(balance.layer("nir"), x)
     return transfer(balance.layer(band), transfer(balance.layer("rgb"), x))
+
+
+def band_transfer(balance: Balance, band: str, x: np.ndarray) -> np.ndarray:
+    """What a band goes through: its own layers, then "all" (the same for the
+    four bands, last: the NIR matched to the visible stays matched)."""
+    return transfer(balance.layer("all"), own_transfer(balance, band, x))
 
 
 def lut16(balance: Balance, band: str) -> np.ndarray:
@@ -327,7 +334,7 @@ def auto_nir(balance: Balance, small: np.ndarray) -> Tuple[float, float]:
 
     Solved exactly on the two percentiles:  (g n50)^(1/gamma) = t50  and
     (g n98)^(1/gamma) = t98."""
-    vis = np.mean([band_transfer(balance, b, small[..., i].astype(np.float64) / 65535.0)
+    vis = np.mean([own_transfer(balance, b, small[..., i].astype(np.float64) / 65535.0)
                    for i, b in enumerate(VISIBLE_LAYERS)], axis=0)
     nir = small[..., 3].astype(np.float64) / 65535.0
     t50, t98 = np.percentile(vis, AUTO_PERCENTILES)
