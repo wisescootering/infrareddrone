@@ -24,6 +24,7 @@ from rasterio.enums import Resampling
 from IRD_Interactive_diskspace import is_disk_full, raise_if_disk_full
 import best_mapping
 import mission_type
+import spectral_balance
 
 
 MANIFEST_NAME = "img_best_mappping.json"
@@ -1632,6 +1633,17 @@ def _run_odm_in(mission_folder, mapping_folder, manifest_path, worker_log, stage
     resolution_cm = manifest["orthophoto_resolution_estimate"][
         "recommended_orthophoto_resolution_cm_per_pixel"
     ]
+
+    if spectral_balance.is_active(mission_folder):
+        # The balanced bands (ImgIRdrone/img_Bal_Multispectral) replace the
+        # originals; those missing or out of date are written first.
+        stage("Spectral balance")
+        summary = spectral_balance.apply_to_manifest(mission_folder, manifest, log=worker_log)
+        if summary is not None:
+            manifest["spectral_balance"] = summary
+            _write_json_atomic(Path(manifest["manifest_path"]), manifest)
+            worker_log(f"Spectral balance: the map uses the balanced bands of {summary['images']} images "
+                       f"({summary['written']} written now, {summary['up_to_date']} already up to date).")
 
     stage("Preparing selected TIFF quartets")
     images_folder = prepare_odm_input(mission_folder, manifest, log=worker_log)

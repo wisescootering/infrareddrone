@@ -85,6 +85,7 @@ import IRD_Interactive_help as Help
 from IRD_Interactive_progress import mark_step_done, notifier
 import best_mapping
 import mission_type
+import spectral_balance
 import IRD_Interactive_GeoRef as GeoRef
 from IRD_Interactive_contours import DEFAULT_GRID_STEP_M, generate_ortho_dtm
 import IRD_Interactive_look as Look
@@ -694,6 +695,7 @@ class DialogGeoRef(QDialog):
         self._log_callback = self.log_signal.emit
         GeoRef.logger.log_callback = self._log_callback
 
+        self._refresh_balance_button()
         self._show_previous_result()
 
     # ------------------------------------------------------------------
@@ -727,6 +729,9 @@ class DialogGeoRef(QDialog):
         self.btn_run_GeoRef = QPushButton("Georeference images…")
         self.btn_run_GeoRef.setStyleSheet(SECONDARY_STYLE)
         btn_layout.addWidget(self.btn_run_GeoRef)
+        self.btn_run_Balance = QPushButton("Spectral balance…")
+        self.btn_run_Balance.setStyleSheet(SECONDARY_STYLE)
+        btn_layout.addWidget(self.btn_run_Balance)
         btn_layout.addStretch()
         main_layout.addLayout(btn_layout)
 
@@ -780,6 +785,7 @@ class DialogGeoRef(QDialog):
             (self.btn_run_DTM, "btn:step6_dtm",
              "Build the terrain model and the contour lines over the orthophoto again, with another "
              "grid step (IGN altitudes, internet)."),
+            (self.btn_run_Balance, "btn:step6_balance", self._balance_tip()),
             (self.btn_close, "btn:step6_close", "Close this window."),
             (self.btn_help, "ch:step6", "Open the manual at Step 6."),
             (self.btn_continue, "btn:step6_continue", self.btn_continue.toolTip()),
@@ -790,6 +796,21 @@ class DialogGeoRef(QDialog):
 
     def _visible_only(self) -> bool:
         return mission_type.is_visible(Path(self.folderMissionPath))
+
+    def _balance_available(self) -> bool:
+        """Spectral balance: a multispectral mission whose four band images exist (Step 4)."""
+        return not self._visible_only() and bool(spectral_balance.quartet_numbers(Path(self.folderMissionPath)))
+
+    def _balance_tip(self) -> str:
+        if self._visible_only():
+            return "A visible only mission has no infrared band to balance."
+        if not self._balance_available():
+            return "Available once Step 4 has written the multispectral images (ImgIRdrone/imgMultispectral)."
+        return ("Balance the near infrared with the visible bands (exposure, gamma, contrast, brightness, "
+                "tone curve, or automatically on each image); the map then uses the balanced images.")
+
+    def _refresh_balance_button(self, enabled: bool = True) -> None:
+        self.btn_run_Balance.setEnabled(enabled and self._balance_available())
 
     def _orthophoto_path(self) -> Path:
         return Path(self.folderMissionPath) / "mapping_MULTI" / "mapping_result" / "odm_orthophoto.tif"
@@ -819,6 +840,7 @@ class DialogGeoRef(QDialog):
         self.btn_run_GeoRef.clicked.connect(self.on_run_GeoRef)
         self.btn_run_Mapping.clicked.connect(self.on_run_ODM)
         self.btn_run_DTM.clicked.connect(self.on_run_DTM)
+        self.btn_run_Balance.clicked.connect(self.on_run_Balance)
         self.btn_close.clicked.connect(self.on_close)
 
     # ------------------------------------------------------------------
@@ -906,6 +928,21 @@ class DialogGeoRef(QDialog):
     # ------------------------------------------------------------------
     #       Georeferencing
     # ------------------------------------------------------------------
+
+    def on_run_Balance(self) -> None:
+        """The spectral balance window (refused while ODM or the DTM runs: ODM reads the balanced images)."""
+        if self.odm_worker is not None or self.dtm_worker is not None:
+            return
+        from IRD_Interactive_Spectral_Balance import SpectralBalanceDialog
+        try:
+            dialog = SpectralBalanceDialog(Path(self.folderMissionPath), parent=self)
+        except Exception as error:
+            QMessageBox.critical(self, "Spectral balance", f"The window cannot open:\n{error}")
+            return
+        dialog.exec()
+        active = spectral_balance.is_active(Path(self.folderMissionPath))
+        self._log("Spectral balance saved: the next map uses the balanced images." if active
+                  else "Spectral balance: none set, the map uses the original images.")
 
     def on_run_GeoRef(self) -> None:
         """
@@ -1027,6 +1064,7 @@ class DialogGeoRef(QDialog):
         worker.signals.error.connect(self._on_ODM_error)
         self.odm_worker = worker
         self.btn_run_GeoRef.setEnabled(False)
+        self._refresh_balance_button(False)
         self.btn_run_Mapping.setEnabled(False)
         self.btn_run_DTM.setEnabled(False)
         self.btn_close.setEnabled(False)
@@ -1076,6 +1114,7 @@ class DialogGeoRef(QDialog):
         """Release the worker and re-enable the buttons and the progress bar."""
         self.odm_worker = None
         self.btn_run_GeoRef.setEnabled(True)
+        self._refresh_balance_button()
         self.btn_run_Mapping.setEnabled(True)
         self.btn_run_DTM.setEnabled(self._orthophoto_path().is_file())
         self.btn_close.setEnabled(True)
@@ -1155,6 +1194,7 @@ class DialogGeoRef(QDialog):
             self.btn_continue,
         ):
             button.setEnabled(enabled)
+        self._refresh_balance_button(enabled)
 
     def on_run_DTM(self) -> None:
         """Rebuild the DTM and contour lines of the archived ODM orthophoto."""
