@@ -1250,17 +1250,18 @@ Les images multispectrales produites à l'étape~4 sont des images \og à plat \
 {step5_VIS_ortho.png}{Image Orthorectifiée avec un modèle de terrain au pas de $10\,m$.}
 {L'effet de l'orthorectification est bien visible sur cette image où le terrain présente une forte déclivité (voir figure \ref{fig:step6_topo}).}
 
- L'étape~6 les rend exploitables dans un système d'information géographique (SIG) comme QGIS. Elle propose trois traitements indépendants, un par bouton :
+ L'étape~6 les rend exploitables dans un système d'information géographique (SIG) comme QGIS. Elle propose quatre traitements indépendants, un par bouton :
 \begin{itemize}
 	\item \bouton{Build the map\ldots} (le bouton principal) : assemblage de l'ensemble des images retenues en une seule \emph{orthophoto} à 4 bandes (rouge, vert, bleu, proche infrarouge) avec le logiciel libre OpenDroneMap (ODM), puis le modèle de terrain et les courbes de niveau ;
 	\item \bouton{Terrain model and contours\ldots} : construction à nouveau du MNT et des \emph{courbes de niveau}, par exemple avec un autre pas de grille, à partir d'altitudes fournies par un service en ligne (IGN) ;
+	\item \bouton{Spectral balance\ldots} : équilibrage du proche infrarouge avec les bandes visibles avant la carte (voir \ref{btn:step6_balance}) ;
 	\item \bouton{Georeference images\ldots} : \emph{géoréférencement} et \emph{orthorectification} d'images isolées. Chaque image est projetée sur un modèle numérique de terrain (MNT) puis enregistrée au format GeoTIFF en coordonnées UTM.
 \end{itemize}
 Ces traitements s'appuient sur les métadonnées de vol enregistrées dans les fichiers \texttt{.exif} \og compagnons \fg~(position GPS, altitude, angles de lacet, tangage et roulis, voir étape~1).
 
 \figureIRD{step5_window.png}{Fen\^etre de l'étape~6.}{0.6}
 
-La fenêtre est organisée comme celle de l'étape~3. De haut en bas : le nom de l'étape et de la mission ; les étapes de la carte (\texttt{Image selection}, \texttt{Orthophoto (OpenDroneMap)}, \texttt{Terrain model and contours} : $\circ$ à faire, $\bullet$ en cours, \checkmark{} fait, $\times$ échec, avec un détail sous chacune) ; une zone de messages (journal) ; les trois boutons, \bouton{Build the map\ldots} en premier ; une barre de progression précédée d'un intitulé qui indique l'opération en cours ; une zone d'aperçu d'image ; et les boutons \bouton{?} et \bouton{Close}, puis \bouton{Continue with archiving} une fois la carte construite.
+La fenêtre est organisée comme celle de l'étape~3. De haut en bas : le nom de l'étape et de la mission ; les étapes de la carte (\texttt{Image selection}, \texttt{Orthophoto (OpenDroneMap)}, \texttt{Terrain model and contours} : $\circ$ à faire, $\bullet$ en cours, \checkmark{} fait, $\times$ échec, avec un détail sous chacune) ; une zone de messages (journal) ; les quatre boutons, \bouton{Build the map\ldots} en premier ; une barre de progression précédée d'un intitulé qui indique l'opération en cours ; une zone d'aperçu d'image ; et les boutons \bouton{?} et \bouton{Close}, puis \bouton{Continue with archiving} une fois la carte construite.
 
 Si la carte a déjà été construite, les étapes sont déjà cochées et l'orthophoto s'affiche dès l'ouverture de la fenêtre. \bouton{Terrain model and contours\ldots} reste grisé tant que la carte n'existe pas.
 
@@ -1440,6 +1441,33 @@ Quelques actions simples avec une orthophotographie à 4 bandes spectrales red,g
 {step5_mapping_NDVI.png}{Carte de l'indice NDVI.}
 {Représentation des données IRdrone avec le logiciel QGIS sur fond Google Satellite.}
 
+
+\section{Bouton \bouton{Spectral balance\ldots}}\label{btn:step6_balance}
+Les bandes rouge, verte et bleue viennent de la caméra du drone, dont la balance des blancs automatique les garde bien équilibrées. Le proche infrarouge (NIR) vient de la SJCam, avec sa propre exposition : dans les images multispectrales il est souvent beaucoup plus sombre (ou plus clair) que les bandes visibles, et une image en fausses couleurs (NIR, rouge, vert) est dominée par une couleur. Cette fenêtre ajuste les tons des bandes pour qu'elles s'accordent. Le bouton est grisé pour une mission visible seulement et tant que l'étape~4 n'a pas écrit les images multispectrales.
+
+\subsection*{La fenêtre}
+\begin{itemize}
+	\item \textbf{À gauche} : la couche réglée, \bouton{RGB} (les trois bandes visibles ensemble), \bouton{R}, \bouton{G}, \bouton{B} (une bande visible, après les réglages RGB) ou \bouton{NIR} ; quatre curseurs, \emph{Exposure} (en IL : $\times 2$ par IL), \emph{Gamma} (au-dessus de 1 éclaircit les tons sombres et moyens), \emph{Contrast} et \emph{Brightness}, avec à droite une case où la valeur peut être saisie ; la \emph{courbe des tons} de la couche (un clic ajoute une poignée, on la fait glisser, un double-clic ou un clic droit la supprime ; la courbe est une spline monotone, la droite par défaut ; l'histogramme gris derrière est ce que reçoit la courbe) ; \bouton{Reset this layer}.
+	\item \textbf{Au centre} : l'image, l'originale face à l'équilibrée, sur fond noir : \bouton{Swipe} (originale à gauche du rideau, équilibrée à droite), \bouton{Blink} (l'une puis l'autre) ou \bouton{Side by side} ; affichée en \bouton{Visible}, \bouton{NIR} (gris) ou \bouton{VIR} (NIR en rouge, rouge en vert, vert en bleu). La molette zoome, un glisser déplace, un double-clic ajuste l'image ; le zoom est indiqué en bas à droite. \bouton{Map} montre le vol sur photos aériennes ou cartes (IGN, Esri, OpenStreetMap ou aucun fond), les images de la carte et l'emprise au sol de l'image sélectionnée.
+	\item \textbf{À droite} : l'image sélectionnée et \bouton{Validate} ; les histogrammes des quatre bandes de l'image équilibrée (le NIR d'origine en pointillés) ; \bouton{\(\blacktriangleleft\)}, \bouton{Next to validate}, \bouton{\(\blacktriangleright\)} ; la carte (un clic l'ouvre en grand) ; \bouton{Write all the balanced images}.
+	\item \textbf{En bas} : les images de la carte (celles qu'utilisera le prochain \bouton{Build the map\ldots} : alignées, non signalées, dans l'écart de temps et le recouvrement choisis), en vignettes fausses couleurs. Une étoile orange marque une image dont les bandes équilibrées sont écrites, une grise une image dont les bandes sont périmées (les réglages ou l'image ont changé depuis). La molette zoome (les heures des prises de vue apparaissent), un clic sélectionne une image.
+\end{itemize}
+
+\subsection*{Un équilibre pour la mission}
+Les réglages s'appliquent à \textbf{toutes les images} de la mission : la carte est une mosaïque de nombreuses images, traitées de la même façon elles ne laissent pas de raccords. Une image peut recevoir un équilibre propre (\emph{This image has a balance of its own}) : il part d'une copie de l'équilibre de la mission (un petit crayon la signale sur la pellicule).
+
+L'exposition de la SJCam change d'une image à l'autre, un réglage fixe ne peut pas toutes les équilibrer : \emph{Match the NIR to the visible (each image)} calcule sur chaque image l'exposition et le gamma du NIR pour que sa médiane et ses hautes lumières (98\textsuperscript{e} centile) soient celles des bandes visibles. Les valeurs calculées pour l'image sélectionnée s'affichent sous les curseurs ; contraste, luminosité et courbe s'appliquent ensuite. C'est en général le seul réglage nécessaire.
+
+\subsection*{Fichiers écrits}
+Dans \texttt{ImgIRdrone\textbackslash img\_Bal\_Multispectral} :
+\begin{itemize}
+	\item \texttt{spectral\_balance.json} : les réglages, enregistrés à la fermeture de la fenêtre (\bouton{Close}, \og Save and close \fg{} dès qu'un réglage a changé, ou la croix) ;
+	\item \texttt{IRD\_XXXX\_1.tif} à \texttt{IRD\_XXXX\_4.tif} : les bandes équilibrées (rouge, vert, bleu, NIR), en 16 bits avec les métadonnées des originales, écrites par \bouton{Validate} (touche \texttt{V}) ou \bouton{Write all the balanced images} (environ une seconde par image, en arrière-plan, \bouton{Stop} pour interrompre) ;
+	\item \texttt{IRD\_XXXX\_bal.json} : les réglages appliqués à l'image et les valeurs calculées pour elle.
+\end{itemize}
+Les originales de \texttt{imgMultispectral} ne sont jamais modifiées. Dès qu'un équilibre est réglé, \bouton{Build the map\ldots} utilise les bandes équilibrées ; celles pas encore écrites, ou périmées, sont écrites d'abord (étape \texttt{Spectral balance} du journal). \bouton{\(\circlearrowleft\)} en bas à gauche remet tous les réglages au neutre : la carte utilise alors à nouveau les bandes d'origine.
+
+Touches : \(\leftarrow\) \(\rightarrow\) image précédente / suivante, \texttt{N} prochaine image à valider, \texttt{V} valider, \texttt{1} à \texttt{3} les modes de comparaison, \texttt{4} la carte.
 
 \section{Bouton \bouton{Close}}\label{btn:step6_close}
 Ferme la fenêtre et rend la main au dialogue principal. La fermeture est refusée tant qu'un calcul ODM ou MNT est en cours. Le bouton \bouton{?} ouvre cette aide à la page de ce chapitre.

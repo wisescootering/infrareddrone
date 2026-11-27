@@ -1251,17 +1251,18 @@ The multispectral images produced in Step~4 are ``flat'' images: they are not po
 {step5_VIS_ortho.png}{Image orthorectified with a terrain model with a $10\,m$ step.}
 {The effect of orthorectification is clearly visible in this image, where the terrain has a steep slope (see Figure~\ref{fig:step6_topo}).}
 
- Step~6 makes them usable in a geographic information system (GIS) such as QGIS. It offers three processes, one per button:
+ Step~6 makes them usable in a geographic information system (GIS) such as QGIS. It offers four processes, one per button:
 \begin{itemize}
 	\item \bouton{Build the map\ldots} (the main one): stitching all the selected images into a single 4-band \emph{orthophoto} (red, green, blue, near infrared) with the free software OpenDroneMap (ODM), then the terrain model and the contour lines;
 	\item \bouton{Terrain model and contours\ldots}: building the DTM and the \emph{contour lines} again, for example with another grid step, from elevations supplied by an online service (IGN);
+	\item \bouton{Spectral balance\ldots}: balancing the near infrared with the visible bands before the map (see \ref{btn:step6_balance});
 	\item \bouton{Georeference images\ldots}: \emph{georeferencing} and \emph{orthorectification} of individual images. Each image is projected onto a digital terrain model (DTM) and then saved in GeoTIFF format in UTM coordinates.
 \end{itemize}
 These processes rely on the flight metadata stored in the ``companion'' \texttt{.exif} files (GPS position, altitude, yaw, pitch and roll angles, see Step~1).
 
 \figureIRD{step5_window.png}{Step~6 window.}{0.6}
 
-The window is laid out as Step~3. From top to bottom: the name of the step and of the mission; the stages of the map (\texttt{Image selection}, \texttt{Orthophoto (OpenDroneMap)}, \texttt{Terrain model and contours}: $\circ$ to do, $\bullet$ running, \checkmark{} done, $\times$ failed, with a detail under each); a message area (log); the three buttons, \bouton{Build the map\ldots} first; a progress bar preceded by a label showing the operation in progress; an image preview area; and the \bouton{?} and \bouton{Close} buttons, then \bouton{Continue with archiving} once the map is built.
+The window is laid out as Step~3. From top to bottom: the name of the step and of the mission; the stages of the map (\texttt{Image selection}, \texttt{Orthophoto (OpenDroneMap)}, \texttt{Terrain model and contours}: $\circ$ to do, $\bullet$ running, \checkmark{} done, $\times$ failed, with a detail under each); a message area (log); the four buttons, \bouton{Build the map\ldots} first; a progress bar preceded by a label showing the operation in progress; an image preview area; and the \bouton{?} and \bouton{Close} buttons, then \bouton{Continue with archiving} once the map is built.
 
 When the map was built earlier, the stages are already ticked and the orthophoto is shown as soon as the window opens. \bouton{Terrain model and contours\ldots} stays greyed out until the map exists.
 
@@ -1441,6 +1442,33 @@ A few simple actions with a 4-band orthophoto red, green, blue, nir
 {step5_mapping_NDVI.png}{NDVI index map.}
 {IRdrone data shown in the QGIS software over a Google Satellite background.}
 
+
+\section{\bouton{Spectral balance\ldots} button}\label{btn:step6_balance}
+The red, green and blue bands come from the drone camera, whose automatic white balance keeps them well balanced. The near infrared (NIR) comes from the SJCam, with its own exposure: in the multispectral images it is often much darker (or brighter) than the visible bands, and a false colour image (NIR, red, green) is dominated by one colour. This window adjusts the tones of the bands so that they match. The button is greyed out in a visible only mission and until Step~4 has written the multispectral images.
+
+\subsection*{The window}
+\begin{itemize}
+	\item \textbf{Left}: the layer adjusted, \bouton{RGB} (the three visible bands together), \bouton{R}, \bouton{G}, \bouton{B} (one visible band, after the RGB settings) or \bouton{NIR}; four sliders, \emph{Exposure} (in EV: $\times 2$ per EV), \emph{Gamma} (above 1 lifts the dark and mid tones), \emph{Contrast} and \emph{Brightness}, with a box on the right where the value can be typed; the \emph{tone curve} of the layer (a click adds a handle, drag it, a double-click or a right-click removes it; the curve is a monotone spline, the straight line by default; the grey histogram behind it is what the curve receives); \bouton{Reset this layer}.
+	\item \textbf{Centre}: the image, the original against the balanced one, on a black background: \bouton{Swipe} (original on the left of the curtain, balanced on the right), \bouton{Blink} (one then the other) or \bouton{Side by side}; shown in \bouton{Visible}, \bouton{NIR} (grey) or \bouton{VIR} (NIR in red, red in green, green in blue). The wheel zooms, a drag pans, a double-click fits the image; the zoom is written at the bottom right. \bouton{Map} shows the flight on aerial photos or maps (IGN, Esri, OpenStreetMap or none), the images of the map and the ground covered by the selected image.
+	\item \textbf{Right}: the selected image and \bouton{Validate}; the histograms of the four bands of the balanced image (the original NIR dotted); \bouton{\(\blacktriangleleft\)}, \bouton{Next to validate}, \bouton{\(\blacktriangleright\)}; the map (a click opens it large); \bouton{Write all the balanced images}.
+	\item \textbf{Bottom}: the images of the map (those the next \bouton{Build the map\ldots} uses: aligned, not flagged, within the time difference and the overlap chosen), as false colour thumbnails. An orange star marks an image whose balanced bands are written, a grey one an image whose bands are out of date (the settings or the image changed since). The wheel zooms (the times of the shots appear), a click selects an image.
+\end{itemize}
+
+\subsection*{One balance for the mission}
+The settings apply to \textbf{every image} of the mission: the map is a mosaic of many images, treated alike they leave no seams. An image may get a balance of its own (\emph{This image has a balance of its own}): it starts from a copy of the mission balance (a small pencil marks it on the strip).
+
+The exposure of the SJCam changes from image to image, a fixed setting cannot balance them all: \emph{Match the NIR to the visible (each image)} computes on each image the exposure and the gamma of the NIR so that its median and its highlights (98th percentile) are those of the visible bands. The values computed for the selected image are shown under the sliders; contrast, brightness and curve still apply after. This is usually the only setting needed.
+
+\subsection*{Files written}
+In \texttt{ImgIRdrone\textbackslash img\_Bal\_Multispectral}:
+\begin{itemize}
+	\item \texttt{spectral\_balance.json}: the settings, saved when the window closes (\bouton{Close}, ``Save and close'' once something changed, or the cross);
+	\item \texttt{IRD\_XXXX\_1.tif} to \texttt{IRD\_XXXX\_4.tif}: the balanced bands (red, green, blue, NIR), in 16 bits with the metadata of the originals, written by \bouton{Validate} (key \texttt{V}) or \bouton{Write all the balanced images} (about a second per image, in the background, \bouton{Stop} to interrupt);
+	\item \texttt{IRD\_XXXX\_bal.json}: the settings applied to the image and the values computed for it.
+\end{itemize}
+The originals in \texttt{imgMultispectral} are never changed. Once a balance is set, \bouton{Build the map\ldots} uses the balanced bands; those not written yet, or out of date, are written first (stage \texttt{Spectral balance} of the log). \bouton{\(\circlearrowleft\)} at the bottom left puts every setting back to neutral: the map then uses the original bands again.
+
+Keys: \(\leftarrow\) \(\rightarrow\) previous / next image, \texttt{N} next image to validate, \texttt{V} validate, \texttt{1} to \texttt{3} the comparison modes, \texttt{4} the map.
 
 \section{\bouton{Close} button}\label{btn:step6_close}
 Closes the window and returns to the main dialog. Closing is refused while an ODM or DTM computation is running. The \bouton{?} button opens this help at the page of this chapter.
